@@ -107,14 +107,34 @@ test("admin-store-catalog.css exists and includes responsive rules for 320-360px
   assert.match(catalogCssSource, /asc-item-card/);
 });
 
-test("openCatalogModalForEdit populates cm_effective_from and cm_effective_to from the item", () => {
-  assert.match(catalogJsSource, /el\("cm_effective_from"\)\.value = toDateInputValue\(item\.effective_from\);/);
-  assert.match(catalogJsSource, /el\("cm_effective_to"\)\.value = toDateInputValue\(item\.effective_to\);/);
+test("openCatalogModalForEdit populates cm_effective_from and cm_effective_to from raw pricing fields with fallback", () => {
+  assert.match(catalogJsSource, /el\("cm_effective_from"\)\.value = toDateInputValue\(item\.pricing_effective_from \?\? item\.effective_from\);/);
+  assert.match(catalogJsSource, /el\("cm_effective_to"\)\.value = toDateInputValue\(item\.pricing_effective_to \?\? item\.effective_to\);/);
 });
 
 test("openCatalogModalForEdit no longer hardcodes cm_pricing_is_active to \"1\" regardless of state", () => {
   assert.doesNotMatch(catalogJsSource, /cm_pricing_is_active"\)\.value = item\.price_rule_id \? "1" : "1";/);
-  assert.match(catalogJsSource, /cm_pricing_is_active"\)\.value = item\.price_rule_id \? \(item\.pricing_is_active \? "1" : "0"\) : "1";/);
+  assert.match(catalogJsSource, /const rawPricingIsActive = item\.pricing_is_active != null \? item\.pricing_is_active : true;/);
+  assert.match(catalogJsSource, /cm_pricing_is_active"\)\.value = item\.price_rule_id \? \(rawPricingIsActive \? "1" : "0"\) : "1";/);
+});
+
+test("openCatalogModalForEdit reads raw pricing_* fields first, falling back to the effective field names", () => {
+  assert.match(catalogJsSource, /item\.pricing_wash_variant \?\? item\.wash_variant \?\? ""/);
+  assert.match(catalogJsSource, /const rawNormalPrice = item\.pricing_normal_price \?\? item\.normal_price;/);
+  assert.match(catalogJsSource, /const rawActivePrice = item\.pricing_active_price \?\? item\.sale_price;/);
+  assert.match(catalogJsSource, /const rawPriority = item\.pricing_priority \?\? item\.priority;/);
+  assert.match(catalogJsSource, /item\.pricing_label \?\? item\.price_label \?\? ""/);
+  assert.match(catalogJsSource, /item\.pricing_campaign_name \?\? item\.campaign_name \?\? ""/);
+});
+
+test("openCatalogModalForEdit never assigns blank/empty values when raw pricing data exists (no data loss on open+save)", () => {
+  const fnMatch = catalogJsSource.match(/function openCatalogModalForEdit\(itemId\)[\s\S]*?\n}\n/);
+  assert.ok(fnMatch, "openCatalogModalForEdit function not found");
+  const body = fnMatch[0];
+  assert.doesNotMatch(body, /el\("cm_normal_price"\)\.value = "";/);
+  assert.doesNotMatch(body, /el\("cm_active_price"\)\.value = "";/);
+  assert.doesNotMatch(body, /el\("cm_label"\)\.value = "";/);
+  assert.doesNotMatch(body, /el\("cm_campaign_name"\)\.value = "";/);
 });
 
 test("catalogModalPayload sends pricing.pricing_is_active, not pricing.is_active", () => {

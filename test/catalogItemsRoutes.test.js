@@ -28,6 +28,9 @@ function makePool(initialItems = [], initialRules = [], { schemaReady = true } =
       rule_is_active: rule ? rule.is_active : null,
       rule_effective_from: rule ? rule.effective_from : null,
       rule_effective_to: rule ? rule.effective_to : null,
+      rule_wash_variant: rule ? rule.wash_variant : null,
+      rule_label: rule ? rule.label : null,
+      rule_priority: rule ? rule.priority : null,
     };
   }
 
@@ -53,16 +56,16 @@ function makePool(initialItems = [], initialRules = [], { schemaReady = true } =
     }
 
     if (s.includes("INSERT INTO public.customer_service_price_rules")) {
-      const [job_type, ac_type, btu_min, btu_max, normal_price, active_price, campaign_name, effective_from, effective_to, is_active, updated_by] = params;
-      const rule = { rule_id: nextRuleId++, job_type, ac_type, btu_min, btu_max, normal_price, active_price, campaign_name, effective_from, effective_to, is_active, updated_by };
+      const [job_type, ac_type, btu_min, btu_max, normal_price, active_price, campaign_name, effective_from, effective_to, is_active, updated_by, wash_variant, label, priority] = params;
+      const rule = { rule_id: nextRuleId++, job_type, ac_type, btu_min, btu_max, normal_price, active_price, campaign_name, effective_from, effective_to, is_active, updated_by, wash_variant, label, priority };
       state.rules.push(rule);
       return { rows: [{ rule_id: rule.rule_id }] };
     }
 
     if (s.includes("UPDATE public.customer_service_price_rules")) {
-      const [rule_id, job_type, ac_type, btu_min, btu_max, normal_price, active_price, campaign_name, effective_from, effective_to, is_active, updated_by] = params;
+      const [rule_id, job_type, ac_type, btu_min, btu_max, normal_price, active_price, campaign_name, effective_from, effective_to, is_active, updated_by, wash_variant, label, priority] = params;
       const rule = state.rules.find((r) => String(r.rule_id) === String(rule_id));
-      if (rule) Object.assign(rule, { job_type, ac_type, btu_min, btu_max, normal_price, active_price, campaign_name, effective_from, effective_to, is_active, updated_by });
+      if (rule) Object.assign(rule, { job_type, ac_type, btu_min, btu_max, normal_price, active_price, campaign_name, effective_from, effective_to, is_active, updated_by, wash_variant, label, priority });
       return { rows: [] };
     }
 
@@ -583,6 +586,130 @@ test("a future rule is not used; falls back to base_price", async () => {
     const item = body.find((x) => x.item_id === 1);
     assert.equal(item.normal_price, null);
     assert.equal(Number(item.display_price), 700);
+  });
+});
+
+test("admin GET of an inactive rule returns full raw pricing_* fields, but public GET falls back to base_price", async () => {
+  const items = sampleItems();
+  items[0].price_rule_id = 61;
+  const rules = [{
+    rule_id: 61, normal_price: 700, active_price: 550, campaign_name: "โปรหน้าฝน", is_active: false,
+    effective_from: "2020-01-01T00:00:00Z", effective_to: "2099-01-01T00:00:00Z",
+    wash_variant: "ล้างน้ำ", label: "โปรโมชันหน้าฝน", priority: 2,
+  }];
+  const pool = makePool(items, rules);
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const adminRes = await fetch(`${base}/admin/catalog/items`);
+    const adminBody = await adminRes.json();
+    const adminItem = adminBody.find((x) => x.item_id === 1);
+    assert.equal(Number(adminItem.pricing_normal_price), 700);
+    assert.equal(Number(adminItem.pricing_active_price), 550);
+    assert.equal(adminItem.pricing_campaign_name, "โปรหน้าฝน");
+    assert.equal(adminItem.pricing_is_active, false);
+    assert.equal(adminItem.pricing_wash_variant, "ล้างน้ำ");
+    assert.equal(adminItem.pricing_label, "โปรโมชันหน้าฝน");
+    assert.equal(adminItem.pricing_priority, 2);
+    // Effective/public fields must NOT use the inactive rule's data.
+    assert.equal(adminItem.normal_price, null);
+    assert.equal(adminItem.has_active_promotion, false);
+
+    const publicRes = await fetch(`${base}/catalog/items?customer=1`);
+    const publicBody = await publicRes.json();
+    const publicItem = publicBody.find((x) => x.item_id === 1);
+    assert.equal(publicItem.normal_price, null);
+    assert.equal(Number(publicItem.display_price), 700);
+    assert.equal(publicItem.has_active_promotion, false);
+    assert.equal(publicItem.pricing_normal_price, undefined);
+  });
+});
+
+test("admin GET of a future rule returns full raw prices/dates/campaign, but public GET does not yet use the rule", async () => {
+  const items = sampleItems();
+  items[0].price_rule_id = 62;
+  const rules = [{
+    rule_id: 62, normal_price: 800, active_price: 600, campaign_name: "โปรซัมเมอร์", is_active: true,
+    effective_from: "2999-01-01T00:00:00Z", effective_to: null,
+    wash_variant: "ล้างน้ำยา", label: "ลดราคาล่วงหน้า", priority: 5,
+  }];
+  const pool = makePool(items, rules);
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const adminRes = await fetch(`${base}/admin/catalog/items`);
+    const adminBody = await adminRes.json();
+    const adminItem = adminBody.find((x) => x.item_id === 1);
+    assert.equal(Number(adminItem.pricing_normal_price), 800);
+    assert.equal(Number(adminItem.pricing_active_price), 600);
+    assert.equal(adminItem.pricing_campaign_name, "โปรซัมเมอร์");
+    assert.equal(adminItem.pricing_effective_from, "2999-01-01T00:00:00Z");
+    assert.equal(adminItem.pricing_wash_variant, "ล้างน้ำยา");
+    assert.equal(adminItem.pricing_label, "ลดราคาล่วงหน้า");
+    assert.equal(adminItem.pricing_priority, 5);
+
+    const publicRes = await fetch(`${base}/catalog/items?customer=1`);
+    const publicBody = await publicRes.json();
+    const publicItem = publicBody.find((x) => x.item_id === 1);
+    assert.equal(publicItem.normal_price, null);
+    assert.equal(Number(publicItem.display_price), 700);
+    assert.equal(publicItem.has_active_promotion, false);
+    assert.equal(publicItem.campaign_name, null);
+    assert.equal(publicItem.effective_from, null);
+  });
+});
+
+test("admin GET of an expired rule returns full raw prices", async () => {
+  const items = sampleItems();
+  items[0].price_rule_id = 63;
+  const rules = [{
+    rule_id: 63, normal_price: 900, active_price: 650, campaign_name: "โปรเก่า", is_active: true,
+    effective_from: "2000-01-01T00:00:00Z", effective_to: "2000-02-01T00:00:00Z",
+    wash_variant: "ล้างน้ำ", label: "หมดอายุแล้ว", priority: 1,
+  }];
+  const pool = makePool(items, rules);
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const adminRes = await fetch(`${base}/admin/catalog/items`);
+    const adminBody = await adminRes.json();
+    const adminItem = adminBody.find((x) => x.item_id === 1);
+    assert.equal(Number(adminItem.pricing_normal_price), 900);
+    assert.equal(Number(adminItem.pricing_active_price), 650);
+    assert.equal(adminItem.pricing_campaign_name, "โปรเก่า");
+    assert.equal(adminItem.pricing_effective_to, "2000-02-01T00:00:00Z");
+    assert.equal(adminItem.pricing_is_active, true);
+
+    const publicRes = await fetch(`${base}/catalog/items?customer=1`);
+    const publicBody = await publicRes.json();
+    const publicItem = publicBody.find((x) => x.item_id === 1);
+    assert.equal(publicItem.normal_price, null);
+    assert.equal(Number(publicItem.display_price), 700);
+  });
+});
+
+test("the public contract fields are unchanged by the admin raw-pricing DTO addition", async () => {
+  const items = sampleItems();
+  items[0].price_rule_id = 64;
+  const rules = [{
+    rule_id: 64, normal_price: 700, active_price: 550, campaign_name: "โปรหน้าฝน", is_active: true,
+    effective_from: null, effective_to: null, wash_variant: "ล้างน้ำ", label: "โปร", priority: 1,
+  }];
+  const pool = makePool(items, rules);
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/catalog/items?customer=1`);
+    const body = await res.json();
+    const item = body.find((x) => x.item_id === 1);
+    assert.equal(Number(item.normal_price), 700);
+    assert.equal(Number(item.active_price), 550);
+    assert.equal(item.has_active_promotion, true);
+    assert.equal(Number(item.sale_price), 550);
+    assert.equal(item.has_promo, true);
+    assert.equal(item.campaign_name, "โปรหน้าฝน");
+    assert.equal(item.price_label, "โปร");
+    assert.equal(item.wash_variant, "ล้างน้ำ");
+    assert.equal(item.priority, 1);
+    // No raw admin-only fields ever leak into the public response.
+    assert.equal(item.pricing_normal_price, undefined);
+    assert.equal(item.pricing_is_active, undefined);
   });
 });
 

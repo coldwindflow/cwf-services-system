@@ -28,7 +28,7 @@ This branch's migration file (`migrations/20260622_catalog_store_media_pricing.s
 
 - File: `migrations/20260622_catalog_store_media_pricing.sql`
 - Additive only: 3 nullable columns on `public.catalog_items` (`image_url`, `image_public_id`, `price_rule_id`), 1 index, 1 idempotent FK to `public.customer_service_price_rules(rule_id)` with `ON DELETE SET NULL`.
-- The FK-existence check is scoped by joining `pg_constraint` → `pg_class` → `pg_namespace`, filtering on `nsp.nspname = 'public'`, `rel.relname = 'catalog_items'`, `con.contype = 'f'`, and the constraint name — not just the constraint name alone. This avoids a false "already exists" positive if a different table happens to have an identically-named constraint. `server/routes/catalog/items.js`'s own boot-time `ensureCatalogMediaPricingSchema()` runtime guard was updated with the identical scoped check, so the inline runtime DDL and the standalone migration file never drift apart.
+- The FK-existence check is scoped by joining `pg_constraint` → `pg_class` → `pg_namespace`, filtering on `nsp.nspname = 'public'`, `rel.relname = 'catalog_items'`, `con.contype = 'f'`, and the constraint name — not just the constraint name alone. This avoids a false "already exists" positive if a different table happens to have an identically-named constraint. This migration file is the only place that runs this DDL: `server/routes/catalog/items.js` contains no DDL of any kind (see production-blocker fix #1 above) and cannot drift from it.
 - Run command (staging/production, when authorized):
   ```
   DATABASE_URL=... node scripts/run-catalog-store-media-pricing-migration.js
@@ -67,9 +67,10 @@ All three queries must return rows. `scripts/run-catalog-store-media-pricing-mig
 ## Deploy order
 
 1. Confirm `CLOUDINARY_URL` (or the discrete trio) is set in the target environment's secrets — without it, image upload returns 503 but nothing else breaks.
-2. Run the migration during a planned deployment window (advisory-locked, so it is safe to run once even if a deploy retries).
-3. Deploy the application code (this PR). The route layer's `ensureCatalogMediaPricingSchema()` is a defensive idempotent guard, not a substitute for running the real migration — it exists only so the app doesn't crash if it boots before the migration has run, not as the primary migration path.
-4. Smoke test (see below) in the target environment before announcing the feature.
+2. Run the approved migration (`scripts/run-catalog-store-media-pricing-migration.js`) during a planned deployment window (advisory-locked, so it is safe to run once even if a deploy retries).
+3. Verify the new columns/index/FK exist (see "Schema verification steps" below) — the migration runner already does this automatically and exits non-zero if anything is missing, but it can also be re-confirmed manually.
+4. Deploy the application code (this PR). The route layer performs only a read-only schema-capability check (`isMediaPricingSchemaReady()`, an `information_schema.columns` query) — it never executes `ALTER`/`CREATE`/`ADD CONSTRAINT` or any other DDL. If the application boots before the migration has run, `GET /catalog/items` and `GET /admin/catalog/items` automatically fall back to `CATALOG_SELECT_LEGACY` (the column-minimal select) instead of crashing; the admin media/pricing feature (image upload, price-rule fields) only becomes usable once the migration has actually run and the capability check passes.
+5. Smoke test (see below) in the target environment before announcing the feature.
 
 ## Smoke test (after deploy)
 
@@ -92,7 +93,7 @@ If this needs to be rolled back after data has been written to the new columns:
 ## Files changed in this phase
 
 - `migrations/20260622_catalog_store_media_pricing.sql` — FK-idempotency scoping fix.
-- `server/routes/catalog/items.js` — same FK-idempotency fix applied to the inline `ensureCatalogMediaPricingSchema()` runtime guard; `wash_variant`/`label`/`priority` now read/written on the existing `customer_service_price_rules` columns (no new migration — these columns already existed via `ensureCustomerPriceBookSchema` in `server/customerPricing.js`).
+- `server/routes/catalog/items.js` — at this point in the phase the route still had an inline `ensureCatalogMediaPricingSchema()` runtime guard, which received the same FK-idempotency fix; this guard was later removed entirely (see "Production-blocker fix pass" below — the route now performs no DDL at all). `wash_variant`/`label`/`priority` now read/written on the existing `customer_service_price_rules` columns (no new migration — these columns already existed via `ensureCustomerPriceBookSchema` in `server/customerPricing.js`).
 - `server/lib/cloudinaryImageUpload.js` — folder path changed to `cwf/catalog/services/{itemId}` with strict positive-integer sanitization; added `CLOUDINARY_URL` parsing with fallback to the discrete env trio; secrets are never logged.
 - `test/cloudinaryImageUpload.test.js` (new) — covers URL parsing/precedence, incomplete-value rejection, secret-never-leaks, folder structure, itemId sanitization.
 - `test/catalogStoreMediaPricingMigration.test.js` — added a scoped-FK regex assertion and a real-Postgres integration test proving the migration still adds the FK to `catalog_items` even when an identically-named constraint already exists on a different table.
@@ -111,6 +112,19 @@ If this needs to be rolled back after data has been written to the new columns:
 - `test/catalogStoreMediaPricingMigration.test.js` — added a regression test confirming no `ROLLBACK` is issued when post-commit verification fails.
 - `docs/ADMIN_SERVICE_CATALOG_PHASE2A2_HANDOFF.md` — this section, plus the corrected rollback-scope wording above.
 - `migrations/20260622_catalog_store_media_pricing.sql`, `scripts/run-catalog-store-media-pricing-migration.js`, `server/lib/cloudinaryImageUpload.js` — reviewed, no code changes required (the migration runner's transaction/verification ordering was already correct; only the documentation overstated it).
+
+### Admin raw-pricing DTO split (final PR #84 closeout round, same branch)
+
+A further review found that admin Edit could silently lose price/promo data: the single serializer used by every route conflated "what a customer is currently charged" with "what the price rule actually has stored," so opening Edit on a rule that was inactive, not-yet-started, or expired showed blank fields — and saving without noticing would wipe the rule's real data. Fixed by splitting the DTO into two layers, with no schema/migration/architecture change:
+
+- `computeEffectivePricing(row)` — unchanged in spirit, but now consistently gates **all** rule-derived fields (`campaign_name`, `price_label`, `effective_from`, `effective_to`, `wash_variant`, `priority` — previously the last four leaked raw data even when the rule was not currently effective) by the same `ruleIsCurrentlyActive` check that already gated `normal_price`/`sale_price`.
+- `serializeCatalogRow(row)` — the public/effective DTO. Used by `GET /catalog/items` (public) and unchanged in its field names/aliases (`active_price`, `has_active_promotion`, `effective_from`, `effective_to`, `sale_price`, `has_promo`, `display_price`, `campaign_name`, `price_label`, `wash_variant`, `priority`). Still reflects only the currently-effective rule — never raw/inactive/future/expired data.
+- `serializeAdminCatalogRow(row)` — new, admin-only. Spreads `serializeCatalogRow`'s output and adds `pricing_normal_price`, `pricing_active_price`, `pricing_label`, `pricing_campaign_name`, `pricing_effective_from`, `pricing_effective_to`, `pricing_is_active`, `pricing_wash_variant`, `pricing_priority` — the rule's raw stored values, present whenever a `price_rule_id` is linked, regardless of active/date-window state. Never used to compute what a customer is charged.
+- Wired into every admin-facing route (`GET /admin/catalog/items`, `POST /admin/catalog/items`, `PATCH /admin/catalog/items/:itemId`, and both `.../image` upload/delete responses). The public `GET /catalog/items` route continues to use plain `serializeCatalogRow` and never sees the `pricing_*` raw fields.
+- `admin-store-catalog.js`'s `openCatalogModalForEdit()` now reads the raw `pricing_*` fields first (`item.pricing_normal_price ?? item.normal_price`, etc.) so the Edit modal shows the rule's real values even when it is inactive, future, or expired, falling back to the old effective-field names only when raw fields are absent. The admin card-list rendering (which intentionally shows "what's currently effective") was left unchanged.
+- `test/catalogItemsRoutes.test.js` — added regression tests covering admin GET of inactive/future/expired rules (asserting full raw `pricing_*` values) alongside the corresponding public GET (asserting it still falls back to `base_price`/no-promo and never sees `pricing_*` fields), plus a public-contract-unchanged test.
+- `test/adminStoreCatalogUi.test.js` — added regression tests confirming the modal reads `pricing_*` fields with fallback, and that the function body never assigns blank strings over fields that should carry raw data.
+- No migration, route SQL shape, write-path/tri-state `pricing` semantics, Cloudinary helper, or `style.css` were touched in this round.
 
 ## Remaining risks / follow-ups
 

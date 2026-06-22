@@ -205,11 +205,22 @@ function computeEffectivePricing(row) {
     sale_price,
     display_price,
     has_promo,
+    // These reflect the rule only while it is currently effective (active, started,
+    // not expired) — an inactive/future/expired rule must never leak its campaign,
+    // label, dates, wash_variant, or priority into the effective/public pricing view.
     campaign_name: ruleIsCurrentlyActive ? (row.rule_campaign_name || null) : null,
     price_label: ruleIsCurrentlyActive ? (row.rule_label || null) : null,
+    effective_from: ruleIsCurrentlyActive ? (row.rule_effective_from || null) : null,
+    effective_to: ruleIsCurrentlyActive ? (row.rule_effective_to || null) : null,
+    wash_variant: ruleIsCurrentlyActive ? (row.rule_wash_variant || null) : null,
+    priority: ruleIsCurrentlyActive ? (row.rule_priority != null ? Number(row.rule_priority) : null) : null,
   };
 }
 
+// Public/effective DTO: every pricing-shaped field here reflects the currently-effective
+// price rule only (active, started, not expired) — never the raw stored rule. This is
+// what both the public storefront and the admin list/card views consume for "what would
+// a customer see right now". Do not add raw rule fields here; see serializeAdminCatalogRow.
 function serializeCatalogRow(row) {
   const pricing = computeEffectivePricing(row);
   return {
@@ -230,20 +241,37 @@ function serializeCatalogRow(row) {
     // Canonical public-contract field names (Phase 2A.2 production-blocker fixes):
     active_price: pricing.sale_price,
     has_active_promotion: pricing.has_promo,
-    effective_from: row.rule_effective_from || null,
-    effective_to: row.rule_effective_to || null,
+    effective_from: pricing.effective_from,
+    effective_to: pricing.effective_to,
     // Backward-compatible aliases — kept additive, do not remove.
     sale_price: pricing.sale_price,
     has_promo: pricing.has_promo,
     display_price: pricing.display_price,
     campaign_name: pricing.campaign_name,
     price_label: pricing.price_label,
-    wash_variant: row.rule_wash_variant || null,
-    priority: row.rule_priority != null ? Number(row.rule_priority) : null,
-    // Raw price-rule active flag (distinct from has_active_promotion, which also
-    // factors in the effective-date window) — needed so the admin Edit UI can
-    // reflect the rule's real stored state instead of guessing/hardcoding it.
-    pricing_is_active: row.price_rule_id ? Boolean(row.rule_is_active) : null,
+    wash_variant: pricing.wash_variant,
+    priority: pricing.priority,
+  };
+}
+
+// Admin-only DTO: adds the raw, unfiltered price-rule columns under a `pricing_` prefix
+// so the admin Edit UI can see (and round-trip) a rule's real stored values even while it
+// is inactive, not yet started, or already expired. These must never be used to compute
+// what a customer is charged — only serializeCatalogRow's effective fields drive that.
+function serializeAdminCatalogRow(row) {
+  const base = serializeCatalogRow(row);
+  const hasRule = Boolean(row.price_rule_id);
+  return {
+    ...base,
+    pricing_normal_price: hasRule ? Number(row.rule_normal_price ?? 0) : null,
+    pricing_active_price: hasRule ? Number(row.rule_active_price ?? 0) : null,
+    pricing_label: hasRule ? (row.rule_label || null) : null,
+    pricing_campaign_name: hasRule ? (row.rule_campaign_name || null) : null,
+    pricing_effective_from: hasRule ? (row.rule_effective_from || null) : null,
+    pricing_effective_to: hasRule ? (row.rule_effective_to || null) : null,
+    pricing_is_active: hasRule ? Boolean(row.rule_is_active) : null,
+    pricing_wash_variant: hasRule ? (row.rule_wash_variant || null) : null,
+    pricing_priority: hasRule ? (row.rule_priority != null ? Number(row.rule_priority) : null) : null,
   };
 }
 
@@ -366,7 +394,7 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
       const schemaReady = await isMediaPricingSchemaReady(pool);
       const select = schemaReady ? CATALOG_SELECT_WITH_PRICING : CATALOG_SELECT_LEGACY;
       const r = await pool.query(`${select} ORDER BY ci.item_category, ci.item_name`);
-      res.json(r.rows.map(serializeCatalogRow));
+      res.json(r.rows.map(serializeAdminCatalogRow));
     } catch (e) {
       console.error(e);
       res.status(500).json({ error: "โหลดรายการสินค้า/บริการไม่สำเร็จ" });
@@ -419,7 +447,7 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
 
       const select = schemaReady ? CATALOG_SELECT_WITH_PRICING : CATALOG_SELECT_LEGACY;
       const final = await pool.query(`${select} WHERE ci.item_id = $1`, [itemId]);
-      res.status(201).json(serializeCatalogRow(final.rows[0]));
+      res.status(201).json(serializeAdminCatalogRow(final.rows[0]));
     } catch (e) {
       await client.query("ROLLBACK").catch(() => {});
       console.error(e);
@@ -482,7 +510,7 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
       await client.query("COMMIT");
 
       const final = await pool.query(`${select} WHERE ci.item_id = $1`, [itemId]);
-      res.json(serializeCatalogRow(final.rows[0]));
+      res.json(serializeAdminCatalogRow(final.rows[0]));
     } catch (e) {
       await client.query("ROLLBACK").catch(() => {});
       console.error(e);
@@ -543,7 +571,7 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
         }
 
         const final = await pool.query(`${CATALOG_SELECT_WITH_PRICING} WHERE ci.item_id = $1`, [itemId]);
-        res.json(serializeCatalogRow(final.rows[0]));
+        res.json(serializeAdminCatalogRow(final.rows[0]));
       } catch (e) {
         console.error(e);
         if (e && e.code === "CLOUDINARY_NOT_CONFIGURED") {
@@ -589,7 +617,7 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
       }
 
       const final = await pool.query(`${CATALOG_SELECT_WITH_PRICING} WHERE ci.item_id = $1`, [itemId]);
-      res.json(serializeCatalogRow(final.rows[0]));
+      res.json(serializeAdminCatalogRow(final.rows[0]));
     } catch (e) {
       console.error(e);
       res.status(500).json({ error: "ลบรูปภาพไม่สำเร็จ" });
@@ -601,4 +629,5 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
 
 module.exports.computeEffectivePricing = computeEffectivePricing;
 module.exports.serializeCatalogRow = serializeCatalogRow;
+module.exports.serializeAdminCatalogRow = serializeAdminCatalogRow;
 module.exports.validatePricingInput = validatePricingInput;
