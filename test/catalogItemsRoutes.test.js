@@ -140,6 +140,56 @@ function makePool(initialItems = [], initialRules = [], { schemaReady = true } =
   };
 }
 
+// Wraps a fake pool so it behaves like a pool with exactly one available connection:
+// any pool.query() issued while a client is still checked out (between connect() and
+// release()) throws instead of hanging forever, the way a real single-connection pool
+// would. This is what catches the production hang: code that runs `pool.query(...)`
+// for a post-COMMIT read instead of `client.query(...)` deadlocks against the same
+// connection it is still holding — here that regresses to a thrown error (and
+// therefore an HTTP 500) instead of an actual infinite hang, so the test fails fast.
+function wrapAsSingleConnectionPool(pool) {
+  let checkedOut = false;
+  const poolQueryCallsWhileCheckedOut = [];
+  const clientQueryCalls = [];
+  let connectCalls = 0;
+  let releaseCalls = 0;
+  const originalQuery = pool.query;
+  const originalConnect = pool.connect;
+
+  pool.query = async (sql, params) => {
+    if (checkedOut) {
+      poolQueryCallsWhileCheckedOut.push(sql);
+      throw new Error("SIMULATED_POOL_EXHAUSTED: pool.query() called while the only connection is checked out");
+    }
+    return originalQuery(sql, params);
+  };
+
+  pool.connect = async () => {
+    if (checkedOut) throw new Error("SIMULATED_POOL_EXHAUSTED: no available connections");
+    checkedOut = true;
+    connectCalls += 1;
+    const client = await originalConnect();
+    return {
+      query: async (sql, params) => {
+        clientQueryCalls.push(sql);
+        return client.query(sql, params);
+      },
+      release() {
+        checkedOut = false;
+        releaseCalls += 1;
+        client.release();
+      },
+    };
+  };
+
+  return {
+    poolQueryCallsWhileCheckedOut,
+    clientQueryCalls,
+    get connectCalls() { return connectCalls; },
+    get releaseCalls() { return releaseCalls; },
+  };
+}
+
 function allowAdmin(req, res, next) { next(); }
 function denyAdmin(req, res) { res.status(401).json({ error: "UNAUTHORIZED" }); }
 
@@ -1171,6 +1221,92 @@ test("an admin PATCH on an unknown item never calls pool.connect()", async () =>
     });
     assert.equal(res.status, 404);
     assert.equal(pool.state.connectCount, 0);
+  });
+});
+
+test("admin POST responds successfully (no hang/deadlock) against a single-connection pool", async () => {
+  const pool = makePool(sampleItems());
+  const tracker = wrapAsSingleConnectionPool(pool);
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ item_name: "ทดสอบ single-connection pool" }),
+    });
+    assert.equal(res.status, 201);
+    assert.deepEqual(tracker.poolQueryCallsWhileCheckedOut, []);
+    assert.equal(tracker.connectCalls, 1);
+    assert.equal(tracker.releaseCalls, 1);
+    // The post-COMMIT final SELECT must go through the held client, not the pool.
+    assert.ok(tracker.clientQueryCalls.some((sql) => String(sql).includes("WHERE ci.item_id = $1")));
+  });
+});
+
+test("admin PATCH responds successfully (no hang/deadlock) against a single-connection pool", async () => {
+  const pool = makePool(sampleItems());
+  const tracker = wrapAsSingleConnectionPool(pool);
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items/1`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ item_name: "ทดสอบ patch single-connection pool" }),
+    });
+    assert.equal(res.status, 200);
+    assert.deepEqual(tracker.poolQueryCallsWhileCheckedOut, []);
+    assert.equal(tracker.connectCalls, 1);
+    assert.equal(tracker.releaseCalls, 1);
+    assert.ok(tracker.clientQueryCalls.some((sql) => String(sql).includes("WHERE ci.item_id = $1")));
+  });
+});
+
+test("admin POST with a pricing rule still responds successfully against a single-connection pool", async () => {
+  const pool = makePool(sampleItems());
+  const tracker = wrapAsSingleConnectionPool(pool);
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        item_name: "ทดสอบราคา",
+        pricing: { normal_price: 700, active_price: 550, pricing_is_active: true },
+      }),
+    });
+    assert.equal(res.status, 201);
+    assert.deepEqual(tracker.poolQueryCallsWhileCheckedOut, []);
+    assert.equal(tracker.releaseCalls, 1);
+  });
+});
+
+test("a failed admin PATCH against a single-connection pool still rolls back and releases without hanging", async () => {
+  const items = sampleItems();
+  const pool = makePool(items);
+  const originalConnect = pool.connect;
+  pool.connect = async () => {
+    const client = await originalConnect();
+    return {
+      query: async (sql, params) => {
+        if (String(sql).includes("UPDATE public.catalog_items") && String(sql).includes("SET item_name=$1")) {
+          throw new Error("simulated write failure");
+        }
+        return client.query(sql, params);
+      },
+      release: client.release ? client.release.bind(client) : () => {},
+    };
+  };
+  const tracker = wrapAsSingleConnectionPool(pool);
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items/1`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ item_name: "ทดสอบ rollback" }),
+    });
+    assert.equal(res.status, 500);
+    assert.equal(tracker.connectCalls, 1);
+    assert.equal(tracker.releaseCalls, 1);
   });
 });
 
