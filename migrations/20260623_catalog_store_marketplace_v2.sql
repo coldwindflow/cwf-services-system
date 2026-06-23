@@ -70,6 +70,13 @@ CREATE TABLE IF NOT EXISTS public.catalog_item_images (
 CREATE INDEX IF NOT EXISTS idx_catalog_item_images_item_id
   ON public.catalog_item_images(item_id, sort_order);
 
+-- At most one Primary image per item, enforced at the database level (the
+-- application also locks the parent row during first-image upload, but this
+-- index is the backstop against any other race or direct write).
+CREATE UNIQUE INDEX IF NOT EXISTS uq_catalog_item_images_primary_per_item
+  ON public.catalog_item_images(item_id)
+  WHERE is_primary;
+
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -94,6 +101,7 @@ $$;
 COMMIT;
 
 -- Rollback plan:
+-- DROP INDEX IF EXISTS public.uq_catalog_item_images_primary_per_item;
 -- DROP TABLE IF EXISTS public.catalog_item_images;
 -- ALTER TABLE public.catalog_items DROP CONSTRAINT IF EXISTS catalog_items_booking_mode_check;
 -- ALTER TABLE public.catalog_items DROP COLUMN IF EXISTS is_featured;

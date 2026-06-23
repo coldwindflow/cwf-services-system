@@ -57,7 +57,7 @@ class FakeClient {
       return { rows: [] };
     }
     if (s.includes("pg_advisory_unlock") && this.options.failUnlock) throw new Error(this.options.failUnlock);
-    if (this.options.failSql && s.includes("BEGIN;")) {
+    if (this.options.failSql && s.includes("ALTER TABLE public.catalog_items")) {
       this.aborted = true;
       throw new Error(this.options.failSql);
     }
@@ -71,7 +71,9 @@ class FakeClient {
       return { rows: this.options.missingImageColumn ? IMAGE_TABLE_COLUMNS.slice(0, 3) : IMAGE_TABLE_COLUMNS };
     }
     if (s.includes("pg_indexes")) {
-      return { rows: this.options.missingIndex ? [] : [{ indexname: "idx_catalog_item_images_item_id" }] };
+      if (this.options.missingIndex) return { rows: [] };
+      if (this.options.missingPrimaryIndex) return { rows: [{ indexname: "idx_catalog_item_images_item_id" }] };
+      return { rows: [{ indexname: "idx_catalog_item_images_item_id" }, { indexname: "uq_catalog_item_images_primary_per_item" }] };
     }
     if (s.includes("con.contype = 'f'")) {
       return { rows: this.options.missingFk ? [] : [{ constraint_name: "catalog_item_images_item_id_fkey" }] };
@@ -130,7 +132,11 @@ test("marketplace v2 migration runner executes the exact merged SQL file and ver
   const migrationSql = fs.readFileSync(path.join(REPO_ROOT, runner.MIGRATION_RELATIVE_PATH), "utf8");
   assert.equal(client.queries[0].sql, "SELECT pg_advisory_lock($1::bigint)");
   assert.deepEqual(client.queries[0].params, [runner.ADVISORY_LOCK_KEY]);
-  assert.equal(client.queries[1].sql, migrationSql);
+  // The runner owns the transaction itself: BEGIN -> stripped body -> verify -> COMMIT,
+  // rather than trusting the migration file's own embedded BEGIN;/COMMIT;.
+  assert.equal(client.queries[1].sql, "BEGIN");
+  assert.equal(client.queries[2].sql, runner.stripOuterTransactionWrapper(migrationSql));
+  assert.ok(client.queries.some((q) => q.sql === "COMMIT"));
   assert.equal(client.queries.at(-1).sql, "SELECT pg_advisory_unlock($1::bigint)");
   assert.equal(client.ended, true);
   assert.deepEqual(logger.lines, ["CATALOG_MARKETPLACE_V2_MIGRATION_START", "CATALOG_MARKETPLACE_V2_MIGRATION_OK"]);
@@ -193,6 +199,34 @@ test("marketplace v2 migration runner fails non-zero when catalog_item_images ta
   assert.match(logger.lines.join("\n"), /catalog_item_images table missing/);
 });
 
+test("marketplace v2 migration runner rolls back (not commits) when post-body schema verification fails", async () => {
+  let client;
+  const logger = makeLogger();
+  const code = await runner.runCli({
+    env: { DATABASE_URL },
+    repoRoot: REPO_ROOT,
+    logger,
+    clientFactory() {
+      client = new FakeClient({ missingTable: true });
+      return client;
+    },
+  });
+  assert.equal(code, 1);
+  // The migration body itself must have actually run (BEGIN -> body -> verify),
+  // proving the failure was caught by verification after execution, not before it.
+  const sqls = client.queries.map((q) => q.sql);
+  assert.ok(sqls.includes("BEGIN"));
+  const migrationSql = fs.readFileSync(path.join(REPO_ROOT, runner.MIGRATION_RELATIVE_PATH), "utf8");
+  assert.ok(sqls.some((sql) => sql === runner.stripOuterTransactionWrapper(migrationSql)));
+  assert.ok(!sqls.includes("COMMIT"), "a failed verification must never reach COMMIT");
+  // ROLLBACK must happen before the advisory unlock, and the connection must still be closed.
+  const rollbackIndex = sqls.lastIndexOf("ROLLBACK");
+  const unlockIndex = sqls.findIndex((sql) => String(sql).includes("pg_advisory_unlock"));
+  assert.ok(rollbackIndex !== -1, "ROLLBACK must be issued when verification fails");
+  assert.ok(rollbackIndex < unlockIndex, "ROLLBACK must happen before the advisory unlock");
+  assert.equal(client.ended, true);
+});
+
 test("marketplace v2 migration runner fails non-zero when a marketplace column is missing", async () => {
   const logger = makeLogger();
   const code = await runner.runCli({
@@ -215,6 +249,18 @@ test("marketplace v2 migration runner fails non-zero when the booking_mode CHECK
   });
   assert.equal(code, 1);
   assert.match(logger.lines.join("\n"), /catalog_items_booking_mode_check missing/);
+});
+
+test("marketplace v2 migration runner fails non-zero when the partial unique Primary-image index is missing", async () => {
+  const logger = makeLogger();
+  const code = await runner.runCli({
+    env: { DATABASE_URL },
+    repoRoot: REPO_ROOT,
+    logger,
+    clientFactory() { return new FakeClient({ missingPrimaryIndex: true }); },
+  });
+  assert.equal(code, 1);
+  assert.match(logger.lines.join("\n"), /uq_catalog_item_images_primary_per_item missing/);
 });
 
 test("marketplace v2 migration runner fails non-zero when the item_id FK is missing", async () => {

@@ -173,13 +173,42 @@ test("catalogModalPayload includes booking_mode, is_featured, highlights array, 
   assert.match(catalogJsSource, /service_conditions: trimmedOrEmpty\("cm_service_conditions"\),/);
 });
 
-test("client-side validation rejects a bookable item without booking_service_key or booking_ac_type", () => {
-  assert.match(catalogJsSource, /payload\.booking_mode === "bookable" && !payload\.booking_service_key && !payload\.booking_ac_type/);
+test("client-side validation rejects a bookable item with an unsupported/missing booking_ac_type, booking_btu, or wash_variant", () => {
+  assert.match(catalogJsSource, /if \(!BOOKING_AC_TYPES\.includes\(payload\.booking_ac_type\)\) \{/);
+  assert.match(catalogJsSource, /if \(!BOOKING_BTU_OPTIONS\.includes\(Number\(payload\.booking_btu\)\)\) \{/);
+  assert.match(catalogJsSource, /if \(payload\.booking_ac_type === BOOKING_WALL_AC_TYPE && !BOOKING_WASH_VARIANTS\.includes\(payload\.booking_wash_variant\)\) \{/);
+});
+
+test("booking ac_type, btu, and wash_variant are <select> dropdowns built from the canonical allow-lists, not free-text inputs", () => {
+  assert.match(catalogJsSource, /const BOOKING_AC_TYPES = \["ผนัง", "สี่ทิศทาง", "แขวน", "เปลือยใต้ฝ้า"\];/);
+  assert.match(catalogJsSource, /const BOOKING_BTU_OPTIONS = \[9000, 12000, 18000, 24000, 30000\];/);
+  assert.match(catalogJsSource, /const BOOKING_WASH_VARIANTS = \["ล้างธรรมดา", "ล้างพรีเมียม", "ล้างแขวนคอยล์", "ล้างแบบตัดล้าง"\];/);
+  assert.match(catalogJsSource, /<select id="cm_booking_ac_type">/);
+  assert.match(catalogJsSource, /<select id="cm_booking_btu">/);
+  assert.match(catalogJsSource, /<select id="cm_booking_wash_variant">/);
+  assert.doesNotMatch(catalogJsSource, /<input[^>]*id="cm_booking_ac_type"/);
+  assert.doesNotMatch(catalogJsSource, /<input[^>]*id="cm_booking_btu"/);
+  assert.doesNotMatch(catalogJsSource, /<input[^>]*id="cm_booking_wash_variant"/);
+});
+
+test("the wash_variant field only shows for wall-mounted ac_type and toggles on ac_type change", () => {
+  assert.match(catalogJsSource, /id="cm_booking_wash_variant_field"/);
+  assert.match(catalogJsSource, /el\("cm_booking_ac_type"\)\.addEventListener\("change", updateBookingFieldsVisibility\)/);
+  assert.match(catalogJsSource, /const isWallAc = el\("cm_booking_ac_type"\)\.value === BOOKING_WALL_AC_TYPE;/);
+  assert.match(catalogJsSource, /el\("cm_booking_wash_variant_field"\)\.style\.display = isWallAc \? "block" : "none";/);
 });
 
 test("openCatalogModalForEdit populates marketplace fields from the item, including a fallback booking_mode", () => {
   assert.match(catalogJsSource, /el\("cm_booking_mode"\)\.value = BOOKING_MODES\.includes\(item\.booking_mode\) \? item\.booking_mode : "contact_admin";/);
   assert.match(catalogJsSource, /el\("cm_highlights"\)\.value = Array\.isArray\(item\.highlights\) \? item\.highlights\.join\("\\n"\) : "";/);
+});
+
+test("admin card thumbnail uses the Primary image from item.images before falling back to legacy image_url", () => {
+  const fnMatch = catalogJsSource.match(/function catalogItemThumbUrl\(item\) \{[\s\S]*?\n\}/);
+  assert.ok(fnMatch, "catalogItemThumbUrl function not found");
+  assert.match(fnMatch[0], /find\(\(img\) => img\.is_primary\)/);
+  assert.match(fnMatch[0], /\|\| item\.image_url/);
+  assert.match(catalogJsSource, /const thumbUrl = catalogItemThumbUrl\(item\);/);
 });
 
 test("catalog item cards show a bookable/contact-admin badge and a featured badge when applicable", () => {

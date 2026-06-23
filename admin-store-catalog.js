@@ -8,6 +8,15 @@ let galleryImages = [];
 let galleryLoading = false;
 const BOOKING_MODES = ["bookable", "contact_admin"];
 
+// Must mirror the Customer App's canonical lists exactly
+// (customer-app/modules/services.js: acTypes/btuOptions/washVariants) and the
+// backend's validateMarketplaceFields() allow-lists (server/routes/catalog/items.js)
+// — a bookable item can never carry a value the booking flow can't handle.
+const BOOKING_AC_TYPES = ["ผนัง", "สี่ทิศทาง", "แขวน", "เปลือยใต้ฝ้า"];
+const BOOKING_BTU_OPTIONS = [9000, 12000, 18000, 24000, 30000];
+const BOOKING_WASH_VARIANTS = ["ล้างธรรมดา", "ล้างพรีเมียม", "ล้างแขวนคอยล์", "ล้างแบบตัดล้าง"];
+const BOOKING_WALL_AC_TYPE = "ผนัง";
+
 function escapeHtml(value) {
   return String(value == null ? "" : value)
     .replace(/&/g, "&amp;")
@@ -142,12 +151,27 @@ function ensureCatalogModal() {
           </div>
           <div id="cm_booking_fields" style="display:none;">
             <div class="asc-grid2">
-              <div class="asc-field"><label>Service Key</label><input id="cm_booking_service_key" placeholder="เช่น wash_wall"></div>
-              <div class="asc-field"><label>ประเภทแอร์สำหรับจอง</label><input id="cm_booking_ac_type" placeholder="เช่น ผนัง"></div>
+              <div class="asc-field"><label>Service Key (ข้อมูลอ้างอิง ไม่ใช่เงื่อนไขการจอง)</label><input id="cm_booking_service_key" placeholder="เช่น wash_wall"></div>
+              <div class="asc-field"><label>ประเภทแอร์สำหรับจอง *</label>
+                <select id="cm_booking_ac_type">
+                  <option value="">— เลือกประเภทแอร์ —</option>
+                  ${BOOKING_AC_TYPES.map((v) => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join("")}
+                </select>
+              </div>
             </div>
             <div class="asc-grid2">
-              <div class="asc-field"><label>BTU สำหรับจอง</label><input id="cm_booking_btu" type="number" step="1" min="1"></div>
-              <div class="asc-field"><label>รูปแบบการล้างสำหรับจอง</label><input id="cm_booking_wash_variant" placeholder="เช่น ล้างน้ำ"></div>
+              <div class="asc-field"><label>BTU สำหรับจอง *</label>
+                <select id="cm_booking_btu">
+                  <option value="">— เลือก BTU —</option>
+                  ${BOOKING_BTU_OPTIONS.map((v) => `<option value="${v}">${v.toLocaleString("th-TH")}</option>`).join("")}
+                </select>
+              </div>
+              <div class="asc-field" id="cm_booking_wash_variant_field"><label>รูปแบบการล้างสำหรับจอง * (สำหรับแอร์ผนัง)</label>
+                <select id="cm_booking_wash_variant">
+                  <option value="">— เลือกรูปแบบการล้าง —</option>
+                  ${BOOKING_WASH_VARIANTS.map((v) => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join("")}
+                </select>
+              </div>
             </div>
           </div>
           <div class="asc-field"><label>รายการแนะนำ (Featured) *</label>
@@ -183,12 +207,15 @@ function ensureCatalogModal() {
   el("cm_image_input").addEventListener("change", onCatalogImagePicked);
   el("cm_image_delete").addEventListener("click", onCatalogImageDeleteClick);
   el("cm_booking_mode").addEventListener("change", updateBookingFieldsVisibility);
+  el("cm_booking_ac_type").addEventListener("change", updateBookingFieldsVisibility);
   bindGalleryActions();
 }
 
 function updateBookingFieldsVisibility() {
   const bookable = el("cm_booking_mode").value === "bookable";
   el("cm_booking_fields").style.display = bookable ? "block" : "none";
+  const isWallAc = el("cm_booking_ac_type").value === BOOKING_WALL_AC_TYPE;
+  el("cm_booking_wash_variant_field").style.display = isWallAc ? "block" : "none";
 }
 
 function hideCatalogModalError() {
@@ -399,8 +426,16 @@ function validateCatalogModalPayload(payload) {
   if (payload.btu_min !== "" && payload.btu_max !== "" && Number(payload.btu_min) > Number(payload.btu_max)) {
     return "btu_min ต้องไม่มากกว่า btu_max";
   }
-  if (payload.booking_mode === "bookable" && !payload.booking_service_key && !payload.booking_ac_type) {
-    return "รายการที่จองออนไลน์ได้ ต้องระบุ Service Key หรือประเภทแอร์สำหรับจอง";
+  if (payload.booking_mode === "bookable") {
+    if (!BOOKING_AC_TYPES.includes(payload.booking_ac_type)) {
+      return `รายการที่จองออนไลน์ได้ ต้องระบุประเภทแอร์สำหรับจองเป็นหนึ่งใน: ${BOOKING_AC_TYPES.join(", ")}`;
+    }
+    if (!BOOKING_BTU_OPTIONS.includes(Number(payload.booking_btu))) {
+      return `รายการที่จองออนไลน์ได้ ต้องระบุ BTU สำหรับจองเป็นหนึ่งใน: ${BOOKING_BTU_OPTIONS.join(", ")}`;
+    }
+    if (payload.booking_ac_type === BOOKING_WALL_AC_TYPE && !BOOKING_WASH_VARIANTS.includes(payload.booking_wash_variant)) {
+      return `รายการแอร์ผนังที่จองออนไลน์ได้ ต้องระบุรูปแบบการล้างสำหรับจองเป็นหนึ่งใน: ${BOOKING_WASH_VARIANTS.join(", ")}`;
+    }
   }
   if (payload.short_description && payload.short_description.length > 300) {
     return "คำอธิบายสั้นต้องไม่เกิน 300 ตัวอักษร";
@@ -650,6 +685,12 @@ function catalogItemMatchesFilters(item) {
   return true;
 }
 
+function catalogItemThumbUrl(item) {
+  const images = Array.isArray(item.images) ? item.images : [];
+  const primary = images.find((img) => img.is_primary) || images[0];
+  return (primary && primary.image_url) || item.image_url || "";
+}
+
 function catalogItemCard(item) {
   const active = !!item.is_active;
   const visible = !!item.is_customer_visible;
@@ -659,8 +700,9 @@ function catalogItemCard(item) {
   const salePrice = item.display_price != null ? item.display_price : item.base_price;
   const showAsk = !(Number(salePrice) > 0);
 
-  const thumb = item.image_url
-    ? `<img class="asc-item-thumb" src="${escapeHtml(item.image_url)}" alt="${escapeHtml(item.item_name)}" loading="lazy" onerror="this.outerHTML='<div class=&quot;asc-item-thumb asc-placeholder&quot;>ไม่มีรูป</div>';">`
+  const thumbUrl = catalogItemThumbUrl(item);
+  const thumb = thumbUrl
+    ? `<img class="asc-item-thumb" src="${escapeHtml(thumbUrl)}" alt="${escapeHtml(item.item_name)}" loading="lazy" onerror="this.outerHTML='<div class=&quot;asc-item-thumb asc-placeholder&quot;>ไม่มีรูป</div>';">`
     : `<div class="asc-item-thumb asc-placeholder">ไม่มีรูป</div>`;
 
   const priceRow = showAsk

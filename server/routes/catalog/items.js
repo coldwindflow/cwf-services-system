@@ -61,6 +61,15 @@ const CATALOG_MARKETPLACE_FIELDS = [
 
 const BOOKING_MODES = new Set(["bookable", "contact_admin"]);
 
+// Allowed values must match the Customer App's canonical lists exactly
+// (customer-app/modules/services.js: acTypes/btuOptions/washVariants) so a
+// "bookable" catalog item can never carry a value the booking flow can't
+// actually handle.
+const ALLOWED_BOOKING_AC_TYPES = new Set(["ผนัง", "สี่ทิศทาง", "แขวน", "เปลือยใต้ฝ้า"]);
+const ALLOWED_BOOKING_BTU = new Set([9000, 12000, 18000, 24000, 30000]);
+const ALLOWED_BOOKING_WASH_VARIANTS = new Set(["ล้างธรรมดา", "ล้างพรีเมียม", "ล้างแขวนคอยล์", "ล้างแบบตัดล้าง"]);
+const WALL_AC_TYPE = "ผนัง";
+
 function mergeCatalogItemPayload(existing, body) {
   const merged = {};
   CATALOG_ITEM_FIELDS.forEach((key) => {
@@ -138,8 +147,25 @@ function validateMarketplaceFields(merged) {
   );
   if (!isFeaturedResult.ok) errors.push(isFeaturedResult.error);
 
-  if (bookingMode === "bookable" && !bookingServiceKeyResult.value && !bookingAcTypeResult.value) {
-    errors.push("รายการที่เป็น bookable ต้องระบุ booking_service_key หรือ booking_ac_type อย่างน้อยหนึ่งอย่าง เพื่อให้จองได้จริง");
+  // booking_service_key is metadata only — the customer app doesn't consume it
+  // for prefill yet, so it must never be treated as sufficient on its own. A
+  // bookable item must carry a real, supported ac_type + btu (and, for wall
+  // units, a supported wash_variant), or the booking screen can't be opened
+  // deterministically.
+  if (bookingMode === "bookable") {
+    const acType = bookingAcTypeResult.value;
+    const btu = bookingBtuResult.value !== null ? Math.round(bookingBtuResult.value) : null;
+    const washVariant = bookingWashVariantResult.value;
+
+    if (!acType || !ALLOWED_BOOKING_AC_TYPES.has(acType)) {
+      errors.push(`รายการที่เป็น bookable ต้องระบุ booking_ac_type เป็นหนึ่งใน: ${Array.from(ALLOWED_BOOKING_AC_TYPES).join(", ")}`);
+    }
+    if (!btu || !ALLOWED_BOOKING_BTU.has(btu)) {
+      errors.push(`รายการที่เป็น bookable ต้องระบุ booking_btu เป็นหนึ่งใน: ${Array.from(ALLOWED_BOOKING_BTU).join(", ")}`);
+    }
+    if (acType === WALL_AC_TYPE && (!washVariant || !ALLOWED_BOOKING_WASH_VARIANTS.has(washVariant))) {
+      errors.push(`รายการแอร์ผนังที่เป็น bookable ต้องระบุ booking_wash_variant เป็นหนึ่งใน: ${Array.from(ALLOWED_BOOKING_WASH_VARIANTS).join(", ")}`);
+    }
   }
 
   if (errors.length) return { ok: false, errors };
@@ -389,8 +415,18 @@ function serializeCatalogRow(row) {
   // image_url/image_public_id pair (as one synthetic primary image) so items
   // created before the marketplace v2 migration still render a photo.
   const galleryRows = Array.isArray(row.images) ? row.images : [];
-  const images = galleryRows.length
-    ? galleryRows.map(serializeCatalogImage)
+  // Primary image must render first regardless of sort_order, since "Primary"
+  // is the field admins actually use to choose the lead photo.
+  const orderedGalleryRows = galleryRows.length
+    ? [...galleryRows].sort((a, b) => {
+      const aPrimary = a.is_primary ? 0 : 1;
+      const bPrimary = b.is_primary ? 0 : 1;
+      if (aPrimary !== bPrimary) return aPrimary - bPrimary;
+      return (a.sort_order ?? 0) - (b.sort_order ?? 0) || (a.image_id ?? 0) - (b.image_id ?? 0);
+    })
+    : galleryRows;
+  const images = orderedGalleryRows.length
+    ? orderedGalleryRows.map(serializeCatalogImage)
     : (row.image_url ? [{ image_id: null, image_url: row.image_url, alt_text: null, sort_order: 0, is_primary: true }] : []);
 
   return {
@@ -722,7 +758,7 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
 
       const select = buildCatalogSelect({ pricingReady: schemaReady, marketplaceReady });
       const final = await client.query(`${select} WHERE ci.item_id = $1`, [itemId]);
-      await attachCatalogImages(pool, final.rows, marketplaceReady);
+      await attachCatalogImages(client, final.rows, marketplaceReady);
       res.status(201).json(serializeAdminCatalogRow(final.rows[0]));
     } catch (e) {
       await client.query("ROLLBACK").catch(() => {});
@@ -815,7 +851,7 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
       await client.query("COMMIT");
 
       const final = await client.query(`${select} WHERE ci.item_id = $1`, [itemId]);
-      await attachCatalogImages(pool, final.rows, marketplaceReady);
+      await attachCatalogImages(client, final.rows, marketplaceReady);
       res.json(serializeAdminCatalogRow(final.rows[0]));
     } catch (e) {
       await client.query("ROLLBACK").catch(() => {});
@@ -985,38 +1021,66 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
           return res.status(503).json({ error: "ระบบ Marketplace ยังไม่พร้อมใช้งาน (ยังไม่ได้รัน migration)" });
         }
 
-        const existingResult = await pool.query(`SELECT item_id FROM public.catalog_items WHERE item_id = $1`, [itemId]);
-        if (!existingResult.rows[0]) return res.status(404).json({ error: "ไม่พบรายการนี้" });
+        const altText = parseOptionalText(req.body && req.body.alt_text, "alt_text", 200);
+        if (!altText.ok) return res.status(400).json({ error: altText.error });
 
         if (!req.file) return res.status(400).json({ error: "ไม่พบไฟล์รูปภาพ" });
         const validation = cloudinaryImageUpload.validateCatalogImageFile(req.file);
         if (!validation.ok) return res.status(400).json({ error: validation.error });
 
-        const countResult = await pool.query(
-          `SELECT COUNT(*)::int AS cnt, COALESCE(MAX(sort_order), -1) AS max_sort
-             FROM public.catalog_item_images WHERE item_id = $1`,
-          [itemId]
-        );
-        const isFirstImage = Number(countResult.rows[0].cnt) === 0;
-        const nextSortOrder = Number(countResult.rows[0].max_sort) + 1;
+        let uploaded = null;
+        const client = await pool.connect();
+        try {
+          await client.query("BEGIN");
+          // Lock the parent row for the duration of the first-image computation so
+          // two concurrent uploads can never both observe "no images yet" and both
+          // insert is_primary=TRUE (the partial unique index is a DB-level backstop
+          // for the same race).
+          const existingResult = await client.query(
+            `SELECT item_id FROM public.catalog_items WHERE item_id = $1 FOR UPDATE`,
+            [itemId]
+          );
+          if (!existingResult.rows[0]) {
+            await client.query("ROLLBACK");
+            return res.status(404).json({ error: "ไม่พบรายการนี้" });
+          }
 
-        const altText = parseOptionalText(req.body && req.body.alt_text, "alt_text", 200);
-        if (!altText.ok) return res.status(400).json({ error: altText.error });
+          const countResult = await client.query(
+            `SELECT COUNT(*)::int AS cnt, COALESCE(MAX(sort_order), -1) AS max_sort
+               FROM public.catalog_item_images WHERE item_id = $1`,
+            [itemId]
+          );
+          const isFirstImage = Number(countResult.rows[0].cnt) === 0;
+          const nextSortOrder = Number(countResult.rows[0].max_sort) + 1;
 
-        const uploaded = await uploadCatalogImage({
-          buffer: req.file.buffer,
-          mimetype: req.file.mimetype,
-          itemId,
-        });
+          uploaded = await uploadCatalogImage({
+            buffer: req.file.buffer,
+            mimetype: req.file.mimetype,
+            itemId,
+          });
 
-        const inserted = await pool.query(
-          `INSERT INTO public.catalog_item_images (item_id, image_url, image_public_id, alt_text, sort_order, is_primary)
-           VALUES ($1, $2, $3, $4, $5, $6)
-           RETURNING image_id, item_id, image_url, image_public_id, alt_text, sort_order, is_primary`,
-          [itemId, uploaded.url, uploaded.public_id, altText.value, nextSortOrder, isFirstImage]
-        );
+          const inserted = await client.query(
+            `INSERT INTO public.catalog_item_images (item_id, image_url, image_public_id, alt_text, sort_order, is_primary)
+             VALUES ($1, $2, $3, $4, $5, $6)
+             RETURNING image_id, item_id, image_url, image_public_id, alt_text, sort_order, is_primary`,
+            [itemId, uploaded.url, uploaded.public_id, altText.value, nextSortOrder, isFirstImage]
+          );
 
-        res.status(201).json(serializeCatalogImage(inserted.rows[0]));
+          await client.query("COMMIT");
+          res.status(201).json(serializeCatalogImage(inserted.rows[0]));
+        } catch (e) {
+          await client.query("ROLLBACK").catch(() => {});
+          // The Cloudinary asset was already uploaded but never got a DB row to
+          // reference it — clean it up so it doesn't become an orphan.
+          if (uploaded && uploaded.public_id) {
+            deleteCatalogImage(uploaded.public_id).catch((cleanupError) => {
+              console.error("cleanup of orphaned catalog image upload failed", safeImageErrorMessage(cleanupError));
+            });
+          }
+          throw e;
+        } finally {
+          client.release();
+        }
       } catch (e) {
         console.error(e);
         if (e && e.code === "CLOUDINARY_NOT_CONFIGURED") {
@@ -1045,34 +1109,42 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
       const existing = existingResult.rows[0];
       if (!existing) return res.status(404).json({ error: "ไม่พบรูปภาพนี้" });
 
-      // DB-first, same as the legacy single-image delete route, but here Cloudinary
-      // cleanup result is reported back to the caller (not merely best-effort/fire-and-
-      // forget) since the row itself is now gone for good and there is nothing further
-      // to retry from — the caller deserves to know if the asset truly disappeared.
-      await pool.query(`DELETE FROM public.catalog_item_images WHERE image_id = $1`, [imageId]);
-
-      if (existing.is_primary) {
-        const promoted = await pool.query(
-          `UPDATE public.catalog_item_images SET is_primary = TRUE
-             WHERE image_id = (
-               SELECT image_id FROM public.catalog_item_images WHERE item_id = $1 ORDER BY sort_order, image_id LIMIT 1
-             )
-           RETURNING image_id`,
-          [itemId]
-        );
-        void promoted;
-      }
-
-      let cloudinaryResult = { ok: true, skipped: true };
+      // Cloudinary-first: deleting the DB row before the Cloudinary asset would
+      // lose the only reference to that asset's public_id the moment Cloudinary
+      // failed, orphaning it forever with no way to retry. Only "ok" or "not
+      // found" from Cloudinary are treated as safe to proceed — any other
+      // failure must leave the DB row (and its public_id) intact for retry.
+      let cloudinaryResult;
       try {
         cloudinaryResult = await deleteCatalogImage(existing.image_public_id);
       } catch (cleanupError) {
-        console.error("cloudinary cleanup after gallery image delete failed", safeImageErrorMessage(cleanupError));
-        return res.status(207).json({
-          deleted: true,
+        console.error("cloudinary delete before gallery image delete failed", safeImageErrorMessage(cleanupError));
+        return res.status(502).json({
+          deleted: false,
           cloudinary_deleted: false,
-          cloudinary_error: safeImageErrorMessage(cleanupError),
+          error: "ลบรูปภาพบน Cloudinary ไม่สำเร็จ กรุณาลองใหม่",
         });
+      }
+
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        await client.query(`DELETE FROM public.catalog_item_images WHERE image_id = $1`, [imageId]);
+        if (existing.is_primary) {
+          await client.query(
+            `UPDATE public.catalog_item_images SET is_primary = TRUE
+               WHERE image_id = (
+                 SELECT image_id FROM public.catalog_item_images WHERE item_id = $1 ORDER BY sort_order, image_id LIMIT 1
+               )`,
+            [itemId]
+          );
+        }
+        await client.query("COMMIT");
+      } catch (e) {
+        await client.query("ROLLBACK").catch(() => {});
+        throw e;
+      } finally {
+        client.release();
       }
 
       res.json({ deleted: true, cloudinary_deleted: Boolean(cloudinaryResult.ok), cloudinary_result: cloudinaryResult.result || null });

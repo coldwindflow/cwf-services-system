@@ -1004,6 +1004,40 @@ test("clicking a bookable card's book button prefills the real scheduled draft f
   assert.equal(root.state.draft.scheduled.btu, "18000");
 });
 
+test("a bookable item with incomplete/invalid booking fields never reaches the scheduled booking route", async () => {
+  const context = makeContext();
+  const root = loadCustomerFrontend(context);
+  root.api.loadCatalogItems = async () => [
+    {
+      // booking_mode is "bookable" and booking_service_key is set, but the
+      // frontend does not use booking_service_key as a prefill source — without
+      // a supported booking_ac_type/booking_btu this item must never open the
+      // booking screen, only the contact-admin sheet.
+      item_id: 1, item_name: "ล้างแอร์ผนัง", item_category: "ล้างแอร์", base_price: 900, unit_label: "เครื่อง",
+      booking_mode: "bookable", booking_service_key: "wash_wall",
+    },
+  ];
+
+  const container = new FakeMount();
+  root.store.render(container);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const routeCalls = [];
+  root.utils.routeTo = (route) => routeCalls.push(route);
+  let applyCalled = false;
+  root.services.applyCommerceDraft = (...args) => { applyCalled = true; return true; };
+  let contactSheetOpened = false;
+  root.ui.openContactSheet = () => { contactSheetOpened = true; };
+
+  const book = container.querySelectorAll("[data-store-book]")[0];
+  assert.ok(book);
+  await book.click();
+
+  assert.equal(applyCalled, false);
+  assert.deepEqual(routeCalls, []);
+  assert.equal(contactSheetOpened, true);
+});
+
 test("a contact_admin item's contact button never applies a commerce draft or routes into booking", async () => {
   const context = makeContext();
   const root = loadCustomerFrontend(context);

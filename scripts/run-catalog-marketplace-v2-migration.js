@@ -32,6 +32,18 @@ function readMigrationSql(repoRoot) {
   return fs.readFileSync(resolveMigrationPath(repoRoot), "utf8");
 }
 
+// The migration file keeps its own top-level BEGIN/COMMIT so it can still be
+// pasted directly into pgAdmin and run standalone. When driven by this
+// runner, though, the runner must own the transaction boundary itself (so a
+// verifySchema() failure can still trigger a real ROLLBACK after the body
+// has executed) — so those two statements are stripped before the body is
+// executed under the runner's own BEGIN/COMMIT/ROLLBACK.
+function stripOuterTransactionWrapper(sql) {
+  return sql
+    .replace(/^[ \t]*BEGIN[ \t]*;[ \t]*$/m, "")
+    .replace(/^[ \t]*COMMIT[ \t]*;[ \t]*$/m, "");
+}
+
 function createClientConfig(env = process.env) {
   const databaseUrl = clean(env.DATABASE_URL);
   if (!databaseUrl) throw new Error("DATABASE_URL is required");
@@ -107,6 +119,9 @@ async function verifySchema(client) {
   if (!indexNames.has("idx_catalog_item_images_item_id")) {
     throw new Error("idx_catalog_item_images_item_id missing after migration");
   }
+  if (!indexNames.has("uq_catalog_item_images_primary_per_item")) {
+    throw new Error("uq_catalog_item_images_primary_per_item missing after migration");
+  }
 
   const fk = await client.query(`
     SELECT con.conname AS constraint_name
@@ -140,9 +155,10 @@ async function runMigration(options = {}) {
   const clientFactory = options.clientFactory || ((config) => new Client(config));
   const config = createClientConfig(env);
   const sql = readMigrationSql(repoRoot);
+  const body = stripOuterTransactionWrapper(sql);
   const client = clientFactory(config);
   let locked = false;
-  let migrationFailed = false;
+  let inTransaction = false;
   let originalError = null;
 
   logger.log("CATALOG_MARKETPLACE_V2_MIGRATION_START");
@@ -150,20 +166,25 @@ async function runMigration(options = {}) {
     await client.connect();
     await client.query("SELECT pg_advisory_lock($1::bigint)", [ADVISORY_LOCK_KEY]);
     locked = true;
-    try {
-      await client.query(sql);
-    } catch (error) {
-      migrationFailed = true;
-      throw error;
-    }
+
+    // The runner owns BEGIN/verify/COMMIT itself (rather than trusting the
+    // migration file's own embedded BEGIN/COMMIT) so that a verifySchema()
+    // failure — discovered only after the migration body has run — still
+    // triggers a real ROLLBACK instead of leaving an already-committed,
+    // wrongly-verified schema change in place.
+    await client.query("BEGIN");
+    inTransaction = true;
+    await client.query(body);
     await verifySchema(client);
+    await client.query("COMMIT");
+    inTransaction = false;
     logger.log("CATALOG_MARKETPLACE_V2_MIGRATION_OK");
   } catch (error) {
     originalError = error;
     throw error;
   } finally {
     let cleanupError = null;
-    if (migrationFailed) {
+    if (inTransaction) {
       try {
         await client.query("ROLLBACK");
       } catch (error) {
@@ -212,5 +233,6 @@ module.exports = {
   runCli,
   runMigration,
   safeErrorMessage,
+  stripOuterTransactionWrapper,
   verifySchema,
 };

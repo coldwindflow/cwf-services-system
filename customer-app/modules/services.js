@@ -249,16 +249,33 @@
   // screen's static commerce catalogs. booking_service_key is a categorization key
   // only — booking_ac_type/booking_btu/booking_wash_variant are the source of truth
   // for what gets prefilled, matching the DB schema's bookable contract.
+  // No fallback/defaulting allowed here: if the catalog item's marketplace
+  // booking fields are missing or unsupported, this must return null so the
+  // caller routes the customer to "contact admin" instead of silently
+  // opening a booking screen prefilled with a guessed ac_type/btu/wash.
   function catalogItemToCommerceDraft(catalogItem) {
     if (!catalogItem || catalogItem.booking_mode !== "bookable") return null;
+
+    const matchedAcType = bookableAcTypes.find((item) => item.value === catalogItem.booking_ac_type);
+    if (!matchedAcType) return null;
+
+    const btuValue = Number(catalogItem.booking_btu);
+    const matchedBtu = bookableBtuOptions.find((item) => item.btu === btuValue);
+    if (!matchedBtu) return null;
+
+    if (matchedAcType.value === WALL_AC) {
+      const matchedWash = washVariants.find((item) => item.value === catalogItem.booking_wash_variant);
+      if (!matchedWash) return null;
+    }
+
     return {
       id: catalogItem.item_id,
       title: catalogItem.item_name,
       action: "book",
       draft: createServiceLine({
-        ac_type: catalogItem.booking_ac_type || WALL_AC,
-        btu: catalogItem.booking_btu || 12000,
-        wash_variant: catalogItem.booking_wash_variant || DEFAULT_WASH,
+        ac_type: matchedAcType.value,
+        btu: matchedBtu.btu,
+        wash_variant: matchedAcType.value === WALL_AC ? catalogItem.booking_wash_variant : "",
         machine_count: 1,
       }),
     };

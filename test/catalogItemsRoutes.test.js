@@ -208,7 +208,7 @@ function makePool(initialItems = [], initialRules = [], { schemaReady = true, ma
       return { rows: [] };
     }
 
-    if (s.includes("UPDATE public.catalog_item_images SET is_primary = TRUE\n             WHERE image_id = (")) {
+    if (s.includes("UPDATE public.catalog_item_images SET is_primary = TRUE") && s.includes("WHERE image_id = (")) {
       const [itemId] = params;
       const rows = imagesForItem(itemId);
       if (rows.length) rows[0].is_primary = true;
@@ -322,6 +322,39 @@ function wrapAsSingleConnectionPool(pool) {
     get connectCalls() { return connectCalls; },
     get releaseCalls() { return releaseCalls; },
   };
+}
+
+// Simulates Postgres row-level locking for `SELECT ... FOR UPDATE` against the
+// fake in-memory pool: a second connection's FOR UPDATE on the same row must
+// wait until the first connection releases (i.e. after its COMMIT/ROLLBACK),
+// the way a real lock would. Without this, the fake pool's connect() calls are
+// all independent and a race that the app's FOR UPDATE is meant to prevent
+// would never actually race in a single-threaded test.
+function wrapWithFakeRowLock(pool) {
+  const locks = new Map();
+  const originalConnect = pool.connect;
+  pool.connect = async () => {
+    const client = await originalConnect();
+    let releaseLock = null;
+    return {
+      query: async (sql, params) => {
+        const s = String(sql);
+        if (s.includes("FOR UPDATE")) {
+          const key = String(params[0]);
+          while (locks.has(key)) await locks.get(key);
+          let resolveFn;
+          locks.set(key, new Promise((resolve) => { resolveFn = resolve; }));
+          releaseLock = () => { locks.delete(key); resolveFn(); };
+        }
+        return client.query(sql, params);
+      },
+      release() {
+        if (releaseLock) { releaseLock(); releaseLock = null; }
+        client.release();
+      },
+    };
+  };
+  return pool;
 }
 
 function allowAdmin(req, res, next) { next(); }
@@ -1395,6 +1428,43 @@ test("admin PATCH responds successfully (no hang/deadlock) against a single-conn
   });
 });
 
+test("admin POST in marketplaceReady mode responds successfully (no hang/deadlock) against a single-connection pool", async () => {
+  const pool = makePool(sampleItems(), [], { marketplaceReady: true });
+  const tracker = wrapAsSingleConnectionPool(pool);
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ item_name: "ทดสอบ single-connection pool marketplace" }),
+    });
+    assert.equal(res.status, 201);
+    assert.deepEqual(tracker.poolQueryCallsWhileCheckedOut, []);
+    assert.equal(tracker.connectCalls, 1);
+    assert.equal(tracker.releaseCalls, 1);
+    // attachCatalogImages() must read through the still-open client, not pool.query().
+    assert.ok(tracker.clientQueryCalls.some((sql) => String(sql).includes("FROM public.catalog_item_images") && String(sql).includes("ANY($1::bigint[])")));
+  });
+});
+
+test("admin PATCH in marketplaceReady mode responds successfully (no hang/deadlock) against a single-connection pool", async () => {
+  const pool = makePool(sampleItems(), [], { marketplaceReady: true });
+  const tracker = wrapAsSingleConnectionPool(pool);
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items/1`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ item_name: "ทดสอบ patch single-connection pool marketplace" }),
+    });
+    assert.equal(res.status, 200);
+    assert.deepEqual(tracker.poolQueryCallsWhileCheckedOut, []);
+    assert.equal(tracker.connectCalls, 1);
+    assert.equal(tracker.releaseCalls, 1);
+    assert.ok(tracker.clientQueryCalls.some((sql) => String(sql).includes("FROM public.catalog_item_images") && String(sql).includes("ANY($1::bigint[])")));
+  });
+});
+
 test("admin POST with a pricing rule still responds successfully against a single-connection pool", async () => {
   const pool = makePool(sampleItems());
   const tracker = wrapAsSingleConnectionPool(pool);
@@ -1469,23 +1539,65 @@ test("validateMarketplaceFields rejects an unknown booking_mode", () => {
   assert.ok(result.errors.some((e) => /booking_mode/.test(e)));
 });
 
-test("validateMarketplaceFields rejects bookable without booking_service_key or booking_ac_type", () => {
+test("validateMarketplaceFields rejects bookable without booking_ac_type or booking_btu", () => {
   const result = validateMarketplaceFields({ booking_mode: "bookable" });
   assert.equal(result.ok, false);
-  assert.ok(result.errors.some((e) => /bookable/.test(e)));
+  assert.ok(result.errors.some((e) => /booking_ac_type/.test(e)));
+  assert.ok(result.errors.some((e) => /booking_btu/.test(e)));
 });
 
-test("validateMarketplaceFields accepts bookable with only booking_ac_type set", () => {
-  const result = validateMarketplaceFields({ booking_mode: "bookable", booking_ac_type: "ผนัง" });
-  assert.equal(result.ok, true);
-  assert.equal(result.value.booking_mode, "bookable");
-  assert.equal(result.value.booking_ac_type, "ผนัง");
-});
-
-test("validateMarketplaceFields accepts bookable with only booking_service_key set", () => {
+// booking_service_key is categorization metadata only — the customer app does
+// not consume it for prefill, so it must never be treated as sufficient on
+// its own for a bookable item.
+test("validateMarketplaceFields rejects bookable with only booking_service_key set", () => {
   const result = validateMarketplaceFields({ booking_mode: "bookable", booking_service_key: "wash_wall" });
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.some((e) => /booking_ac_type/.test(e)));
+});
+
+test("validateMarketplaceFields rejects bookable with only booking_ac_type set (missing booking_btu)", () => {
+  const result = validateMarketplaceFields({ booking_mode: "bookable", booking_ac_type: "ผนัง" });
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.some((e) => /booking_btu/.test(e)));
+});
+
+test("validateMarketplaceFields rejects an unsupported booking_ac_type", () => {
+  const result = validateMarketplaceFields({ booking_mode: "bookable", booking_ac_type: "ไม่รู้จัก", booking_btu: 12000, booking_wash_variant: "ล้างธรรมดา" });
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.some((e) => /booking_ac_type/.test(e)));
+});
+
+test("validateMarketplaceFields rejects an unsupported booking_btu", () => {
+  const result = validateMarketplaceFields({ booking_mode: "bookable", booking_ac_type: "ผนัง", booking_btu: 15000, booking_wash_variant: "ล้างธรรมดา" });
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.some((e) => /booking_btu/.test(e)));
+});
+
+test("validateMarketplaceFields rejects a wall ac_type bookable item without a supported booking_wash_variant", () => {
+  const result = validateMarketplaceFields({ booking_mode: "bookable", booking_ac_type: "ผนัง", booking_btu: 12000 });
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.some((e) => /booking_wash_variant/.test(e)));
+});
+
+test("validateMarketplaceFields rejects a wall ac_type bookable item with an unsupported booking_wash_variant", () => {
+  const result = validateMarketplaceFields({ booking_mode: "bookable", booking_ac_type: "ผนัง", booking_btu: 12000, booking_wash_variant: "ล้างไม่รู้จัก" });
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.some((e) => /booking_wash_variant/.test(e)));
+});
+
+test("validateMarketplaceFields accepts a fully-specified bookable wall ac_type item", () => {
+  const result = validateMarketplaceFields({ booking_mode: "bookable", booking_ac_type: "ผนัง", booking_btu: 12000, booking_wash_variant: "ล้างธรรมดา" });
   assert.equal(result.ok, true);
-  assert.equal(result.value.booking_service_key, "wash_wall");
+  assert.equal(result.value.booking_ac_type, "ผนัง");
+  assert.equal(result.value.booking_btu, 12000);
+  assert.equal(result.value.booking_wash_variant, "ล้างธรรมดา");
+});
+
+test("validateMarketplaceFields accepts a fully-specified bookable non-wall ac_type item without a wash_variant", () => {
+  const result = validateMarketplaceFields({ booking_mode: "bookable", booking_ac_type: "สี่ทิศทาง", booking_btu: 24000 });
+  assert.equal(result.ok, true);
+  assert.equal(result.value.booking_ac_type, "สี่ทิศทาง");
+  assert.equal(result.value.booking_btu, 24000);
 });
 
 test("validateMarketplaceFields defaults booking_mode to contact_admin and is_featured to false", () => {
@@ -1562,17 +1674,18 @@ test("admin POST creates a bookable item with marketplace fields once the migrat
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         item_name: "ล้างแอร์ฝัง", item_category: "ล้างแอร์", base_price: 800,
-        short_description: "ล้างแอร์ฝังฝ้าเพดาน", highlights: ["ฟรีน้ำยา"],
-        booking_mode: "bookable", booking_ac_type: "ฝังฝ้า", is_featured: true,
+        short_description: "ล้างแอร์เปลือยใต้ฝ้าเพดาน", highlights: ["ฟรีน้ำยา"],
+        booking_mode: "bookable", booking_ac_type: "เปลือยใต้ฝ้า", booking_btu: 18000, is_featured: true,
       }),
     });
     assert.equal(res.status, 201);
     const body = await res.json();
     assert.equal(body.booking_mode, "bookable");
-    assert.equal(body.short_description, "ล้างแอร์ฝังฝ้าเพดาน");
+    assert.equal(body.short_description, "ล้างแอร์เปลือยใต้ฝ้าเพดาน");
     assert.deepEqual(body.highlights, ["ฟรีน้ำยา"]);
     assert.equal(body.is_featured, true);
-    assert.equal(body.booking_ac_type, "ฝังฝ้า");
+    assert.equal(body.booking_ac_type, "เปลือยใต้ฝ้า");
+    assert.equal(body.booking_btu, 18000);
   });
 });
 
@@ -1583,7 +1696,11 @@ test("admin PATCH updates marketplace fields once the migration has run", async 
     const res = await fetch(`${base}/admin/catalog/items/1`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ booking_mode: "bookable", booking_service_key: "wash_wall", is_featured: true }),
+      body: JSON.stringify({
+        booking_mode: "bookable", booking_service_key: "wash_wall",
+        booking_ac_type: "ผนัง", booking_btu: 12000, booking_wash_variant: "ล้างธรรมดา",
+        is_featured: true,
+      }),
     });
     assert.equal(res.status, 200);
     const body = await res.json();
@@ -1593,7 +1710,7 @@ test("admin PATCH updates marketplace fields once the migration has run", async 
   });
 });
 
-test("admin POST rejects a bookable item without booking_service_key or booking_ac_type", async () => {
+test("admin POST rejects a bookable item without booking_ac_type or booking_btu", async () => {
   const pool = makePool(sampleItems(), [], { marketplaceReady: true });
   const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
   await withServer(router, async (base) => {
@@ -1604,7 +1721,21 @@ test("admin POST rejects a bookable item without booking_service_key or booking_
     });
     assert.equal(res.status, 400);
     const body = await res.json();
-    assert.match(body.error, /bookable/);
+    assert.match(body.error, /booking_ac_type/);
+    assert.equal(pool.state.items.length, 3);
+  });
+});
+
+test("admin POST rejects a bookable item with only booking_service_key set", async () => {
+  const pool = makePool(sampleItems(), [], { marketplaceReady: true });
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ item_name: "ทดสอบ", booking_mode: "bookable", booking_service_key: "wash_wall" }),
+    });
+    assert.equal(res.status, 400);
     assert.equal(pool.state.items.length, 3);
   });
 });
@@ -1633,6 +1764,24 @@ test("public GET /catalog/items includes marketplace fields and the images galle
     assert.equal(item.images.length, 2);
     assert.equal(item.images[0].is_primary, true);
     assert.equal(item.images[1].alt_text, "มุมที่สอง");
+  });
+});
+
+test("public GET /catalog/items/:itemId puts the Primary image first even when it is not sort_order 0", async () => {
+  const items = sampleItems();
+  const pool = makePool(items, [], { marketplaceReady: true });
+  pool.state.images.push(
+    { image_id: 1, item_id: 1, image_url: "https://res.cloudinary.com/demo/non-primary.jpg", image_public_id: "p1", alt_text: null, sort_order: 0, is_primary: false },
+    { image_id: 2, item_id: 1, image_url: "https://res.cloudinary.com/demo/primary.jpg", image_public_id: "p2", alt_text: null, sort_order: 1, is_primary: true }
+  );
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/catalog/items/1`);
+    const body = await res.json();
+    assert.equal(body.images[0].image_id, 2);
+    assert.equal(body.images[0].is_primary, true);
+    assert.equal(body.images[0].image_url, "https://res.cloudinary.com/demo/primary.jpg");
+    assert.equal(body.images[1].image_id, 1);
   });
 });
 
@@ -1786,6 +1935,29 @@ test("uploading a second gallery image is not primary and gets the next sort_ord
   });
 });
 
+test("concurrent first-image uploads for the same item never produce two Primary images", async () => {
+  const pool = makePool(sampleItems(), [], { marketplaceReady: true });
+  wrapWithFakeRowLock(pool);
+  let n = 0;
+  const uploadCatalogImage = async () => {
+    n += 1;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    return { url: `https://res.cloudinary.com/demo/c${n}.jpg`, public_id: `c${n}` };
+  };
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin, uploadCatalogImage });
+  await withServer(router, async (base) => {
+    const [res1, res2] = await Promise.all([
+      fetch(`${base}/admin/catalog/items/1/images`, { method: "POST", body: multipartImageForm(JPEG_BYTES) }),
+      fetch(`${base}/admin/catalog/items/1/images`, { method: "POST", body: multipartImageForm(PNG_BYTES, { mimetype: "image/png", filename: "x.png" }) }),
+    ]);
+    assert.equal(res1.status, 201);
+    assert.equal(res2.status, 201);
+    const itemImages = pool.state.images.filter((img) => String(img.item_id) === "1");
+    assert.equal(itemImages.length, 2);
+    assert.equal(itemImages.filter((img) => img.is_primary).length, 1);
+  });
+});
+
 test("uploading a gallery image accepts and stores alt_text", async () => {
   const pool = makePool(sampleItems(), [], { marketplaceReady: true });
   const uploadCatalogImage = async () => ({ url: "https://res.cloudinary.com/demo/g1.jpg", public_id: "g1" });
@@ -1797,6 +1969,34 @@ test("uploading a gallery image accepts and stores alt_text", async () => {
     const res = await fetch(`${base}/admin/catalog/items/1/images`, { method: "POST", body: fd });
     const body = await res.json();
     assert.equal(body.alt_text, "มุมหน้าตรง");
+  });
+});
+
+test("uploading a gallery image cleans up the Cloudinary asset if the DB insert fails", async () => {
+  const pool = makePool(sampleItems(), [], { marketplaceReady: true });
+  const uploadCatalogImage = async () => ({ url: "https://res.cloudinary.com/demo/orphan.jpg", public_id: "orphan-id" });
+  const cleanedUp = [];
+  const deleteCatalogImage = async (publicId) => { cleanedUp.push(publicId); return { ok: true }; };
+  const originalConnect = pool.connect;
+  pool.connect = async () => {
+    const client = await originalConnect();
+    return {
+      query: async (sql, params) => {
+        if (String(sql).includes("INSERT INTO public.catalog_item_images")) {
+          throw new Error("simulated DB insert failure");
+        }
+        return client.query(sql, params);
+      },
+      release: () => client.release(),
+    };
+  };
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin, uploadCatalogImage, deleteCatalogImage });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items/1/images`, { method: "POST", body: multipartImageForm(JPEG_BYTES) });
+    assert.equal(res.status, 500);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.deepEqual(cleanedUp, ["orphan-id"]);
+    assert.equal(pool.state.images.length, 0);
   });
 });
 
@@ -1848,19 +2048,21 @@ test("deleting the primary gallery image promotes the next image by sort_order",
   });
 });
 
-test("deleting a gallery image reports a real Cloudinary failure via HTTP 207, not a silent success", async () => {
+test("deleting a gallery image keeps the DB row when Cloudinary delete fails (no orphan, retry possible)", async () => {
   const pool = makePool(sampleItems(), [], { marketplaceReady: true });
   pool.state.images.push({ image_id: 1, item_id: 1, image_url: "u1", image_public_id: "p1", alt_text: null, sort_order: 0, is_primary: true });
   const deleteCatalogImage = async () => { throw new Error("cloudinary down"); };
   const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin, deleteCatalogImage });
   await withServer(router, async (base) => {
     const res = await fetch(`${base}/admin/catalog/items/1/images/1`, { method: "DELETE" });
-    assert.equal(res.status, 207);
+    assert.equal(res.status, 502);
     const body = await res.json();
-    assert.equal(body.deleted, true);
+    assert.equal(body.deleted, false);
     assert.equal(body.cloudinary_deleted, false);
-    assert.match(body.cloudinary_error, /cloudinary down/);
-    assert.equal(pool.state.images.some((img) => img.image_id === 1), false);
+    assert.match(body.error, /Cloudinary|cloudinary/i);
+    const row = pool.state.images.find((img) => img.image_id === 1);
+    assert.ok(row, "the DB row must be retained when Cloudinary delete fails");
+    assert.equal(row.image_public_id, "p1");
   });
 });
 

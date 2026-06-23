@@ -210,7 +210,10 @@
         const id = button.getAttribute("data-store-book");
         const item = (root.state.catalog.items || []).find((it) => String(it.item_id) === String(id));
         const draftItem = root.services.catalogItemToCommerceDraft(item);
-        if (!draftItem || !root.services.applyCommerceDraft("scheduled", draftItem)) return;
+        if (!draftItem || !root.services.applyCommerceDraft("scheduled", draftItem)) {
+          root.ui.openContactSheet(container, { title: item?.item_name || "รายการนี้" });
+          return;
+        }
         root.utils.routeTo("scheduled");
       });
     });
@@ -407,7 +410,10 @@
       bookButton.addEventListener("click", () => {
         const item = root.state.storeDetail?.data;
         const draftItem = root.services.catalogItemToCommerceDraft(item);
-        if (!draftItem || !root.services.applyCommerceDraft("scheduled", draftItem)) return;
+        if (!draftItem || !root.services.applyCommerceDraft("scheduled", draftItem)) {
+          root.ui.openContactSheet(container, { title: item?.item_name || "รายการนี้" });
+          return;
+        }
         root.utils.routeTo("scheduled");
       });
     }
