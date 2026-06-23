@@ -881,6 +881,84 @@ test("store card shows a multi-image slider with dot indicators when an item has
   assert.equal((body.innerHTML.match(/class="store-card-dot is-active"/g) || []).length, 1);
 });
 
+test("store card shows the CWF featured ribbon only for featured items, and a five-star standard-service badge for every item", async () => {
+  const context = makeContext();
+  const root = loadCustomerFrontend(context);
+  root.api.loadCatalogItems = async () => [
+    { item_id: 1, item_name: "รายการแนะนำ", item_category: "ล้างแอร์", base_price: 700, unit_label: "เครื่อง", is_featured: true, image_url: "https://res.cloudinary.com/demo/a.jpg" },
+    { item_id: 2, item_name: "รายการธรรมดา", item_category: "ล้างแอร์", base_price: 700, unit_label: "เครื่อง", is_featured: false, image_url: "https://res.cloudinary.com/demo/b.jpg" },
+  ];
+
+  const container = new FakeMount();
+  root.store.render(container);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const body = container.querySelector("[data-store-body]");
+  assert.equal((body.innerHTML.match(/store-featured-ribbon/g) || []).length, 1);
+  assert.match(body.innerHTML, /CWF แนะนำ/);
+  assert.doesNotMatch(body.innerHTML, /store-badge-featured/);
+  assert.equal((body.innerHTML.match(/store-standard-badge/g) || []).length, 2);
+  assert.equal((body.innerHTML.match(/store-standard-label">มาตรฐานบริการ CWF/g) || []).length, 2);
+  assert.equal((body.innerHTML.match(/store-standard-star is-filled/g) || []).length, 10);
+});
+
+test("store card and product detail gallery flag autoplay only for multi-image items with is_autoplay_enabled true", async () => {
+  const context = makeContext();
+  const root = loadCustomerFrontend(context);
+  root.api.loadCatalogItems = async () => [
+    {
+      item_id: 1, item_name: "เปิดออโต้เลื่อน", item_category: "ล้างแอร์", base_price: 700, unit_label: "เครื่อง",
+      is_autoplay_enabled: true,
+      images: [
+        { image_id: 1, image_url: "https://res.cloudinary.com/demo/a.jpg", alt_text: null },
+        { image_id: 2, image_url: "https://res.cloudinary.com/demo/b.jpg", alt_text: null },
+      ],
+    },
+    {
+      item_id: 2, item_name: "ปิดออโต้เลื่อน", item_category: "ล้างแอร์", base_price: 700, unit_label: "เครื่อง",
+      is_autoplay_enabled: false,
+      images: [
+        { image_id: 3, image_url: "https://res.cloudinary.com/demo/c.jpg", alt_text: null },
+        { image_id: 4, image_url: "https://res.cloudinary.com/demo/d.jpg", alt_text: null },
+      ],
+    },
+    {
+      item_id: 3, item_name: "รูปเดียวเปิดออโต้", item_category: "ล้างแอร์", base_price: 700, unit_label: "เครื่อง",
+      is_autoplay_enabled: true,
+      image_url: "https://res.cloudinary.com/demo/e.jpg",
+    },
+  ];
+
+  const container = new FakeMount();
+  root.store.render(container);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const body = container.querySelector("[data-store-body]");
+  assert.equal((body.innerHTML.match(/data-store-autoplay="1"/g) || []).length, 1);
+});
+
+test("product detail gallery flags autoplay for a multi-image bookable item with is_autoplay_enabled true", async () => {
+  const context = makeContext();
+  const root = loadCustomerFrontend(context);
+  root.state.setRoute("storeItem-9");
+  root.api.loadCatalogItem = async () => ({
+    item_id: 9, item_name: "รายละเอียดออโต้เลื่อน", item_category: "ล้างแอร์", base_price: 900, unit_label: "เครื่อง",
+    is_autoplay_enabled: true, is_featured: true,
+    images: [
+      { image_id: 1, image_url: "https://res.cloudinary.com/demo/a.jpg", alt_text: null },
+      { image_id: 2, image_url: "https://res.cloudinary.com/demo/b.jpg", alt_text: null },
+    ],
+  });
+
+  const container = new FakeMount();
+  root.store.renderDetail(container);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const body = container.querySelector("[data-store-detail-body]");
+  assert.match(body.innerHTML, /data-store-autoplay="1"/);
+  assert.match(body.innerHTML, /store-featured-ribbon/);
+});
+
 test("storeItem dynamic route is registered and dispatches to the product detail handler with the numeric id", () => {
   const shell = read("customer-app/assets/customer-app.js");
   assert.match(shell, /storeItem:\s*App\.store\.renderDetail/);
