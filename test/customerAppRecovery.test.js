@@ -135,11 +135,13 @@ class FakeMount {
     this._html = "";
     this.mountCache = new Map();
     this.singleCache = new Map();
+    this.multiCache = new Map();
   }
   set innerHTML(value) {
     this._html = String(value || "");
     this.mountCache.clear();
     this.singleCache.clear();
+    this.multiCache.clear();
   }
   get innerHTML() { return this._html; }
   appendChild() {}
@@ -160,7 +162,7 @@ class FakeMount {
     const m = selector.match(/\[data-([a-z-]+)\]/);
     if (!m) return null;
     const attr = `data-${m[1]}`;
-    if (attr === "data-store-body" || attr === "data-store-grid-mount" || attr === "data-contact-sheet-mount") {
+    if (attr === "data-store-body" || attr === "data-store-grid-mount" || attr === "data-contact-sheet-mount" || attr === "data-store-detail-body") {
       const owner = this._findOwner(attr);
       if (!owner) return null;
       if (!owner.mountCache.has(attr)) owner.mountCache.set(attr, new FakeMount());
@@ -182,10 +184,12 @@ class FakeMount {
     const attr = `data-${m[1]}`;
     const owner = this._findOwner(attr);
     if (!owner) return [];
+    if (owner.multiCache.has(attr)) return owner.multiCache.get(attr);
     const results = [];
     for (const match of owner._html.matchAll(new RegExp(`<button[^>]*${attr}="([^"]*)"[^>]*>`, "g"))) {
       results.push(new FakeButton(FakeMount.parseAttrs(match[0])));
     }
+    owner.multiCache.set(attr, results);
     return results;
   }
 }
@@ -224,7 +228,7 @@ test("Customer App build id is consistent across shell and service worker", () =
   const sw = read("customer-app/sw.js");
   const app = read("customer-app/assets/customer-app.js");
   const manifest = read("customer-app/manifest.webmanifest");
-  const build = "20260622_catalog_media_pricing_v1";
+  const build = "20260623_catalog_marketplace_v2";
 
   assert.match(index, new RegExp(`customer-app\\.css\\?v=${build}`));
   assert.match(index, new RegExp(`bookingUrgent\\.js\\?v=${build}`));
@@ -240,7 +244,7 @@ test("Customer App build id is consistent across shell and service worker", () =
 test("store module is loaded in index.html and precached in the service worker app shell", () => {
   const index = read("customer-app/index.html");
   const sw = read("customer-app/sw.js");
-  const build = "20260622_catalog_media_pricing_v1";
+  const build = "20260623_catalog_marketplace_v2";
 
   assert.match(index, new RegExp(`modules/store\\.js\\?v=${build}`));
   assert.match(sw, /`\.\/modules\/store\.js\?v=\$\{BUILD_ID\}`/);
@@ -697,7 +701,7 @@ test("store search and category filters narrow already-loaded items without extr
   assert.equal(calls, 1);
 });
 
-test("store booking button routes to booking without implying the item is already added", async () => {
+test("store shows a contact button (never a booking button) for an item without an explicit bookable booking_mode", async () => {
   const context = makeContext();
   const root = loadCustomerFrontend(context);
   root.api.loadCatalogItems = async () => [
@@ -709,12 +713,30 @@ test("store booking button routes to booking without implying the item is alread
   await new Promise((resolve) => setTimeout(resolve, 0));
 
   const body = container.querySelector("[data-store-body]");
-  assert.match(body.innerHTML, /ไปหน้าจองบริการ/);
-  assert.doesNotMatch(body.innerHTML, />จองบริการ</);
+  assert.match(body.innerHTML, /data-store-contact="1"/);
+  assert.doesNotMatch(body.innerHTML, /data-store-book="1"/);
 
   assert.doesNotMatch(container.innerHTML, /ราคาที่แน่นอนตอนจอง/);
   assert.doesNotMatch(container.innerHTML, /เพิ่มในรายการจอง/);
   assert.doesNotMatch(container.innerHTML, /เพิ่มลงตะกร้า/);
+});
+
+test("store shows a real booking button only when the item's booking_mode is explicitly bookable", async () => {
+  const context = makeContext();
+  const root = loadCustomerFrontend(context);
+  root.api.loadCatalogItems = async () => [
+    { item_id: 1, item_name: "ล้างแอร์ผนัง", item_category: "ล้างแอร์", base_price: 700, unit_label: "เครื่อง", booking_mode: "bookable", booking_ac_type: "ผนัง", booking_btu: 12000 },
+    { item_id: 2, item_name: "ติดตั้งแอร์ใหม่", item_category: "ติดตั้ง", base_price: 0, unit_label: "งาน", booking_mode: "contact_admin" },
+  ];
+
+  const container = new FakeMount();
+  root.store.render(container);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const body = container.querySelector("[data-store-body]");
+  assert.match(body.innerHTML, /data-store-book="1"/);
+  assert.doesNotMatch(body.innerHTML, /data-store-book="2"/);
+  assert.match(body.innerHTML, /data-store-contact="2"/);
 });
 
 test("store BTU label formats min/max/range/neither cases correctly", async () => {
@@ -756,7 +778,7 @@ test("store renders the real image_url with lazy loading and an alt from the ite
   await new Promise((resolve) => setTimeout(resolve, 0));
 
   const body = container.querySelector("[data-store-body]");
-  assert.match(body.innerHTML, /<img class="store-card-image" src="https:\/\/res\.cloudinary\.com\/demo\/x\.jpg" alt="ล้างแอร์ผนัง" loading="lazy"/);
+  assert.match(body.innerHTML, /<img class="store-card-slide" src="https:\/\/res\.cloudinary\.com\/demo\/x\.jpg" alt="ล้างแอร์ผนัง" loading="lazy"/);
 });
 
 test("store shows a placeholder when an item has no image_url", async () => {
@@ -787,8 +809,7 @@ test("store image has an onerror fallback to the placeholder for broken images",
   await new Promise((resolve) => setTimeout(resolve, 0));
 
   const body = container.querySelector("[data-store-body]");
-  assert.match(body.innerHTML, /onerror="this\.outerHTML=/);
-  assert.match(body.innerHTML, /store-card-image-placeholder/);
+  assert.match(body.innerHTML, /onerror="this\.style\.visibility='hidden';"/);
 });
 
 test("store shows the real sale price prominently with the normal price struck through when discounted", async () => {
@@ -808,7 +829,7 @@ test("store shows the real sale price prominently with the normal price struck t
   const body = container.querySelector("[data-store-body]");
   assert.match(body.innerHTML, /class="price-text[^"]*">500/);
   assert.match(body.innerHTML, /class="price-strike">700/);
-  assert.match(body.innerHTML, /class="store-card-badge">โปรดูแลแอร์รับหน้าฝน/);
+  assert.match(body.innerHTML, /class="store-badge store-badge-promo">โปรดูแลแอร์รับหน้าฝน/);
 });
 
 test("store falls back to base_price when there is no active price rule", async () => {
@@ -825,6 +846,205 @@ test("store falls back to base_price when there is no active price rule", async 
   const body = container.querySelector("[data-store-body]");
   assert.match(body.innerHTML, /650/);
   assert.doesNotMatch(body.innerHTML, /สอบถามราคา/);
+});
+
+test("store grid uses a 2-column-first mobile layout that expands at larger breakpoints", () => {
+  const css = read("customer-app/assets/customer-app.css");
+  const gridBlock = css.slice(css.indexOf(".store-grid {"), css.indexOf(".store-grid {") + 400);
+  assert.match(gridBlock, /grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/);
+  assert.match(css, /@media \(min-width: 700px\)[\s\S]{0,80}repeat\(3,/);
+  assert.match(css, /@media \(min-width: 1024px\)[\s\S]{0,80}repeat\(4,/);
+  assert.match(css, /@media \(min-width: 1280px\)[\s\S]{0,80}repeat\(5,/);
+});
+
+test("store card shows a multi-image slider with dot indicators when an item has several images", async () => {
+  const context = makeContext();
+  const root = loadCustomerFrontend(context);
+  root.api.loadCatalogItems = async () => [
+    {
+      item_id: 1, item_name: "ล้างแอร์ผนัง", item_category: "ล้างแอร์", base_price: 700, unit_label: "เครื่อง",
+      images: [
+        { image_id: 1, image_url: "https://res.cloudinary.com/demo/a.jpg", alt_text: null },
+        { image_id: 2, image_url: "https://res.cloudinary.com/demo/b.jpg", alt_text: null },
+        { image_id: 3, image_url: "https://res.cloudinary.com/demo/c.jpg", alt_text: null },
+      ],
+    },
+  ];
+
+  const container = new FakeMount();
+  root.store.render(container);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const body = container.querySelector("[data-store-body]");
+  assert.equal((body.innerHTML.match(/class="store-card-slide"/g) || []).length, 3);
+  assert.match(body.innerHTML, /store-card-dots/);
+  assert.equal((body.innerHTML.match(/class="store-card-dot is-active"/g) || []).length, 1);
+});
+
+test("storeItem dynamic route is registered and dispatches to the product detail handler with the numeric id", () => {
+  const shell = read("customer-app/assets/customer-app.js");
+  assert.match(shell, /storeItem:\s*App\.store\.renderDetail/);
+
+  const context = makeContext();
+  const root = load(context, ["customer-app/modules/utils.js", "customer-app/modules/state.js", "customer-app/modules/router.js"]);
+  root.router.register({ home() {}, store() {}, storeItem() {} });
+
+  assert.equal(root.router.canonicalRoute("storeItem-42"), "storeItem-42");
+  assert.equal(root.router.resolveHandler("storeItem-42"), root.router.routes.storeItem);
+  assert.equal(root.router.routeParam("storeItem-42"), "42");
+  assert.equal(root.router.routeParam("store"), "");
+  assert.equal(root.router.canonicalRoute("storeItem-abc"), "home");
+});
+
+test("product detail page loads the real item by id and renders gallery, content, and a working back button", async () => {
+  const context = makeContext();
+  const root = loadCustomerFrontend(context);
+  root.state.setRoute("storeItem-7");
+  let requestedId = null;
+  root.api.loadCatalogItem = async (id) => {
+    requestedId = id;
+    return {
+      item_id: 7, item_name: "ล้างแอร์พรีเมียม", item_category: "ล้างแอร์", base_price: 900, unit_label: "เครื่อง",
+      booking_mode: "bookable", short_description: "สั้นๆ", long_description: "ยาวๆ", service_conditions: "เงื่อนไข",
+      highlights: ["จุดเด่นหนึ่ง", "จุดเด่นสอง"],
+      images: [
+        { image_id: 1, image_url: "https://res.cloudinary.com/demo/a.jpg", alt_text: null },
+        { image_id: 2, image_url: "https://res.cloudinary.com/demo/b.jpg", alt_text: null },
+      ],
+    };
+  };
+
+  const container = new FakeMount();
+  root.store.renderDetail(container);
+  assert.equal(requestedId, "7");
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const body = container.querySelector("[data-store-detail-body]");
+  assert.match(body.innerHTML, /ล้างแอร์พรีเมียม/);
+  assert.match(body.innerHTML, /สั้นๆ/);
+  assert.match(body.innerHTML, /ยาวๆ/);
+  assert.match(body.innerHTML, /เงื่อนไข/);
+  assert.match(body.innerHTML, /จุดเด่นหนึ่ง/);
+  assert.equal((body.innerHTML.match(/class="store-detail-slide"/g) || []).length, 2);
+  assert.match(body.innerHTML, /data-store-detail-back/);
+
+  const storeSrc = read("customer-app/modules/store.js");
+  const backBinding = storeSrc.slice(storeSrc.indexOf("[data-store-detail-back]"), storeSrc.indexOf("[data-store-detail-back]") + 150);
+  assert.match(backBinding, /routeTo\("store"\)/);
+});
+
+test("product detail shows a 404-style not-found error when the catalog item does not exist", async () => {
+  const context = makeContext();
+  const root = loadCustomerFrontend(context);
+  root.state.setRoute("storeItem-999");
+  root.api.loadCatalogItem = async () => {
+    const error = new Error("ไม่พบรายการนี้");
+    error.status = 404;
+    throw error;
+  };
+
+  const container = new FakeMount();
+  root.store.renderDetail(container);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const body = container.querySelector("[data-store-detail-body]");
+  assert.match(body.innerHTML, /ไม่พบรายการนี้/);
+  assert.doesNotMatch(body.innerHTML, /data-store-detail-book/);
+});
+
+test("product detail escapes hostile text in description, highlight, and image alt fields", async () => {
+  const context = makeContext();
+  const root = loadCustomerFrontend(context);
+  root.state.setRoute("storeItem-1");
+  root.api.loadCatalogItem = async () => ({
+    item_id: 1,
+    item_name: '<img src=x onerror=alert(1)>',
+    item_category: "ล้างแอร์",
+    base_price: 700,
+    unit_label: "เครื่อง",
+    short_description: '<script>alert("short")</script>',
+    long_description: '<script>alert("long")</script>',
+    service_conditions: '<script>alert("cond")</script>',
+    highlights: ['<script>alert("hl")</script>'],
+    images: [{ image_id: 1, image_url: "https://res.cloudinary.com/demo/a.jpg", alt_text: '<script>alert("alt")</script>' }],
+  });
+
+  const container = new FakeMount();
+  root.store.renderDetail(container);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const body = container.querySelector("[data-store-detail-body]");
+  assert.doesNotMatch(body.innerHTML, /<script>/);
+  assert.match(body.innerHTML, /&lt;script&gt;/);
+  assert.doesNotMatch(body.innerHTML, /<img src=x onerror=alert\(1\)>/);
+});
+
+test("clicking a bookable card's book button prefills the real scheduled draft from the catalog item's booking fields", async () => {
+  const context = makeContext();
+  const root = loadCustomerFrontend(context);
+  root.api.loadCatalogItems = async () => [
+    {
+      item_id: 1, item_name: "ล้างแอร์แขวนพรีเมียม", item_category: "ล้างแอร์", base_price: 900, unit_label: "เครื่อง",
+      booking_mode: "bookable", booking_ac_type: "แขวน", booking_btu: 18000, booking_wash_variant: "ล้างพรีเมียม",
+    },
+  ];
+
+  const container = new FakeMount();
+  root.store.render(container);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const routeCalls = [];
+  root.utils.routeTo = (route) => routeCalls.push(route);
+  const book = container.querySelectorAll("[data-store-book]")[0];
+  assert.ok(book);
+  await book.click();
+
+  assert.deepEqual(routeCalls, ["scheduled"]);
+  assert.equal(root.state.draft.scheduled.ac_type, "แขวน");
+  assert.equal(root.state.draft.scheduled.btu, "18000");
+});
+
+test("a contact_admin item's contact button never applies a commerce draft or routes into booking", async () => {
+  const context = makeContext();
+  const root = loadCustomerFrontend(context);
+  root.api.loadCatalogItems = async () => [
+    { item_id: 2, item_name: "ติดตั้งแอร์ใหม่", item_category: "ติดตั้ง", base_price: 0, unit_label: "งาน", booking_mode: "contact_admin" },
+  ];
+
+  const container = new FakeMount();
+  root.store.render(container);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const routeCalls = [];
+  root.utils.routeTo = (route) => routeCalls.push(route);
+  let applyCalled = false;
+  root.services.applyCommerceDraft = (...args) => { applyCalled = true; return true; };
+  root.ui.openContactSheet = () => {};
+
+  const contact = container.querySelectorAll("[data-store-contact]")[0];
+  assert.ok(contact);
+  await contact.click();
+
+  assert.equal(applyCalled, false);
+  assert.deepEqual(routeCalls, []);
+});
+
+test("legacy single-image catalog items still render through the gallery fallback on the product detail page", async () => {
+  const context = makeContext();
+  const root = loadCustomerFrontend(context);
+  root.state.setRoute("storeItem-3");
+  root.api.loadCatalogItem = async () => ({
+    item_id: 3, item_name: "ล้างแอร์รุ่นเก่า", item_category: "ล้างแอร์", base_price: 700, unit_label: "เครื่อง",
+    image_url: "https://res.cloudinary.com/demo/legacy.jpg",
+  });
+
+  const container = new FakeMount();
+  root.store.renderDetail(container);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const body = container.querySelector("[data-store-detail-body]");
+  assert.match(body.innerHTML, /<img class="store-detail-slide" src="https:\/\/res\.cloudinary\.com\/demo\/legacy\.jpg"/);
+  assert.doesNotMatch(body.innerHTML, /store-detail-dots/);
 });
 
 test("store shows สอบถามราคา when there is no price at all", async () => {

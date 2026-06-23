@@ -3,6 +3,8 @@
 
   const root = window.CWFCustomerAppV2 = window.CWFCustomerAppV2 || {};
 
+  const DYNAMIC_ROUTE_PATTERN = /^storeItem-(\d+)$/;
+
   const router = {
     routes: {},
     initialized: false,
@@ -12,7 +14,20 @@
     },
     canonicalRoute(route) {
       const requested = String(route || "home").trim();
-      return this.routes[requested] ? requested : "home";
+      if (this.routes[requested]) return requested;
+      if (DYNAMIC_ROUTE_PATTERN.test(requested) && typeof this.routes.storeItem === "function") {
+        return requested;
+      }
+      return "home";
+    },
+    resolveHandler(route) {
+      if (typeof this.routes[route] === "function") return this.routes[route];
+      if (DYNAMIC_ROUTE_PATTERN.test(route)) return this.routes.storeItem;
+      return this.routes.home;
+    },
+    routeParam(route) {
+      const match = DYNAMIC_ROUTE_PATTERN.exec(String(route || ""));
+      return match ? match[1] : "";
     },
     init() {
       if (this.initialized) return;
@@ -35,7 +50,7 @@
     render(options = {}) {
       const requestedRoute = root.state.readRouteFromHash();
       const route = this.canonicalRoute(requestedRoute);
-      const handler = this.routes[route] || this.routes.home;
+      const handler = this.resolveHandler(route);
       const app = document.getElementById("app");
       if (!app || typeof handler !== "function") return;
       document.body.classList.remove("has-contact-sheet");
@@ -44,7 +59,7 @@
       }
       const routeChanged = this.lastRoute !== route;
       if (routeChanged) {
-        const prevHandler = this.routes[this.lastRoute];
+        const prevHandler = this.resolveHandler(this.lastRoute);
         if (typeof prevHandler?.onLeave === "function") prevHandler.onLeave();
       }
       this.lastRoute = route;
@@ -57,8 +72,9 @@
       }
     },
     updateNav(route) {
+      const navRoute = DYNAMIC_ROUTE_PATTERN.test(route) ? "store" : route;
       document.querySelectorAll(".nav-item[data-route]").forEach((item) => {
-        const active = item.getAttribute("data-route") === route;
+        const active = item.getAttribute("data-route") === navRoute;
         item.classList.toggle("is-active", active);
         if (active) item.setAttribute("aria-current", "page");
         else item.removeAttribute("aria-current");

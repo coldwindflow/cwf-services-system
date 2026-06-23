@@ -122,6 +122,8 @@
     authError: "",
     authConfig: null,
     catalog: { status: "idle", items: [], error: "" },
+    storeDetail: { status: "idle", itemId: "", data: null, error: "" },
+    storeScrollY: 0,
     promotions: { status: "idle", items: [], error: "" },
     zones: { status: "idle", items: [], error: "" },
     homePricing: { status: "idle", items: {}, error: "" },
@@ -370,6 +372,15 @@
         ...(this.tracking || {}),
         ...(patch || {}),
       };
+    },
+    setStoreDetail(patch) {
+      this.storeDetail = {
+        ...(this.storeDetail || {}),
+        ...(patch || {}),
+      };
+    },
+    setStoreScrollY(value) {
+      this.storeScrollY = Math.max(0, Number(value) || 0);
     },
   };
 

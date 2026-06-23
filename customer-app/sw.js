@@ -1,6 +1,6 @@
 "use strict";
 
-const BUILD_ID = "20260622_catalog_media_pricing_v1";
+const BUILD_ID = "20260623_catalog_marketplace_v2";
 const CACHE_NAME = `cwf-customer-app-v2-${BUILD_ID}`;
 const APP_SHELL = [
   `./index.html?v=${BUILD_ID}`,

@@ -244,6 +244,26 @@
     return true;
   }
 
+  // Maps a bookable catalog/store item (Marketplace v2 booking_* fields) into the
+  // same {action, draft} shape applyCommerceDraft() already expects from the Home
+  // screen's static commerce catalogs. booking_service_key is a categorization key
+  // only — booking_ac_type/booking_btu/booking_wash_variant are the source of truth
+  // for what gets prefilled, matching the DB schema's bookable contract.
+  function catalogItemToCommerceDraft(catalogItem) {
+    if (!catalogItem || catalogItem.booking_mode !== "bookable") return null;
+    return {
+      id: catalogItem.item_id,
+      title: catalogItem.item_name,
+      action: "book",
+      draft: createServiceLine({
+        ac_type: catalogItem.booking_ac_type || WALL_AC,
+        btu: catalogItem.booking_btu || 12000,
+        wash_variant: catalogItem.booking_wash_variant || DEFAULT_WASH,
+        machine_count: 1,
+      }),
+    };
+  }
+
   root.services = {
     UNKNOWN_AC,
     UNKNOWN_BTU,
@@ -274,6 +294,7 @@
     cleaningMethods,
     commerceItem,
     applyCommerceDraft,
+    catalogItemToCommerceDraft,
     createServiceLine,
     normalizeServiceLine,
     normalizeServiceLines,

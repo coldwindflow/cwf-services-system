@@ -110,6 +110,10 @@
       return requestJson("/catalog/items", { query: { customer: 1 } });
     },
 
+    async loadCatalogItem(itemId) {
+      return requestJson(`/catalog/items/${encodeURIComponent(itemId)}`, { query: { customer: 1 } });
+    },
+
     async submitScheduledBooking(payload) {
       const body = {
         ...(payload || {}),
