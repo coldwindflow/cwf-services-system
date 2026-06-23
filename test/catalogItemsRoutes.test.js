@@ -7,16 +7,24 @@ const express = require("express");
 
 const createCatalogItemRoutes = require("../server/routes/catalog/items");
 
-function makePool(initialItems = [], initialRules = [], { schemaReady = true } = {}) {
+function makePool(initialItems = [], initialRules = [], { schemaReady = true, marketplaceReady = false } = {}) {
   const state = {
-    items: initialItems.map((x) => ({ image_url: null, image_public_id: null, price_rule_id: null, ...x })),
+    items: initialItems.map((x) => ({
+      image_url: null, image_public_id: null, price_rule_id: null,
+      short_description: null, long_description: null, highlights: null, service_conditions: null,
+      booking_mode: "contact_admin", booking_service_key: null, booking_ac_type: null, booking_btu: null,
+      booking_wash_variant: null, is_featured: false,
+      ...x,
+    })),
     rules: initialRules.map((x) => ({ ...x })),
+    images: [],
     queries: [],
     connectCount: 0,
     releaseCount: 0,
   };
   let nextItemId = 1 + state.items.reduce((max, x) => Math.max(max, Number(x.item_id) || 0), 0);
   let nextRuleId = 1 + state.rules.reduce((max, x) => Math.max(max, Number(x.rule_id) || 0), 0);
+  let nextImageId = 1;
 
   function joinedRow(item) {
     const rule = item.price_rule_id ? state.rules.find((r) => String(r.rule_id) === String(item.price_rule_id)) : null;
@@ -34,10 +42,22 @@ function makePool(initialItems = [], initialRules = [], { schemaReady = true } =
     };
   }
 
+  function imagesForItem(itemId) {
+    return state.images
+      .filter((img) => String(img.item_id) === String(itemId))
+      .sort((a, b) => (a.sort_order - b.sort_order) || (a.image_id - b.image_id));
+  }
+
   async function query(sql, params = []) {
     state.queries.push({ sql, params });
     const s = String(sql);
 
+    if (s.includes("information_schema.columns") && s.includes("catalog_items") && s.includes("short_description")) {
+      return { rows: [{ cnt: marketplaceReady ? 10 : 0 }] };
+    }
+    if (s.includes("to_regclass('public.catalog_item_images')")) {
+      return { rows: [{ reg: marketplaceReady ? "public.catalog_item_images" : null }] };
+    }
     if (s.includes("information_schema.columns") && s.includes("catalog_items")) {
       return { rows: [{ cnt: schemaReady ? 3 : 0 }] };
     }
@@ -45,11 +65,30 @@ function makePool(initialItems = [], initialRules = [], { schemaReady = true } =
     if (/^\s*(BEGIN|COMMIT|ROLLBACK)\s*;?\s*$/i.test(s)) return { rows: [] };
     if (s.includes("ALTER TABLE") || s.includes("CREATE INDEX") || s.includes("ADD CONSTRAINT") || s.includes("DO $$")) return { rows: [] };
 
+    if (s.includes("INSERT INTO public.catalog_items") && s.includes("booking_mode")) {
+      const [
+        item_name, item_category, base_price, unit_label, job_category, ac_type, btu_min, btu_max, is_active, is_customer_visible,
+        short_description, long_description, highlights, service_conditions,
+        booking_mode, booking_service_key, booking_ac_type, booking_btu, booking_wash_variant, is_featured,
+      ] = params;
+      const row = {
+        item_id: nextItemId++, item_name, item_category, base_price, unit_label, job_category, ac_type, btu_min, btu_max,
+        is_active, is_customer_visible, image_url: null, image_public_id: null, price_rule_id: null,
+        short_description, long_description, highlights: highlights ? JSON.parse(highlights) : null, service_conditions,
+        booking_mode, booking_service_key, booking_ac_type, booking_btu, booking_wash_variant, is_featured,
+      };
+      state.items.push(row);
+      return { rows: [{ item_id: row.item_id }] };
+    }
+
     if (s.includes("INSERT INTO public.catalog_items")) {
       const [item_name, item_category, base_price, unit_label, job_category, ac_type, btu_min, btu_max, is_active, is_customer_visible] = params;
       const row = {
         item_id: nextItemId++, item_name, item_category, base_price, unit_label, job_category, ac_type, btu_min, btu_max,
         is_active, is_customer_visible, image_url: null, image_public_id: null, price_rule_id: null,
+        short_description: null, long_description: null, highlights: null, service_conditions: null,
+        booking_mode: "contact_admin", booking_service_key: null, booking_ac_type: null, booking_btu: null,
+        booking_wash_variant: null, is_featured: false,
       };
       state.items.push(row);
       return { rows: [{ item_id: row.item_id }] };
@@ -97,6 +136,24 @@ function makePool(initialItems = [], initialRules = [], { schemaReady = true } =
       return { rows: [] };
     }
 
+    if (s.includes("SET item_name=$1") && s.includes("short_description=$11")) {
+      const [
+        item_name, item_category, base_price, unit_label, job_category, ac_type, btu_min, btu_max, is_active, is_customer_visible,
+        short_description, long_description, highlights, service_conditions,
+        booking_mode, booking_service_key, booking_ac_type, booking_btu, booking_wash_variant, is_featured,
+        item_id,
+      ] = params;
+      const row = state.items.find((x) => String(x.item_id) === String(item_id));
+      if (row) {
+        Object.assign(row, {
+          item_name, item_category, base_price, unit_label, job_category, ac_type, btu_min, btu_max, is_active, is_customer_visible,
+          short_description, long_description, highlights: highlights ? JSON.parse(highlights) : null, service_conditions,
+          booking_mode, booking_service_key, booking_ac_type, booking_btu, booking_wash_variant, is_featured,
+        });
+      }
+      return { rows: [] };
+    }
+
     if (s.includes("SET item_name=$1")) {
       const [item_name, item_category, base_price, unit_label, job_category, ac_type, btu_min, btu_max, is_active, is_customer_visible, item_id] = params;
       const row = state.items.find((x) => String(x.item_id) === String(item_id));
@@ -109,7 +166,84 @@ function makePool(initialItems = [], initialRules = [], { schemaReady = true } =
       return { rows: row ? [{ item_id: row.item_id, image_public_id: row.image_public_id ?? null }] : [] };
     }
 
+    if (s.includes("SELECT item_id FROM public.catalog_items WHERE item_id = $1")) {
+      const row = state.items.find((x) => String(x.item_id) === String(params[0]));
+      return { rows: row ? [{ item_id: row.item_id }] : [] };
+    }
+
+    if (s.includes("FROM public.catalog_item_images") && s.includes("ANY($1::bigint[])")) {
+      const ids = (params[0] || []).map(String);
+      const rows = state.images
+        .filter((img) => ids.includes(String(img.item_id)))
+        .sort((a, b) => (String(a.item_id).localeCompare(String(b.item_id))) || (a.sort_order - b.sort_order) || (a.image_id - b.image_id));
+      return { rows };
+    }
+
+    if (s.includes("SELECT image_id, item_id, image_url, image_public_id, alt_text, sort_order, is_primary FROM public.catalog_item_images WHERE item_id = $1 AND image_id")
+      || (s.includes("FROM public.catalog_item_images WHERE image_id = $1 AND item_id = $2"))) {
+      const [imageId, itemId] = params;
+      const row = state.images.find((img) => String(img.image_id) === String(imageId) && String(img.item_id) === String(itemId));
+      return { rows: row ? [row] : [] };
+    }
+
+    if (s.includes("SELECT image_id, item_id, image_url, image_public_id, alt_text, sort_order, is_primary") && s.includes("WHERE item_id = $1 ORDER BY sort_order")) {
+      return { rows: imagesForItem(params[0]) };
+    }
+
+    if (s.includes("SELECT COUNT(*)::int AS cnt, COALESCE(MAX(sort_order), -1) AS max_sort")) {
+      const rows = imagesForItem(params[0]);
+      return { rows: [{ cnt: rows.length, max_sort: rows.length ? Math.max(...rows.map((r) => r.sort_order)) : -1 }] };
+    }
+
+    if (s.includes("INSERT INTO public.catalog_item_images")) {
+      const [item_id, image_url, image_public_id, alt_text, sort_order, is_primary] = params;
+      const row = { image_id: nextImageId++, item_id, image_url, image_public_id, alt_text, sort_order, is_primary };
+      state.images.push(row);
+      return { rows: [row] };
+    }
+
+    if (s.includes("DELETE FROM public.catalog_item_images WHERE image_id = $1")) {
+      const [imageId] = params;
+      state.images = state.images.filter((img) => String(img.image_id) !== String(imageId));
+      return { rows: [] };
+    }
+
+    if (s.includes("UPDATE public.catalog_item_images SET is_primary = TRUE\n             WHERE image_id = (")) {
+      const [itemId] = params;
+      const rows = imagesForItem(itemId);
+      if (rows.length) rows[0].is_primary = true;
+      return { rows: rows.length ? [{ image_id: rows[0].image_id }] : [] };
+    }
+
+    if (s.includes("UPDATE public.catalog_item_images SET is_primary = FALSE WHERE item_id = $1")) {
+      const [itemId] = params;
+      state.images.filter((img) => String(img.item_id) === String(itemId)).forEach((img) => { img.is_primary = false; });
+      return { rows: [] };
+    }
+
+    if (s.includes("UPDATE public.catalog_item_images SET is_primary = TRUE WHERE image_id = $1")) {
+      const [imageId] = params;
+      const row = state.images.find((img) => String(img.image_id) === String(imageId));
+      if (row) row.is_primary = true;
+      return { rows: [] };
+    }
+
+    if (s.includes("SELECT image_id FROM public.catalog_item_images WHERE item_id = $1")) {
+      return { rows: imagesForItem(params[0]).map((img) => ({ image_id: img.image_id })) };
+    }
+
+    if (s.includes("UPDATE public.catalog_item_images SET sort_order = $1 WHERE image_id = $2 AND item_id = $3")) {
+      const [sortOrder, imageId, itemId] = params;
+      const row = state.images.find((img) => String(img.image_id) === String(imageId) && String(img.item_id) === String(itemId));
+      if (row) row.sort_order = sortOrder;
+      return { rows: [] };
+    }
+
     if (s.includes("FROM public.catalog_items ci")) {
+      if (s.includes("WHERE ci.item_id = $1") && s.includes("is_customer_visible = TRUE")) {
+        const row = state.items.find((x) => String(x.item_id) === String(params[0]) && x.is_active === true && x.is_customer_visible === true);
+        return { rows: row ? [joinedRow(row)] : [] };
+      }
       if (s.includes("WHERE ci.item_id = $1")) {
         const row = state.items.find((x) => String(x.item_id) === String(params[0]));
         return { rows: row ? [joinedRow(row)] : [] };
@@ -1322,5 +1456,513 @@ test("image upload SQL is parameterized: a hostile filename/public_id never appe
     assert.ok(updateQuery);
     assert.equal(updateQuery.sql.includes(hostilePublicId), false);
     assert.ok(updateQuery.params.includes(hostilePublicId));
+  });
+});
+
+// ---------- Marketplace v2 (migrations/20260623_catalog_store_marketplace_v2.sql) ----------
+
+const { validateMarketplaceFields } = createCatalogItemRoutes;
+
+test("validateMarketplaceFields rejects an unknown booking_mode", () => {
+  const result = validateMarketplaceFields({ booking_mode: "ship_it" });
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.some((e) => /booking_mode/.test(e)));
+});
+
+test("validateMarketplaceFields rejects bookable without booking_service_key or booking_ac_type", () => {
+  const result = validateMarketplaceFields({ booking_mode: "bookable" });
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.some((e) => /bookable/.test(e)));
+});
+
+test("validateMarketplaceFields accepts bookable with only booking_ac_type set", () => {
+  const result = validateMarketplaceFields({ booking_mode: "bookable", booking_ac_type: "ผนัง" });
+  assert.equal(result.ok, true);
+  assert.equal(result.value.booking_mode, "bookable");
+  assert.equal(result.value.booking_ac_type, "ผนัง");
+});
+
+test("validateMarketplaceFields accepts bookable with only booking_service_key set", () => {
+  const result = validateMarketplaceFields({ booking_mode: "bookable", booking_service_key: "wash_wall" });
+  assert.equal(result.ok, true);
+  assert.equal(result.value.booking_service_key, "wash_wall");
+});
+
+test("validateMarketplaceFields defaults booking_mode to contact_admin and is_featured to false", () => {
+  const result = validateMarketplaceFields({});
+  assert.equal(result.ok, true);
+  assert.equal(result.value.booking_mode, "contact_admin");
+  assert.equal(result.value.is_featured, false);
+});
+
+test("validateMarketplaceFields rejects highlights that are not an array", () => {
+  const result = validateMarketplaceFields({ highlights: "not an array or json array" });
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.some((e) => /highlights/.test(e)));
+});
+
+test("validateMarketplaceFields parses a JSON-string highlights array and trims/drops empties", () => {
+  const result = validateMarketplaceFields({ highlights: JSON.stringify(["ฟรีน้ำยา", "  ", "รับประกัน 30 วัน"]) });
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.value.highlights, ["ฟรีน้ำยา", "รับประกัน 30 วัน"]);
+});
+
+test("validateMarketplaceFields rejects a short_description longer than 300 characters", () => {
+  const result = validateMarketplaceFields({ short_description: "ก".repeat(301) });
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.some((e) => /คำอธิบายสั้น/.test(e)));
+});
+
+test("admin POST returns 503 when marketplace fields are sent but the migration has not run", async () => {
+  const pool = makePool(sampleItems(), [], { marketplaceReady: false });
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ item_name: "ทดสอบ", short_description: "สั้นๆ" }),
+    });
+    assert.equal(res.status, 503);
+    assert.equal(pool.state.items.length, 3);
+  });
+});
+
+test("admin PATCH returns 503 when marketplace fields are sent but the migration has not run", async () => {
+  const pool = makePool(sampleItems(), [], { marketplaceReady: false });
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items/1`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ is_featured: true }),
+    });
+    assert.equal(res.status, 503);
+  });
+});
+
+test("admin POST without marketplace fields still succeeds when the migration has not run", async () => {
+  const pool = makePool(sampleItems(), [], { marketplaceReady: false });
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ item_name: "ทดสอบ ไม่มี marketplace" }),
+    });
+    assert.equal(res.status, 201);
+  });
+});
+
+test("admin POST creates a bookable item with marketplace fields once the migration has run", async () => {
+  const pool = makePool(sampleItems(), [], { marketplaceReady: true });
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        item_name: "ล้างแอร์ฝัง", item_category: "ล้างแอร์", base_price: 800,
+        short_description: "ล้างแอร์ฝังฝ้าเพดาน", highlights: ["ฟรีน้ำยา"],
+        booking_mode: "bookable", booking_ac_type: "ฝังฝ้า", is_featured: true,
+      }),
+    });
+    assert.equal(res.status, 201);
+    const body = await res.json();
+    assert.equal(body.booking_mode, "bookable");
+    assert.equal(body.short_description, "ล้างแอร์ฝังฝ้าเพดาน");
+    assert.deepEqual(body.highlights, ["ฟรีน้ำยา"]);
+    assert.equal(body.is_featured, true);
+    assert.equal(body.booking_ac_type, "ฝังฝ้า");
+  });
+});
+
+test("admin PATCH updates marketplace fields once the migration has run", async () => {
+  const pool = makePool(sampleItems(), [], { marketplaceReady: true });
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items/1`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ booking_mode: "bookable", booking_service_key: "wash_wall", is_featured: true }),
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.booking_mode, "bookable");
+    assert.equal(body.booking_service_key, "wash_wall");
+    assert.equal(body.is_featured, true);
+  });
+});
+
+test("admin POST rejects a bookable item without booking_service_key or booking_ac_type", async () => {
+  const pool = makePool(sampleItems(), [], { marketplaceReady: true });
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ item_name: "ทดสอบ", booking_mode: "bookable" }),
+    });
+    assert.equal(res.status, 400);
+    const body = await res.json();
+    assert.match(body.error, /bookable/);
+    assert.equal(pool.state.items.length, 3);
+  });
+});
+
+test("public GET /catalog/items includes marketplace fields and the images gallery once ready", async () => {
+  const items = sampleItems();
+  items[0].booking_mode = "bookable";
+  items[0].booking_ac_type = "ผนัง";
+  items[0].short_description = "ล้างแอร์ผนังครบชุด";
+  items[0].highlights = ["ฟรีน้ำยา", "รับประกัน 30 วัน"];
+  items[0].is_featured = true;
+  const pool = makePool(items, [], { marketplaceReady: true });
+  pool.state.images.push(
+    { image_id: 1, item_id: 1, image_url: "https://res.cloudinary.com/demo/a1.jpg", image_public_id: "p1", alt_text: null, sort_order: 0, is_primary: true },
+    { image_id: 2, item_id: 1, image_url: "https://res.cloudinary.com/demo/a2.jpg", image_public_id: "p2", alt_text: "มุมที่สอง", sort_order: 1, is_primary: false }
+  );
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/catalog/items?customer=1`);
+    const body = await res.json();
+    const item = body.find((x) => x.item_id === 1);
+    assert.equal(item.booking_mode, "bookable");
+    assert.equal(item.short_description, "ล้างแอร์ผนังครบชุด");
+    assert.deepEqual(item.highlights, ["ฟรีน้ำยา", "รับประกัน 30 วัน"]);
+    assert.equal(item.is_featured, true);
+    assert.equal(item.images.length, 2);
+    assert.equal(item.images[0].is_primary, true);
+    assert.equal(item.images[1].alt_text, "มุมที่สอง");
+  });
+});
+
+test("public GET /catalog/items falls back to a synthetic single image when the gallery is empty", async () => {
+  const items = sampleItems();
+  items[0].image_url = "https://res.cloudinary.com/demo/legacy.jpg";
+  items[0].image_public_id = "legacy-id";
+  const pool = makePool(items, [], { marketplaceReady: true });
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/catalog/items?customer=1`);
+    const body = await res.json();
+    const item = body.find((x) => x.item_id === 1);
+    assert.equal(item.images.length, 1);
+    assert.equal(item.images[0].image_url, "https://res.cloudinary.com/demo/legacy.jpg");
+    assert.equal(item.images[0].is_primary, true);
+  });
+});
+
+test("public GET /catalog/items still works (legacy fields only) before the marketplace migration has run", async () => {
+  const pool = makePool(sampleItems(), [], { marketplaceReady: false });
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/catalog/items?customer=1`);
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    const item = body.find((x) => x.item_id === 1);
+    assert.equal(item.booking_mode, "contact_admin");
+    assert.deepEqual(item.highlights, []);
+  });
+});
+
+test("public GET /catalog/items/:itemId returns the full detail DTO for a bookable item", async () => {
+  const items = sampleItems();
+  items[0].booking_mode = "bookable";
+  items[0].booking_ac_type = "ผนัง";
+  items[0].booking_btu = 12000;
+  items[0].long_description = "รายละเอียดเต็มของบริการล้างแอร์ผนัง";
+  items[0].service_conditions = "ราคานี้สำหรับแอร์ผนังเท่านั้น";
+  const pool = makePool(items, [], { marketplaceReady: true });
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/catalog/items/1`);
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.item_id, 1);
+    assert.equal(body.long_description, "รายละเอียดเต็มของบริการล้างแอร์ผนัง");
+    assert.equal(body.service_conditions, "ราคานี้สำหรับแอร์ผนังเท่านั้น");
+    assert.equal(body.booking_ac_type, "ผนัง");
+    assert.equal(body.booking_btu, 12000);
+  });
+});
+
+test("public GET /catalog/items/:itemId suppresses booking_* fields when booking_mode is contact_admin", async () => {
+  const items = sampleItems();
+  items[0].booking_ac_type = "ผนัง";
+  items[0].booking_btu = 12000;
+  const pool = makePool(items, [], { marketplaceReady: true });
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/catalog/items/1`);
+    const body = await res.json();
+    assert.equal(body.booking_mode, "contact_admin");
+    assert.equal(body.booking_ac_type, null);
+    assert.equal(body.booking_btu, null);
+  });
+});
+
+test("public GET /catalog/items/:itemId returns 404 for an inactive item", async () => {
+  const pool = makePool(sampleItems(), [], { marketplaceReady: true });
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/catalog/items/3`);
+    assert.equal(res.status, 404);
+  });
+});
+
+test("public GET /catalog/items/:itemId returns 404 for an item hidden from customers", async () => {
+  const pool = makePool(sampleItems(), [], { marketplaceReady: true });
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/catalog/items/2`);
+    assert.equal(res.status, 404);
+  });
+});
+
+test("public GET /catalog/items/:itemId rejects a non-numeric item id", async () => {
+  const pool = makePool(sampleItems(), [], { marketplaceReady: true });
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/catalog/items/abc`);
+    assert.equal(res.status, 400);
+  });
+});
+
+test("admin GET returns the raw marketplace DTO including long_description/service_conditions", async () => {
+  const items = sampleItems();
+  items[0].long_description = "รายละเอียดยาว";
+  items[0].service_conditions = "เงื่อนไข";
+  items[0].booking_mode = "bookable";
+  items[0].booking_service_key = "wash_wall";
+  const pool = makePool(items, [], { marketplaceReady: true });
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items`);
+    const body = await res.json();
+    const item = body.find((x) => x.item_id === 1);
+    assert.equal(item.long_description, "รายละเอียดยาว");
+    assert.equal(item.service_conditions, "เงื่อนไข");
+    assert.equal(item.booking_service_key, "wash_wall");
+  });
+});
+
+// ---------- Marketplace v2: multi-image gallery routes ----------
+
+test("gallery image routes return 503 before the marketplace migration has run", async () => {
+  const pool = makePool(sampleItems(), [], { marketplaceReady: false });
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const listRes = await fetch(`${base}/admin/catalog/items/1/images`);
+    assert.equal(listRes.status, 503);
+    const uploadRes = await fetch(`${base}/admin/catalog/items/1/images`, { method: "POST", body: multipartImageForm(JPEG_BYTES) });
+    assert.equal(uploadRes.status, 503);
+  });
+});
+
+test("uploading the first gallery image marks it primary with sort_order 0", async () => {
+  const pool = makePool(sampleItems(), [], { marketplaceReady: true });
+  const uploadCatalogImage = async () => ({ url: "https://res.cloudinary.com/demo/g1.jpg", public_id: "g1" });
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin, uploadCatalogImage });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items/1/images`, { method: "POST", body: multipartImageForm(JPEG_BYTES) });
+    assert.equal(res.status, 201);
+    const body = await res.json();
+    assert.equal(body.is_primary, true);
+    assert.equal(body.sort_order, 0);
+  });
+});
+
+test("uploading a second gallery image is not primary and gets the next sort_order", async () => {
+  const pool = makePool(sampleItems(), [], { marketplaceReady: true });
+  let n = 0;
+  const uploadCatalogImage = async () => { n += 1; return { url: `https://res.cloudinary.com/demo/g${n}.jpg`, public_id: `g${n}` }; };
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin, uploadCatalogImage });
+  await withServer(router, async (base) => {
+    await fetch(`${base}/admin/catalog/items/1/images`, { method: "POST", body: multipartImageForm(JPEG_BYTES) });
+    const res = await fetch(`${base}/admin/catalog/items/1/images`, { method: "POST", body: multipartImageForm(PNG_BYTES, { mimetype: "image/png", filename: "x.png" }) });
+    const body = await res.json();
+    assert.equal(body.is_primary, false);
+    assert.equal(body.sort_order, 1);
+  });
+});
+
+test("uploading a gallery image accepts and stores alt_text", async () => {
+  const pool = makePool(sampleItems(), [], { marketplaceReady: true });
+  const uploadCatalogImage = async () => ({ url: "https://res.cloudinary.com/demo/g1.jpg", public_id: "g1" });
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin, uploadCatalogImage });
+  await withServer(router, async (base) => {
+    const fd = new FormData();
+    fd.append("image", new Blob([JPEG_BYTES], { type: "image/jpeg" }), "photo.jpg");
+    fd.append("alt_text", "มุมหน้าตรง");
+    const res = await fetch(`${base}/admin/catalog/items/1/images`, { method: "POST", body: fd });
+    const body = await res.json();
+    assert.equal(body.alt_text, "มุมหน้าตรง");
+  });
+});
+
+test("GET gallery images list is ordered by sort_order", async () => {
+  const pool = makePool(sampleItems(), [], { marketplaceReady: true });
+  pool.state.images.push(
+    { image_id: 1, item_id: 1, image_url: "u1", image_public_id: "p1", alt_text: null, sort_order: 1, is_primary: false },
+    { image_id: 2, item_id: 1, image_url: "u2", image_public_id: "p2", alt_text: null, sort_order: 0, is_primary: true }
+  );
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items/1/images`);
+    const body = await res.json();
+    assert.deepEqual(body.map((x) => x.image_id), [2, 1]);
+  });
+});
+
+test("deleting a non-primary gallery image succeeds and reports the real Cloudinary result", async () => {
+  const pool = makePool(sampleItems(), [], { marketplaceReady: true });
+  pool.state.images.push(
+    { image_id: 1, item_id: 1, image_url: "u1", image_public_id: "p1", alt_text: null, sort_order: 0, is_primary: true },
+    { image_id: 2, item_id: 1, image_url: "u2", image_public_id: "p2", alt_text: null, sort_order: 1, is_primary: false }
+  );
+  const deleteCatalogImage = async (publicId) => ({ ok: true, result: { public_id: publicId, result: "ok" } });
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin, deleteCatalogImage });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items/1/images/2`, { method: "DELETE" });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.deleted, true);
+    assert.equal(body.cloudinary_deleted, true);
+    assert.equal(pool.state.images.some((img) => img.image_id === 2), false);
+    assert.equal(pool.state.images.find((img) => img.image_id === 1).is_primary, true);
+  });
+});
+
+test("deleting the primary gallery image promotes the next image by sort_order", async () => {
+  const pool = makePool(sampleItems(), [], { marketplaceReady: true });
+  pool.state.images.push(
+    { image_id: 1, item_id: 1, image_url: "u1", image_public_id: "p1", alt_text: null, sort_order: 0, is_primary: true },
+    { image_id: 2, item_id: 1, image_url: "u2", image_public_id: "p2", alt_text: null, sort_order: 1, is_primary: false }
+  );
+  const deleteCatalogImage = async () => ({ ok: true, result: {} });
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin, deleteCatalogImage });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items/1/images/1`, { method: "DELETE" });
+    assert.equal(res.status, 200);
+    assert.equal(pool.state.images.find((img) => img.image_id === 2).is_primary, true);
+  });
+});
+
+test("deleting a gallery image reports a real Cloudinary failure via HTTP 207, not a silent success", async () => {
+  const pool = makePool(sampleItems(), [], { marketplaceReady: true });
+  pool.state.images.push({ image_id: 1, item_id: 1, image_url: "u1", image_public_id: "p1", alt_text: null, sort_order: 0, is_primary: true });
+  const deleteCatalogImage = async () => { throw new Error("cloudinary down"); };
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin, deleteCatalogImage });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items/1/images/1`, { method: "DELETE" });
+    assert.equal(res.status, 207);
+    const body = await res.json();
+    assert.equal(body.deleted, true);
+    assert.equal(body.cloudinary_deleted, false);
+    assert.match(body.cloudinary_error, /cloudinary down/);
+    assert.equal(pool.state.images.some((img) => img.image_id === 1), false);
+  });
+});
+
+test("deleting an unknown gallery image returns 404", async () => {
+  const pool = makePool(sampleItems(), [], { marketplaceReady: true });
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items/1/images/999`, { method: "DELETE" });
+    assert.equal(res.status, 404);
+  });
+});
+
+test("setting a gallery image as primary unsets every other image for that item", async () => {
+  const pool = makePool(sampleItems(), [], { marketplaceReady: true });
+  pool.state.images.push(
+    { image_id: 1, item_id: 1, image_url: "u1", image_public_id: "p1", alt_text: null, sort_order: 0, is_primary: true },
+    { image_id: 2, item_id: 1, image_url: "u2", image_public_id: "p2", alt_text: null, sort_order: 1, is_primary: false }
+  );
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items/1/images/2/primary`, { method: "POST" });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    const byId = (id) => body.find((x) => x.image_id === id);
+    assert.equal(byId(1).is_primary, false);
+    assert.equal(byId(2).is_primary, true);
+  });
+});
+
+test("setting an unknown image as primary returns 404 and changes nothing", async () => {
+  const pool = makePool(sampleItems(), [], { marketplaceReady: true });
+  pool.state.images.push({ image_id: 1, item_id: 1, image_url: "u1", image_public_id: "p1", alt_text: null, sort_order: 0, is_primary: true });
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items/1/images/999/primary`, { method: "POST" });
+    assert.equal(res.status, 404);
+    assert.equal(pool.state.images.find((img) => img.image_id === 1).is_primary, true);
+  });
+});
+
+test("reordering gallery images applies the requested order as sort_order", async () => {
+  const pool = makePool(sampleItems(), [], { marketplaceReady: true });
+  pool.state.images.push(
+    { image_id: 1, item_id: 1, image_url: "u1", image_public_id: "p1", alt_text: null, sort_order: 0, is_primary: true },
+    { image_id: 2, item_id: 1, image_url: "u2", image_public_id: "p2", alt_text: null, sort_order: 1, is_primary: false },
+    { image_id: 3, item_id: 1, image_url: "u3", image_public_id: "p3", alt_text: null, sort_order: 2, is_primary: false }
+  );
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items/1/images/reorder`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ image_ids: [3, 1, 2] }),
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.deepEqual(body.map((x) => x.image_id), [3, 1, 2]);
+  });
+});
+
+test("reordering rejects a request that omits an existing image", async () => {
+  const pool = makePool(sampleItems(), [], { marketplaceReady: true });
+  pool.state.images.push(
+    { image_id: 1, item_id: 1, image_url: "u1", image_public_id: "p1", alt_text: null, sort_order: 0, is_primary: true },
+    { image_id: 2, item_id: 1, image_url: "u2", image_public_id: "p2", alt_text: null, sort_order: 1, is_primary: false }
+  );
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items/1/images/reorder`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ image_ids: [1] }),
+    });
+    assert.equal(res.status, 400);
+  });
+});
+
+test("reordering rejects a request with a duplicate image id", async () => {
+  const pool = makePool(sampleItems(), [], { marketplaceReady: true });
+  pool.state.images.push(
+    { image_id: 1, item_id: 1, image_url: "u1", image_public_id: "p1", alt_text: null, sort_order: 0, is_primary: true },
+    { image_id: 2, item_id: 1, image_url: "u2", image_public_id: "p2", alt_text: null, sort_order: 1, is_primary: false }
+  );
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items/1/images/reorder`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ image_ids: [1, 1] }),
+    });
+    assert.equal(res.status, 400);
+  });
+});
+
+test("gallery image routes require admin session", async () => {
+  const pool = makePool(sampleItems(), [], { marketplaceReady: true });
+  pool.state.images.push({ image_id: 1, item_id: 1, image_url: "u1", image_public_id: "p1", alt_text: null, sort_order: 0, is_primary: true });
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: denyAdmin });
+  await withServer(router, async (base) => {
+    assert.equal((await fetch(`${base}/admin/catalog/items/1/images`)).status, 401);
+    assert.equal((await fetch(`${base}/admin/catalog/items/1/images/1`, { method: "DELETE" })).status, 401);
+    assert.equal((await fetch(`${base}/admin/catalog/items/1/images/1/primary`, { method: "POST" })).status, 401);
+    assert.equal((await fetch(`${base}/admin/catalog/items/1/images/reorder`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ image_ids: [1] }) })).status, 401);
   });
 });
