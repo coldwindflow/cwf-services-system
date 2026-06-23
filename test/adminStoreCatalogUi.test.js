@@ -247,3 +247,59 @@ test("admin-store-catalog.css defines gallery grid and badge styles for the mark
   assert.match(catalogCssSource, /\.asc-badge-bookable\{/);
   assert.match(catalogCssSource, /\.asc-badge-featured\{/);
 });
+
+// ---------- Autoplay toggle, multi-image upload queue, delete confirmation ----------
+
+test("modal includes an is_autoplay_enabled select defaulting to enabled, wired into reset/edit/payload", () => {
+  assert.match(catalogJsSource, /<select id="cm_is_autoplay_enabled">/);
+  assert.match(catalogJsSource, /el\("cm_is_autoplay_enabled"\)\.value = "1";/);
+  assert.match(catalogJsSource, /el\("cm_is_autoplay_enabled"\)\.value = item\.is_autoplay_enabled === false \? "0" : "1";/);
+  assert.match(catalogJsSource, /is_autoplay_enabled: el\("cm_is_autoplay_enabled"\)\.value === "1",/);
+});
+
+test("gallery file input supports selecting multiple files and enforces a max of MAX_GALLERY_IMAGES", () => {
+  assert.match(catalogJsSource, /const MAX_GALLERY_IMAGES = 4;/);
+  assert.match(catalogJsSource, /<input id="cm_gallery_input" type="file" accept="[^"]+" multiple>/);
+});
+
+test("onGalleryImagePicked uploads multiple files sequentially, truncates over the remaining slot count, and hides the input while uploading", () => {
+  const fnMatch = catalogJsSource.match(/async function onGalleryImagePicked\(event\)[\s\S]*?\n}\n/);
+  assert.ok(fnMatch, "onGalleryImagePicked function not found");
+  const body = fnMatch[0];
+  assert.match(body, /Array\.from\(event\.target\.files\)/);
+  assert.match(body, /const remaining = Math\.max\(0, MAX_GALLERY_IMAGES - galleryImages\.length\);/);
+  assert.match(body, /files\.slice\(0, remaining\)/);
+  assert.match(body, /galleryUploading = true;/);
+  assert.match(body, /galleryUploading = false;/);
+  assert.match(body, /for \(const file of toUpload\)/);
+
+  const renderMatch = catalogJsSource.match(/function renderGalleryManager\(\)[\s\S]*?\n}\n/);
+  assert.ok(renderMatch, "renderGalleryManager function not found");
+  assert.match(renderMatch[0], /const inputArea = galleryUploading/);
+});
+
+test("the more-sheet has a delete option that opens the delete confirmation modal", () => {
+  assert.match(catalogJsSource, /<button class="danger" data-act="delete" type="button">ลบรายการนี้<\/button>/);
+  assert.match(catalogJsSource, /if \(act === "delete"\) \{ closeMoreSheet\(\); openDeleteModal\(item\.item_id\); return; \}/);
+});
+
+test("delete confirmation modal requires typing the exact item_name before the confirm button is enabled", () => {
+  assert.match(catalogJsSource, /function updateDeleteConfirmButtonState\(\)/);
+  assert.match(catalogJsSource, /typed !== item\.item_name/);
+  assert.match(catalogJsSource, /id="asc_delete_modal_confirm" class="danger" type="button" disabled>/);
+});
+
+test("delete confirmation modal warns extra when the item is currently active and visible to customers", () => {
+  const fnMatch = catalogJsSource.match(/function openDeleteModal\(itemId\)[\s\S]*?\n}\n/);
+  assert.ok(fnMatch, "openDeleteModal function not found");
+  assert.match(fnMatch[0], /item\.is_active && item\.is_customer_visible \? "block" : "none"/);
+});
+
+test("confirmDeleteCatalogItem calls the real DELETE endpoint and surfaces a Cloudinary cleanup warning distinctly from plain success", () => {
+  const fnMatch = catalogJsSource.match(/async function confirmDeleteCatalogItem\(\)[\s\S]*?\n}\n/);
+  assert.ok(fnMatch, "confirmDeleteCatalogItem function not found");
+  const body = fnMatch[0];
+  assert.match(body, /apiFetch\(`\/admin\/catalog\/items\/\$\{itemId\}`, \{ method: "DELETE" \}\)/);
+  assert.match(body, /if \(result && result\.warning\) showToast\(result\.warning, "error"\);/);
+  assert.match(body, /else showToast\("ลบรายการแล้ว", "success"\);/);
+});

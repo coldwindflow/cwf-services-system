@@ -6,7 +6,11 @@ let pendingImageRemoved = false;
 let moreSheetItemId = null;
 let galleryImages = [];
 let galleryLoading = false;
+let galleryUploading = false;
+let deleteModalItemId = null;
 const BOOKING_MODES = ["bookable", "contact_admin"];
+// Must mirror the backend's MAX_CATALOG_IMAGES_PER_ITEM (server/routes/catalog/items.js)
+const MAX_GALLERY_IMAGES = 4;
 
 // Must mirror the Customer App's canonical lists exactly
 // (customer-app/modules/services.js: acTypes/btuOptions/washVariants) and the
@@ -89,6 +93,12 @@ function ensureCatalogModal() {
               <div class="muted2 mini">JPEG/PNG/WEBP ไม่เกิน 5MB</div>
               <button id="cm_image_delete" class="secondary btn-small" type="button" style="display:none;margin-top:6px;">ลบรูปภาพ</button>
             </div>
+          </div>
+          <div class="asc-field"><label>เลื่อนรูปภาพอัตโนมัติ (Autoplay) *</label>
+            <select id="cm_is_autoplay_enabled">
+              <option value="1">เลื่อนอัตโนมัติ</option>
+              <option value="0">ไม่เลื่อนอัตโนมัติ</option>
+            </select>
           </div>
         </div>
 
@@ -286,6 +296,7 @@ function resetCatalogModalFields() {
   el("cm_is_customer_visible").value = "0";
   el("cm_base_price").value = "";
   el("cm_image_input").value = "";
+  el("cm_is_autoplay_enabled").value = "1";
   pendingImageFile = null;
   pendingImageRemoved = false;
   setCatalogImagePreview(null);
@@ -301,6 +312,7 @@ function resetCatalogModalFields() {
   el("cm_service_conditions").value = "";
   updateBookingFieldsVisibility();
   galleryImages = [];
+  galleryUploading = false;
   renderGalleryManager();
   hideCatalogModalError();
 }
@@ -350,6 +362,7 @@ function openCatalogModalForEdit(itemId) {
   el("cm_is_active").value = item.is_active ? "1" : "0";
   el("cm_is_customer_visible").value = item.is_customer_visible ? "1" : "0";
   el("cm_base_price").value = Number(item.base_price) > 0 ? Number(item.base_price) : "";
+  el("cm_is_autoplay_enabled").value = item.is_autoplay_enabled === false ? "0" : "1";
   if (item.image_url) setCatalogImagePreview(item.image_url);
   el("cm_booking_mode").value = BOOKING_MODES.includes(item.booking_mode) ? item.booking_mode : "contact_admin";
   el("cm_booking_service_key").value = item.booking_service_key || "";
@@ -383,6 +396,7 @@ function catalogModalPayload() {
     btu_min: trimmedOrEmpty("cm_btu_min"),
     btu_max: trimmedOrEmpty("cm_btu_max"),
     base_price: trimmedOrEmpty("cm_base_price"),
+    is_autoplay_enabled: el("cm_is_autoplay_enabled").value === "1",
     is_active: el("cm_is_active").value === "1",
     is_customer_visible: el("cm_is_customer_visible").value === "1",
     booking_mode: el("cm_booking_mode").value,
@@ -531,12 +545,16 @@ function renderGalleryManager() {
   const grid = galleryImages.length
     ? `<div class="asc-gallery-grid">${galleryImages.map((img, i) => galleryThumbHtml(img, i, galleryImages.length)).join("")}</div>`
     : `<div class="asc-empty">ยังไม่มีรูปภาพในแกลเลอรี</div>`;
-  body.innerHTML = `
-    ${grid}
-    <div class="asc-field" style="margin-top:8px;">
-      <input id="cm_gallery_input" type="file" accept="image/jpeg,image/png,image/webp">
-      <div class="muted2 mini">JPEG/PNG/WEBP ไม่เกิน 5MB ต่อรูป</div>
-    </div>`;
+  const remaining = Math.max(0, MAX_GALLERY_IMAGES - galleryImages.length);
+  const inputArea = galleryUploading
+    ? `<div class="asc-loading">กำลังอัปโหลดรูปภาพ...</div>`
+    : remaining > 0
+      ? `<div class="asc-field" style="margin-top:8px;">
+          <input id="cm_gallery_input" type="file" accept="image/jpeg,image/png,image/webp" multiple>
+          <div class="muted2 mini">JPEG/PNG/WEBP ไม่เกิน 5MB ต่อรูป (เพิ่มได้อีก ${remaining} จาก ${MAX_GALLERY_IMAGES} รูป)</div>
+        </div>`
+      : `<div class="muted2 mini" style="margin-top:8px;">มีรูปภาพครบ ${MAX_GALLERY_IMAGES} รูปแล้ว ลบรูปเดิมก่อนเพิ่มรูปใหม่</div>`;
+  body.innerHTML = `${grid}${inputArea}`;
   const input = el("cm_gallery_input");
   if (input) input.addEventListener("change", onGalleryImagePicked);
 }
@@ -556,16 +574,30 @@ async function loadGalleryImages(itemId) {
 }
 
 async function onGalleryImagePicked(event) {
-  const file = event.target.files && event.target.files[0];
-  if (!file || !editingItemId) return;
-  try {
-    const formData = new FormData();
-    formData.append("image", file);
-    await apiFetch(`/admin/catalog/items/${editingItemId}/images`, { method: "POST", body: formData });
-    await loadGalleryImages(editingItemId);
-  } catch (e) {
-    showToast(e.message || "อัปโหลดรูปภาพไม่สำเร็จ", "error");
+  const files = event.target.files ? Array.from(event.target.files) : [];
+  if (!files.length || !editingItemId) return;
+  const remaining = Math.max(0, MAX_GALLERY_IMAGES - galleryImages.length);
+  const toUpload = files.slice(0, remaining);
+  if (files.length > toUpload.length) {
+    showToast(`เลือกได้สูงสุด ${MAX_GALLERY_IMAGES} รูปต่อรายการ อัปโหลดเฉพาะ ${toUpload.length} รูปแรก`, "error");
   }
+  if (!toUpload.length) return;
+
+  galleryUploading = true;
+  renderGalleryManager();
+  const failures = [];
+  for (const file of toUpload) {
+    try {
+      const formData = new FormData();
+      formData.append("image", file);
+      await apiFetch(`/admin/catalog/items/${editingItemId}/images`, { method: "POST", body: formData });
+    } catch (e) {
+      failures.push(file.name || "รูปภาพ");
+    }
+  }
+  galleryUploading = false;
+  await loadGalleryImages(editingItemId);
+  if (failures.length) showToast(`อัปโหลดไม่สำเร็จ: ${failures.join(", ")}`, "error");
 }
 
 async function onGalleryDelete(imageId) {
@@ -631,6 +663,7 @@ function ensureMoreSheet() {
     <div class="asc-more-sheet">
       <button class="secondary" data-act="toggle-active" type="button">เปิด/ปิดใช้งาน</button>
       <button class="secondary" data-act="toggle-visible" type="button">แสดง/ซ่อนจากลูกค้า</button>
+      <button class="danger" data-act="delete" type="button">ลบรายการนี้</button>
       <button class="secondary" data-act="close" type="button">ปิด</button>
     </div>
   </div>`;
@@ -644,6 +677,7 @@ function ensureMoreSheet() {
     if (act === "close" || !item) { closeMoreSheet(); return; }
     if (act === "toggle-active") toggleCatalogField(item.item_id, "is_active", !item.is_active, item);
     if (act === "toggle-visible") toggleCatalogField(item.item_id, "is_customer_visible", !item.is_customer_visible, item);
+    if (act === "delete") { closeMoreSheet(); openDeleteModal(item.item_id); return; }
     closeMoreSheet();
   });
 }
@@ -657,6 +691,86 @@ function openMoreSheet(itemId) {
 function closeMoreSheet() {
   const backdrop = el("asc_more_sheet_backdrop");
   if (backdrop) backdrop.classList.add("hidden");
+}
+
+/* ---------- Delete confirmation modal ---------- */
+
+function ensureDeleteModal() {
+  if (el("asc_delete_modal_backdrop")) return;
+  const wrap = document.createElement("div");
+  wrap.innerHTML = `
+  <div id="asc_delete_modal_backdrop" class="cwf-modal-backdrop hidden">
+    <div class="cwf-modal">
+      <div class="cwf-modal-head">
+        <div class="cwf-modal-title">ลบรายการนี้</div>
+        <button id="asc_delete_modal_close" class="cwf-modal-close" type="button">×</button>
+      </div>
+      <div class="cwf-modal-body">
+        <div class="asc-warning">การลบจะลบรายการและรูปภาพทั้งหมดอย่างถาวร ไม่สามารถย้อนกลับได้ (งานเก่าและราคาที่เคยจองไว้จะไม่ถูกแก้ไข)</div>
+        <div id="asc_delete_modal_visible_warning" class="asc-warning" style="display:none;">รายการนี้กำลังแสดงให้ลูกค้าเห็นอยู่ในขณะนี้</div>
+        <div class="asc-field">
+          <label>พิมพ์ชื่อรายการ "<span id="asc_delete_modal_item_name"></span>" เพื่อยืนยัน</label>
+          <input id="asc_delete_modal_confirm_input" placeholder="พิมพ์ชื่อรายการให้ตรงกัน">
+        </div>
+        <div id="asc_delete_modal_error" class="asc-modal-error"></div>
+      </div>
+      <div class="cwf-modal-foot">
+        <button id="asc_delete_modal_cancel" class="secondary" type="button">ยกเลิก</button>
+        <button id="asc_delete_modal_confirm" class="danger" type="button" disabled>ลบรายการ</button>
+      </div>
+    </div>
+  </div>`;
+  document.body.appendChild(wrap.firstElementChild);
+
+  el("asc_delete_modal_close").addEventListener("click", closeDeleteModal);
+  el("asc_delete_modal_cancel").addEventListener("click", closeDeleteModal);
+  el("asc_delete_modal_confirm").addEventListener("click", confirmDeleteCatalogItem);
+  el("asc_delete_modal_confirm_input").addEventListener("input", updateDeleteConfirmButtonState);
+}
+
+function updateDeleteConfirmButtonState() {
+  const item = catalogItems.find((x) => Number(x.item_id) === Number(deleteModalItemId));
+  const typed = (el("asc_delete_modal_confirm_input").value || "").trim();
+  el("asc_delete_modal_confirm").disabled = !item || typed !== item.item_name;
+}
+
+function openDeleteModal(itemId) {
+  const item = catalogItems.find((x) => Number(x.item_id) === Number(itemId));
+  if (!item) return;
+  ensureDeleteModal();
+  deleteModalItemId = item.item_id;
+  el("asc_delete_modal_item_name").textContent = item.item_name || "";
+  el("asc_delete_modal_confirm_input").value = "";
+  el("asc_delete_modal_error").textContent = "";
+  el("asc_delete_modal_error").style.display = "none";
+  el("asc_delete_modal_visible_warning").style.display = item.is_active && item.is_customer_visible ? "block" : "none";
+  updateDeleteConfirmButtonState();
+  el("asc_delete_modal_backdrop").classList.remove("hidden");
+}
+
+function closeDeleteModal() {
+  const backdrop = el("asc_delete_modal_backdrop");
+  if (backdrop) backdrop.classList.add("hidden");
+  deleteModalItemId = null;
+}
+
+async function confirmDeleteCatalogItem() {
+  if (!deleteModalItemId) return;
+  const itemId = deleteModalItemId;
+  const confirmButton = el("asc_delete_modal_confirm");
+  confirmButton.disabled = true;
+  try {
+    const result = await apiFetch(`/admin/catalog/items/${itemId}`, { method: "DELETE" });
+    closeDeleteModal();
+    await loadCatalogItems();
+    if (result && result.warning) showToast(result.warning, "error");
+    else showToast("ลบรายการแล้ว", "success");
+  } catch (e) {
+    const box = el("asc_delete_modal_error");
+    box.textContent = e.message || "ลบรายการไม่สำเร็จ";
+    box.style.display = "block";
+    updateDeleteConfirmButtonState();
+  }
 }
 
 /* ---------- List / cards ---------- */
