@@ -6,6 +6,7 @@
     "start": "node index.js",
     "migrate:customer-auth": "node scripts/run-customer-auth-migration.js",
     "migrate:catalog-store-media-pricing": "node scripts/run-catalog-store-media-pricing-migration.js",
+    "migrate:catalog-marketplace-v2": "node scripts/run-catalog-marketplace-v2-migration.js",
     "test": "node --test test/*.test.js"
   },
   "dependencies": {
