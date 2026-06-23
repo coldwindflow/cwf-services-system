@@ -3683,6 +3683,7 @@ body.has-contact-sheet { overflow: hidden; }
   color: #f5b700;
 }
 .store-standard-label { color: #92660a; }
+.store-standard-value { color: #92660a; font-weight: 700; }
 .store-standard-count { color: #92660a; font-weight: 500; }
 
 .store-card-price {

@@ -159,7 +159,6 @@ function ensureCatalogModal() {
               <summary class="asc-accordion-summary">ตั้งค่าเพิ่มเติม (Advanced)</summary>
               <div class="asc-field"><label>Service Key (ข้อมูลอ้างอิง ไม่ใช่เงื่อนไขการจอง)</label><input id="cm_booking_service_key" placeholder="เช่น wash_wall"></div>
             </details>
-            </div>
           </div>
         </div>
 

@@ -916,9 +916,28 @@ test("standard-service badge renders real rating_average/review_count with half 
 
   const body = container.querySelector("[data-store-body]");
   assert.match(body.innerHTML, /store-standard-star is-half/);
-  assert.match(body.innerHTML, /store-standard-count">\(12\)<\/span>/);
+  assert.match(body.innerHTML, /store-standard-value">4\.5<\/span>/);
+  assert.match(body.innerHTML, /store-standard-count">\(12 รีวิว\)<\/span>/);
   assert.equal((body.innerHTML.match(/store-standard-count/g) || []).length, 1);
   assert.equal((body.innerHTML.match(/store-standard-star is-filled/g) || []).length, 4 + 5);
+});
+
+test("standard-service badge star fill logic only shows a half star once the fractional part reaches 0.5; below that it rounds down to full/empty stars only", async () => {
+  const context = makeContext();
+  const root = loadCustomerFrontend(context);
+  root.api.loadCatalogItems = async () => [
+    { item_id: 1, item_name: "4.2 ดาว", item_category: "ล้างแอร์", base_price: 700, unit_label: "เครื่อง", rating_average: 4.2, review_count: 6 },
+  ];
+
+  const container = new FakeMount();
+  root.store.render(container);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const body = container.querySelector("[data-store-body]");
+  assert.match(body.innerHTML, /store-standard-value">4\.2<\/span>/);
+  assert.match(body.innerHTML, /store-standard-count">\(6 รีวิว\)<\/span>/);
+  assert.doesNotMatch(body.innerHTML, /store-standard-star is-half/);
+  assert.equal((body.innerHTML.match(/store-standard-star is-filled/g) || []).length, 4);
 });
 
 test("standard-service badge ignores legacy rating_value and fails safe to the no-fake-review CWF badge on invalid/null rating_average or review_count", async () => {
@@ -980,7 +999,8 @@ test("product detail page uses the exact same renderStandardBadge output as the 
 
   const body = container.querySelector("[data-store-detail-body]");
   assert.match(body.innerHTML, /store-standard-star is-half/);
-  assert.match(body.innerHTML, /store-standard-count">\(8\)<\/span>/);
+  assert.match(body.innerHTML, /store-standard-value">3\.5<\/span>/);
+  assert.match(body.innerHTML, /store-standard-count">\(8 รีวิว\)<\/span>/);
   assert.equal((body.innerHTML.match(/store-standard-star is-filled/g) || []).length, 3);
 });
 

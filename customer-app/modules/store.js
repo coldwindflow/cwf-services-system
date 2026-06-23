@@ -102,16 +102,26 @@
     return { value: 5, count: 0 };
   }
 
+  function formatRatingAverage(value) {
+    const rounded = Math.round(value * 10) / 10;
+    return rounded % 1 === 0 ? String(rounded) : rounded.toFixed(1);
+  }
+
   function renderStandardBadge(item) {
     const { value, count } = standardRatingInfo(item);
+    const hasRealReviews = count > 0;
     const full = Math.floor(value);
     const hasHalf = full < 5 && value - full >= 0.5;
     const stars = Array.from({ length: 5 }, (_, i) => {
       const cls = i < full ? " is-filled" : i === full && hasHalf ? " is-half" : "";
       return `<span class="store-standard-star${cls}" aria-hidden="true">★</span>`;
     }).join("");
-    const countLabel = count > 0 ? `<span class="store-standard-count">(${count})</span>` : "";
-    return `<div class="store-standard-badge" title="มาตรฐานบริการ CWF"><span class="store-standard-stars">${stars}</span><span class="store-standard-label">มาตรฐานบริการ CWF</span>${countLabel}</div>`;
+    if (!hasRealReviews) {
+      return `<div class="store-standard-badge" title="มาตรฐานบริการ CWF"><span class="store-standard-stars">${stars}</span><span class="store-standard-label">มาตรฐานบริการ CWF</span></div>`;
+    }
+    const valueLabel = `<span class="store-standard-value">${formatRatingAverage(value)}</span>`;
+    const countLabel = `<span class="store-standard-count">(${count} รีวิว)</span>`;
+    return `<div class="store-standard-badge store-standard-badge-real" title="คะแนนรีวิวจริง"><span class="store-standard-stars">${stars}</span>${valueLabel}${countLabel}</div>`;
   }
 
   function renderCardGallery(item, name) {

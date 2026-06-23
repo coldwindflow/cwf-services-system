@@ -8,6 +8,44 @@ const catalogHtmlSource = fs.readFileSync(path.join(__dirname, "..", "admin-stor
 const catalogJsSource = fs.readFileSync(path.join(__dirname, "..", "admin-store-catalog.js"), "utf8");
 const catalogCssSource = fs.readFileSync(path.join(__dirname, "..", "admin-store-catalog.css"), "utf8");
 
+const VOID_TAGS = new Set(["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"]);
+
+function extractCatalogModalHtml() {
+  const m = catalogJsSource.match(/wrap\.innerHTML = `([\s\S]*?)`;\n  document\.body\.appendChild/);
+  if (!m) throw new Error("could not find ensureCatalogModal's wrap.innerHTML template");
+  return m[1];
+}
+
+// Walks the modal's HTML template as a real tag stack (not just text matching), so a
+// stray/missing closing tag is caught even when it doesn't disturb any single regex window.
+function buildTagDepthTrace(html) {
+  const tagRe = /<(\/?)([a-zA-Z][a-zA-Z0-9]*)\b([^>]*?)(\/?)>/g;
+  const stack = [];
+  const trace = [];
+  let match;
+  while ((match = tagRe.exec(html))) {
+    const [, closing, name, attrs, selfClose] = match;
+    const lower = name.toLowerCase();
+    if (closing) {
+      const top = stack[stack.length - 1];
+      if (!top || top.name !== lower) {
+        throw new Error(`mismatched closing tag </${lower}> at offset ${match.index}; stack top was ${top ? top.name : "(empty)"}`);
+      }
+      stack.pop();
+      continue;
+    }
+    const idMatch = attrs.match(/id="([^"]+)"/);
+    const classMatch = attrs.match(/class="([^"]+)"/);
+    const entry = { name: lower, id: idMatch ? idMatch[1] : null, classes: classMatch ? classMatch[1].split(/\s+/) : [], depth: stack.length };
+    trace.push(entry);
+    if (!selfClose && !VOID_TAGS.has(lower)) stack.push(entry);
+  }
+  if (stack.length) {
+    throw new Error(`unclosed tag(s) remain on stack: ${stack.map((s) => s.name + (s.id ? "#" + s.id : "")).join(", ")}`);
+  }
+  return trace;
+}
+
 test("shared admin menu includes a link to /admin-store-catalog.html", () => {
   assert.match(commonJsSource, /data-href="\/admin-store-catalog\.html"/);
 });
@@ -212,6 +250,42 @@ test("booking section shows only booking_mode/ac_type/btu/wash_variant prominent
   // service_key must not also appear outside of the collapsed subsection
   const outsideDetails = section.replace(detailsMatch[0], "");
   assert.doesNotMatch(outsideDetails, /id="cm_booking_service_key"/);
+});
+
+test("the catalog modal's HTML template is a fully-balanced tag tree (catches stray/missing closing tags that text-window regexes can miss), and sections 5/6/7 plus the error box stay direct children of .cwf-modal-body", () => {
+  const html = extractCatalogModalHtml();
+  // buildTagDepthTrace throws on any mismatched/unclosed tag, which is itself the
+  // regression check for the malformed-markup bug (an extra </div> after the booking
+  // Advanced <details> used to close cm_booking_fields and the booking asc-section twice).
+  const trace = buildTagDepthTrace(html);
+
+  const modalBody = trace.find((e) => e.name === "div" && e.classes.includes("cwf-modal-body"));
+  assert.ok(modalBody, ".cwf-modal-body not found");
+  const bodyDepth = modalBody.depth + 1; // depth of elements that are direct children of .cwf-modal-body
+
+  const bookingFields = trace.find((e) => e.id === "cm_booking_fields");
+  assert.ok(bookingFields, "cm_booking_fields not found");
+  // cm_booking_fields must sit inside exactly one asc-section wrapper, i.e. one level
+  // deeper than the direct children of .cwf-modal-body, not two levels deeper (which is
+  // what the extra stray </div> used to produce by closing the section's wrapper early).
+  assert.equal(bookingFields.depth, bodyDepth + 1, "cm_booking_fields is not nested exactly one level inside its asc-section");
+
+  const detailsAdvanced = trace.find((e) => e.name === "details" && e.classes.includes("asc-booking-advanced"));
+  assert.ok(detailsAdvanced, "booking advanced <details> not found");
+  assert.equal(detailsAdvanced.depth, bookingFields.depth + 1, "booking advanced <details> is not nested directly inside cm_booking_fields");
+
+  for (const id of ["cm_short_description", "cm_is_active", "cm_job_category"]) {
+    const found = trace.find((e) => e.id === id);
+    assert.ok(found, `${id} not found in modal template`);
+  }
+
+  const errorBox = trace.find((e) => e.id === "catalog_modal_error");
+  assert.ok(errorBox, "catalog_modal_error not found");
+  assert.equal(errorBox.depth, bodyDepth, "catalog_modal_error must be a direct child of .cwf-modal-body");
+
+  const section7 = trace.find((e) => e.name === "details" && e.classes.includes("asc-accordion") && e.classes.includes("asc-section"));
+  assert.ok(section7, "section 7 (price-rule-matching accordion) not found");
+  assert.equal(section7.depth, bodyDepth, "section 7 must be a direct child of .cwf-modal-body");
 });
 
 test("booking detail fields are wrapped in a container that toggles visibility based on booking_mode", () => {
