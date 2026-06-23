@@ -158,6 +158,34 @@ test("catalogModalPayload sends pricing.pricing_is_active, not pricing.is_active
   assert.doesNotMatch(catalogJsSource, /pricing\.is_active\b/);
 });
 
+test("the 7-section reorganization does not change which element id backs each field: every id read in catalogModalPayload is also written in openCatalogModalForEdit, so reordering sections never drops a value on open+save", () => {
+  const payloadMatch = catalogJsSource.match(/function catalogModalPayload\(\)[\s\S]*?\n}\n/);
+  const editMatch = catalogJsSource.match(/function openCatalogModalForEdit\(itemId\)[\s\S]*?\n}\n/);
+  assert.ok(payloadMatch, "catalogModalPayload function not found");
+  assert.ok(editMatch, "openCatalogModalForEdit function not found");
+  const payloadIds = [...payloadMatch[0].matchAll(/el\("(cm_[a-z_]+)"\)/g)].map((m) => m[1]);
+  const editIds = [...editMatch[0].matchAll(/el\("(cm_[a-z_]+)"\)\.value =/g)].map((m) => m[1]);
+  const missing = payloadIds.filter((id) => !editIds.includes(id));
+  assert.deepEqual(missing, [], `fields read by catalogModalPayload but never populated in openCatalogModalForEdit: ${missing.join(", ")}`);
+});
+
+test("no two distinct DOM elements in the modal share the same id (no duplicate inputs writing into the same field)", () => {
+  const ids = [...catalogJsSource.matchAll(/id="(cm_[a-z_]+)"/g)].map((m) => m[1]);
+  const counts = {};
+  for (const id of ids) counts[id] = (counts[id] || 0) + 1;
+  const duplicates = Object.entries(counts).filter(([, n]) => n > 1).map(([id]) => id);
+  assert.deepEqual(duplicates, [], `duplicate field ids found: ${duplicates.join(", ")}`);
+});
+
+test("hidden/collapsed fields (price-rule-matching accordion, booking advanced subsection) are populated on edit just like visible fields, so collapsing them never clears stored values", () => {
+  const editMatch = catalogJsSource.match(/function openCatalogModalForEdit\(itemId\)[\s\S]*?\n}\n/);
+  assert.ok(editMatch, "openCatalogModalForEdit function not found");
+  const body = editMatch[0];
+  for (const id of ["cm_job_category", "cm_ac_type", "cm_wash_variant", "cm_btu_min", "cm_btu_max", "cm_booking_service_key"]) {
+    assert.match(body, new RegExp(`el\\("${id}"\\)\\.value = `), `${id} is not populated in openCatalogModalForEdit`);
+  }
+});
+
 // ---------- Marketplace v2: admin UI ----------
 
 test("modal includes booking_mode and is_featured under their own sections, plus description fields under รายละเอียด", () => {
@@ -171,6 +199,19 @@ test("modal includes booking_mode and is_featured under their own sections, plus
   assert.match(catalogJsSource, /id="cm_long_description"/);
   assert.match(catalogJsSource, /id="cm_highlights"/);
   assert.match(catalogJsSource, /id="cm_service_conditions"/);
+});
+
+test("booking section shows only booking_mode/ac_type/btu/wash_variant prominently; service_key is tucked into a collapsed Advanced subsection", () => {
+  const sectionMatch = catalogJsSource.match(/4\) การจอง[\s\S]*?<\/div>\n\n        <div class="asc-section">\n          <div class="asc-section-title">5\)/);
+  assert.ok(sectionMatch, "booking section not found");
+  const section = sectionMatch[0];
+  const detailsMatch = section.match(/<details class="asc-booking-advanced">[\s\S]*?<\/details>/);
+  assert.ok(detailsMatch, "booking advanced <details> not found");
+  assert.doesNotMatch(detailsMatch[0], /<details[^>]* open/);
+  assert.match(detailsMatch[0], /id="cm_booking_service_key"/);
+  // service_key must not also appear outside of the collapsed subsection
+  const outsideDetails = section.replace(detailsMatch[0], "");
+  assert.doesNotMatch(outsideDetails, /id="cm_booking_service_key"/);
 });
 
 test("booking detail fields are wrapped in a container that toggles visibility based on booking_mode", () => {
@@ -277,38 +318,84 @@ test("gallery file input supports selecting multiple files and enforces a max of
   assert.match(catalogJsSource, /<input id="cm_gallery_input" type="file" accept="[^"]+" multiple>/);
 });
 
-test("onGalleryImagePicked uploads multiple files sequentially via a per-file status queue, truncates over the remaining slot count, and hides the input while uploading", () => {
+test("onGalleryImagePicked builds a per-file status queue, blocks picking while already uploading, and clearly reports over-limit truncation instead of staying silent", () => {
   const fnMatch = catalogJsSource.match(/async function onGalleryImagePicked\(event\)[\s\S]*?\n}\n/);
   assert.ok(fnMatch, "onGalleryImagePicked function not found");
   const body = fnMatch[0];
   assert.match(body, /Array\.from\(event\.target\.files\)/);
-  assert.match(body, /const remaining = Math\.max\(0, MAX_GALLERY_IMAGES - galleryImages\.length\);/);
+  assert.match(body, /if \(!files\.length \|\| !editingItemId \|\| galleryUploading\) return;/);
+  assert.match(body, /const activeBefore = galleryActiveCount\(\);/);
+  assert.match(body, /const remaining = Math\.max\(0, MAX_GALLERY_IMAGES - activeBefore\);/);
   assert.match(body, /files\.slice\(0, remaining\)/);
-  assert.match(body, /galleryUploading = true;/);
-  assert.match(body, /galleryUploading = false;/);
-  assert.match(body, /galleryUploadQueue = toUpload\.map\(/);
+  assert.match(body, /if \(!toUpload\.length\) \{/);
+  assert.match(body, /galleryPickNotice = `เลือกแล้ว \$\{files\.length\} รูป/);
+  assert.match(body, /if \(files\.length > toUpload\.length\) \{/);
+  assert.match(body, /เลือกมาเกินจำนวนที่ว่าง จะอัปโหลดเฉพาะ/);
   assert.match(body, /status: "pending",/);
-  assert.match(body, /for \(const queued of galleryUploadQueue\)/);
+  assert.match(body, /await runGalleryUploadQueue\(newlyQueued\);/);
+});
+
+test("runGalleryUploadQueue uploads sequentially with per-file status transitions, reloads the gallery, keeps failed items for retry, and never re-uploads a succeeded file", () => {
+  const fnMatch = catalogJsSource.match(/async function runGalleryUploadQueue\(itemsToRun\)[\s\S]*?\n}\n/);
+  assert.ok(fnMatch, "runGalleryUploadQueue function not found");
+  const body = fnMatch[0];
+  assert.match(body, /galleryUploading = true;/);
+  assert.match(body, /for \(const queued of itemsToRun\)/);
   assert.match(body, /queued\.status = "uploading";/);
   assert.match(body, /queued\.status = "done";/);
   assert.match(body, /queued\.status = "error";/);
-  assert.match(body, /URL\.revokeObjectURL\(queued\.localUrl\);/);
-
-  const renderMatch = catalogJsSource.match(/function renderGalleryManager\(\)[\s\S]*?\n}\n/);
-  assert.ok(renderMatch, "renderGalleryManager function not found");
-  assert.match(renderMatch[0], /if \(galleryUploading\) \{/);
-  assert.match(renderMatch[0], /<input id="cm_gallery_input"/);
+  assert.match(body, /galleryUploading = false;/);
+  // succeeded items are removed from the queue so a later retry pass can never re-upload them
+  assert.match(body, /const doneItems = galleryUploadQueue\.filter\(\(q\) => q\.status === "done"\);/);
+  assert.match(body, /galleryUploadQueue = galleryUploadQueue\.filter\(\(q\) => q\.status !== "done"\);/);
+  assert.match(body, /await loadGalleryImages\(editingItemId\);/);
 });
 
-test("the gallery upload queue shows a per-file pending/uploading/done/error status and an x/N upload progress count", () => {
+test("a single failed upload can be retried without touching files that already succeeded, and can be dismissed without retrying", () => {
+  assert.match(catalogJsSource, /async function onGalleryRetry\(localId\)/);
+  const retryMatch = catalogJsSource.match(/async function onGalleryRetry\(localId\)[\s\S]*?\n}\n/);
+  assert.ok(retryMatch, "onGalleryRetry function not found");
+  assert.match(retryMatch[0], /if \(galleryUploading\) return;/);
+  assert.match(retryMatch[0], /await runGalleryUploadQueue\(\[queued\]\);/);
+
+  assert.match(catalogJsSource, /function onGalleryDismissFailed\(localId\)/);
+  const dismissMatch = catalogJsSource.match(/function onGalleryDismissFailed\(localId\)[\s\S]*?\n}\n/);
+  assert.ok(dismissMatch, "onGalleryDismissFailed function not found");
+  assert.match(dismissMatch[0], /URL\.revokeObjectURL\(queued\.localUrl\);/);
+  assert.match(dismissMatch[0], /galleryUploadQueue = galleryUploadQueue\.filter\(\(q\) => q\.localId !== localId\);/);
+});
+
+test("the gallery upload queue shows a per-file pending/uploading/done/error status with a retry/remove action on failure, and a live in-progress count", () => {
   assert.match(catalogJsSource, /function galleryStatusLabel\(status\)/);
   assert.match(catalogJsSource, /if \(status === "uploading"\) return "กำลังอัปโหลด\.\.\.";/);
   assert.match(catalogJsSource, /if \(status === "done"\) return "สำเร็จ";/);
   assert.match(catalogJsSource, /if \(status === "error"\) return "ล้มเหลว";/);
   assert.match(catalogJsSource, /function galleryQueueThumbHtml\(queued\)/);
-  assert.match(catalogJsSource, /asc-gallery-thumb-status-\$\{queued\.status\}/);
+  const thumbMatch = catalogJsSource.match(/function galleryQueueThumbHtml\(queued\)[\s\S]*?\n}\n/);
+  assert.ok(thumbMatch, "galleryQueueThumbHtml function not found");
+  assert.match(thumbMatch[0], /asc-gallery-thumb-status-\$\{queued\.status\}/);
+  assert.match(thumbMatch[0], /data-qact="retry"/);
+  assert.match(thumbMatch[0], /data-qact="remove"/);
+
   const renderMatch = catalogJsSource.match(/function renderGalleryManager\(\)[\s\S]*?\n}\n/);
-  assert.match(renderMatch[0], /กำลังอัปโหลด \$\{doneCount\}\/\$\{galleryUploadQueue\.length\} รูป/);
+  assert.ok(renderMatch, "renderGalleryManager function not found");
+  assert.match(renderMatch[0], /มีอยู่ \$\{activeCount\} \/ \$\{MAX_GALLERY_IMAGES\} รูป/);
+  assert.match(renderMatch[0], /กำลังเพิ่มอีก \$\{inFlightCount\} รูป \(เสร็จแล้ว \$\{settledCount\}\/\$\{galleryUploadQueue\.length\}\)/);
+});
+
+test("bindGalleryActions wires retry/remove buttons (data-qact) in addition to the existing image actions (data-gact)", () => {
+  const fnMatch = catalogJsSource.match(/function bindGalleryActions\(\)[\s\S]*?\n}\n/);
+  assert.ok(fnMatch, "bindGalleryActions function not found");
+  assert.match(fnMatch[0], /qact === "retry"\) onGalleryRetry\(localId\);/);
+  assert.match(fnMatch[0], /qact === "remove"\) onGalleryDismissFailed\(localId\);/);
+});
+
+test("closeCatalogModal refuses to close while a gallery upload is in flight instead of silently discarding it", () => {
+  const fnMatch = catalogJsSource.match(/function closeCatalogModal\(\)[\s\S]*?\n}\n/);
+  assert.ok(fnMatch, "closeCatalogModal function not found");
+  assert.match(fnMatch[0], /if \(galleryUploading\) \{/);
+  assert.match(fnMatch[0], /กำลังอัปโหลดรูปภาพ กรุณารอให้เสร็จก่อนปิดหน้านี้/);
+  assert.match(fnMatch[0], /return;/);
 });
 
 test("the more-sheet has a delete option that opens the delete confirmation modal", () => {

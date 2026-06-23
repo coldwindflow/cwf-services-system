@@ -8,6 +8,7 @@ let galleryImages = [];
 let galleryLoading = false;
 let galleryUploading = false;
 let galleryUploadQueue = [];
+let galleryPickNotice = "";
 let deleteModalItemId = null;
 const BOOKING_MODES = ["bookable", "contact_admin"];
 // Must mirror the backend's MAX_CATALOG_IMAGES_PER_ITEM (server/routes/catalog/items.js)
@@ -132,27 +133,32 @@ function ensureCatalogModal() {
           </div>
           <div id="cm_booking_fields" style="display:none;">
             <div class="asc-grid2">
-              <div class="asc-field"><label>Service Key (ข้อมูลอ้างอิง ไม่ใช่เงื่อนไขการจอง)</label><input id="cm_booking_service_key" placeholder="เช่น wash_wall"></div>
               <div class="asc-field"><label>ประเภทแอร์สำหรับจอง *</label>
                 <select id="cm_booking_ac_type">
                   <option value="">— เลือกประเภทแอร์ —</option>
                   ${BOOKING_AC_TYPES.map((v) => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join("")}
                 </select>
               </div>
-            </div>
-            <div class="asc-grid2">
               <div class="asc-field"><label>BTU สำหรับจอง *</label>
                 <select id="cm_booking_btu">
                   <option value="">— เลือก BTU —</option>
                   ${BOOKING_BTU_OPTIONS.map((v) => `<option value="${v}">${v.toLocaleString("th-TH")}</option>`).join("")}
                 </select>
               </div>
+            </div>
+            <div class="asc-grid2">
               <div class="asc-field" id="cm_booking_wash_variant_field"><label>รูปแบบการล้างสำหรับจอง * (สำหรับแอร์ผนัง)</label>
                 <select id="cm_booking_wash_variant">
                   <option value="">— เลือกรูปแบบการล้าง —</option>
                   ${BOOKING_WASH_VARIANTS.map((v) => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join("")}
                 </select>
               </div>
+              <div></div>
+            </div>
+            <details class="asc-booking-advanced">
+              <summary class="asc-accordion-summary">ตั้งค่าเพิ่มเติม (Advanced)</summary>
+              <div class="asc-field"><label>Service Key (ข้อมูลอ้างอิง ไม่ใช่เงื่อนไขการจอง)</label><input id="cm_booking_service_key" placeholder="เช่น wash_wall"></div>
+            </details>
             </div>
           </div>
         </div>
@@ -319,6 +325,7 @@ function resetCatalogModalFields() {
   galleryImages = [];
   galleryUploading = false;
   galleryUploadQueue = [];
+  galleryPickNotice = "";
   renderGalleryManager();
   hideCatalogModalError();
 }
@@ -386,6 +393,10 @@ function openCatalogModalForEdit(itemId) {
 }
 
 function closeCatalogModal() {
+  if (galleryUploading) {
+    showToast("กำลังอัปโหลดรูปภาพ กรุณารอให้เสร็จก่อนปิดหน้านี้", "error");
+    return;
+  }
   const backdrop = el("catalog_modal_backdrop");
   if (backdrop) backdrop.classList.add("hidden");
 }
@@ -546,11 +557,24 @@ function galleryStatusLabel(status) {
 }
 
 function galleryQueueThumbHtml(queued) {
+  const label = galleryStatusLabel(queued.status);
+  const statusText = queued.status === "error" && queued.error ? `${label}: ${escapeHtml(queued.error)}` : escapeHtml(label);
+  const actions = queued.status === "error"
+    ? `<div class="asc-gallery-thumb-actions">
+         <button class="secondary btn-small" type="button" data-qact="retry" data-queue-id="${escapeHtml(queued.localId)}">ลองใหม่</button>
+         <button class="secondary btn-small" type="button" data-qact="remove" data-queue-id="${escapeHtml(queued.localId)}">เอาออก</button>
+       </div>`
+    : "";
   return `
   <div class="asc-gallery-thumb asc-gallery-thumb-pending" data-queue-id="${escapeHtml(queued.localId)}">
     <img src="${escapeHtml(queued.localUrl)}" alt="${escapeHtml(queued.name)}" loading="lazy">
-    <div class="asc-gallery-thumb-status asc-gallery-thumb-status-${queued.status}">${escapeHtml(galleryStatusLabel(queued.status))}</div>
+    <div class="asc-gallery-thumb-status asc-gallery-thumb-status-${queued.status}">${statusText}</div>
+    ${actions}
   </div>`;
+}
+
+function galleryActiveCount() {
+  return galleryImages.length + galleryUploadQueue.filter((q) => q.status !== "error").length;
 }
 
 function renderGalleryManager() {
@@ -568,11 +592,15 @@ function renderGalleryManager() {
   const grid = existingThumbs || queueThumbs
     ? `<div class="asc-gallery-grid">${existingThumbs}${queueThumbs}</div>`
     : `<div class="asc-empty">ยังไม่มีรูปภาพในแกลเลอรี</div>`;
-  const remaining = Math.max(0, MAX_GALLERY_IMAGES - galleryImages.length);
+  const activeCount = galleryActiveCount();
+  const remaining = Math.max(0, MAX_GALLERY_IMAGES - activeCount);
+  const countLine = `<div class="muted2 mini asc-gallery-count">มีอยู่ ${activeCount} / ${MAX_GALLERY_IMAGES} รูป</div>`;
+  const noticeLine = galleryPickNotice ? `<div class="asc-warning asc-gallery-overlimit">${escapeHtml(galleryPickNotice)}</div>` : "";
   let inputArea;
   if (galleryUploading) {
-    const doneCount = galleryUploadQueue.filter((q) => q.status === "done" || q.status === "error").length;
-    inputArea = `<div class="asc-loading">กำลังอัปโหลด ${doneCount}/${galleryUploadQueue.length} รูป</div>`;
+    const inFlightCount = galleryUploadQueue.filter((q) => q.status === "pending" || q.status === "uploading").length;
+    const settledCount = galleryUploadQueue.filter((q) => q.status === "done" || q.status === "error").length;
+    inputArea = `<div class="asc-loading">กำลังเพิ่มอีก ${inFlightCount} รูป (เสร็จแล้ว ${settledCount}/${galleryUploadQueue.length})</div>`;
   } else if (remaining > 0) {
     inputArea = `<div class="asc-field" style="margin-top:8px;">
           <input id="cm_gallery_input" type="file" accept="image/jpeg,image/png,image/webp" multiple>
@@ -581,7 +609,7 @@ function renderGalleryManager() {
   } else {
     inputArea = `<div class="muted2 mini" style="margin-top:8px;">มีรูปภาพครบ ${MAX_GALLERY_IMAGES} รูปแล้ว ลบรูปเดิมก่อนเพิ่มรูปใหม่</div>`;
   }
-  body.innerHTML = `${grid}${inputArea}`;
+  body.innerHTML = `${countLine}${noticeLine}${grid}${inputArea}`;
   const input = el("cm_gallery_input");
   if (input) input.addEventListener("change", onGalleryImagePicked);
 }
@@ -602,27 +630,43 @@ async function loadGalleryImages(itemId) {
 
 async function onGalleryImagePicked(event) {
   const files = event.target.files ? Array.from(event.target.files) : [];
-  if (!files.length || !editingItemId) return;
-  const remaining = Math.max(0, MAX_GALLERY_IMAGES - galleryImages.length);
-  const toUpload = files.slice(0, remaining);
-  if (files.length > toUpload.length) {
-    showToast(`เลือกได้สูงสุด ${MAX_GALLERY_IMAGES} รูปต่อรายการ อัปโหลดเฉพาะ ${toUpload.length} รูปแรก`, "error");
-  }
-  if (!toUpload.length) return;
+  event.target.value = "";
+  if (!files.length || !editingItemId || galleryUploading) return;
 
-  galleryUploadQueue = toUpload.map((file, i) => ({
+  const activeBefore = galleryActiveCount();
+  const remaining = Math.max(0, MAX_GALLERY_IMAGES - activeBefore);
+  const toUpload = files.slice(0, remaining);
+
+  if (!toUpload.length) {
+    galleryPickNotice = `เลือกแล้ว ${files.length} รูป แต่มีอยู่ครบ ${MAX_GALLERY_IMAGES} / ${MAX_GALLERY_IMAGES} รูปแล้ว ไม่สามารถเพิ่มรูปที่เลือกได้ กรุณาลบรูปเดิมก่อน`;
+    renderGalleryManager();
+    return;
+  }
+
+  galleryPickNotice = `เลือกแล้ว ${files.length} รูป มีอยู่ ${activeBefore} / ${MAX_GALLERY_IMAGES} รูป กำลังเพิ่มอีก ${toUpload.length} รูป`;
+  if (files.length > toUpload.length) {
+    galleryPickNotice += ` (เลือกมาเกินจำนวนที่ว่าง จะอัปโหลดเฉพาะ: ${toUpload.map((f) => f.name || "รูปภาพ").join(", ")})`;
+  }
+
+  const newlyQueued = toUpload.map((file, i) => ({
     localId: `q${Date.now()}_${i}`,
     file,
     name: file.name || "รูปภาพ",
     localUrl: URL.createObjectURL(file),
     status: "pending",
+    error: "",
   }));
+  galleryUploadQueue = galleryUploadQueue.concat(newlyQueued);
+  await runGalleryUploadQueue(newlyQueued);
+}
+
+async function runGalleryUploadQueue(itemsToRun) {
   galleryUploading = true;
   renderGalleryManager();
 
-  const failures = [];
-  for (const queued of galleryUploadQueue) {
+  for (const queued of itemsToRun) {
     queued.status = "uploading";
+    queued.error = "";
     renderGalleryManager();
     try {
       const formData = new FormData();
@@ -631,16 +675,38 @@ async function onGalleryImagePicked(event) {
       queued.status = "done";
     } catch (e) {
       queued.status = "error";
-      failures.push(queued.name);
+      queued.error = e.message || "อัปโหลดไม่สำเร็จ";
     }
     renderGalleryManager();
   }
 
   galleryUploading = false;
-  for (const queued of galleryUploadQueue) URL.revokeObjectURL(queued.localUrl);
-  galleryUploadQueue = [];
-  await loadGalleryImages(editingItemId);
-  if (failures.length) showToast(`อัปโหลดไม่สำเร็จ: ${failures.join(", ")}`, "error");
+  const doneItems = galleryUploadQueue.filter((q) => q.status === "done");
+  for (const queued of doneItems) URL.revokeObjectURL(queued.localUrl);
+  galleryUploadQueue = galleryUploadQueue.filter((q) => q.status !== "done");
+  if (doneItems.length) await loadGalleryImages(editingItemId);
+  if (!galleryUploadQueue.length) galleryPickNotice = "";
+  renderGalleryManager();
+
+  const failures = itemsToRun.filter((q) => q.status === "error");
+  if (failures.length) showToast(`อัปโหลดไม่สำเร็จ: ${failures.map((q) => q.name).join(", ")}`, "error");
+}
+
+async function onGalleryRetry(localId) {
+  if (galleryUploading) return;
+  const queued = galleryUploadQueue.find((q) => q.localId === localId);
+  if (!queued) return;
+  await runGalleryUploadQueue([queued]);
+}
+
+function onGalleryDismissFailed(localId) {
+  if (galleryUploading) return;
+  const queued = galleryUploadQueue.find((q) => q.localId === localId);
+  if (!queued) return;
+  URL.revokeObjectURL(queued.localUrl);
+  galleryUploadQueue = galleryUploadQueue.filter((q) => q.localId !== localId);
+  if (!galleryUploadQueue.length) galleryPickNotice = "";
+  renderGalleryManager();
 }
 
 async function onGalleryDelete(imageId) {
@@ -701,13 +767,21 @@ async function onGalleryReorder(imageId, direction) {
 function bindGalleryActions() {
   el("cm_gallery_body").addEventListener("click", (event) => {
     const button = event.target.closest("[data-gact]");
-    if (!button) return;
-    const imageId = Number(button.getAttribute("data-image-id"));
-    const act = button.getAttribute("data-gact");
-    if (act === "delete") onGalleryDelete(imageId);
-    else if (act === "primary") onGallerySetPrimary(imageId);
-    else if (act === "up") onGalleryReorder(imageId, "up");
-    else if (act === "down") onGalleryReorder(imageId, "down");
+    if (button) {
+      const imageId = Number(button.getAttribute("data-image-id"));
+      const act = button.getAttribute("data-gact");
+      if (act === "delete") onGalleryDelete(imageId);
+      else if (act === "primary") onGallerySetPrimary(imageId);
+      else if (act === "up") onGalleryReorder(imageId, "up");
+      else if (act === "down") onGalleryReorder(imageId, "down");
+      return;
+    }
+    const qbutton = event.target.closest("[data-qact]");
+    if (!qbutton) return;
+    const localId = qbutton.getAttribute("data-queue-id");
+    const qact = qbutton.getAttribute("data-qact");
+    if (qact === "retry") onGalleryRetry(localId);
+    else if (qact === "remove") onGalleryDismissFailed(localId);
   });
 }
 

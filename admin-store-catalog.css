@@ -154,6 +154,11 @@
 .asc-accordion-summary::before{ content:"▸ "; }
 .asc-accordion[open] > .asc-accordion-summary::before{ content:"▾ "; }
 .asc-accordion > .asc-warning{ margin-top:8px; }
+.asc-booking-advanced{ margin-top:8px; }
+.asc-booking-advanced > .asc-field{ margin-top:8px; }
+.asc-gallery-count{ margin-bottom:6px; }
+.asc-gallery-overlimit{ margin-bottom:8px; }
+.asc-gallery-thumb-error-text{ font-size:10px; }
 .asc-modal-error{ color:#b91c1c; font-size:12px; margin-top:6px; display:none; }
 .asc-loading, .asc-empty, .asc-error{ padding:14px; text-align:center; color:#64748b; font-size:13px; }
 .asc-error{ color:#b91c1c; }

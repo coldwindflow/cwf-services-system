@@ -921,6 +921,69 @@ test("standard-service badge renders real rating_average/review_count with half 
   assert.equal((body.innerHTML.match(/store-standard-star is-filled/g) || []).length, 4 + 5);
 });
 
+test("standard-service badge ignores legacy rating_value and fails safe to the no-fake-review CWF badge on invalid/null rating_average or review_count", async () => {
+  const context = makeContext();
+  const root = loadCustomerFrontend(context);
+  root.api.loadCatalogItems = async () => [
+    // legacy field present but must never be read as the rating contract
+    { item_id: 1, item_name: "เคสเก่า rating_value", item_category: "ล้างแอร์", base_price: 700, unit_label: "เครื่อง", rating_value: 4 },
+    { item_id: 2, item_name: "rating_average ไม่ใช่ตัวเลข", item_category: "ล้างแอร์", base_price: 700, unit_label: "เครื่อง", rating_average: "abc", review_count: 5 },
+    { item_id: 3, item_name: "rating_average นอกช่วง", item_category: "ล้างแอร์", base_price: 700, unit_label: "เครื่อง", rating_average: 7, review_count: 3 },
+    { item_id: 4, item_name: "review_count เป็น 0", item_category: "ล้างแอร์", base_price: 700, unit_label: "เครื่อง", rating_average: 4.8, review_count: 0 },
+    { item_id: 5, item_name: "review_count เป็น null", item_category: "ล้างแอร์", base_price: 700, unit_label: "เครื่อง", rating_average: 4.8, review_count: null },
+  ];
+
+  const container = new FakeMount();
+  root.store.render(container);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const body = container.querySelector("[data-store-body]");
+  // every item must fail safe to the plain 5-star "มาตรฐานบริการ CWF" badge with zero visible review counts
+  assert.equal((body.innerHTML.match(/store-standard-badge/g) || []).length, 5);
+  assert.equal((body.innerHTML.match(/store-standard-label">มาตรฐานบริการ CWF/g) || []).length, 5);
+  assert.equal((body.innerHTML.match(/store-standard-star is-filled/g) || []).length, 25);
+  assert.doesNotMatch(body.innerHTML, /store-standard-count/);
+  assert.doesNotMatch(body.innerHTML, /store-standard-star is-half/);
+});
+
+test("standard-service badge never displays a numeric average, a zero-review count, or the phrase \"คะแนนลูกค้า\" anywhere in its markup", async () => {
+  const context = makeContext();
+  const root = loadCustomerFrontend(context);
+  root.api.loadCatalogItems = async () => [
+    { item_id: 1, item_name: "ยังไม่มีรีวิว", item_category: "ล้างแอร์", base_price: 700, unit_label: "เครื่อง" },
+  ];
+
+  const container = new FakeMount();
+  root.store.render(container);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const body = container.querySelector("[data-store-body]");
+  const badgeMatch = body.innerHTML.match(/<div class="store-standard-badge"[\s\S]*?<\/div>/);
+  assert.ok(badgeMatch, "standard badge markup not found");
+  assert.doesNotMatch(badgeMatch[0], /5\.0/);
+  assert.doesNotMatch(badgeMatch[0], /0 รีวิว/);
+  assert.doesNotMatch(badgeMatch[0], /คะแนนลูกค้า/);
+});
+
+test("product detail page uses the exact same renderStandardBadge output as the store card for both real and absent rating data", async () => {
+  const context = makeContext();
+  const root = loadCustomerFrontend(context);
+  root.api.loadCatalogItem = async () => ({
+    item_id: 9, item_name: "ล้างแอร์มีรีวิว", item_category: "ล้างแอร์", base_price: 900, unit_label: "เครื่อง",
+    rating_average: 3.5, review_count: 8,
+  });
+
+  const container = new FakeMount();
+  root.state.setRoute("storeItem-9");
+  root.store.renderDetail(container);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const body = container.querySelector("[data-store-detail-body]");
+  assert.match(body.innerHTML, /store-standard-star is-half/);
+  assert.match(body.innerHTML, /store-standard-count">\(8\)<\/span>/);
+  assert.equal((body.innerHTML.match(/store-standard-star is-filled/g) || []).length, 3);
+});
+
 test("store card and product detail gallery flag autoplay only for multi-image items with is_autoplay_enabled true", async () => {
   const context = makeContext();
   const root = loadCustomerFrontend(context);

@@ -88,18 +88,18 @@
   }
 
   // Future-rating-prop-ready: once a real review system exists, items carry
-  // rating_average (1-5, may be fractional) and review_count (>0). Until then
-  // there is no real data, so we show a full 5-star badge with no review
-  // count rather than fabricate one.
+  // rating_average (1-5, may be fractional) and review_count (>0). rating_value
+  // is legacy and is never read here — it must not become a second contract.
+  // Until rating_average/review_count are both present and valid there is no
+  // real data, so we fail safe to a full 5-star badge with no review count
+  // rather than fabricate one.
   function standardRatingInfo(item) {
     const avg = Number(item && item.rating_average);
     const count = Number(item && item.review_count);
     if (Number.isFinite(avg) && avg >= 1 && avg <= 5 && Number.isFinite(count) && count > 0) {
       return { value: avg, count };
     }
-    const legacy = Number(item && item.rating_value);
-    const value = Number.isFinite(legacy) && legacy >= 1 && legacy <= 5 ? legacy : 5;
-    return { value, count: 0 };
+    return { value: 5, count: 0 };
   }
 
   function renderStandardBadge(item) {
