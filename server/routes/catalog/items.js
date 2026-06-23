@@ -463,13 +463,19 @@ function serializeCatalogRow(row) {
     short_description: row.short_description || null,
     highlights: Array.isArray(row.highlights) ? row.highlights : [],
     booking_mode: row.booking_mode === "bookable" ? "bookable" : "contact_admin",
+    // Needed on the list endpoint so the Store card's "book" button can build a
+    // real booking draft without a follow-up detail fetch. booking_service_key is
+    // intentionally omitted here: the frontend never uses it for booking, only
+    // the detail/admin DTOs need it.
+    booking_ac_type: row.booking_mode === "bookable" ? (row.booking_ac_type || null) : null,
+    booking_btu: row.booking_mode === "bookable" ? (row.booking_btu || null) : null,
+    booking_wash_variant: row.booking_mode === "bookable" ? (row.booking_wash_variant || null) : null,
     is_featured: Boolean(row.is_featured),
   };
 }
 
 // Public detail DTO: everything serializeCatalogRow has, plus the long-form
-// content a product detail page needs. Never exposed on the list endpoint to
-// keep list payloads small.
+// content and the booking_service_key a product detail page needs.
 function serializeCatalogDetailRow(row) {
   const base = serializeCatalogRow(row);
   return {
@@ -477,9 +483,6 @@ function serializeCatalogDetailRow(row) {
     long_description: row.long_description || null,
     service_conditions: row.service_conditions || null,
     booking_service_key: row.booking_mode === "bookable" ? (row.booking_service_key || null) : null,
-    booking_ac_type: row.booking_mode === "bookable" ? (row.booking_ac_type || null) : null,
-    booking_btu: row.booking_mode === "bookable" ? (row.booking_btu || null) : null,
-    booking_wash_variant: row.booking_mode === "bookable" ? (row.booking_wash_variant || null) : null,
   };
 }
 

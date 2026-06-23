@@ -1767,6 +1767,45 @@ test("public GET /catalog/items includes marketplace fields and the images galle
   });
 });
 
+test("public GET /catalog/items exposes booking_ac_type/booking_btu/booking_wash_variant for a bookable item, so the Store card can book without a detail fetch", async () => {
+  const items = sampleItems();
+  items[0].booking_mode = "bookable";
+  items[0].booking_ac_type = "ผนัง";
+  items[0].booking_btu = 12000;
+  items[0].booking_wash_variant = "ล้างธรรมดา";
+  items[0].booking_service_key = "wash_wall";
+  const pool = makePool(items, [], { marketplaceReady: true });
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/catalog/items?customer=1`);
+    const body = await res.json();
+    const item = body.find((x) => x.item_id === 1);
+    assert.equal(item.booking_mode, "bookable");
+    assert.equal(item.booking_ac_type, "ผนัง");
+    assert.equal(item.booking_btu, 12000);
+    assert.equal(item.booking_wash_variant, "ล้างธรรมดา");
+    assert.equal(item.booking_service_key, undefined, "List DTO must not expose booking_service_key");
+  });
+});
+
+test("public GET /catalog/items suppresses booking_ac_type/booking_btu/booking_wash_variant when booking_mode is contact_admin", async () => {
+  const items = sampleItems();
+  items[0].booking_ac_type = "ผนัง";
+  items[0].booking_btu = 12000;
+  items[0].booking_wash_variant = "ล้างธรรมดา";
+  const pool = makePool(items, [], { marketplaceReady: true });
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/catalog/items?customer=1`);
+    const body = await res.json();
+    const item = body.find((x) => x.item_id === 1);
+    assert.equal(item.booking_mode, "contact_admin");
+    assert.equal(item.booking_ac_type, null);
+    assert.equal(item.booking_btu, null);
+    assert.equal(item.booking_wash_variant, null);
+  });
+});
+
 test("public GET /catalog/items/:itemId puts the Primary image first even when it is not sort_order 0", async () => {
   const items = sampleItems();
   const pool = makePool(items, [], { marketplaceReady: true });
