@@ -44,11 +44,12 @@
   }
 
   // The legacy catalog table constrains item_category to "service"/"product"
-  // in storage; that raw token must never reach the customer as a badge.
+  // in storage; that generic token carries no useful information for the
+  // customer, so it is hidden entirely rather than shown as a translated tag.
   function categoryLabel(cat) {
     const trimmed = String(cat || "").trim();
-    if (trimmed.toLowerCase() === "service") return "บริการ";
-    if (trimmed.toLowerCase() === "product") return "สินค้า";
+    if (trimmed.toLowerCase() === "service") return "";
+    if (trimmed.toLowerCase() === "product") return "";
     return trimmed;
   }
 

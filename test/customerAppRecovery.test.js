@@ -810,11 +810,13 @@ test("store card and product detail render product name before the rating badge,
   assert.ok(detailRatingIndex < detailPriceIndex);
 });
 
-test("store hides/translates the generic literal 'service' item_category instead of showing it as a raw English badge", async () => {
+test("store hides the generic literal 'service'/'product' item_category entirely instead of showing it as a category tag", async () => {
   const context = makeContext();
   const root = loadCustomerFrontend(context);
   root.api.loadCatalogItems = async () => [
     { item_id: 1, item_name: "รายการทั่วไป", item_category: "service", base_price: 700, unit_label: "เครื่อง" },
+    { item_id: 2, item_name: "สินค้าทั่วไป", item_category: "product", base_price: 700, unit_label: "ชิ้น" },
+    { item_id: 3, item_name: "ล้างแอร์ผนัง", item_category: "ล้างแอร์", base_price: 700, unit_label: "เครื่อง" },
   ];
 
   const container = new FakeMount();
@@ -822,7 +824,10 @@ test("store hides/translates the generic literal 'service' item_category instead
   await new Promise((resolve) => setTimeout(resolve, 0));
   const body = container.querySelector("[data-store-body]");
   assert.doesNotMatch(body.innerHTML, /class="tag">service</);
-  assert.match(body.innerHTML, /class="tag">บริการ</);
+  assert.doesNotMatch(body.innerHTML, /class="tag">product</);
+  assert.doesNotMatch(body.innerHTML, /class="tag">บริการ</);
+  assert.doesNotMatch(body.innerHTML, /class="tag">สินค้า</);
+  assert.match(body.innerHTML, /class="tag">ล้างแอร์</);
 });
 
 test("store BTU label formats min/max/range/neither cases correctly", async () => {
