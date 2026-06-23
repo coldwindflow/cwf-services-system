@@ -171,6 +171,18 @@ function makePool(initialItems = [], initialRules = [], { schemaReady = true, ma
       return { rows: row ? [{ item_id: row.item_id }] : [] };
     }
 
+    if (s.includes("SELECT image_public_id FROM public.catalog_item_images WHERE item_id = $1 AND image_public_id IS NOT NULL")) {
+      const rows = imagesForItem(params[0]).filter((img) => img.image_public_id != null).map((img) => ({ image_public_id: img.image_public_id }));
+      return { rows };
+    }
+
+    if (s.includes("DELETE FROM public.catalog_items WHERE item_id = $1")) {
+      const [itemId] = params;
+      state.items = state.items.filter((x) => String(x.item_id) !== String(itemId));
+      state.images = state.images.filter((img) => String(img.item_id) !== String(itemId));
+      return { rows: [] };
+    }
+
     if (s.includes("FROM public.catalog_item_images") && s.includes("ANY($1::bigint[])")) {
       const ids = (params[0] || []).map(String);
       const rows = state.images
@@ -1526,6 +1538,127 @@ test("image upload SQL is parameterized: a hostile filename/public_id never appe
     assert.ok(updateQuery);
     assert.equal(updateQuery.sql.includes(hostilePublicId), false);
     assert.ok(updateQuery.params.includes(hostilePublicId));
+  });
+});
+
+// ---------- DELETE /admin/catalog/items/:itemId ----------
+
+test("DELETE admin catalog item removes the row and never touches customer_service_price_rules", async () => {
+  const items = sampleItems();
+  items[0].price_rule_id = 70;
+  const rules = [{ rule_id: 70, normal_price: 700, active_price: 550, campaign_name: "เดิม", is_active: true, effective_from: null, effective_to: null }];
+  const pool = makePool(items, rules);
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items/1`, { method: "DELETE" });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.ok, true);
+    assert.equal(pool.state.items.some((x) => x.item_id === 1), false);
+    assert.equal(pool.state.rules.length, 1);
+    assert.equal(pool.state.rules[0].rule_id, 70);
+    const deleteQuery = pool.state.queries.some((q) => /DELETE FROM public\.customer_service_price_rules/i.test(q.sql));
+    assert.equal(deleteQuery, false);
+  });
+});
+
+test("DELETE admin catalog item also removes its gallery images (cascade)", async () => {
+  const pool = makePool(sampleItems(), [], { marketplaceReady: true });
+  pool.state.images.push(
+    { image_id: 1, item_id: 1, image_url: "u1", image_public_id: "p1", alt_text: null, sort_order: 0, is_primary: true },
+    { image_id: 2, item_id: 1, image_url: "u2", image_public_id: "p2", alt_text: null, sort_order: 1, is_primary: false }
+  );
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items/1`, { method: "DELETE" });
+    assert.equal(res.status, 200);
+    assert.equal(pool.state.images.length, 0);
+  });
+});
+
+test("DELETE admin catalog item cleans up legacy and gallery Cloudinary assets", async () => {
+  const items = sampleItems();
+  items[0].image_public_id = "legacy-pub-id";
+  const pool = makePool(items, [], { marketplaceReady: true });
+  pool.state.images.push(
+    { image_id: 1, item_id: 1, image_url: "u1", image_public_id: "gallery-pub-1", alt_text: null, sort_order: 0, is_primary: true }
+  );
+  const cleanedUp = [];
+  const deleteCatalogImage = async (publicId) => { cleanedUp.push(publicId); return { ok: true }; };
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin, deleteCatalogImage });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items/1`, { method: "DELETE" });
+    assert.equal(res.status, 200);
+    assert.deepEqual(cleanedUp.sort(), ["gallery-pub-1", "legacy-pub-id"]);
+  });
+});
+
+test("DELETE admin catalog item still reports success with a warning when Cloudinary cleanup fails", async () => {
+  const items = sampleItems();
+  items[0].image_public_id = "legacy-pub-id";
+  const pool = makePool(items);
+  const deleteCatalogImage = async () => { throw new Error("cloudinary down"); };
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin, deleteCatalogImage });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items/1`, { method: "DELETE" });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.ok, true);
+    assert.match(body.warning, /Cloudinary/);
+    assert.equal(pool.state.items.some((x) => x.item_id === 1), false);
+  });
+});
+
+test("DELETE admin catalog item returns 404 for an unknown item and changes nothing", async () => {
+  const pool = makePool(sampleItems());
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items/999`, { method: "DELETE" });
+    assert.equal(res.status, 404);
+    assert.equal(pool.state.items.length, sampleItems().length);
+  });
+});
+
+test("DELETE admin catalog item returns 400 for a malformed item id", async () => {
+  const pool = makePool(sampleItems());
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items/abc`, { method: "DELETE" });
+    assert.equal(res.status, 400);
+  });
+});
+
+test("DELETE admin catalog item requires an admin session", async () => {
+  const pool = makePool(sampleItems());
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: denyAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items/1`, { method: "DELETE" });
+    assert.equal(res.status, 401);
+    assert.equal(pool.state.items.length, sampleItems().length);
+  });
+});
+
+test("a repeated DELETE of an already-deleted item returns 404 instead of double-deleting", async () => {
+  const pool = makePool(sampleItems());
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const first = await fetch(`${base}/admin/catalog/items/1`, { method: "DELETE" });
+    assert.equal(first.status, 200);
+    const second = await fetch(`${base}/admin/catalog/items/1`, { method: "DELETE" });
+    assert.equal(second.status, 404);
+  });
+});
+
+test("DELETE admin catalog item responds successfully (no hang/deadlock) against a single-connection pool", async () => {
+  const pool = makePool(sampleItems());
+  const tracker = wrapAsSingleConnectionPool(pool);
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items/1`, { method: "DELETE" });
+    assert.equal(res.status, 200);
+    assert.deepEqual(tracker.poolQueryCallsWhileCheckedOut, []);
+    assert.equal(tracker.connectCalls, 1);
+    assert.equal(tracker.releaseCalls, 1);
   });
 });
 

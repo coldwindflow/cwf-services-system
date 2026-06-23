@@ -867,6 +867,77 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
     }
   });
 
+  router.delete("/admin/catalog/items/:itemId", requireAdminSession, async (req, res) => {
+    try {
+      const itemId = String(req.params.itemId || "").trim();
+      if (!/^\d+$/.test(itemId)) return res.status(400).json({ error: "item_id ไม่ถูกต้อง" });
+
+      const marketplaceReady = await isMarketplaceSchemaReady(pool);
+
+      const client = await pool.connect();
+      let existing;
+      let galleryImages = [];
+      try {
+        await client.query("BEGIN");
+
+        const existingResult = await client.query(
+          `SELECT item_id, image_public_id FROM public.catalog_items WHERE item_id = $1 FOR UPDATE`,
+          [itemId]
+        );
+        existing = existingResult.rows[0];
+        if (!existing) {
+          await client.query("ROLLBACK");
+          return res.status(404).json({ error: "ไม่พบรายการนี้" });
+        }
+
+        if (marketplaceReady) {
+          const galleryResult = await client.query(
+            `SELECT image_public_id FROM public.catalog_item_images WHERE item_id = $1 AND image_public_id IS NOT NULL`,
+            [itemId]
+          );
+          galleryImages = galleryResult.rows;
+        }
+
+        // Deleting the row is the source of truth for "this item is gone" — gallery
+        // rows are removed via the existing ON DELETE CASCADE FK, and the linked price
+        // rule (customer_service_price_rules) is intentionally never touched here so
+        // old jobs priced against it keep working. Cloudinary cleanup happens after
+        // commit, best-effort, and never re-creates the item if it fails.
+        await client.query(`DELETE FROM public.catalog_items WHERE item_id = $1`, [itemId]);
+
+        await client.query("COMMIT");
+      } catch (e) {
+        await client.query("ROLLBACK").catch(() => {});
+        throw e;
+      } finally {
+        client.release();
+      }
+
+      const publicIdsToClean = [];
+      if (existing.image_public_id) publicIdsToClean.push(existing.image_public_id);
+      for (const row of galleryImages) {
+        if (row.image_public_id) publicIdsToClean.push(row.image_public_id);
+      }
+
+      let cloudinaryWarning = null;
+      for (const publicId of publicIdsToClean) {
+        try {
+          await deleteCatalogImage(publicId);
+        } catch (cleanupError) {
+          console.error("cloudinary cleanup after item delete failed", safeImageErrorMessage(cleanupError));
+          cloudinaryWarning = "ลบสินค้าแล้ว แต่ล้างรูปบน Cloudinary บางรูปไม่สำเร็จ";
+        }
+      }
+
+      const response = { ok: true, item_id: Number(itemId) };
+      if (cloudinaryWarning) response.warning = cloudinaryWarning;
+      res.json(response);
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "ลบรายการไม่สำเร็จ" });
+    }
+  });
+
   router.post(
     "/admin/catalog/items/:itemId/image",
     requireAdminSession,
