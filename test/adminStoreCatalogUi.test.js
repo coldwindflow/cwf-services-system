@@ -295,6 +295,18 @@ test("delete confirmation modal warns extra when the item is currently active an
   assert.match(fnMatch[0], /item\.is_active && item\.is_customer_visible \? "block" : "none"/);
 });
 
+test("gallery delete/set-primary/reorder actions guard against double-clicks while a gallery action is in flight", () => {
+  const deleteFn = catalogJsSource.match(/async function onGalleryDelete\(imageId\)[\s\S]*?\n}\n/);
+  const primaryFn = catalogJsSource.match(/async function onGallerySetPrimary\(imageId\)[\s\S]*?\n}\n/);
+  const reorderFn = catalogJsSource.match(/async function onGalleryReorder\(imageId, direction\)[\s\S]*?\n}\n/);
+  assert.ok(deleteFn && primaryFn && reorderFn, "gallery action functions not found");
+  for (const fn of [deleteFn[0], primaryFn[0], reorderFn[0]]) {
+    assert.match(fn, /galleryUploading\) return;/);
+    assert.match(fn, /galleryUploading = true;/);
+    assert.match(fn, /finally \{\s*\n\s*galleryUploading = false;/);
+  }
+});
+
 test("confirmDeleteCatalogItem calls the real DELETE endpoint and surfaces a Cloudinary cleanup warning distinctly from plain success", () => {
   const fnMatch = catalogJsSource.match(/async function confirmDeleteCatalogItem\(\)[\s\S]*?\n}\n/);
   assert.ok(fnMatch, "confirmDeleteCatalogItem function not found");

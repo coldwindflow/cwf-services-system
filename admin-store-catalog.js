@@ -601,34 +601,46 @@ async function onGalleryImagePicked(event) {
 }
 
 async function onGalleryDelete(imageId) {
-  if (!editingItemId) return;
+  if (!editingItemId || galleryUploading) return;
   const confirmed = confirm("ต้องการลบรูปภาพนี้หรือไม่?");
   if (!confirmed) return;
+  galleryUploading = true;
+  renderGalleryManager();
   try {
     await apiFetch(`/admin/catalog/items/${editingItemId}/images/${imageId}`, { method: "DELETE" });
     await loadGalleryImages(editingItemId);
   } catch (e) {
     showToast(e.message || "ลบรูปภาพไม่สำเร็จ", "error");
+  } finally {
+    galleryUploading = false;
+    renderGalleryManager();
   }
 }
 
 async function onGallerySetPrimary(imageId) {
-  if (!editingItemId) return;
+  if (!editingItemId || galleryUploading) return;
+  galleryUploading = true;
+  renderGalleryManager();
   try {
     await apiFetch(`/admin/catalog/items/${editingItemId}/images/${imageId}/primary`, { method: "POST" });
     await loadGalleryImages(editingItemId);
   } catch (e) {
     showToast(e.message || "ตั้งรูปหลักไม่สำเร็จ", "error");
+  } finally {
+    galleryUploading = false;
+    renderGalleryManager();
   }
 }
 
 async function onGalleryReorder(imageId, direction) {
-  if (!editingItemId) return;
+  if (!editingItemId || galleryUploading) return;
   const index = galleryImages.findIndex((img) => Number(img.image_id) === Number(imageId));
   const swapWith = direction === "up" ? index - 1 : index + 1;
   if (index < 0 || swapWith < 0 || swapWith >= galleryImages.length) return;
   const ids = galleryImages.map((img) => img.image_id);
   [ids[index], ids[swapWith]] = [ids[swapWith], ids[index]];
+  galleryUploading = true;
+  renderGalleryManager();
   try {
     await apiFetch(`/admin/catalog/items/${editingItemId}/images/reorder`, {
       method: "POST",
@@ -637,6 +649,9 @@ async function onGalleryReorder(imageId, direction) {
     await loadGalleryImages(editingItemId);
   } catch (e) {
     showToast(e.message || "จัดเรียงรูปภาพไม่สำเร็จ", "error");
+  } finally {
+    galleryUploading = false;
+    renderGalleryManager();
   }
 }
 
