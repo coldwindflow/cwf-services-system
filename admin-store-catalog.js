@@ -4,6 +4,18 @@ let isSaving = false;
 let pendingImageFile = null;
 let pendingImageRemoved = false;
 let moreSheetItemId = null;
+let galleryImages = [];
+let galleryLoading = false;
+const BOOKING_MODES = ["bookable", "contact_admin"];
+
+// Must mirror the Customer App's canonical lists exactly
+// (customer-app/modules/services.js: acTypes/btuOptions/washVariants) and the
+// backend's validateMarketplaceFields() allow-lists (server/routes/catalog/items.js)
+// — a bookable item can never carry a value the booking flow can't handle.
+const BOOKING_AC_TYPES = ["ผนัง", "สี่ทิศทาง", "แขวน", "เปลือยใต้ฝ้า"];
+const BOOKING_BTU_OPTIONS = [9000, 12000, 18000, 24000, 30000];
+const BOOKING_WASH_VARIANTS = ["ล้างธรรมดา", "ล้างพรีเมียม", "ล้างแขวนคอยล์", "ล้างแบบตัดล้าง"];
+const BOOKING_WALL_AC_TYPE = "ผนัง";
 
 function escapeHtml(value) {
   return String(value == null ? "" : value)
@@ -129,6 +141,56 @@ function ensureCatalogModal() {
           <div class="asc-field"><label>ราคาฐาน (Base Price) *</label><input id="cm_base_price" type="number" step="1" min="0" placeholder="ใช้เมื่อยังไม่มีราคาโปรโมชัน"></div>
         </div>
 
+        <div class="asc-section">
+          <div class="asc-section-title">6) ข้อมูลตลาด (Marketplace)</div>
+          <div class="asc-field"><label>การจอง *</label>
+            <select id="cm_booking_mode">
+              <option value="contact_admin">ติดต่อแอดมิน (ไม่จองออนไลน์)</option>
+              <option value="bookable">จองออนไลน์ได้</option>
+            </select>
+          </div>
+          <div id="cm_booking_fields" style="display:none;">
+            <div class="asc-grid2">
+              <div class="asc-field"><label>Service Key (ข้อมูลอ้างอิง ไม่ใช่เงื่อนไขการจอง)</label><input id="cm_booking_service_key" placeholder="เช่น wash_wall"></div>
+              <div class="asc-field"><label>ประเภทแอร์สำหรับจอง *</label>
+                <select id="cm_booking_ac_type">
+                  <option value="">— เลือกประเภทแอร์ —</option>
+                  ${BOOKING_AC_TYPES.map((v) => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join("")}
+                </select>
+              </div>
+            </div>
+            <div class="asc-grid2">
+              <div class="asc-field"><label>BTU สำหรับจอง *</label>
+                <select id="cm_booking_btu">
+                  <option value="">— เลือก BTU —</option>
+                  ${BOOKING_BTU_OPTIONS.map((v) => `<option value="${v}">${v.toLocaleString("th-TH")}</option>`).join("")}
+                </select>
+              </div>
+              <div class="asc-field" id="cm_booking_wash_variant_field"><label>รูปแบบการล้างสำหรับจอง * (สำหรับแอร์ผนัง)</label>
+                <select id="cm_booking_wash_variant">
+                  <option value="">— เลือกรูปแบบการล้าง —</option>
+                  ${BOOKING_WASH_VARIANTS.map((v) => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join("")}
+                </select>
+              </div>
+            </div>
+          </div>
+          <div class="asc-field"><label>รายการแนะนำ (Featured) *</label>
+            <select id="cm_is_featured">
+              <option value="0">ไม่แนะนำ</option>
+              <option value="1">แนะนำ</option>
+            </select>
+          </div>
+          <div class="asc-field"><label>คำอธิบายสั้น</label><textarea id="cm_short_description" rows="2" maxlength="300" placeholder="แสดงบนการ์ดร้านค้า"></textarea></div>
+          <div class="asc-field"><label>คำอธิบายแบบเต็ม</label><textarea id="cm_long_description" rows="4" placeholder="แสดงในหน้ารายละเอียดสินค้า"></textarea></div>
+          <div class="asc-field"><label>จุดเด่น (1 บรรทัดต่อ 1 รายการ)</label><textarea id="cm_highlights" rows="3" placeholder="เช่น&#10;ฟรีน้ำยา&#10;รับประกัน 30 วัน"></textarea></div>
+          <div class="asc-field"><label>เงื่อนไขการให้บริการ</label><textarea id="cm_service_conditions" rows="3"></textarea></div>
+        </div>
+
+        <div class="asc-section" id="cm_gallery_section">
+          <div class="asc-section-title">7) รูปภาพหลายรูป (แกลเลอรี)</div>
+          <div id="cm_gallery_body"></div>
+        </div>
+
         <div id="catalog_modal_error" class="asc-modal-error"></div>
       </div>
       <div class="cwf-modal-foot">
@@ -144,6 +206,16 @@ function ensureCatalogModal() {
   el("catalog_modal_save").addEventListener("click", saveCatalogItem);
   el("cm_image_input").addEventListener("change", onCatalogImagePicked);
   el("cm_image_delete").addEventListener("click", onCatalogImageDeleteClick);
+  el("cm_booking_mode").addEventListener("change", updateBookingFieldsVisibility);
+  el("cm_booking_ac_type").addEventListener("change", updateBookingFieldsVisibility);
+  bindGalleryActions();
+}
+
+function updateBookingFieldsVisibility() {
+  const bookable = el("cm_booking_mode").value === "bookable";
+  el("cm_booking_fields").style.display = bookable ? "block" : "none";
+  const isWallAc = el("cm_booking_ac_type").value === BOOKING_WALL_AC_TYPE;
+  el("cm_booking_wash_variant_field").style.display = isWallAc ? "block" : "none";
 }
 
 function hideCatalogModalError() {
@@ -217,6 +289,19 @@ function resetCatalogModalFields() {
   pendingImageFile = null;
   pendingImageRemoved = false;
   setCatalogImagePreview(null);
+  el("cm_booking_mode").value = "contact_admin";
+  el("cm_booking_service_key").value = "";
+  el("cm_booking_ac_type").value = "";
+  el("cm_booking_btu").value = "";
+  el("cm_booking_wash_variant").value = "";
+  el("cm_is_featured").value = "0";
+  el("cm_short_description").value = "";
+  el("cm_long_description").value = "";
+  el("cm_highlights").value = "";
+  el("cm_service_conditions").value = "";
+  updateBookingFieldsVisibility();
+  galleryImages = [];
+  renderGalleryManager();
   hideCatalogModalError();
 }
 
@@ -266,6 +351,18 @@ function openCatalogModalForEdit(itemId) {
   el("cm_is_customer_visible").value = item.is_customer_visible ? "1" : "0";
   el("cm_base_price").value = Number(item.base_price) > 0 ? Number(item.base_price) : "";
   if (item.image_url) setCatalogImagePreview(item.image_url);
+  el("cm_booking_mode").value = BOOKING_MODES.includes(item.booking_mode) ? item.booking_mode : "contact_admin";
+  el("cm_booking_service_key").value = item.booking_service_key || "";
+  el("cm_booking_ac_type").value = item.booking_ac_type || "";
+  el("cm_booking_btu").value = item.booking_btu || "";
+  el("cm_booking_wash_variant").value = item.booking_wash_variant || "";
+  el("cm_is_featured").value = item.is_featured ? "1" : "0";
+  el("cm_short_description").value = item.short_description || "";
+  el("cm_long_description").value = item.long_description || "";
+  el("cm_highlights").value = Array.isArray(item.highlights) ? item.highlights.join("\n") : "";
+  el("cm_service_conditions").value = item.service_conditions || "";
+  updateBookingFieldsVisibility();
+  loadGalleryImages(itemId);
   el("catalog_modal_backdrop").classList.remove("hidden");
 }
 
@@ -288,6 +385,16 @@ function catalogModalPayload() {
     base_price: trimmedOrEmpty("cm_base_price"),
     is_active: el("cm_is_active").value === "1",
     is_customer_visible: el("cm_is_customer_visible").value === "1",
+    booking_mode: el("cm_booking_mode").value,
+    booking_service_key: trimmedOrEmpty("cm_booking_service_key"),
+    booking_ac_type: trimmedOrEmpty("cm_booking_ac_type"),
+    booking_btu: trimmedOrEmpty("cm_booking_btu"),
+    booking_wash_variant: trimmedOrEmpty("cm_booking_wash_variant"),
+    is_featured: el("cm_is_featured").value === "1",
+    short_description: trimmedOrEmpty("cm_short_description"),
+    long_description: trimmedOrEmpty("cm_long_description"),
+    highlights: (el("cm_highlights").value || "").split("\n").map((line) => line.trim()).filter(Boolean),
+    service_conditions: trimmedOrEmpty("cm_service_conditions"),
   };
   if (hasAnyPricingInput) {
     payload.pricing = {
@@ -318,6 +425,20 @@ function validateCatalogModalPayload(payload) {
   }
   if (payload.btu_min !== "" && payload.btu_max !== "" && Number(payload.btu_min) > Number(payload.btu_max)) {
     return "btu_min ต้องไม่มากกว่า btu_max";
+  }
+  if (payload.booking_mode === "bookable") {
+    if (!BOOKING_AC_TYPES.includes(payload.booking_ac_type)) {
+      return `รายการที่จองออนไลน์ได้ ต้องระบุประเภทแอร์สำหรับจองเป็นหนึ่งใน: ${BOOKING_AC_TYPES.join(", ")}`;
+    }
+    if (!BOOKING_BTU_OPTIONS.includes(Number(payload.booking_btu))) {
+      return `รายการที่จองออนไลน์ได้ ต้องระบุ BTU สำหรับจองเป็นหนึ่งใน: ${BOOKING_BTU_OPTIONS.join(", ")}`;
+    }
+    if (payload.booking_ac_type === BOOKING_WALL_AC_TYPE && !BOOKING_WASH_VARIANTS.includes(payload.booking_wash_variant)) {
+      return `รายการแอร์ผนังที่จองออนไลน์ได้ ต้องระบุรูปแบบการล้างสำหรับจองเป็นหนึ่งใน: ${BOOKING_WASH_VARIANTS.join(", ")}`;
+    }
+  }
+  if (payload.short_description && payload.short_description.length > 300) {
+    return "คำอธิบายสั้นต้องไม่เกิน 300 ตัวอักษร";
   }
   if (payload.pricing) {
     if (payload.pricing.normal_price === "" || !Number.isFinite(Number(payload.pricing.normal_price)) || Number(payload.pricing.normal_price) < 0) {
@@ -379,6 +500,125 @@ async function saveCatalogItem() {
     isSaving = false;
     el("catalog_modal_save").disabled = false;
   }
+}
+
+/* ---------- Gallery (multi-image) manager ---------- */
+
+function galleryThumbHtml(image, index, total) {
+  return `
+  <div class="asc-gallery-thumb" data-image-id="${image.image_id}">
+    <img src="${escapeHtml(image.image_url)}" alt="${escapeHtml(image.alt_text || "")}" loading="lazy">
+    ${image.is_primary ? `<span class="asc-badge asc-badge-primary">หลัก</span>` : ""}
+    <div class="asc-gallery-thumb-actions">
+      <button class="secondary btn-small" type="button" data-gact="up" data-image-id="${image.image_id}" ${index === 0 ? "disabled" : ""}>↑</button>
+      <button class="secondary btn-small" type="button" data-gact="down" data-image-id="${image.image_id}" ${index === total - 1 ? "disabled" : ""}>↓</button>
+      ${!image.is_primary ? `<button class="secondary btn-small" type="button" data-gact="primary" data-image-id="${image.image_id}">ตั้งเป็นหลัก</button>` : ""}
+      <button class="secondary btn-small" type="button" data-gact="delete" data-image-id="${image.image_id}">ลบ</button>
+    </div>
+  </div>`;
+}
+
+function renderGalleryManager() {
+  const body = el("cm_gallery_body");
+  if (!editingItemId) {
+    body.innerHTML = `<div class="muted2 mini">บันทึกข้อมูลบริการก่อน จึงค่อยเพิ่มรูปภาพหลายรูปได้</div>`;
+    return;
+  }
+  if (galleryLoading) {
+    body.innerHTML = `<div class="asc-loading">กำลังโหลดรูปภาพ...</div>`;
+    return;
+  }
+  const grid = galleryImages.length
+    ? `<div class="asc-gallery-grid">${galleryImages.map((img, i) => galleryThumbHtml(img, i, galleryImages.length)).join("")}</div>`
+    : `<div class="asc-empty">ยังไม่มีรูปภาพในแกลเลอรี</div>`;
+  body.innerHTML = `
+    ${grid}
+    <div class="asc-field" style="margin-top:8px;">
+      <input id="cm_gallery_input" type="file" accept="image/jpeg,image/png,image/webp">
+      <div class="muted2 mini">JPEG/PNG/WEBP ไม่เกิน 5MB ต่อรูป</div>
+    </div>`;
+  const input = el("cm_gallery_input");
+  if (input) input.addEventListener("change", onGalleryImagePicked);
+}
+
+async function loadGalleryImages(itemId) {
+  galleryLoading = true;
+  renderGalleryManager();
+  try {
+    galleryImages = await apiFetch(`/admin/catalog/items/${itemId}/images`);
+  } catch (e) {
+    galleryImages = [];
+    showToast(e.message || "โหลดแกลเลอรีไม่สำเร็จ", "error");
+  } finally {
+    galleryLoading = false;
+    renderGalleryManager();
+  }
+}
+
+async function onGalleryImagePicked(event) {
+  const file = event.target.files && event.target.files[0];
+  if (!file || !editingItemId) return;
+  try {
+    const formData = new FormData();
+    formData.append("image", file);
+    await apiFetch(`/admin/catalog/items/${editingItemId}/images`, { method: "POST", body: formData });
+    await loadGalleryImages(editingItemId);
+  } catch (e) {
+    showToast(e.message || "อัปโหลดรูปภาพไม่สำเร็จ", "error");
+  }
+}
+
+async function onGalleryDelete(imageId) {
+  if (!editingItemId) return;
+  const confirmed = confirm("ต้องการลบรูปภาพนี้หรือไม่?");
+  if (!confirmed) return;
+  try {
+    await apiFetch(`/admin/catalog/items/${editingItemId}/images/${imageId}`, { method: "DELETE" });
+    await loadGalleryImages(editingItemId);
+  } catch (e) {
+    showToast(e.message || "ลบรูปภาพไม่สำเร็จ", "error");
+  }
+}
+
+async function onGallerySetPrimary(imageId) {
+  if (!editingItemId) return;
+  try {
+    await apiFetch(`/admin/catalog/items/${editingItemId}/images/${imageId}/primary`, { method: "POST" });
+    await loadGalleryImages(editingItemId);
+  } catch (e) {
+    showToast(e.message || "ตั้งรูปหลักไม่สำเร็จ", "error");
+  }
+}
+
+async function onGalleryReorder(imageId, direction) {
+  if (!editingItemId) return;
+  const index = galleryImages.findIndex((img) => Number(img.image_id) === Number(imageId));
+  const swapWith = direction === "up" ? index - 1 : index + 1;
+  if (index < 0 || swapWith < 0 || swapWith >= galleryImages.length) return;
+  const ids = galleryImages.map((img) => img.image_id);
+  [ids[index], ids[swapWith]] = [ids[swapWith], ids[index]];
+  try {
+    await apiFetch(`/admin/catalog/items/${editingItemId}/images/reorder`, {
+      method: "POST",
+      body: JSON.stringify({ image_ids: ids }),
+    });
+    await loadGalleryImages(editingItemId);
+  } catch (e) {
+    showToast(e.message || "จัดเรียงรูปภาพไม่สำเร็จ", "error");
+  }
+}
+
+function bindGalleryActions() {
+  el("cm_gallery_body").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-gact]");
+    if (!button) return;
+    const imageId = Number(button.getAttribute("data-image-id"));
+    const act = button.getAttribute("data-gact");
+    if (act === "delete") onGalleryDelete(imageId);
+    else if (act === "primary") onGallerySetPrimary(imageId);
+    else if (act === "up") onGalleryReorder(imageId, "up");
+    else if (act === "down") onGalleryReorder(imageId, "down");
+  });
 }
 
 /* ---------- "เพิ่มเติม" action sheet ---------- */
@@ -445,6 +685,12 @@ function catalogItemMatchesFilters(item) {
   return true;
 }
 
+function catalogItemThumbUrl(item) {
+  const images = Array.isArray(item.images) ? item.images : [];
+  const primary = images.find((img) => img.is_primary) || images[0];
+  return (primary && primary.image_url) || item.image_url || "";
+}
+
 function catalogItemCard(item) {
   const active = !!item.is_active;
   const visible = !!item.is_customer_visible;
@@ -454,8 +700,9 @@ function catalogItemCard(item) {
   const salePrice = item.display_price != null ? item.display_price : item.base_price;
   const showAsk = !(Number(salePrice) > 0);
 
-  const thumb = item.image_url
-    ? `<img class="asc-item-thumb" src="${escapeHtml(item.image_url)}" alt="${escapeHtml(item.item_name)}" loading="lazy" onerror="this.outerHTML='<div class=&quot;asc-item-thumb asc-placeholder&quot;>ไม่มีรูป</div>';">`
+  const thumbUrl = catalogItemThumbUrl(item);
+  const thumb = thumbUrl
+    ? `<img class="asc-item-thumb" src="${escapeHtml(thumbUrl)}" alt="${escapeHtml(item.item_name)}" loading="lazy" onerror="this.outerHTML='<div class=&quot;asc-item-thumb asc-placeholder&quot;>ไม่มีรูป</div>';">`
     : `<div class="asc-item-thumb asc-placeholder">ไม่มีรูป</div>`;
 
   const priceRow = showAsk
@@ -476,6 +723,8 @@ function catalogItemCard(item) {
         <span class="asc-badge ${active ? "asc-badge-active" : "asc-badge-inactive"}">${active ? "เปิดใช้งาน" : "ปิดใช้งาน"}</span>
         ${visible ? `<span class="asc-badge asc-badge-visible">แสดงลูกค้า</span>` : ""}
         ${hasPromo ? `<span class="asc-badge asc-badge-promo">${escapeHtml(item.campaign_name || "โปรโมชัน")}</span>` : ""}
+        ${item.booking_mode === "bookable" ? `<span class="asc-badge asc-badge-bookable">จองออนไลน์ได้</span>` : `<span class="asc-badge asc-badge-contact">ติดต่อแอดมิน</span>`}
+        ${item.is_featured ? `<span class="asc-badge asc-badge-featured">แนะนำ</span>` : ""}
       </div>
     </div>
     <div class="asc-item-actions">

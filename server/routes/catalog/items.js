@@ -50,12 +50,140 @@ const CATALOG_ITEM_FIELDS = [
   "is_active", "is_customer_visible",
 ];
 
+// Marketplace v2 fields (migrations/20260623_catalog_store_marketplace_v2.sql).
+// Kept as a separate whitelist so the legacy field list above stays stable and
+// readable for reviewers; mergeCatalogItemPayload() merges both lists together.
+const CATALOG_MARKETPLACE_FIELDS = [
+  "short_description", "long_description", "highlights", "service_conditions",
+  "booking_mode", "booking_service_key", "booking_ac_type", "booking_btu",
+  "booking_wash_variant", "is_featured",
+];
+
+const BOOKING_MODES = new Set(["bookable", "contact_admin"]);
+
+// Allowed values must match the Customer App's canonical lists exactly
+// (customer-app/modules/services.js: acTypes/btuOptions/washVariants) so a
+// "bookable" catalog item can never carry a value the booking flow can't
+// actually handle.
+const ALLOWED_BOOKING_AC_TYPES = new Set(["ผนัง", "สี่ทิศทาง", "แขวน", "เปลือยใต้ฝ้า"]);
+const ALLOWED_BOOKING_BTU = new Set([9000, 12000, 18000, 24000, 30000]);
+const ALLOWED_BOOKING_WASH_VARIANTS = new Set(["ล้างธรรมดา", "ล้างพรีเมียม", "ล้างแขวนคอยล์", "ล้างแบบตัดล้าง"]);
+const WALL_AC_TYPE = "ผนัง";
+
 function mergeCatalogItemPayload(existing, body) {
   const merged = {};
   CATALOG_ITEM_FIELDS.forEach((key) => {
     merged[key] = Object.prototype.hasOwnProperty.call(body, key) ? body[key] : existing[key];
   });
+  CATALOG_MARKETPLACE_FIELDS.forEach((key) => {
+    merged[key] = Object.prototype.hasOwnProperty.call(body, key) ? body[key] : existing[key];
+  });
   return merged;
+}
+
+function parseOptionalText(value, fieldLabel, maxLen) {
+  if (value === undefined || value === null) return { ok: true, value: null };
+  const trimmed = String(value).trim();
+  if (!trimmed) return { ok: true, value: null };
+  if (maxLen && trimmed.length > maxLen) {
+    return { ok: false, error: `${fieldLabel} ต้องไม่เกิน ${maxLen} ตัวอักษร` };
+  }
+  return { ok: true, value: trimmed };
+}
+
+function parseOptionalHighlights(value) {
+  if (value === undefined || value === null || value === "") return { ok: true, value: null };
+  let arr = value;
+  if (typeof value === "string") {
+    try {
+      arr = JSON.parse(value);
+    } catch (_) {
+      return { ok: false, error: "highlights ต้องเป็นรายการข้อความ (JSON array)" };
+    }
+  }
+  if (!Array.isArray(arr)) return { ok: false, error: "highlights ต้องเป็นรายการข้อความ (JSON array)" };
+  const cleaned = arr.map((item) => String(item == null ? "" : item).trim()).filter(Boolean);
+  if (cleaned.length > 20) return { ok: false, error: "highlights ต้องมีไม่เกิน 20 ข้อ" };
+  return { ok: true, value: cleaned };
+}
+
+function validateMarketplaceFields(merged) {
+  const errors = [];
+
+  const bookingMode = String(merged.booking_mode || "contact_admin").trim() || "contact_admin";
+  if (!BOOKING_MODES.has(bookingMode)) {
+    errors.push("booking_mode ต้องเป็น 'bookable' หรือ 'contact_admin' เท่านั้น");
+  }
+
+  const shortDescResult = parseOptionalText(merged.short_description, "คำอธิบายสั้น", 300);
+  if (!shortDescResult.ok) errors.push(shortDescResult.error);
+
+  const longDescResult = parseOptionalText(merged.long_description, "คำอธิบายแบบละเอียด", 5000);
+  if (!longDescResult.ok) errors.push(longDescResult.error);
+
+  const conditionsResult = parseOptionalText(merged.service_conditions, "เงื่อนไขบริการ", 3000);
+  if (!conditionsResult.ok) errors.push(conditionsResult.error);
+
+  const highlightsResult = parseOptionalHighlights(merged.highlights);
+  if (!highlightsResult.ok) errors.push(highlightsResult.error);
+
+  const bookingServiceKeyResult = parseOptionalText(merged.booking_service_key, "booking_service_key", 120);
+  if (!bookingServiceKeyResult.ok) errors.push(bookingServiceKeyResult.error);
+
+  const bookingAcTypeResult = parseOptionalText(merged.booking_ac_type, "booking_ac_type", 60);
+  if (!bookingAcTypeResult.ok) errors.push(bookingAcTypeResult.error);
+
+  const bookingWashVariantResult = parseOptionalText(merged.booking_wash_variant, "booking_wash_variant", 60);
+  if (!bookingWashVariantResult.ok) errors.push(bookingWashVariantResult.error);
+
+  const bookingBtuResult = parseOptionalPositiveNumber(merged.booking_btu, "booking_btu");
+  if (!bookingBtuResult.ok) errors.push(bookingBtuResult.error);
+
+  const isFeaturedResult = normalizeBoolean(
+    Object.prototype.hasOwnProperty.call(merged, "is_featured") && merged.is_featured !== undefined && merged.is_featured !== null && merged.is_featured !== ""
+      ? merged.is_featured
+      : false,
+    "is_featured"
+  );
+  if (!isFeaturedResult.ok) errors.push(isFeaturedResult.error);
+
+  // booking_service_key is metadata only — the customer app doesn't consume it
+  // for prefill yet, so it must never be treated as sufficient on its own. A
+  // bookable item must carry a real, supported ac_type + btu (and, for wall
+  // units, a supported wash_variant), or the booking screen can't be opened
+  // deterministically.
+  if (bookingMode === "bookable") {
+    const acType = bookingAcTypeResult.value;
+    const btu = bookingBtuResult.value !== null ? Math.round(bookingBtuResult.value) : null;
+    const washVariant = bookingWashVariantResult.value;
+
+    if (!acType || !ALLOWED_BOOKING_AC_TYPES.has(acType)) {
+      errors.push(`รายการที่เป็น bookable ต้องระบุ booking_ac_type เป็นหนึ่งใน: ${Array.from(ALLOWED_BOOKING_AC_TYPES).join(", ")}`);
+    }
+    if (!btu || !ALLOWED_BOOKING_BTU.has(btu)) {
+      errors.push(`รายการที่เป็น bookable ต้องระบุ booking_btu เป็นหนึ่งใน: ${Array.from(ALLOWED_BOOKING_BTU).join(", ")}`);
+    }
+    if (acType === WALL_AC_TYPE && (!washVariant || !ALLOWED_BOOKING_WASH_VARIANTS.has(washVariant))) {
+      errors.push(`รายการแอร์ผนังที่เป็น bookable ต้องระบุ booking_wash_variant เป็นหนึ่งใน: ${Array.from(ALLOWED_BOOKING_WASH_VARIANTS).join(", ")}`);
+    }
+  }
+
+  if (errors.length) return { ok: false, errors };
+  return {
+    ok: true,
+    value: {
+      booking_mode: bookingMode,
+      short_description: shortDescResult.value,
+      long_description: longDescResult.value,
+      service_conditions: conditionsResult.value,
+      highlights: highlightsResult.value,
+      booking_service_key: bookingServiceKeyResult.value,
+      booking_ac_type: bookingAcTypeResult.value,
+      booking_wash_variant: bookingWashVariantResult.value,
+      booking_btu: bookingBtuResult.value !== null ? Math.round(bookingBtuResult.value) : null,
+      is_featured: isFeaturedResult.value,
+    },
+  };
 }
 
 function validateMergedCatalogItem(merged) {
@@ -184,6 +312,66 @@ const CATALOG_SELECT_LEGACY = `
   FROM public.catalog_items ci
 `;
 
+// Adds marketplace v2 columns (migrations/20260623_catalog_store_marketplace_v2.sql) on
+// top of CATALOG_SELECT_WITH_PRICING. Multi-image rows live in catalog_item_images and are
+// fetched with a separate, grouped query (see attachCatalogImages) rather than joined here,
+// so a single catalog_items row never gets fanned out across N image rows.
+const CATALOG_SELECT_MARKETPLACE = `
+  SELECT ci.item_id, ci.item_name, ci.item_category, ci.base_price, ci.unit_label, ci.is_active,
+         ci.job_category, ci.ac_type, ci.btu_min, ci.btu_max, ci.is_customer_visible,
+         ci.image_url, ci.image_public_id, ci.price_rule_id,
+         ci.short_description, ci.long_description, ci.highlights, ci.service_conditions,
+         ci.booking_mode, ci.booking_service_key, ci.booking_ac_type, ci.booking_btu,
+         ci.booking_wash_variant, ci.is_featured,
+         pr.normal_price AS rule_normal_price, pr.active_price AS rule_active_price,
+         pr.campaign_name AS rule_campaign_name, pr.is_active AS rule_is_active,
+         pr.effective_from AS rule_effective_from, pr.effective_to AS rule_effective_to,
+         pr.wash_variant AS rule_wash_variant, pr.label AS rule_label, pr.priority AS rule_priority
+  FROM public.catalog_items ci
+  LEFT JOIN public.customer_service_price_rules pr ON pr.rule_id = ci.price_rule_id
+`;
+
+// Three-tier capability-driven SELECT: legacy (day one) -> +media/pricing -> +marketplace v2.
+// Building from flags (rather than three independently-hand-written constants) keeps the
+// marketplace tier from drifting out of sync with the pricing tier as both evolve.
+function buildCatalogSelect({ pricingReady, marketplaceReady }) {
+  if (marketplaceReady) return CATALOG_SELECT_MARKETPLACE;
+  if (pricingReady) return CATALOG_SELECT_WITH_PRICING;
+  return CATALOG_SELECT_LEGACY;
+}
+
+async function attachCatalogImages(pool, rows, marketplaceReady) {
+  if (!marketplaceReady || !rows.length) {
+    rows.forEach((row) => { row.images = []; });
+    return rows;
+  }
+  const ids = rows.map((row) => row.item_id);
+  const r = await pool.query(
+    `SELECT image_id, item_id, image_url, image_public_id, alt_text, sort_order, is_primary
+       FROM public.catalog_item_images
+      WHERE item_id = ANY($1::bigint[])
+      ORDER BY item_id, sort_order, image_id`,
+    [ids]
+  );
+  const byItem = new Map();
+  r.rows.forEach((imgRow) => {
+    if (!byItem.has(imgRow.item_id)) byItem.set(imgRow.item_id, []);
+    byItem.get(imgRow.item_id).push(imgRow);
+  });
+  rows.forEach((row) => { row.images = byItem.get(row.item_id) || []; });
+  return rows;
+}
+
+function serializeCatalogImage(imgRow) {
+  return {
+    image_id: imgRow.image_id,
+    image_url: imgRow.image_url,
+    alt_text: imgRow.alt_text || null,
+    sort_order: imgRow.sort_order,
+    is_primary: Boolean(imgRow.is_primary),
+  };
+}
+
 function computeEffectivePricing(row) {
   const base_price = Number(row.base_price || 0);
   let ruleIsCurrentlyActive = false;
@@ -223,6 +411,24 @@ function computeEffectivePricing(row) {
 // a customer see right now". Do not add raw rule fields here; see serializeAdminCatalogRow.
 function serializeCatalogRow(row) {
   const pricing = computeEffectivePricing(row);
+  // Multi-image gallery, ordered by sort_order. Falls back to the legacy single
+  // image_url/image_public_id pair (as one synthetic primary image) so items
+  // created before the marketplace v2 migration still render a photo.
+  const galleryRows = Array.isArray(row.images) ? row.images : [];
+  // Primary image must render first regardless of sort_order, since "Primary"
+  // is the field admins actually use to choose the lead photo.
+  const orderedGalleryRows = galleryRows.length
+    ? [...galleryRows].sort((a, b) => {
+      const aPrimary = a.is_primary ? 0 : 1;
+      const bPrimary = b.is_primary ? 0 : 1;
+      if (aPrimary !== bPrimary) return aPrimary - bPrimary;
+      return (a.sort_order ?? 0) - (b.sort_order ?? 0) || (a.image_id ?? 0) - (b.image_id ?? 0);
+    })
+    : galleryRows;
+  const images = orderedGalleryRows.length
+    ? orderedGalleryRows.map(serializeCatalogImage)
+    : (row.image_url ? [{ image_id: null, image_url: row.image_url, alt_text: null, sort_order: 0, is_primary: true }] : []);
+
   return {
     item_id: row.item_id,
     item_name: row.item_name,
@@ -251,6 +457,32 @@ function serializeCatalogRow(row) {
     price_label: pricing.price_label,
     wash_variant: pricing.wash_variant,
     priority: pricing.priority,
+    // Marketplace v2 fields (default to the safe "needs admin" shape when the
+    // migration hasn't been run yet, since row.booking_mode is then undefined).
+    images,
+    short_description: row.short_description || null,
+    highlights: Array.isArray(row.highlights) ? row.highlights : [],
+    booking_mode: row.booking_mode === "bookable" ? "bookable" : "contact_admin",
+    // Needed on the list endpoint so the Store card's "book" button can build a
+    // real booking draft without a follow-up detail fetch. booking_service_key is
+    // intentionally omitted here: the frontend never uses it for booking, only
+    // the detail/admin DTOs need it.
+    booking_ac_type: row.booking_mode === "bookable" ? (row.booking_ac_type || null) : null,
+    booking_btu: row.booking_mode === "bookable" ? (row.booking_btu || null) : null,
+    booking_wash_variant: row.booking_mode === "bookable" ? (row.booking_wash_variant || null) : null,
+    is_featured: Boolean(row.is_featured),
+  };
+}
+
+// Public detail DTO: everything serializeCatalogRow has, plus the long-form
+// content and the booking_service_key a product detail page needs.
+function serializeCatalogDetailRow(row) {
+  const base = serializeCatalogRow(row);
+  return {
+    ...base,
+    long_description: row.long_description || null,
+    service_conditions: row.service_conditions || null,
+    booking_service_key: row.booking_mode === "bookable" ? (row.booking_service_key || null) : null,
   };
 }
 
@@ -272,6 +504,14 @@ function serializeAdminCatalogRow(row) {
     pricing_is_active: hasRule ? Boolean(row.rule_is_active) : null,
     pricing_wash_variant: hasRule ? (row.rule_wash_variant || null) : null,
     pricing_priority: hasRule ? (row.rule_priority != null ? Number(row.rule_priority) : null) : null,
+    // Raw marketplace fields for the admin Edit form (booking_mode is already on
+    // `base` since it's needed for public CTA routing too; this adds the rest).
+    long_description: row.long_description || null,
+    service_conditions: row.service_conditions || null,
+    booking_service_key: row.booking_service_key || null,
+    booking_ac_type: row.booking_ac_type || null,
+    booking_btu: row.booking_btu || null,
+    booking_wash_variant: row.booking_wash_variant || null,
   };
 }
 
@@ -355,10 +595,35 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
     return ready;
   }
 
+  // Mirrors isMediaPricingSchemaReady's capability-check idiom: read-only, never issues
+  // DDL, caches `true` for the router's lifetime once the marketplace v2 migration
+  // (migrations/20260623_catalog_store_marketplace_v2.sql) has actually been run.
+  let marketplaceSchemaReadyCache = false;
+  async function isMarketplaceSchemaReady(db) {
+    if (marketplaceSchemaReadyCache) return true;
+    const r = await db.query(`
+      SELECT COUNT(*)::int AS cnt
+      FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = 'catalog_items'
+        AND column_name IN (
+          'short_description', 'long_description', 'highlights', 'service_conditions',
+          'booking_mode', 'booking_service_key', 'booking_ac_type', 'booking_btu',
+          'booking_wash_variant', 'is_featured'
+        )
+    `);
+    const columnsReady = Number(r.rows?.[0]?.cnt || 0) === 10;
+    if (!columnsReady) return false;
+    const t = await db.query(`SELECT to_regclass('public.catalog_item_images') AS reg`);
+    const ready = Boolean(t.rows?.[0]?.reg);
+    if (ready) marketplaceSchemaReadyCache = true;
+    return ready;
+  }
+
   router.get("/catalog/items", async (req, res) => {
     try {
-      const schemaReady = await isMediaPricingSchemaReady(pool);
-      const select = schemaReady ? CATALOG_SELECT_WITH_PRICING : CATALOG_SELECT_LEGACY;
+      const pricingReady = await isMediaPricingSchemaReady(pool);
+      const marketplaceReady = await isMarketplaceSchemaReady(pool);
+      const select = buildCatalogSelect({ pricingReady, marketplaceReady });
       const customer = String(req.query.customer || "").trim() === "1";
       const job_category = (req.query.job_category || "").toString().trim();
       const ac_type = (req.query.ac_type || "").toString().trim();
@@ -382,6 +647,7 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
          ORDER BY ci.item_category, ci.item_name`,
         params
       );
+      await attachCatalogImages(pool, r.rows, marketplaceReady);
       res.json(r.rows.map(serializeCatalogRow));
     } catch (e) {
       console.error(e);
@@ -389,11 +655,36 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
     }
   });
 
+  router.get("/catalog/items/:itemId", async (req, res) => {
+    try {
+      const itemId = String(req.params.itemId || "").trim();
+      if (!/^\d+$/.test(itemId)) return res.status(400).json({ error: "item_id ไม่ถูกต้อง" });
+
+      const pricingReady = await isMediaPricingSchemaReady(pool);
+      const marketplaceReady = await isMarketplaceSchemaReady(pool);
+      const select = buildCatalogSelect({ pricingReady, marketplaceReady });
+
+      const r = await pool.query(
+        `${select} WHERE ci.item_id = $1 AND ci.is_active = TRUE AND ci.is_customer_visible = TRUE`,
+        [itemId]
+      );
+      const row = r.rows[0];
+      if (!row) return res.status(404).json({ error: "ไม่พบรายการนี้" });
+      await attachCatalogImages(pool, [row], marketplaceReady);
+      res.json(serializeCatalogDetailRow(row));
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "โหลดรายละเอียดสินค้า/บริการไม่สำเร็จ" });
+    }
+  });
+
   router.get("/admin/catalog/items", requireAdminSession, async (req, res) => {
     try {
-      const schemaReady = await isMediaPricingSchemaReady(pool);
-      const select = schemaReady ? CATALOG_SELECT_WITH_PRICING : CATALOG_SELECT_LEGACY;
+      const pricingReady = await isMediaPricingSchemaReady(pool);
+      const marketplaceReady = await isMarketplaceSchemaReady(pool);
+      const select = buildCatalogSelect({ pricingReady, marketplaceReady });
       const r = await pool.query(`${select} ORDER BY ci.item_category, ci.item_name`);
+      await attachCatalogImages(pool, r.rows, marketplaceReady);
       res.json(r.rows.map(serializeAdminCatalogRow));
     } catch (e) {
       console.error(e);
@@ -411,26 +702,49 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
     const result = validateMergedCatalogItem(merged);
     if (!result.ok) return res.status(400).json({ error: result.errors.join(", ") });
 
+    const marketplaceResult = validateMarketplaceFields(merged);
+    if (!marketplaceResult.ok) return res.status(400).json({ error: marketplaceResult.errors.join(", ") });
+
     const hasPricingKey = req.body && Object.prototype.hasOwnProperty.call(req.body, "pricing");
     const pricingResult = hasPricingKey ? validatePricingInput(req.body.pricing) : { ok: true, value: undefined };
     if (!pricingResult.ok) return res.status(400).json({ error: pricingResult.errors.join(", ") });
 
+    const hasMarketplaceKey = CATALOG_MARKETPLACE_FIELDS.some((key) => Object.prototype.hasOwnProperty.call(req.body || {}, key));
     const schemaReady = await isMediaPricingSchemaReady(pool);
+    const marketplaceReady = await isMarketplaceSchemaReady(pool);
     if (pricingResult.value && !schemaReady) {
       return res.status(503).json({ error: "ระบบราคาโปรโมชันยังไม่พร้อมใช้งาน (ยังไม่ได้รัน migration)" });
     }
+    if (hasMarketplaceKey && !marketplaceReady) {
+      return res.status(503).json({ error: "ระบบ Marketplace ยังไม่พร้อมใช้งาน (ยังไม่ได้รัน migration)" });
+    }
 
     const v = result.value;
+    const mv = marketplaceResult.value;
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
-      const insertRes = await client.query(
-        `INSERT INTO public.catalog_items
-           (item_name, item_category, base_price, unit_label, job_category, ac_type, btu_min, btu_max, is_active, is_customer_visible)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-         RETURNING item_id`,
-        [v.item_name, v.item_category, v.base_price, v.unit_label, v.job_category, v.ac_type, v.btu_min, v.btu_max, v.is_active, v.is_customer_visible]
-      );
+      const insertRes = marketplaceReady
+        ? await client.query(
+          `INSERT INTO public.catalog_items
+             (item_name, item_category, base_price, unit_label, job_category, ac_type, btu_min, btu_max, is_active, is_customer_visible,
+              short_description, long_description, highlights, service_conditions,
+              booking_mode, booking_service_key, booking_ac_type, booking_btu, booking_wash_variant, is_featured)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+           RETURNING item_id`,
+          [
+            v.item_name, v.item_category, v.base_price, v.unit_label, v.job_category, v.ac_type, v.btu_min, v.btu_max, v.is_active, v.is_customer_visible,
+            mv.short_description, mv.long_description, mv.highlights ? JSON.stringify(mv.highlights) : null, mv.service_conditions,
+            mv.booking_mode, mv.booking_service_key, mv.booking_ac_type, mv.booking_btu, mv.booking_wash_variant, mv.is_featured,
+          ]
+        )
+        : await client.query(
+          `INSERT INTO public.catalog_items
+             (item_name, item_category, base_price, unit_label, job_category, ac_type, btu_min, btu_max, is_active, is_customer_visible)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+           RETURNING item_id`,
+          [v.item_name, v.item_category, v.base_price, v.unit_label, v.job_category, v.ac_type, v.btu_min, v.btu_max, v.is_active, v.is_customer_visible]
+        );
       const itemId = insertRes.rows[0].item_id;
 
       if (pricingResult.value) {
@@ -445,8 +759,9 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
 
       await client.query("COMMIT");
 
-      const select = schemaReady ? CATALOG_SELECT_WITH_PRICING : CATALOG_SELECT_LEGACY;
+      const select = buildCatalogSelect({ pricingReady: schemaReady, marketplaceReady });
       const final = await client.query(`${select} WHERE ci.item_id = $1`, [itemId]);
+      await attachCatalogImages(client, final.rows, marketplaceReady);
       res.status(201).json(serializeAdminCatalogRow(final.rows[0]));
     } catch (e) {
       await client.query("ROLLBACK").catch(() => {});
@@ -462,7 +777,8 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
     if (!/^\d+$/.test(itemId)) return res.status(400).json({ error: "item_id ไม่ถูกต้อง" });
 
     const schemaReady = await isMediaPricingSchemaReady(pool);
-    const select = schemaReady ? CATALOG_SELECT_WITH_PRICING : CATALOG_SELECT_LEGACY;
+    const marketplaceReady = await isMarketplaceSchemaReady(pool);
+    const select = buildCatalogSelect({ pricingReady: schemaReady, marketplaceReady });
     const existingResult = await pool.query(`${select} WHERE ci.item_id = $1`, [itemId]);
     const existing = existingResult.rows[0];
     if (!existing) return res.status(404).json({ error: "ไม่พบรายการนี้" });
@@ -471,6 +787,9 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
     const result = validateMergedCatalogItem(merged);
     if (!result.ok) return res.status(400).json({ error: result.errors.join(", ") });
 
+    const marketplaceResult = validateMarketplaceFields(merged);
+    if (!marketplaceResult.ok) return res.status(400).json({ error: marketplaceResult.errors.join(", ") });
+
     const hasPricingKey = req.body && Object.prototype.hasOwnProperty.call(req.body, "pricing");
     const pricingResult = hasPricingKey ? validatePricingInput(req.body.pricing) : { ok: true, value: undefined };
     if (!pricingResult.ok) return res.status(400).json({ error: pricingResult.errors.join(", ") });
@@ -478,18 +797,43 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
       return res.status(503).json({ error: "ระบบราคาโปรโมชันยังไม่พร้อมใช้งาน (ยังไม่ได้รัน migration)" });
     }
 
+    const hasMarketplaceKey = CATALOG_MARKETPLACE_FIELDS.some((key) => Object.prototype.hasOwnProperty.call(req.body || {}, key));
+    if (hasMarketplaceKey && !marketplaceReady) {
+      return res.status(503).json({ error: "ระบบ Marketplace ยังไม่พร้อมใช้งาน (ยังไม่ได้รัน migration)" });
+    }
+
     const v = result.value;
+    const mv = marketplaceResult.value;
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
-      await client.query(
-        `UPDATE public.catalog_items
-            SET item_name=$1, item_category=$2, base_price=$3, unit_label=$4,
-                job_category=$5, ac_type=$6, btu_min=$7, btu_max=$8,
-                is_active=$9, is_customer_visible=$10
-          WHERE item_id = $11`,
-        [v.item_name, v.item_category, v.base_price, v.unit_label, v.job_category, v.ac_type, v.btu_min, v.btu_max, v.is_active, v.is_customer_visible, itemId]
-      );
+      if (marketplaceReady) {
+        await client.query(
+          `UPDATE public.catalog_items
+              SET item_name=$1, item_category=$2, base_price=$3, unit_label=$4,
+                  job_category=$5, ac_type=$6, btu_min=$7, btu_max=$8,
+                  is_active=$9, is_customer_visible=$10,
+                  short_description=$11, long_description=$12, highlights=$13, service_conditions=$14,
+                  booking_mode=$15, booking_service_key=$16, booking_ac_type=$17, booking_btu=$18,
+                  booking_wash_variant=$19, is_featured=$20
+            WHERE item_id = $21`,
+          [
+            v.item_name, v.item_category, v.base_price, v.unit_label, v.job_category, v.ac_type, v.btu_min, v.btu_max, v.is_active, v.is_customer_visible,
+            mv.short_description, mv.long_description, mv.highlights ? JSON.stringify(mv.highlights) : null, mv.service_conditions,
+            mv.booking_mode, mv.booking_service_key, mv.booking_ac_type, mv.booking_btu, mv.booking_wash_variant, mv.is_featured,
+            itemId,
+          ]
+        );
+      } else {
+        await client.query(
+          `UPDATE public.catalog_items
+              SET item_name=$1, item_category=$2, base_price=$3, unit_label=$4,
+                  job_category=$5, ac_type=$6, btu_min=$7, btu_max=$8,
+                  is_active=$9, is_customer_visible=$10
+            WHERE item_id = $11`,
+          [v.item_name, v.item_category, v.base_price, v.unit_label, v.job_category, v.ac_type, v.btu_min, v.btu_max, v.is_active, v.is_customer_visible, itemId]
+        );
+      }
 
       // pricingResult.value === undefined -> field omitted, leave pricing untouched.
       // pricingResult.value === null      -> caller sent no pricing changes; the existing
@@ -510,6 +854,7 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
       await client.query("COMMIT");
 
       const final = await client.query(`${select} WHERE ci.item_id = $1`, [itemId]);
+      await attachCatalogImages(client, final.rows, marketplaceReady);
       res.json(serializeAdminCatalogRow(final.rows[0]));
     } catch (e) {
       await client.query("ROLLBACK").catch(() => {});
@@ -570,7 +915,10 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
           });
         }
 
-        const final = await pool.query(`${CATALOG_SELECT_WITH_PRICING} WHERE ci.item_id = $1`, [itemId]);
+        const marketplaceReady = await isMarketplaceSchemaReady(pool);
+        const select = buildCatalogSelect({ pricingReady: true, marketplaceReady });
+        const final = await pool.query(`${select} WHERE ci.item_id = $1`, [itemId]);
+        await attachCatalogImages(pool, final.rows, marketplaceReady);
         res.json(serializeAdminCatalogRow(final.rows[0]));
       } catch (e) {
         console.error(e);
@@ -616,11 +964,296 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
         }
       }
 
-      const final = await pool.query(`${CATALOG_SELECT_WITH_PRICING} WHERE ci.item_id = $1`, [itemId]);
+      const marketplaceReady = await isMarketplaceSchemaReady(pool);
+      const select = buildCatalogSelect({ pricingReady: true, marketplaceReady });
+      const final = await pool.query(`${select} WHERE ci.item_id = $1`, [itemId]);
+      await attachCatalogImages(pool, final.rows, marketplaceReady);
       res.json(serializeAdminCatalogRow(final.rows[0]));
     } catch (e) {
       console.error(e);
       res.status(500).json({ error: "ลบรูปภาพไม่สำเร็จ" });
+    }
+  });
+
+  // ---- Multi-image gallery management (marketplace v2) ----
+  // catalog_item_images is the gallery store; the legacy single image_url/image_public_id
+  // pair above remains untouched and is only used as a fallback when an item has zero rows
+  // in catalog_item_images (see serializeCatalogRow).
+
+  router.get("/admin/catalog/items/:itemId/images", requireAdminSession, async (req, res) => {
+    try {
+      const itemId = String(req.params.itemId || "").trim();
+      if (!/^\d+$/.test(itemId)) return res.status(400).json({ error: "item_id ไม่ถูกต้อง" });
+
+      const marketplaceReady = await isMarketplaceSchemaReady(pool);
+      if (!marketplaceReady) {
+        return res.status(503).json({ error: "ระบบ Marketplace ยังไม่พร้อมใช้งาน (ยังไม่ได้รัน migration)" });
+      }
+
+      const r = await pool.query(
+        `SELECT image_id, item_id, image_url, image_public_id, alt_text, sort_order, is_primary
+           FROM public.catalog_item_images WHERE item_id = $1 ORDER BY sort_order, image_id`,
+        [itemId]
+      );
+      res.json(r.rows.map(serializeCatalogImage));
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "โหลดรูปภาพไม่สำเร็จ" });
+    }
+  });
+
+  router.post(
+    "/admin/catalog/items/:itemId/images",
+    requireAdminSession,
+    (req, res, next) => {
+      upload.single("image")(req, res, (err) => {
+        if (err) {
+          if (err.code === "LIMIT_FILE_SIZE") return res.status(400).json({ error: "ไฟล์รูปภาพใหญ่เกิน 5MB" });
+          return res.status(400).json({ error: "อัปโหลดไฟล์ไม่สำเร็จ" });
+        }
+        next();
+      });
+    },
+    async (req, res) => {
+      try {
+        const itemId = String(req.params.itemId || "").trim();
+        if (!/^\d+$/.test(itemId)) return res.status(400).json({ error: "item_id ไม่ถูกต้อง" });
+
+        const marketplaceReady = await isMarketplaceSchemaReady(pool);
+        if (!marketplaceReady) {
+          return res.status(503).json({ error: "ระบบ Marketplace ยังไม่พร้อมใช้งาน (ยังไม่ได้รัน migration)" });
+        }
+
+        const altText = parseOptionalText(req.body && req.body.alt_text, "alt_text", 200);
+        if (!altText.ok) return res.status(400).json({ error: altText.error });
+
+        if (!req.file) return res.status(400).json({ error: "ไม่พบไฟล์รูปภาพ" });
+        const validation = cloudinaryImageUpload.validateCatalogImageFile(req.file);
+        if (!validation.ok) return res.status(400).json({ error: validation.error });
+
+        let uploaded = null;
+        const client = await pool.connect();
+        try {
+          await client.query("BEGIN");
+          // Lock the parent row for the duration of the first-image computation so
+          // two concurrent uploads can never both observe "no images yet" and both
+          // insert is_primary=TRUE (the partial unique index is a DB-level backstop
+          // for the same race).
+          const existingResult = await client.query(
+            `SELECT item_id FROM public.catalog_items WHERE item_id = $1 FOR UPDATE`,
+            [itemId]
+          );
+          if (!existingResult.rows[0]) {
+            await client.query("ROLLBACK");
+            return res.status(404).json({ error: "ไม่พบรายการนี้" });
+          }
+
+          const countResult = await client.query(
+            `SELECT COUNT(*)::int AS cnt, COALESCE(MAX(sort_order), -1) AS max_sort
+               FROM public.catalog_item_images WHERE item_id = $1`,
+            [itemId]
+          );
+          const isFirstImage = Number(countResult.rows[0].cnt) === 0;
+          const nextSortOrder = Number(countResult.rows[0].max_sort) + 1;
+
+          uploaded = await uploadCatalogImage({
+            buffer: req.file.buffer,
+            mimetype: req.file.mimetype,
+            itemId,
+          });
+
+          const inserted = await client.query(
+            `INSERT INTO public.catalog_item_images (item_id, image_url, image_public_id, alt_text, sort_order, is_primary)
+             VALUES ($1, $2, $3, $4, $5, $6)
+             RETURNING image_id, item_id, image_url, image_public_id, alt_text, sort_order, is_primary`,
+            [itemId, uploaded.url, uploaded.public_id, altText.value, nextSortOrder, isFirstImage]
+          );
+
+          await client.query("COMMIT");
+          res.status(201).json(serializeCatalogImage(inserted.rows[0]));
+        } catch (e) {
+          await client.query("ROLLBACK").catch(() => {});
+          // The Cloudinary asset was already uploaded but never got a DB row to
+          // reference it — clean it up so it doesn't become an orphan.
+          if (uploaded && uploaded.public_id) {
+            deleteCatalogImage(uploaded.public_id).catch((cleanupError) => {
+              console.error("cleanup of orphaned catalog image upload failed", safeImageErrorMessage(cleanupError));
+            });
+          }
+          throw e;
+        } finally {
+          client.release();
+        }
+      } catch (e) {
+        console.error(e);
+        if (e && e.code === "CLOUDINARY_NOT_CONFIGURED") {
+          return res.status(503).json({ error: "ยังไม่ได้ตั้งค่า Cloudinary" });
+        }
+        res.status(500).json({ error: "อัปโหลดรูปภาพไม่สำเร็จ" });
+      }
+    }
+  );
+
+  router.delete("/admin/catalog/items/:itemId/images/:imageId", requireAdminSession, async (req, res) => {
+    try {
+      const itemId = String(req.params.itemId || "").trim();
+      const imageId = String(req.params.imageId || "").trim();
+      if (!/^\d+$/.test(itemId) || !/^\d+$/.test(imageId)) return res.status(400).json({ error: "พารามิเตอร์ไม่ถูกต้อง" });
+
+      const marketplaceReady = await isMarketplaceSchemaReady(pool);
+      if (!marketplaceReady) {
+        return res.status(503).json({ error: "ระบบ Marketplace ยังไม่พร้อมใช้งาน (ยังไม่ได้รัน migration)" });
+      }
+
+      const existingResult = await pool.query(
+        `SELECT image_id, item_id, image_public_id, is_primary FROM public.catalog_item_images WHERE image_id = $1 AND item_id = $2`,
+        [imageId, itemId]
+      );
+      const existing = existingResult.rows[0];
+      if (!existing) return res.status(404).json({ error: "ไม่พบรูปภาพนี้" });
+
+      // Cloudinary-first: deleting the DB row before the Cloudinary asset would
+      // lose the only reference to that asset's public_id the moment Cloudinary
+      // failed, orphaning it forever with no way to retry. Only "ok" or "not
+      // found" from Cloudinary are treated as safe to proceed — any other
+      // failure must leave the DB row (and its public_id) intact for retry.
+      let cloudinaryResult;
+      try {
+        cloudinaryResult = await deleteCatalogImage(existing.image_public_id);
+      } catch (cleanupError) {
+        console.error("cloudinary delete before gallery image delete failed", safeImageErrorMessage(cleanupError));
+        return res.status(502).json({
+          deleted: false,
+          cloudinary_deleted: false,
+          error: "ลบรูปภาพบน Cloudinary ไม่สำเร็จ กรุณาลองใหม่",
+        });
+      }
+
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        await client.query(`DELETE FROM public.catalog_item_images WHERE image_id = $1`, [imageId]);
+        if (existing.is_primary) {
+          await client.query(
+            `UPDATE public.catalog_item_images SET is_primary = TRUE
+               WHERE image_id = (
+                 SELECT image_id FROM public.catalog_item_images WHERE item_id = $1 ORDER BY sort_order, image_id LIMIT 1
+               )`,
+            [itemId]
+          );
+        }
+        await client.query("COMMIT");
+      } catch (e) {
+        await client.query("ROLLBACK").catch(() => {});
+        throw e;
+      } finally {
+        client.release();
+      }
+
+      res.json({ deleted: true, cloudinary_deleted: Boolean(cloudinaryResult.ok), cloudinary_result: cloudinaryResult.result || null });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "ลบรูปภาพไม่สำเร็จ" });
+    }
+  });
+
+  router.post("/admin/catalog/items/:itemId/images/:imageId/primary", requireAdminSession, async (req, res) => {
+    try {
+      const itemId = String(req.params.itemId || "").trim();
+      const imageId = String(req.params.imageId || "").trim();
+      if (!/^\d+$/.test(itemId) || !/^\d+$/.test(imageId)) return res.status(400).json({ error: "พารามิเตอร์ไม่ถูกต้อง" });
+
+      const marketplaceReady = await isMarketplaceSchemaReady(pool);
+      if (!marketplaceReady) {
+        return res.status(503).json({ error: "ระบบ Marketplace ยังไม่พร้อมใช้งาน (ยังไม่ได้รัน migration)" });
+      }
+
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        const target = await client.query(
+          `SELECT image_id FROM public.catalog_item_images WHERE image_id = $1 AND item_id = $2`,
+          [imageId, itemId]
+        );
+        if (!target.rows[0]) {
+          await client.query("ROLLBACK");
+          return res.status(404).json({ error: "ไม่พบรูปภาพนี้" });
+        }
+        await client.query(`UPDATE public.catalog_item_images SET is_primary = FALSE WHERE item_id = $1`, [itemId]);
+        await client.query(`UPDATE public.catalog_item_images SET is_primary = TRUE WHERE image_id = $1`, [imageId]);
+        await client.query("COMMIT");
+      } catch (e) {
+        await client.query("ROLLBACK").catch(() => {});
+        throw e;
+      } finally {
+        client.release();
+      }
+
+      const r = await pool.query(
+        `SELECT image_id, item_id, image_url, image_public_id, alt_text, sort_order, is_primary
+           FROM public.catalog_item_images WHERE item_id = $1 ORDER BY sort_order, image_id`,
+        [itemId]
+      );
+      res.json(r.rows.map(serializeCatalogImage));
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "ตั้งรูปหลักไม่สำเร็จ" });
+    }
+  });
+
+  router.post("/admin/catalog/items/:itemId/images/reorder", requireAdminSession, async (req, res) => {
+    try {
+      const itemId = String(req.params.itemId || "").trim();
+      if (!/^\d+$/.test(itemId)) return res.status(400).json({ error: "item_id ไม่ถูกต้อง" });
+
+      const marketplaceReady = await isMarketplaceSchemaReady(pool);
+      if (!marketplaceReady) {
+        return res.status(503).json({ error: "ระบบ Marketplace ยังไม่พร้อมใช้งาน (ยังไม่ได้รัน migration)" });
+      }
+
+      const imageIds = Array.isArray(req.body && req.body.image_ids) ? req.body.image_ids : null;
+      if (!imageIds || !imageIds.length || !imageIds.every((id) => /^\d+$/.test(String(id)))) {
+        return res.status(400).json({ error: "image_ids ต้องเป็นรายการ image_id" });
+      }
+
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        const existing = await client.query(`SELECT image_id FROM public.catalog_item_images WHERE item_id = $1`, [itemId]);
+        const existingIds = new Set(existing.rows.map((row) => String(row.image_id)));
+        const requestedIds = imageIds.map(String);
+        const requestedIdSet = new Set(requestedIds);
+        if (
+          requestedIds.length !== existingIds.size ||
+          requestedIdSet.size !== existingIds.size ||
+          !requestedIds.every((id) => existingIds.has(id))
+        ) {
+          await client.query("ROLLBACK");
+          return res.status(400).json({ error: "image_ids ต้องครบทุกรูปของรายการนี้ และไม่มีรายการซ้ำ" });
+        }
+        for (let i = 0; i < requestedIds.length; i += 1) {
+          await client.query(
+            `UPDATE public.catalog_item_images SET sort_order = $1 WHERE image_id = $2 AND item_id = $3`,
+            [i, requestedIds[i], itemId]
+          );
+        }
+        await client.query("COMMIT");
+      } catch (e) {
+        await client.query("ROLLBACK").catch(() => {});
+        throw e;
+      } finally {
+        client.release();
+      }
+
+      const r = await pool.query(
+        `SELECT image_id, item_id, image_url, image_public_id, alt_text, sort_order, is_primary
+           FROM public.catalog_item_images WHERE item_id = $1 ORDER BY sort_order, image_id`,
+        [itemId]
+      );
+      res.json(r.rows.map(serializeCatalogImage));
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "จัดเรียงรูปภาพไม่สำเร็จ" });
     }
   });
 
@@ -629,5 +1262,9 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
 
 module.exports.computeEffectivePricing = computeEffectivePricing;
 module.exports.serializeCatalogRow = serializeCatalogRow;
+module.exports.serializeCatalogDetailRow = serializeCatalogDetailRow;
 module.exports.serializeAdminCatalogRow = serializeAdminCatalogRow;
+module.exports.serializeCatalogImage = serializeCatalogImage;
 module.exports.validatePricingInput = validatePricingInput;
+module.exports.validateMarketplaceFields = validateMarketplaceFields;
+module.exports.buildCatalogSelect = buildCatalogSelect;
