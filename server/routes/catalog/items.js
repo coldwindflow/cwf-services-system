@@ -1,6 +1,8 @@
 const { money, intOrNull, boolish } = require("../../customerPricing");
 const cloudinaryImageUpload = require("../../lib/cloudinaryImageUpload");
 
+const MAX_CATALOG_IMAGES_PER_ITEM = 4;
+
 function normalizeBoolean(value, fieldLabel) {
   if (typeof value === "boolean") return { ok: true, value };
   if (typeof value === "number") {
@@ -1053,7 +1055,12 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
                FROM public.catalog_item_images WHERE item_id = $1`,
             [itemId]
           );
-          const isFirstImage = Number(countResult.rows[0].cnt) === 0;
+          const currentCount = Number(countResult.rows[0].cnt);
+          if (currentCount >= MAX_CATALOG_IMAGES_PER_ITEM) {
+            await client.query("ROLLBACK");
+            return res.status(409).json({ error: `รายการนี้มีรูปภาพครบ ${MAX_CATALOG_IMAGES_PER_ITEM} รูปแล้ว ไม่สามารถเพิ่มรูปได้อีก` });
+          }
+          const isFirstImage = currentCount === 0;
           const nextSortOrder = Number(countResult.rows[0].max_sort) + 1;
 
           uploaded = await uploadCatalogImage({
@@ -1268,3 +1275,4 @@ module.exports.serializeCatalogImage = serializeCatalogImage;
 module.exports.validatePricingInput = validatePricingInput;
 module.exports.validateMarketplaceFields = validateMarketplaceFields;
 module.exports.buildCatalogSelect = buildCatalogSelect;
+module.exports.MAX_CATALOG_IMAGES_PER_ITEM = MAX_CATALOG_IMAGES_PER_ITEM;

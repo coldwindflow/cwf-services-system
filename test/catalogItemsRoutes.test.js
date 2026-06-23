@@ -1974,6 +1974,54 @@ test("uploading a second gallery image is not primary and gets the next sort_ord
   });
 });
 
+test("uploading a 5th gallery image is rejected and never persisted", async () => {
+  const pool = makePool(sampleItems(), [], { marketplaceReady: true });
+  pool.state.images.push(
+    { image_id: 1, item_id: 1, image_url: "u1", image_public_id: "p1", alt_text: null, sort_order: 0, is_primary: true },
+    { image_id: 2, item_id: 1, image_url: "u2", image_public_id: "p2", alt_text: null, sort_order: 1, is_primary: false },
+    { image_id: 3, item_id: 1, image_url: "u3", image_public_id: "p3", alt_text: null, sort_order: 2, is_primary: false },
+    { image_id: 4, item_id: 1, image_url: "u4", image_public_id: "p4", alt_text: null, sort_order: 3, is_primary: false }
+  );
+  let uploadCalled = false;
+  const uploadCatalogImage = async () => { uploadCalled = true; return { url: "https://res.cloudinary.com/demo/g5.jpg", public_id: "g5" }; };
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin, uploadCatalogImage });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items/1/images`, { method: "POST", body: multipartImageForm(JPEG_BYTES) });
+    assert.equal(res.status, 409);
+    const body = await res.json();
+    assert.match(body.error, /4 รูป/);
+    assert.equal(uploadCalled, false);
+    assert.equal(pool.state.images.length, 4);
+  });
+});
+
+test("concurrent gallery uploads at the cap never exceed 4 images for an item", async () => {
+  const pool = makePool(sampleItems(), [], { marketplaceReady: true });
+  wrapWithFakeRowLock(pool);
+  pool.state.images.push(
+    { image_id: 1, item_id: 1, image_url: "u1", image_public_id: "p1", alt_text: null, sort_order: 0, is_primary: true },
+    { image_id: 2, item_id: 1, image_url: "u2", image_public_id: "p2", alt_text: null, sort_order: 1, is_primary: false },
+    { image_id: 3, item_id: 1, image_url: "u3", image_public_id: "p3", alt_text: null, sort_order: 2, is_primary: false }
+  );
+  let n = 0;
+  const uploadCatalogImage = async () => {
+    n += 1;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    return { url: `https://res.cloudinary.com/demo/cap${n}.jpg`, public_id: `cap${n}` };
+  };
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin, uploadCatalogImage });
+  await withServer(router, async (base) => {
+    const [res1, res2] = await Promise.all([
+      fetch(`${base}/admin/catalog/items/1/images`, { method: "POST", body: multipartImageForm(JPEG_BYTES) }),
+      fetch(`${base}/admin/catalog/items/1/images`, { method: "POST", body: multipartImageForm(PNG_BYTES, { mimetype: "image/png", filename: "x.png" }) }),
+    ]);
+    const statuses = [res1.status, res2.status].sort();
+    assert.deepEqual(statuses, [201, 409]);
+    const itemImages = pool.state.images.filter((img) => String(img.item_id) === "1");
+    assert.equal(itemImages.length, 4);
+  });
+});
+
 test("concurrent first-image uploads for the same item never produce two Primary images", async () => {
   const pool = makePool(sampleItems(), [], { marketplaceReady: true });
   wrapWithFakeRowLock(pool);
