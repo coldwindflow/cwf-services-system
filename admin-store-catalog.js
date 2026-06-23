@@ -6,7 +6,13 @@ let pendingImageRemoved = false;
 let moreSheetItemId = null;
 let galleryImages = [];
 let galleryLoading = false;
+let galleryUploading = false;
+let galleryUploadQueue = [];
+let galleryPickNotice = "";
+let deleteModalItemId = null;
 const BOOKING_MODES = ["bookable", "contact_admin"];
+// Must mirror the backend's MAX_CATALOG_IMAGES_PER_ITEM (server/routes/catalog/items.js)
+const MAX_GALLERY_IMAGES = 4;
 
 // Must mirror the Customer App's canonical lists exactly
 // (customer-app/modules/services.js: acTypes/btuOptions/washVariants) and the
@@ -59,28 +65,16 @@ function ensureCatalogModal() {
       <div class="cwf-modal-body">
 
         <div class="asc-section">
-          <div class="asc-section-title">1) ข้อมูลบริการ</div>
+          <div class="asc-section-title">1) ข้อมูลหลัก</div>
           <div class="asc-field"><label>ชื่อรายการ *</label><input id="cm_item_name" placeholder="เช่น ล้างแอร์ผนัง"></div>
           <div class="asc-grid2">
             <div class="asc-field"><label>หมวดหมู่ *</label><input id="cm_item_category" placeholder="เช่น ล้างแอร์"></div>
             <div class="asc-field"><label>หน่วย *</label><input id="cm_unit_label" placeholder="เช่น เครื่อง, งาน"></div>
           </div>
-          <div class="asc-grid2">
-            <div class="asc-field"><label>ประเภทงาน *</label><input id="cm_job_category" placeholder="เช่น ล้าง, ซ่อม"></div>
-            <div class="asc-field"><label>ประเภทแอร์ *</label><input id="cm_ac_type" placeholder="เช่น ผนัง, แขวน"></div>
-          </div>
-          <div class="asc-grid2">
-            <div class="asc-field"><label>ลักษณะการล้าง *</label><input id="cm_wash_variant" placeholder="เช่น ล้างน้ำ, ล้างน้ำยา"></div>
-            <div></div>
-          </div>
-          <div class="asc-grid2">
-            <div class="asc-field"><label>BTU ต่ำสุด *</label><input id="cm_btu_min" type="number" step="1" min="1" placeholder="ว่าง = ไม่จำกัด"></div>
-            <div class="asc-field"><label>BTU สูงสุด *</label><input id="cm_btu_max" type="number" step="1" min="1" placeholder="ว่าง = ไม่จำกัด"></div>
-          </div>
         </div>
 
         <div class="asc-section">
-          <div class="asc-section-title">2) รูปบริการ</div>
+          <div class="asc-section-title">2) รูปภาพสินค้า</div>
           <div class="asc-image-preview-row">
             <img id="cm_image_preview" class="asc-image-preview" src="" alt="" style="display:none;">
             <div id="cm_image_placeholder" class="asc-item-thumb asc-placeholder">ไม่มีรูป</div>
@@ -90,11 +84,22 @@ function ensureCatalogModal() {
               <button id="cm_image_delete" class="secondary btn-small" type="button" style="display:none;margin-top:6px;">ลบรูปภาพ</button>
             </div>
           </div>
+          <div class="asc-field"><label>เลื่อนรูปภาพอัตโนมัติ (Autoplay) *</label>
+            <select id="cm_is_autoplay_enabled">
+              <option value="1">เลื่อนอัตโนมัติ</option>
+              <option value="0">ไม่เลื่อนอัตโนมัติ</option>
+            </select>
+          </div>
+          <div id="cm_gallery_section">
+            <div class="asc-section-title" style="margin-top:14px;">รูปภาพเพิ่มเติม (แกลเลอรี)</div>
+            <div id="cm_gallery_body"></div>
+          </div>
         </div>
 
         <div class="asc-section">
           <div class="asc-section-title">3) ราคาและโปรโมชั่น</div>
           <div class="asc-warning">${escapeHtml(PRICING_WARNING_TEXT)}</div>
+          <div class="asc-field"><label>ราคาฐาน (Base Price) *</label><input id="cm_base_price" type="number" step="1" min="0" placeholder="ใช้เมื่อยังไม่มีราคาโปรโมชัน"></div>
           <div class="asc-grid2">
             <div class="asc-field"><label>ราคาปกติ (บาท) *</label><input id="cm_normal_price" type="number" step="1" min="0"></div>
             <div class="asc-field"><label>ราคาขายจริง (บาท) *</label><input id="cm_active_price" type="number" step="1" min="0"></div>
@@ -119,7 +124,54 @@ function ensureCatalogModal() {
         </div>
 
         <div class="asc-section">
-          <div class="asc-section-title">4) การแสดงผล</div>
+          <div class="asc-section-title">4) การจอง</div>
+          <div class="asc-field"><label>การจอง *</label>
+            <select id="cm_booking_mode">
+              <option value="contact_admin">ติดต่อแอดมิน (ไม่จองออนไลน์)</option>
+              <option value="bookable">จองออนไลน์ได้</option>
+            </select>
+          </div>
+          <div id="cm_booking_fields" style="display:none;">
+            <div class="asc-grid2">
+              <div class="asc-field"><label>ประเภทแอร์สำหรับจอง *</label>
+                <select id="cm_booking_ac_type">
+                  <option value="">— เลือกประเภทแอร์ —</option>
+                  ${BOOKING_AC_TYPES.map((v) => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join("")}
+                </select>
+              </div>
+              <div class="asc-field"><label>BTU สำหรับจอง *</label>
+                <select id="cm_booking_btu">
+                  <option value="">— เลือก BTU —</option>
+                  ${BOOKING_BTU_OPTIONS.map((v) => `<option value="${v}">${v.toLocaleString("th-TH")}</option>`).join("")}
+                </select>
+              </div>
+            </div>
+            <div class="asc-grid2">
+              <div class="asc-field" id="cm_booking_wash_variant_field"><label>รูปแบบการล้างสำหรับจอง * (สำหรับแอร์ผนัง)</label>
+                <select id="cm_booking_wash_variant">
+                  <option value="">— เลือกรูปแบบการล้าง —</option>
+                  ${BOOKING_WASH_VARIANTS.map((v) => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join("")}
+                </select>
+              </div>
+              <div></div>
+            </div>
+            <details class="asc-booking-advanced">
+              <summary class="asc-accordion-summary">ตั้งค่าเพิ่มเติม (Advanced)</summary>
+              <div class="asc-field"><label>Service Key (ข้อมูลอ้างอิง ไม่ใช่เงื่อนไขการจอง)</label><input id="cm_booking_service_key" placeholder="เช่น wash_wall"></div>
+            </details>
+          </div>
+        </div>
+
+        <div class="asc-section">
+          <div class="asc-section-title">5) รายละเอียด</div>
+          <div class="asc-field"><label>คำอธิบายสั้น</label><textarea id="cm_short_description" rows="2" maxlength="300" placeholder="แสดงบนการ์ดร้านค้า"></textarea></div>
+          <div class="asc-field"><label>คำอธิบายแบบเต็ม</label><textarea id="cm_long_description" rows="4" placeholder="แสดงในหน้ารายละเอียดสินค้า"></textarea></div>
+          <div class="asc-field"><label>จุดเด่น (1 บรรทัดต่อ 1 รายการ)</label><textarea id="cm_highlights" rows="3" placeholder="เช่น&#10;ฟรีน้ำยา&#10;รับประกัน 30 วัน"></textarea></div>
+          <div class="asc-field"><label>เงื่อนไขการให้บริการ</label><textarea id="cm_service_conditions" rows="3"></textarea></div>
+        </div>
+
+        <div class="asc-section">
+          <div class="asc-section-title">6) การแสดงผล</div>
           <div class="asc-grid2">
             <div class="asc-field"><label>สถานะการใช้งาน *</label>
               <select id="cm_is_active">
@@ -134,62 +186,30 @@ function ensureCatalogModal() {
               </select>
             </div>
           </div>
-        </div>
-
-        <div class="asc-section">
-          <div class="asc-section-title">5) ขั้นสูง</div>
-          <div class="asc-field"><label>ราคาฐาน (Base Price) *</label><input id="cm_base_price" type="number" step="1" min="0" placeholder="ใช้เมื่อยังไม่มีราคาโปรโมชัน"></div>
-        </div>
-
-        <div class="asc-section">
-          <div class="asc-section-title">6) ข้อมูลตลาด (Marketplace)</div>
-          <div class="asc-field"><label>การจอง *</label>
-            <select id="cm_booking_mode">
-              <option value="contact_admin">ติดต่อแอดมิน (ไม่จองออนไลน์)</option>
-              <option value="bookable">จองออนไลน์ได้</option>
-            </select>
-          </div>
-          <div id="cm_booking_fields" style="display:none;">
-            <div class="asc-grid2">
-              <div class="asc-field"><label>Service Key (ข้อมูลอ้างอิง ไม่ใช่เงื่อนไขการจอง)</label><input id="cm_booking_service_key" placeholder="เช่น wash_wall"></div>
-              <div class="asc-field"><label>ประเภทแอร์สำหรับจอง *</label>
-                <select id="cm_booking_ac_type">
-                  <option value="">— เลือกประเภทแอร์ —</option>
-                  ${BOOKING_AC_TYPES.map((v) => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join("")}
-                </select>
-              </div>
-            </div>
-            <div class="asc-grid2">
-              <div class="asc-field"><label>BTU สำหรับจอง *</label>
-                <select id="cm_booking_btu">
-                  <option value="">— เลือก BTU —</option>
-                  ${BOOKING_BTU_OPTIONS.map((v) => `<option value="${v}">${v.toLocaleString("th-TH")}</option>`).join("")}
-                </select>
-              </div>
-              <div class="asc-field" id="cm_booking_wash_variant_field"><label>รูปแบบการล้างสำหรับจอง * (สำหรับแอร์ผนัง)</label>
-                <select id="cm_booking_wash_variant">
-                  <option value="">— เลือกรูปแบบการล้าง —</option>
-                  ${BOOKING_WASH_VARIANTS.map((v) => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join("")}
-                </select>
-              </div>
-            </div>
-          </div>
           <div class="asc-field"><label>รายการแนะนำ (Featured) *</label>
             <select id="cm_is_featured">
               <option value="0">ไม่แนะนำ</option>
               <option value="1">แนะนำ</option>
             </select>
           </div>
-          <div class="asc-field"><label>คำอธิบายสั้น</label><textarea id="cm_short_description" rows="2" maxlength="300" placeholder="แสดงบนการ์ดร้านค้า"></textarea></div>
-          <div class="asc-field"><label>คำอธิบายแบบเต็ม</label><textarea id="cm_long_description" rows="4" placeholder="แสดงในหน้ารายละเอียดสินค้า"></textarea></div>
-          <div class="asc-field"><label>จุดเด่น (1 บรรทัดต่อ 1 รายการ)</label><textarea id="cm_highlights" rows="3" placeholder="เช่น&#10;ฟรีน้ำยา&#10;รับประกัน 30 วัน"></textarea></div>
-          <div class="asc-field"><label>เงื่อนไขการให้บริการ</label><textarea id="cm_service_conditions" rows="3"></textarea></div>
         </div>
 
-        <div class="asc-section" id="cm_gallery_section">
-          <div class="asc-section-title">7) รูปภาพหลายรูป (แกลเลอรี)</div>
-          <div id="cm_gallery_body"></div>
-        </div>
+        <details class="asc-section asc-accordion">
+          <summary class="asc-section-title asc-accordion-summary">7) ข้อมูลจับคู่ระบบราคา (กดเพื่อแก้ไข)</summary>
+          <div class="asc-warning">การแก้ไขค่าด้านล่างนี้จะเปลี่ยนการจับคู่กับระบบราคาอัตโนมัติ (customer_service_price_rules) โปรดมั่นใจก่อนแก้ไข</div>
+          <div class="asc-grid2">
+            <div class="asc-field"><label>ประเภทงาน *</label><input id="cm_job_category" placeholder="เช่น ล้าง, ซ่อม"></div>
+            <div class="asc-field"><label>ประเภทแอร์ *</label><input id="cm_ac_type" placeholder="เช่น ผนัง, แขวน"></div>
+          </div>
+          <div class="asc-grid2">
+            <div class="asc-field"><label>ลักษณะการล้าง *</label><input id="cm_wash_variant" placeholder="เช่น ล้างน้ำ, ล้างน้ำยา"></div>
+            <div></div>
+          </div>
+          <div class="asc-grid2">
+            <div class="asc-field"><label>BTU ต่ำสุด *</label><input id="cm_btu_min" type="number" step="1" min="1" placeholder="ว่าง = ไม่จำกัด"></div>
+            <div class="asc-field"><label>BTU สูงสุด *</label><input id="cm_btu_max" type="number" step="1" min="1" placeholder="ว่าง = ไม่จำกัด"></div>
+          </div>
+        </details>
 
         <div id="catalog_modal_error" class="asc-modal-error"></div>
       </div>
@@ -286,6 +306,7 @@ function resetCatalogModalFields() {
   el("cm_is_customer_visible").value = "0";
   el("cm_base_price").value = "";
   el("cm_image_input").value = "";
+  el("cm_is_autoplay_enabled").value = "1";
   pendingImageFile = null;
   pendingImageRemoved = false;
   setCatalogImagePreview(null);
@@ -301,6 +322,9 @@ function resetCatalogModalFields() {
   el("cm_service_conditions").value = "";
   updateBookingFieldsVisibility();
   galleryImages = [];
+  galleryUploading = false;
+  galleryUploadQueue = [];
+  galleryPickNotice = "";
   renderGalleryManager();
   hideCatalogModalError();
 }
@@ -350,6 +374,7 @@ function openCatalogModalForEdit(itemId) {
   el("cm_is_active").value = item.is_active ? "1" : "0";
   el("cm_is_customer_visible").value = item.is_customer_visible ? "1" : "0";
   el("cm_base_price").value = Number(item.base_price) > 0 ? Number(item.base_price) : "";
+  el("cm_is_autoplay_enabled").value = item.is_autoplay_enabled === false ? "0" : "1";
   if (item.image_url) setCatalogImagePreview(item.image_url);
   el("cm_booking_mode").value = BOOKING_MODES.includes(item.booking_mode) ? item.booking_mode : "contact_admin";
   el("cm_booking_service_key").value = item.booking_service_key || "";
@@ -367,6 +392,10 @@ function openCatalogModalForEdit(itemId) {
 }
 
 function closeCatalogModal() {
+  if (galleryUploading) {
+    showToast("กำลังอัปโหลดรูปภาพ กรุณารอให้เสร็จก่อนปิดหน้านี้", "error");
+    return;
+  }
   const backdrop = el("catalog_modal_backdrop");
   if (backdrop) backdrop.classList.add("hidden");
 }
@@ -383,6 +412,7 @@ function catalogModalPayload() {
     btu_min: trimmedOrEmpty("cm_btu_min"),
     btu_max: trimmedOrEmpty("cm_btu_max"),
     base_price: trimmedOrEmpty("cm_base_price"),
+    is_autoplay_enabled: el("cm_is_autoplay_enabled").value === "1",
     is_active: el("cm_is_active").value === "1",
     is_customer_visible: el("cm_is_customer_visible").value === "1",
     booking_mode: el("cm_booking_mode").value,
@@ -518,6 +548,34 @@ function galleryThumbHtml(image, index, total) {
   </div>`;
 }
 
+function galleryStatusLabel(status) {
+  if (status === "uploading") return "กำลังอัปโหลด...";
+  if (status === "done") return "สำเร็จ";
+  if (status === "error") return "ล้มเหลว";
+  return "รออัปโหลด";
+}
+
+function galleryQueueThumbHtml(queued) {
+  const label = galleryStatusLabel(queued.status);
+  const statusText = queued.status === "error" && queued.error ? `${label}: ${escapeHtml(queued.error)}` : escapeHtml(label);
+  const actions = queued.status === "error"
+    ? `<div class="asc-gallery-thumb-actions">
+         <button class="secondary btn-small" type="button" data-qact="retry" data-queue-id="${escapeHtml(queued.localId)}">ลองใหม่</button>
+         <button class="secondary btn-small" type="button" data-qact="remove" data-queue-id="${escapeHtml(queued.localId)}">เอาออก</button>
+       </div>`
+    : "";
+  return `
+  <div class="asc-gallery-thumb asc-gallery-thumb-pending" data-queue-id="${escapeHtml(queued.localId)}">
+    <img src="${escapeHtml(queued.localUrl)}" alt="${escapeHtml(queued.name)}" loading="lazy">
+    <div class="asc-gallery-thumb-status asc-gallery-thumb-status-${queued.status}">${statusText}</div>
+    ${actions}
+  </div>`;
+}
+
+function galleryActiveCount() {
+  return galleryImages.length + galleryUploadQueue.filter((q) => q.status !== "error").length;
+}
+
 function renderGalleryManager() {
   const body = el("cm_gallery_body");
   if (!editingItemId) {
@@ -528,15 +586,29 @@ function renderGalleryManager() {
     body.innerHTML = `<div class="asc-loading">กำลังโหลดรูปภาพ...</div>`;
     return;
   }
-  const grid = galleryImages.length
-    ? `<div class="asc-gallery-grid">${galleryImages.map((img, i) => galleryThumbHtml(img, i, galleryImages.length)).join("")}</div>`
+  const existingThumbs = galleryImages.map((img, i) => galleryThumbHtml(img, i, galleryImages.length)).join("");
+  const queueThumbs = galleryUploadQueue.map(galleryQueueThumbHtml).join("");
+  const grid = existingThumbs || queueThumbs
+    ? `<div class="asc-gallery-grid">${existingThumbs}${queueThumbs}</div>`
     : `<div class="asc-empty">ยังไม่มีรูปภาพในแกลเลอรี</div>`;
-  body.innerHTML = `
-    ${grid}
-    <div class="asc-field" style="margin-top:8px;">
-      <input id="cm_gallery_input" type="file" accept="image/jpeg,image/png,image/webp">
-      <div class="muted2 mini">JPEG/PNG/WEBP ไม่เกิน 5MB ต่อรูป</div>
-    </div>`;
+  const activeCount = galleryActiveCount();
+  const remaining = Math.max(0, MAX_GALLERY_IMAGES - activeCount);
+  const countLine = `<div class="muted2 mini asc-gallery-count">มีอยู่ ${activeCount} / ${MAX_GALLERY_IMAGES} รูป</div>`;
+  const noticeLine = galleryPickNotice ? `<div class="asc-warning asc-gallery-overlimit">${escapeHtml(galleryPickNotice)}</div>` : "";
+  let inputArea;
+  if (galleryUploading) {
+    const inFlightCount = galleryUploadQueue.filter((q) => q.status === "pending" || q.status === "uploading").length;
+    const settledCount = galleryUploadQueue.filter((q) => q.status === "done" || q.status === "error").length;
+    inputArea = `<div class="asc-loading">กำลังเพิ่มอีก ${inFlightCount} รูป (เสร็จแล้ว ${settledCount}/${galleryUploadQueue.length})</div>`;
+  } else if (remaining > 0) {
+    inputArea = `<div class="asc-field" style="margin-top:8px;">
+          <input id="cm_gallery_input" type="file" accept="image/jpeg,image/png,image/webp" multiple>
+          <div class="muted2 mini">JPEG/PNG/WEBP ไม่เกิน 5MB ต่อรูป (เพิ่มได้อีก ${remaining} จาก ${MAX_GALLERY_IMAGES} รูป)</div>
+        </div>`;
+  } else {
+    inputArea = `<div class="muted2 mini" style="margin-top:8px;">มีรูปภาพครบ ${MAX_GALLERY_IMAGES} รูปแล้ว ลบรูปเดิมก่อนเพิ่มรูปใหม่</div>`;
+  }
+  body.innerHTML = `${countLine}${noticeLine}${grid}${inputArea}`;
   const input = el("cm_gallery_input");
   if (input) input.addEventListener("change", onGalleryImagePicked);
 }
@@ -556,47 +628,127 @@ async function loadGalleryImages(itemId) {
 }
 
 async function onGalleryImagePicked(event) {
-  const file = event.target.files && event.target.files[0];
-  if (!file || !editingItemId) return;
-  try {
-    const formData = new FormData();
-    formData.append("image", file);
-    await apiFetch(`/admin/catalog/items/${editingItemId}/images`, { method: "POST", body: formData });
-    await loadGalleryImages(editingItemId);
-  } catch (e) {
-    showToast(e.message || "อัปโหลดรูปภาพไม่สำเร็จ", "error");
+  const files = event.target.files ? Array.from(event.target.files) : [];
+  event.target.value = "";
+  if (!files.length || !editingItemId || galleryUploading) return;
+
+  const activeBefore = galleryActiveCount();
+  const remaining = Math.max(0, MAX_GALLERY_IMAGES - activeBefore);
+  const toUpload = files.slice(0, remaining);
+
+  if (!toUpload.length) {
+    galleryPickNotice = `เลือกแล้ว ${files.length} รูป แต่มีอยู่ครบ ${MAX_GALLERY_IMAGES} / ${MAX_GALLERY_IMAGES} รูปแล้ว ไม่สามารถเพิ่มรูปที่เลือกได้ กรุณาลบรูปเดิมก่อน`;
+    renderGalleryManager();
+    return;
   }
+
+  galleryPickNotice = `เลือกแล้ว ${files.length} รูป มีอยู่ ${activeBefore} / ${MAX_GALLERY_IMAGES} รูป กำลังเพิ่มอีก ${toUpload.length} รูป`;
+  if (files.length > toUpload.length) {
+    galleryPickNotice += ` (เลือกมาเกินจำนวนที่ว่าง จะอัปโหลดเฉพาะ: ${toUpload.map((f) => f.name || "รูปภาพ").join(", ")})`;
+  }
+
+  const newlyQueued = toUpload.map((file, i) => ({
+    localId: `q${Date.now()}_${i}`,
+    file,
+    name: file.name || "รูปภาพ",
+    localUrl: URL.createObjectURL(file),
+    status: "pending",
+    error: "",
+  }));
+  galleryUploadQueue = galleryUploadQueue.concat(newlyQueued);
+  await runGalleryUploadQueue(newlyQueued);
+}
+
+async function runGalleryUploadQueue(itemsToRun) {
+  galleryUploading = true;
+  renderGalleryManager();
+
+  for (const queued of itemsToRun) {
+    queued.status = "uploading";
+    queued.error = "";
+    renderGalleryManager();
+    try {
+      const formData = new FormData();
+      formData.append("image", queued.file);
+      await apiFetch(`/admin/catalog/items/${editingItemId}/images`, { method: "POST", body: formData });
+      queued.status = "done";
+    } catch (e) {
+      queued.status = "error";
+      queued.error = e.message || "อัปโหลดไม่สำเร็จ";
+    }
+    renderGalleryManager();
+  }
+
+  galleryUploading = false;
+  const doneItems = galleryUploadQueue.filter((q) => q.status === "done");
+  for (const queued of doneItems) URL.revokeObjectURL(queued.localUrl);
+  galleryUploadQueue = galleryUploadQueue.filter((q) => q.status !== "done");
+  if (doneItems.length) await loadGalleryImages(editingItemId);
+  if (!galleryUploadQueue.length) galleryPickNotice = "";
+  renderGalleryManager();
+
+  const failures = itemsToRun.filter((q) => q.status === "error");
+  if (failures.length) showToast(`อัปโหลดไม่สำเร็จ: ${failures.map((q) => q.name).join(", ")}`, "error");
+}
+
+async function onGalleryRetry(localId) {
+  if (galleryUploading) return;
+  const queued = galleryUploadQueue.find((q) => q.localId === localId);
+  if (!queued) return;
+  await runGalleryUploadQueue([queued]);
+}
+
+function onGalleryDismissFailed(localId) {
+  if (galleryUploading) return;
+  const queued = galleryUploadQueue.find((q) => q.localId === localId);
+  if (!queued) return;
+  URL.revokeObjectURL(queued.localUrl);
+  galleryUploadQueue = galleryUploadQueue.filter((q) => q.localId !== localId);
+  if (!galleryUploadQueue.length) galleryPickNotice = "";
+  renderGalleryManager();
 }
 
 async function onGalleryDelete(imageId) {
-  if (!editingItemId) return;
+  if (!editingItemId || galleryUploading) return;
   const confirmed = confirm("ต้องการลบรูปภาพนี้หรือไม่?");
   if (!confirmed) return;
+  galleryUploading = true;
+  renderGalleryManager();
   try {
     await apiFetch(`/admin/catalog/items/${editingItemId}/images/${imageId}`, { method: "DELETE" });
     await loadGalleryImages(editingItemId);
   } catch (e) {
     showToast(e.message || "ลบรูปภาพไม่สำเร็จ", "error");
+  } finally {
+    galleryUploading = false;
+    renderGalleryManager();
   }
 }
 
 async function onGallerySetPrimary(imageId) {
-  if (!editingItemId) return;
+  if (!editingItemId || galleryUploading) return;
+  galleryUploading = true;
+  renderGalleryManager();
   try {
     await apiFetch(`/admin/catalog/items/${editingItemId}/images/${imageId}/primary`, { method: "POST" });
     await loadGalleryImages(editingItemId);
   } catch (e) {
     showToast(e.message || "ตั้งรูปหลักไม่สำเร็จ", "error");
+  } finally {
+    galleryUploading = false;
+    renderGalleryManager();
   }
 }
 
 async function onGalleryReorder(imageId, direction) {
-  if (!editingItemId) return;
+  if (!editingItemId || galleryUploading) return;
   const index = galleryImages.findIndex((img) => Number(img.image_id) === Number(imageId));
   const swapWith = direction === "up" ? index - 1 : index + 1;
   if (index < 0 || swapWith < 0 || swapWith >= galleryImages.length) return;
   const ids = galleryImages.map((img) => img.image_id);
   [ids[index], ids[swapWith]] = [ids[swapWith], ids[index]];
+  galleryUploading = true;
+  renderGalleryManager();
   try {
     await apiFetch(`/admin/catalog/items/${editingItemId}/images/reorder`, {
       method: "POST",
@@ -605,19 +757,30 @@ async function onGalleryReorder(imageId, direction) {
     await loadGalleryImages(editingItemId);
   } catch (e) {
     showToast(e.message || "จัดเรียงรูปภาพไม่สำเร็จ", "error");
+  } finally {
+    galleryUploading = false;
+    renderGalleryManager();
   }
 }
 
 function bindGalleryActions() {
   el("cm_gallery_body").addEventListener("click", (event) => {
     const button = event.target.closest("[data-gact]");
-    if (!button) return;
-    const imageId = Number(button.getAttribute("data-image-id"));
-    const act = button.getAttribute("data-gact");
-    if (act === "delete") onGalleryDelete(imageId);
-    else if (act === "primary") onGallerySetPrimary(imageId);
-    else if (act === "up") onGalleryReorder(imageId, "up");
-    else if (act === "down") onGalleryReorder(imageId, "down");
+    if (button) {
+      const imageId = Number(button.getAttribute("data-image-id"));
+      const act = button.getAttribute("data-gact");
+      if (act === "delete") onGalleryDelete(imageId);
+      else if (act === "primary") onGallerySetPrimary(imageId);
+      else if (act === "up") onGalleryReorder(imageId, "up");
+      else if (act === "down") onGalleryReorder(imageId, "down");
+      return;
+    }
+    const qbutton = event.target.closest("[data-qact]");
+    if (!qbutton) return;
+    const localId = qbutton.getAttribute("data-queue-id");
+    const qact = qbutton.getAttribute("data-qact");
+    if (qact === "retry") onGalleryRetry(localId);
+    else if (qact === "remove") onGalleryDismissFailed(localId);
   });
 }
 
@@ -631,6 +794,7 @@ function ensureMoreSheet() {
     <div class="asc-more-sheet">
       <button class="secondary" data-act="toggle-active" type="button">เปิด/ปิดใช้งาน</button>
       <button class="secondary" data-act="toggle-visible" type="button">แสดง/ซ่อนจากลูกค้า</button>
+      <button class="danger" data-act="delete" type="button">ลบรายการนี้</button>
       <button class="secondary" data-act="close" type="button">ปิด</button>
     </div>
   </div>`;
@@ -644,6 +808,7 @@ function ensureMoreSheet() {
     if (act === "close" || !item) { closeMoreSheet(); return; }
     if (act === "toggle-active") toggleCatalogField(item.item_id, "is_active", !item.is_active, item);
     if (act === "toggle-visible") toggleCatalogField(item.item_id, "is_customer_visible", !item.is_customer_visible, item);
+    if (act === "delete") { closeMoreSheet(); openDeleteModal(item.item_id); return; }
     closeMoreSheet();
   });
 }
@@ -657,6 +822,86 @@ function openMoreSheet(itemId) {
 function closeMoreSheet() {
   const backdrop = el("asc_more_sheet_backdrop");
   if (backdrop) backdrop.classList.add("hidden");
+}
+
+/* ---------- Delete confirmation modal ---------- */
+
+function ensureDeleteModal() {
+  if (el("asc_delete_modal_backdrop")) return;
+  const wrap = document.createElement("div");
+  wrap.innerHTML = `
+  <div id="asc_delete_modal_backdrop" class="cwf-modal-backdrop hidden">
+    <div class="cwf-modal">
+      <div class="cwf-modal-head">
+        <div class="cwf-modal-title">ลบรายการนี้</div>
+        <button id="asc_delete_modal_close" class="cwf-modal-close" type="button">×</button>
+      </div>
+      <div class="cwf-modal-body">
+        <div class="asc-warning">การลบจะลบรายการและรูปภาพทั้งหมดอย่างถาวร ไม่สามารถย้อนกลับได้ (งานเก่าและราคาที่เคยจองไว้จะไม่ถูกแก้ไข)</div>
+        <div id="asc_delete_modal_visible_warning" class="asc-warning" style="display:none;">รายการนี้กำลังแสดงให้ลูกค้าเห็นอยู่ในขณะนี้</div>
+        <div class="asc-field">
+          <label>พิมพ์ชื่อรายการ "<span id="asc_delete_modal_item_name"></span>" เพื่อยืนยัน</label>
+          <input id="asc_delete_modal_confirm_input" placeholder="พิมพ์ชื่อรายการให้ตรงกัน">
+        </div>
+        <div id="asc_delete_modal_error" class="asc-modal-error"></div>
+      </div>
+      <div class="cwf-modal-foot">
+        <button id="asc_delete_modal_cancel" class="secondary" type="button">ยกเลิก</button>
+        <button id="asc_delete_modal_confirm" class="danger" type="button" disabled>ลบรายการ</button>
+      </div>
+    </div>
+  </div>`;
+  document.body.appendChild(wrap.firstElementChild);
+
+  el("asc_delete_modal_close").addEventListener("click", closeDeleteModal);
+  el("asc_delete_modal_cancel").addEventListener("click", closeDeleteModal);
+  el("asc_delete_modal_confirm").addEventListener("click", confirmDeleteCatalogItem);
+  el("asc_delete_modal_confirm_input").addEventListener("input", updateDeleteConfirmButtonState);
+}
+
+function updateDeleteConfirmButtonState() {
+  const item = catalogItems.find((x) => Number(x.item_id) === Number(deleteModalItemId));
+  const typed = (el("asc_delete_modal_confirm_input").value || "").trim();
+  el("asc_delete_modal_confirm").disabled = !item || typed !== item.item_name;
+}
+
+function openDeleteModal(itemId) {
+  const item = catalogItems.find((x) => Number(x.item_id) === Number(itemId));
+  if (!item) return;
+  ensureDeleteModal();
+  deleteModalItemId = item.item_id;
+  el("asc_delete_modal_item_name").textContent = item.item_name || "";
+  el("asc_delete_modal_confirm_input").value = "";
+  el("asc_delete_modal_error").textContent = "";
+  el("asc_delete_modal_error").style.display = "none";
+  el("asc_delete_modal_visible_warning").style.display = item.is_active && item.is_customer_visible ? "block" : "none";
+  updateDeleteConfirmButtonState();
+  el("asc_delete_modal_backdrop").classList.remove("hidden");
+}
+
+function closeDeleteModal() {
+  const backdrop = el("asc_delete_modal_backdrop");
+  if (backdrop) backdrop.classList.add("hidden");
+  deleteModalItemId = null;
+}
+
+async function confirmDeleteCatalogItem() {
+  if (!deleteModalItemId) return;
+  const itemId = deleteModalItemId;
+  const confirmButton = el("asc_delete_modal_confirm");
+  confirmButton.disabled = true;
+  try {
+    const result = await apiFetch(`/admin/catalog/items/${itemId}`, { method: "DELETE" });
+    closeDeleteModal();
+    await loadCatalogItems();
+    if (result && result.warning) showToast(result.warning, "error");
+    else showToast("ลบรายการแล้ว", "success");
+  } catch (e) {
+    const box = el("asc_delete_modal_error");
+    box.textContent = e.message || "ลบรายการไม่สำเร็จ";
+    box.style.display = "block";
+    updateDeleteConfirmButtonState();
+  }
 }
 
 /* ---------- List / cards ---------- */

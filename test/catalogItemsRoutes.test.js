@@ -7,7 +7,7 @@ const express = require("express");
 
 const createCatalogItemRoutes = require("../server/routes/catalog/items");
 
-function makePool(initialItems = [], initialRules = [], { schemaReady = true, marketplaceReady = false } = {}) {
+function makePool(initialItems = [], initialRules = [], { schemaReady = true, marketplaceReady = false, autoplayReady = false } = {}) {
   const state = {
     items: initialItems.map((x) => ({
       image_url: null, image_public_id: null, price_rule_id: null,
@@ -28,7 +28,7 @@ function makePool(initialItems = [], initialRules = [], { schemaReady = true, ma
 
   function joinedRow(item) {
     const rule = item.price_rule_id ? state.rules.find((r) => String(r.rule_id) === String(item.price_rule_id)) : null;
-    return {
+    const row = {
       ...item,
       rule_normal_price: rule ? rule.normal_price : null,
       rule_active_price: rule ? rule.active_price : null,
@@ -40,6 +40,10 @@ function makePool(initialItems = [], initialRules = [], { schemaReady = true, ma
       rule_label: rule ? rule.label : null,
       rule_priority: rule ? rule.priority : null,
     };
+    // Mirrors a real SELECT: is_autoplay_enabled is only a real, readable column once its
+    // own migration has run, regardless of what the in-memory fixture happens to hold.
+    if (!autoplayReady) delete row.is_autoplay_enabled;
+    return row;
   }
 
   function imagesForItem(itemId) {
@@ -52,6 +56,9 @@ function makePool(initialItems = [], initialRules = [], { schemaReady = true, ma
     state.queries.push({ sql, params });
     const s = String(sql);
 
+    if (s.includes("information_schema.columns") && s.includes("catalog_items") && s.includes("is_autoplay_enabled")) {
+      return { rows: [{ cnt: autoplayReady ? 1 : 0 }] };
+    }
     if (s.includes("information_schema.columns") && s.includes("catalog_items") && s.includes("short_description")) {
       return { rows: [{ cnt: marketplaceReady ? 10 : 0 }] };
     }
@@ -64,6 +71,22 @@ function makePool(initialItems = [], initialRules = [], { schemaReady = true, ma
 
     if (/^\s*(BEGIN|COMMIT|ROLLBACK)\s*;?\s*$/i.test(s)) return { rows: [] };
     if (s.includes("ALTER TABLE") || s.includes("CREATE INDEX") || s.includes("ADD CONSTRAINT") || s.includes("DO $$")) return { rows: [] };
+
+    if (s.includes("INSERT INTO public.catalog_items") && s.includes("is_autoplay_enabled")) {
+      const [
+        item_name, item_category, base_price, unit_label, job_category, ac_type, btu_min, btu_max, is_active, is_customer_visible,
+        short_description, long_description, highlights, service_conditions,
+        booking_mode, booking_service_key, booking_ac_type, booking_btu, booking_wash_variant, is_featured, is_autoplay_enabled,
+      ] = params;
+      const row = {
+        item_id: nextItemId++, item_name, item_category, base_price, unit_label, job_category, ac_type, btu_min, btu_max,
+        is_active, is_customer_visible, image_url: null, image_public_id: null, price_rule_id: null,
+        short_description, long_description, highlights: highlights ? JSON.parse(highlights) : null, service_conditions,
+        booking_mode, booking_service_key, booking_ac_type, booking_btu, booking_wash_variant, is_featured, is_autoplay_enabled,
+      };
+      state.items.push(row);
+      return { rows: [{ item_id: row.item_id }] };
+    }
 
     if (s.includes("INSERT INTO public.catalog_items") && s.includes("booking_mode")) {
       const [
@@ -136,6 +159,24 @@ function makePool(initialItems = [], initialRules = [], { schemaReady = true, ma
       return { rows: [] };
     }
 
+    if (s.includes("SET item_name=$1") && s.includes("is_autoplay_enabled=$21")) {
+      const [
+        item_name, item_category, base_price, unit_label, job_category, ac_type, btu_min, btu_max, is_active, is_customer_visible,
+        short_description, long_description, highlights, service_conditions,
+        booking_mode, booking_service_key, booking_ac_type, booking_btu, booking_wash_variant, is_featured, is_autoplay_enabled,
+        item_id,
+      ] = params;
+      const row = state.items.find((x) => String(x.item_id) === String(item_id));
+      if (row) {
+        Object.assign(row, {
+          item_name, item_category, base_price, unit_label, job_category, ac_type, btu_min, btu_max, is_active, is_customer_visible,
+          short_description, long_description, highlights: highlights ? JSON.parse(highlights) : null, service_conditions,
+          booking_mode, booking_service_key, booking_ac_type, booking_btu, booking_wash_variant, is_featured, is_autoplay_enabled,
+        });
+      }
+      return { rows: [] };
+    }
+
     if (s.includes("SET item_name=$1") && s.includes("short_description=$11")) {
       const [
         item_name, item_category, base_price, unit_label, job_category, ac_type, btu_min, btu_max, is_active, is_customer_visible,
@@ -169,6 +210,18 @@ function makePool(initialItems = [], initialRules = [], { schemaReady = true, ma
     if (s.includes("SELECT item_id FROM public.catalog_items WHERE item_id = $1")) {
       const row = state.items.find((x) => String(x.item_id) === String(params[0]));
       return { rows: row ? [{ item_id: row.item_id }] : [] };
+    }
+
+    if (s.includes("SELECT image_public_id FROM public.catalog_item_images WHERE item_id = $1 AND image_public_id IS NOT NULL")) {
+      const rows = imagesForItem(params[0]).filter((img) => img.image_public_id != null).map((img) => ({ image_public_id: img.image_public_id }));
+      return { rows };
+    }
+
+    if (s.includes("DELETE FROM public.catalog_items WHERE item_id = $1")) {
+      const [itemId] = params;
+      state.items = state.items.filter((x) => String(x.item_id) !== String(itemId));
+      state.images = state.images.filter((img) => String(img.item_id) !== String(itemId));
+      return { rows: [] };
     }
 
     if (s.includes("FROM public.catalog_item_images") && s.includes("ANY($1::bigint[])")) {
@@ -1529,6 +1582,127 @@ test("image upload SQL is parameterized: a hostile filename/public_id never appe
   });
 });
 
+// ---------- DELETE /admin/catalog/items/:itemId ----------
+
+test("DELETE admin catalog item removes the row and never touches customer_service_price_rules", async () => {
+  const items = sampleItems();
+  items[0].price_rule_id = 70;
+  const rules = [{ rule_id: 70, normal_price: 700, active_price: 550, campaign_name: "เดิม", is_active: true, effective_from: null, effective_to: null }];
+  const pool = makePool(items, rules);
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items/1`, { method: "DELETE" });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.ok, true);
+    assert.equal(pool.state.items.some((x) => x.item_id === 1), false);
+    assert.equal(pool.state.rules.length, 1);
+    assert.equal(pool.state.rules[0].rule_id, 70);
+    const deleteQuery = pool.state.queries.some((q) => /DELETE FROM public\.customer_service_price_rules/i.test(q.sql));
+    assert.equal(deleteQuery, false);
+  });
+});
+
+test("DELETE admin catalog item also removes its gallery images (cascade)", async () => {
+  const pool = makePool(sampleItems(), [], { marketplaceReady: true });
+  pool.state.images.push(
+    { image_id: 1, item_id: 1, image_url: "u1", image_public_id: "p1", alt_text: null, sort_order: 0, is_primary: true },
+    { image_id: 2, item_id: 1, image_url: "u2", image_public_id: "p2", alt_text: null, sort_order: 1, is_primary: false }
+  );
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items/1`, { method: "DELETE" });
+    assert.equal(res.status, 200);
+    assert.equal(pool.state.images.length, 0);
+  });
+});
+
+test("DELETE admin catalog item cleans up legacy and gallery Cloudinary assets", async () => {
+  const items = sampleItems();
+  items[0].image_public_id = "legacy-pub-id";
+  const pool = makePool(items, [], { marketplaceReady: true });
+  pool.state.images.push(
+    { image_id: 1, item_id: 1, image_url: "u1", image_public_id: "gallery-pub-1", alt_text: null, sort_order: 0, is_primary: true }
+  );
+  const cleanedUp = [];
+  const deleteCatalogImage = async (publicId) => { cleanedUp.push(publicId); return { ok: true }; };
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin, deleteCatalogImage });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items/1`, { method: "DELETE" });
+    assert.equal(res.status, 200);
+    assert.deepEqual(cleanedUp.sort(), ["gallery-pub-1", "legacy-pub-id"]);
+  });
+});
+
+test("DELETE admin catalog item still reports success with a warning when Cloudinary cleanup fails", async () => {
+  const items = sampleItems();
+  items[0].image_public_id = "legacy-pub-id";
+  const pool = makePool(items);
+  const deleteCatalogImage = async () => { throw new Error("cloudinary down"); };
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin, deleteCatalogImage });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items/1`, { method: "DELETE" });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.ok, true);
+    assert.match(body.warning, /Cloudinary/);
+    assert.equal(pool.state.items.some((x) => x.item_id === 1), false);
+  });
+});
+
+test("DELETE admin catalog item returns 404 for an unknown item and changes nothing", async () => {
+  const pool = makePool(sampleItems());
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items/999`, { method: "DELETE" });
+    assert.equal(res.status, 404);
+    assert.equal(pool.state.items.length, sampleItems().length);
+  });
+});
+
+test("DELETE admin catalog item returns 400 for a malformed item id", async () => {
+  const pool = makePool(sampleItems());
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items/abc`, { method: "DELETE" });
+    assert.equal(res.status, 400);
+  });
+});
+
+test("DELETE admin catalog item requires an admin session", async () => {
+  const pool = makePool(sampleItems());
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: denyAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items/1`, { method: "DELETE" });
+    assert.equal(res.status, 401);
+    assert.equal(pool.state.items.length, sampleItems().length);
+  });
+});
+
+test("a repeated DELETE of an already-deleted item returns 404 instead of double-deleting", async () => {
+  const pool = makePool(sampleItems());
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const first = await fetch(`${base}/admin/catalog/items/1`, { method: "DELETE" });
+    assert.equal(first.status, 200);
+    const second = await fetch(`${base}/admin/catalog/items/1`, { method: "DELETE" });
+    assert.equal(second.status, 404);
+  });
+});
+
+test("DELETE admin catalog item responds successfully (no hang/deadlock) against a single-connection pool", async () => {
+  const pool = makePool(sampleItems());
+  const tracker = wrapAsSingleConnectionPool(pool);
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items/1`, { method: "DELETE" });
+    assert.equal(res.status, 200);
+    assert.deepEqual(tracker.poolQueryCallsWhileCheckedOut, []);
+    assert.equal(tracker.connectCalls, 1);
+    assert.equal(tracker.releaseCalls, 1);
+  });
+});
+
 // ---------- Marketplace v2 (migrations/20260623_catalog_store_marketplace_v2.sql) ----------
 
 const { validateMarketplaceFields } = createCatalogItemRoutes;
@@ -1737,6 +1911,110 @@ test("admin POST rejects a bookable item with only booking_service_key set", asy
     });
     assert.equal(res.status, 400);
     assert.equal(pool.state.items.length, 3);
+  });
+});
+
+// ---------- Auto-slide (is_autoplay_enabled) ----------
+
+test("validateMarketplaceFields defaults is_autoplay_enabled to true", () => {
+  const result = validateMarketplaceFields({});
+  assert.equal(result.ok, true);
+  assert.equal(result.value.is_autoplay_enabled, true);
+});
+
+test("validateMarketplaceFields rejects a non-boolean is_autoplay_enabled", () => {
+  const result = validateMarketplaceFields({ is_autoplay_enabled: "not-a-boolean" });
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.some((e) => /is_autoplay_enabled/.test(e)));
+});
+
+test("public/detail/admin DTOs fail-safe is_autoplay_enabled to false before the autoplay migration has run", async () => {
+  const items = sampleItems();
+  items[0].is_autoplay_enabled = true; // even if the column somehow had a value pre-migration
+  const pool = makePool(items, [], { marketplaceReady: true, autoplayReady: false });
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const listRes = await fetch(`${base}/catalog/items?customer=1`);
+    const listBody = await listRes.json();
+    assert.equal(listBody.find((x) => x.item_id === 1).is_autoplay_enabled, false);
+
+    const adminRes = await fetch(`${base}/admin/catalog/items`);
+    const adminBody = await adminRes.json();
+    assert.equal(adminBody.find((x) => x.item_id === 1).is_autoplay_enabled, false);
+  });
+});
+
+test("admin POST creates an item with is_autoplay_enabled once the autoplay migration has run", async () => {
+  const pool = makePool(sampleItems(), [], { marketplaceReady: true, autoplayReady: true });
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ item_name: "ทดสอบ autoplay", is_autoplay_enabled: false }),
+    });
+    assert.equal(res.status, 201);
+    const body = await res.json();
+    assert.equal(body.is_autoplay_enabled, false);
+  });
+});
+
+test("admin POST defaults is_autoplay_enabled to true when omitted, once the autoplay migration has run", async () => {
+  const pool = makePool(sampleItems(), [], { marketplaceReady: true, autoplayReady: true });
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ item_name: "ทดสอบ autoplay default" }),
+    });
+    assert.equal(res.status, 201);
+    const body = await res.json();
+    assert.equal(body.is_autoplay_enabled, true);
+  });
+});
+
+test("admin PATCH round-trips is_autoplay_enabled and leaves it unchanged when not sent", async () => {
+  const items = sampleItems();
+  items[0].is_autoplay_enabled = false;
+  const pool = makePool(items, [], { marketplaceReady: true, autoplayReady: true });
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items/1`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ item_name: "ทดสอบ ไม่เปลี่ยน autoplay" }),
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.is_autoplay_enabled, false);
+
+    const res2 = await fetch(`${base}/admin/catalog/items/1`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ is_autoplay_enabled: true }),
+    });
+    const body2 = await res2.json();
+    assert.equal(body2.is_autoplay_enabled, true);
+  });
+});
+
+test("opening an item for edit and saving without changes round-trips is_autoplay_enabled unchanged", async () => {
+  const items = sampleItems();
+  items[0].is_autoplay_enabled = false;
+  items[0].is_featured = true;
+  const pool = makePool(items, [], { marketplaceReady: true, autoplayReady: true });
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items/1`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.is_autoplay_enabled, false);
+    assert.equal(body.is_featured, true);
   });
 });
 
@@ -1971,6 +2249,54 @@ test("uploading a second gallery image is not primary and gets the next sort_ord
     const body = await res.json();
     assert.equal(body.is_primary, false);
     assert.equal(body.sort_order, 1);
+  });
+});
+
+test("uploading a 5th gallery image is rejected and never persisted", async () => {
+  const pool = makePool(sampleItems(), [], { marketplaceReady: true });
+  pool.state.images.push(
+    { image_id: 1, item_id: 1, image_url: "u1", image_public_id: "p1", alt_text: null, sort_order: 0, is_primary: true },
+    { image_id: 2, item_id: 1, image_url: "u2", image_public_id: "p2", alt_text: null, sort_order: 1, is_primary: false },
+    { image_id: 3, item_id: 1, image_url: "u3", image_public_id: "p3", alt_text: null, sort_order: 2, is_primary: false },
+    { image_id: 4, item_id: 1, image_url: "u4", image_public_id: "p4", alt_text: null, sort_order: 3, is_primary: false }
+  );
+  let uploadCalled = false;
+  const uploadCatalogImage = async () => { uploadCalled = true; return { url: "https://res.cloudinary.com/demo/g5.jpg", public_id: "g5" }; };
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin, uploadCatalogImage });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items/1/images`, { method: "POST", body: multipartImageForm(JPEG_BYTES) });
+    assert.equal(res.status, 409);
+    const body = await res.json();
+    assert.match(body.error, /4 รูป/);
+    assert.equal(uploadCalled, false);
+    assert.equal(pool.state.images.length, 4);
+  });
+});
+
+test("concurrent gallery uploads at the cap never exceed 4 images for an item", async () => {
+  const pool = makePool(sampleItems(), [], { marketplaceReady: true });
+  wrapWithFakeRowLock(pool);
+  pool.state.images.push(
+    { image_id: 1, item_id: 1, image_url: "u1", image_public_id: "p1", alt_text: null, sort_order: 0, is_primary: true },
+    { image_id: 2, item_id: 1, image_url: "u2", image_public_id: "p2", alt_text: null, sort_order: 1, is_primary: false },
+    { image_id: 3, item_id: 1, image_url: "u3", image_public_id: "p3", alt_text: null, sort_order: 2, is_primary: false }
+  );
+  let n = 0;
+  const uploadCatalogImage = async () => {
+    n += 1;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    return { url: `https://res.cloudinary.com/demo/cap${n}.jpg`, public_id: `cap${n}` };
+  };
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin, uploadCatalogImage });
+  await withServer(router, async (base) => {
+    const [res1, res2] = await Promise.all([
+      fetch(`${base}/admin/catalog/items/1/images`, { method: "POST", body: multipartImageForm(JPEG_BYTES) }),
+      fetch(`${base}/admin/catalog/items/1/images`, { method: "POST", body: multipartImageForm(PNG_BYTES, { mimetype: "image/png", filename: "x.png" }) }),
+    ]);
+    const statuses = [res1.status, res2.status].sort();
+    assert.deepEqual(statuses, [201, 409]);
+    const itemImages = pool.state.images.filter((img) => String(img.item_id) === "1");
+    assert.equal(itemImages.length, 4);
   });
 });
 

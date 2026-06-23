@@ -82,16 +82,60 @@
     `).join("");
   }
 
+  function renderFeaturedRibbon(item) {
+    if (!item.is_featured) return "";
+    return `<span class="store-featured-ribbon">CWF แนะนำ</span>`;
+  }
+
+  // Future-rating-prop-ready: once a real review system exists, items carry
+  // rating_average (1-5, may be fractional) and review_count (>0). rating_value
+  // is legacy and is never read here — it must not become a second contract.
+  // Until rating_average/review_count are both present and valid there is no
+  // real data, so we fail safe to a full 5-star badge with no review count
+  // rather than fabricate one.
+  function standardRatingInfo(item) {
+    const avg = Number(item && item.rating_average);
+    const count = Number(item && item.review_count);
+    if (Number.isFinite(avg) && avg >= 1 && avg <= 5 && Number.isFinite(count) && count > 0) {
+      return { value: avg, count };
+    }
+    return { value: 5, count: 0 };
+  }
+
+  function formatRatingAverage(value) {
+    const rounded = Math.round(value * 10) / 10;
+    return rounded % 1 === 0 ? String(rounded) : rounded.toFixed(1);
+  }
+
+  function renderStandardBadge(item) {
+    const { value, count } = standardRatingInfo(item);
+    const hasRealReviews = count > 0;
+    const full = Math.floor(value);
+    const hasHalf = full < 5 && value - full >= 0.5;
+    const stars = Array.from({ length: 5 }, (_, i) => {
+      const cls = i < full ? " is-filled" : i === full && hasHalf ? " is-half" : "";
+      return `<span class="store-standard-star${cls}" aria-hidden="true">★</span>`;
+    }).join("");
+    if (!hasRealReviews) {
+      return `<div class="store-standard-badge" title="มาตรฐานบริการ CWF"><span class="store-standard-stars">${stars}</span><span class="store-standard-label">มาตรฐานบริการ CWF</span></div>`;
+    }
+    const valueLabel = `<span class="store-standard-value">${formatRatingAverage(value)}</span>`;
+    const countLabel = `<span class="store-standard-count">(${count} รีวิว)</span>`;
+    return `<div class="store-standard-badge store-standard-badge-real" title="คะแนนรีวิวจริง"><span class="store-standard-stars">${stars}</span>${valueLabel}${countLabel}</div>`;
+  }
+
   function renderCardGallery(item, name) {
     const images = itemGalleryImages(item);
     if (!images.length) {
       return `<div class="store-card-gallery"><div class="store-card-image-placeholder" aria-hidden="true">ไม่มีรูปภาพ</div></div>`;
     }
+    const autoplay = images.length > 1 && item.is_autoplay_enabled === true;
     const dots = images.length > 1
       ? `<div class="store-card-dots" data-store-dots>${images.map((_, i) => `<span class="store-card-dot${i === 0 ? " is-active" : ""}"></span>`).join("")}</div>`
       : "";
     return `
-      <div class="store-card-gallery">
+      <div class="store-card-gallery"${autoplay ? ' data-store-autoplay="1"' : ""}>
+        ${renderFeaturedRibbon(item)}
         <div class="store-card-slides" data-store-slides>${renderGallerySlides(images, name, "store-card-slide")}</div>
         ${dots}
       </div>
@@ -101,7 +145,6 @@
   function renderBadges(item) {
     const badges = [];
     if (hasPromo(item)) badges.push(`<span class="store-badge store-badge-promo">${root.utils.escapeHtml(promoBadgeText(item))}</span>`);
-    if (item.is_featured) badges.push(`<span class="store-badge store-badge-featured">แนะนำ</span>`);
     if (isBookable(item)) badges.push(`<span class="store-badge store-badge-bookable">จองได้ทันที</span>`);
     else badges.push(`<span class="store-badge store-badge-contact">ติดต่อแอดมิน</span>`);
     return badges.length ? `<div class="store-card-badges">${badges.join("")}</div>` : "";
@@ -120,6 +163,7 @@
       <article class="store-card" data-store-item="${root.utils.escapeHtml(id)}" tabindex="0" role="button" aria-label="ดูรายละเอียด ${root.utils.escapeHtml(name)}">
         ${renderCardGallery(item, name)}
         ${renderBadges(item)}
+        ${renderStandardBadge(item)}
         <div class="store-card-head">
           ${category ? `<span class="tag">${root.utils.escapeHtml(category)}</span>` : ""}
           <strong>${root.utils.escapeHtml(name)}</strong>
@@ -173,15 +217,103 @@
     `;
   }
 
+  const AUTOPLAY_INTERVAL_MS = 4500;
+  const AUTOPLAY_RESUME_DELAY_MS = 4500;
+
+  function prefersReducedMotion() {
+    try {
+      return typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    } catch (_error) {
+      return false;
+    }
+  }
+
+  // Returns a cleanup function, or null if autoplay could not be attached
+  // (reduced-motion preference, or the slides element lacks scrollTo support
+  // in this environment).
+  function attachAutoplay(slides, dots) {
+    if (prefersReducedMotion() || typeof slides.scrollTo !== "function") return null;
+    const count = dots.length;
+    if (count < 2) return null;
+    let timer = null;
+    let paused = false;
+    let visible = false;
+    let resumeTimer = null;
+
+    function stop() {
+      if (timer) { clearInterval(timer); timer = null; }
+    }
+    function start() {
+      if (timer || paused || !visible) return;
+      timer = setInterval(() => {
+        const width = Math.max(1, slides.clientWidth);
+        const current = Math.round(slides.scrollLeft / width);
+        const next = current >= count - 1 ? 0 : current + 1;
+        slides.scrollTo({ left: next * width, behavior: "smooth" });
+      }, AUTOPLAY_INTERVAL_MS);
+    }
+    function pauseForInteraction() {
+      paused = true;
+      stop();
+      if (resumeTimer) clearTimeout(resumeTimer);
+      resumeTimer = setTimeout(() => { paused = false; start(); }, AUTOPLAY_RESUME_DELAY_MS);
+    }
+    slides.addEventListener("touchstart", pauseForInteraction, { passive: true });
+    slides.addEventListener("pointerdown", pauseForInteraction, { passive: true });
+
+    function onVisibilityChange() {
+      if (document.hidden) stop();
+      else start();
+    }
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    let observer = null;
+    if (typeof IntersectionObserver === "function") {
+      observer = new IntersectionObserver((entries) => {
+        entries.forEach((entry) => {
+          visible = entry.isIntersecting;
+          if (visible) start();
+          else stop();
+        });
+      }, { threshold: 0.5 });
+      observer.observe(slides);
+    } else {
+      visible = true;
+      start();
+    }
+
+    return function cleanup() {
+      stop();
+      if (resumeTimer) clearTimeout(resumeTimer);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      if (observer) observer.disconnect();
+      slides.removeEventListener("touchstart", pauseForInteraction);
+      slides.removeEventListener("pointerdown", pauseForInteraction);
+    };
+  }
+
+  let cardAutoplayCleanups = [];
+
+  function clearCardAutoplay() {
+    cardAutoplayCleanups.forEach((cleanup) => cleanup());
+    cardAutoplayCleanups = [];
+  }
+
   function bindGallerySliders(scope) {
+    clearCardAutoplay();
     scope.querySelectorAll("[data-store-slides]").forEach((slides) => {
       const gallery = slides.closest(".store-card-gallery");
       const dots = gallery ? gallery.querySelectorAll(".store-card-dot") : [];
-      if (!dots.length) return;
-      slides.addEventListener("scroll", () => {
-        const index = Math.round(slides.scrollLeft / Math.max(1, slides.clientWidth));
-        dots.forEach((dot, i) => dot.classList.toggle("is-active", i === index));
-      }, { passive: true });
+      if (dots.length) {
+        slides.addEventListener("scroll", () => {
+          const index = Math.round(slides.scrollLeft / Math.max(1, slides.clientWidth));
+          dots.forEach((dot, i) => dot.classList.toggle("is-active", i === index));
+        }, { passive: true });
+      }
+      if (gallery && gallery.getAttribute("data-store-autoplay") === "1") {
+        const cleanup = attachAutoplay(slides, dots);
+        if (cleanup) cardAutoplayCleanups.push(cleanup);
+      }
     });
   }
 
@@ -304,11 +436,13 @@
     if (!images.length) {
       return `<div class="store-detail-gallery"><div class="store-card-image-placeholder" aria-hidden="true">ไม่มีรูปภาพ</div></div>`;
     }
+    const autoplay = images.length > 1 && item.is_autoplay_enabled === true;
     const dots = images.length > 1
       ? `<div class="store-detail-dots" data-store-detail-dots>${images.map((_, i) => `<span class="store-detail-dot${i === 0 ? " is-active" : ""}"></span>`).join("")}</div>`
       : "";
     return `
-      <div class="store-detail-gallery">
+      <div class="store-detail-gallery"${autoplay ? ' data-store-autoplay="1"' : ""}>
+        ${renderFeaturedRibbon(item)}
         <div class="store-detail-slides" data-store-detail-slides>${renderGallerySlides(images, name, "store-detail-slide")}</div>
         ${dots}
       </div>
@@ -326,6 +460,7 @@
       <button class="store-detail-back" type="button" data-store-detail-back>${root.utils.icon("pin", 16)}กลับไปหน้าร้านค้า</button>
       ${renderDetailGallery(item, name)}
       ${renderBadges(item)}
+      ${renderStandardBadge(item)}
       <div class="store-detail-head">
         ${category ? `<span class="tag">${root.utils.escapeHtml(category)}</span>` : ""}
         <h2>${root.utils.escapeHtml(name)}</h2>
@@ -388,7 +523,17 @@
     return renderDetailContent(bucket.data);
   }
 
+  let detailAutoplayCleanup = null;
+
+  function clearDetailAutoplay() {
+    if (detailAutoplayCleanup) {
+      detailAutoplayCleanup();
+      detailAutoplayCleanup = null;
+    }
+  }
+
   function bindDetailGallery(container) {
+    clearDetailAutoplay();
     const slides = container.querySelector("[data-store-detail-slides]");
     const dotsWrap = container.querySelector("[data-store-detail-dots]");
     if (!slides || !dotsWrap) return;
@@ -397,6 +542,10 @@
       const index = Math.round(slides.scrollLeft / Math.max(1, slides.clientWidth));
       dots.forEach((dot, i) => dot.classList.toggle("is-active", i === index));
     }, { passive: true });
+    const gallery = slides.closest(".store-detail-gallery");
+    if (gallery && gallery.getAttribute("data-store-autoplay") === "1") {
+      detailAutoplayCleanup = attachAutoplay(slides, dots);
+    }
   }
 
   function bindDetailBody(container) {
@@ -481,6 +630,13 @@
         loadDetail(container, itemId);
       }
     },
+  };
+
+  store.render.onLeave = () => {
+    clearCardAutoplay();
+  };
+  store.renderDetail.onLeave = () => {
+    clearDetailAutoplay();
   };
 
   root.store = store;

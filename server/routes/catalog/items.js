@@ -1,6 +1,8 @@
 const { money, intOrNull, boolish } = require("../../customerPricing");
 const cloudinaryImageUpload = require("../../lib/cloudinaryImageUpload");
 
+const MAX_CATALOG_IMAGES_PER_ITEM = 4;
+
 function normalizeBoolean(value, fieldLabel) {
   if (typeof value === "boolean") return { ok: true, value };
   if (typeof value === "number") {
@@ -56,7 +58,7 @@ const CATALOG_ITEM_FIELDS = [
 const CATALOG_MARKETPLACE_FIELDS = [
   "short_description", "long_description", "highlights", "service_conditions",
   "booking_mode", "booking_service_key", "booking_ac_type", "booking_btu",
-  "booking_wash_variant", "is_featured",
+  "booking_wash_variant", "is_featured", "is_autoplay_enabled",
 ];
 
 const BOOKING_MODES = new Set(["bookable", "contact_admin"]);
@@ -147,6 +149,14 @@ function validateMarketplaceFields(merged) {
   );
   if (!isFeaturedResult.ok) errors.push(isFeaturedResult.error);
 
+  const isAutoplayEnabledResult = normalizeBoolean(
+    Object.prototype.hasOwnProperty.call(merged, "is_autoplay_enabled") && merged.is_autoplay_enabled !== undefined && merged.is_autoplay_enabled !== null && merged.is_autoplay_enabled !== ""
+      ? merged.is_autoplay_enabled
+      : true,
+    "is_autoplay_enabled"
+  );
+  if (!isAutoplayEnabledResult.ok) errors.push(isAutoplayEnabledResult.error);
+
   // booking_service_key is metadata only — the customer app doesn't consume it
   // for prefill yet, so it must never be treated as sufficient on its own. A
   // bookable item must carry a real, supported ac_type + btu (and, for wall
@@ -182,6 +192,7 @@ function validateMarketplaceFields(merged) {
       booking_wash_variant: bookingWashVariantResult.value,
       booking_btu: bookingBtuResult.value !== null ? Math.round(bookingBtuResult.value) : null,
       is_featured: isFeaturedResult.value,
+      is_autoplay_enabled: isAutoplayEnabledResult.value,
     },
   };
 }
@@ -331,10 +342,30 @@ const CATALOG_SELECT_MARKETPLACE = `
   LEFT JOIN public.customer_service_price_rules pr ON pr.rule_id = ci.price_rule_id
 `;
 
-// Three-tier capability-driven SELECT: legacy (day one) -> +media/pricing -> +marketplace v2.
-// Building from flags (rather than three independently-hand-written constants) keeps the
-// marketplace tier from drifting out of sync with the pricing tier as both evolve.
-function buildCatalogSelect({ pricingReady, marketplaceReady }) {
+// Adds the additive auto-slide column (migrations/<date>_catalog_store_autoplay.sql) on top
+// of CATALOG_SELECT_MARKETPLACE. Kept as its own tier (rather than folded permanently into
+// CATALOG_SELECT_MARKETPLACE) so the column is only ever referenced once its own migration
+// has actually run, independent of when marketplace v2 itself ran.
+const CATALOG_SELECT_MARKETPLACE_AUTOPLAY = `
+  SELECT ci.item_id, ci.item_name, ci.item_category, ci.base_price, ci.unit_label, ci.is_active,
+         ci.job_category, ci.ac_type, ci.btu_min, ci.btu_max, ci.is_customer_visible,
+         ci.image_url, ci.image_public_id, ci.price_rule_id,
+         ci.short_description, ci.long_description, ci.highlights, ci.service_conditions,
+         ci.booking_mode, ci.booking_service_key, ci.booking_ac_type, ci.booking_btu,
+         ci.booking_wash_variant, ci.is_featured, ci.is_autoplay_enabled,
+         pr.normal_price AS rule_normal_price, pr.active_price AS rule_active_price,
+         pr.campaign_name AS rule_campaign_name, pr.is_active AS rule_is_active,
+         pr.effective_from AS rule_effective_from, pr.effective_to AS rule_effective_to,
+         pr.wash_variant AS rule_wash_variant, pr.label AS rule_label, pr.priority AS rule_priority
+  FROM public.catalog_items ci
+  LEFT JOIN public.customer_service_price_rules pr ON pr.rule_id = ci.price_rule_id
+`;
+
+// Four-tier capability-driven SELECT: legacy (day one) -> +media/pricing -> +marketplace v2
+// -> +autoplay. Building from flags (rather than hand-written constants per combination)
+// keeps later tiers from drifting out of sync with earlier ones as all evolve.
+function buildCatalogSelect({ pricingReady, marketplaceReady, autoplayReady }) {
+  if (marketplaceReady && autoplayReady) return CATALOG_SELECT_MARKETPLACE_AUTOPLAY;
   if (marketplaceReady) return CATALOG_SELECT_MARKETPLACE;
   if (pricingReady) return CATALOG_SELECT_WITH_PRICING;
   return CATALOG_SELECT_LEGACY;
@@ -471,6 +502,10 @@ function serializeCatalogRow(row) {
     booking_btu: row.booking_mode === "bookable" ? (row.booking_btu || null) : null,
     booking_wash_variant: row.booking_mode === "bookable" ? (row.booking_wash_variant || null) : null,
     is_featured: Boolean(row.is_featured),
+    // Fail-safe disabled: row.is_autoplay_enabled is undefined until the autoplay
+    // migration has actually run, and a pre-migration item must never be silently
+    // treated as autoplay-enabled.
+    is_autoplay_enabled: row.is_autoplay_enabled === undefined ? false : Boolean(row.is_autoplay_enabled),
   };
 }
 
@@ -619,11 +654,30 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
     return ready;
   }
 
+  // Mirrors the same capability-check idiom for the additive auto-slide column
+  // (migrations/<date>_catalog_store_autoplay.sql). Kept independent of
+  // isMarketplaceSchemaReady so is_autoplay_enabled is only ever read/written once
+  // its own migration has actually run, regardless of marketplace v2's state.
+  let autoplaySchemaReadyCache = false;
+  async function isAutoplaySchemaReady(db) {
+    if (autoplaySchemaReadyCache) return true;
+    const r = await db.query(`
+      SELECT COUNT(*)::int AS cnt
+      FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = 'catalog_items'
+        AND column_name = 'is_autoplay_enabled'
+    `);
+    const ready = Number(r.rows?.[0]?.cnt || 0) === 1;
+    if (ready) autoplaySchemaReadyCache = true;
+    return ready;
+  }
+
   router.get("/catalog/items", async (req, res) => {
     try {
       const pricingReady = await isMediaPricingSchemaReady(pool);
       const marketplaceReady = await isMarketplaceSchemaReady(pool);
-      const select = buildCatalogSelect({ pricingReady, marketplaceReady });
+      const autoplayReady = await isAutoplaySchemaReady(pool);
+      const select = buildCatalogSelect({ pricingReady, marketplaceReady, autoplayReady });
       const customer = String(req.query.customer || "").trim() === "1";
       const job_category = (req.query.job_category || "").toString().trim();
       const ac_type = (req.query.ac_type || "").toString().trim();
@@ -662,7 +716,8 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
 
       const pricingReady = await isMediaPricingSchemaReady(pool);
       const marketplaceReady = await isMarketplaceSchemaReady(pool);
-      const select = buildCatalogSelect({ pricingReady, marketplaceReady });
+      const autoplayReady = await isAutoplaySchemaReady(pool);
+      const select = buildCatalogSelect({ pricingReady, marketplaceReady, autoplayReady });
 
       const r = await pool.query(
         `${select} WHERE ci.item_id = $1 AND ci.is_active = TRUE AND ci.is_customer_visible = TRUE`,
@@ -682,7 +737,8 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
     try {
       const pricingReady = await isMediaPricingSchemaReady(pool);
       const marketplaceReady = await isMarketplaceSchemaReady(pool);
-      const select = buildCatalogSelect({ pricingReady, marketplaceReady });
+      const autoplayReady = await isAutoplaySchemaReady(pool);
+      const select = buildCatalogSelect({ pricingReady, marketplaceReady, autoplayReady });
       const r = await pool.query(`${select} ORDER BY ci.item_category, ci.item_name`);
       await attachCatalogImages(pool, r.rows, marketplaceReady);
       res.json(r.rows.map(serializeAdminCatalogRow));
@@ -712,6 +768,7 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
     const hasMarketplaceKey = CATALOG_MARKETPLACE_FIELDS.some((key) => Object.prototype.hasOwnProperty.call(req.body || {}, key));
     const schemaReady = await isMediaPricingSchemaReady(pool);
     const marketplaceReady = await isMarketplaceSchemaReady(pool);
+    const autoplayReady = await isAutoplaySchemaReady(pool);
     if (pricingResult.value && !schemaReady) {
       return res.status(503).json({ error: "ระบบราคาโปรโมชันยังไม่พร้อมใช้งาน (ยังไม่ได้รัน migration)" });
     }
@@ -724,8 +781,23 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
-      const insertRes = marketplaceReady
-        ? await client.query(
+      let insertRes;
+      if (marketplaceReady && autoplayReady) {
+        insertRes = await client.query(
+          `INSERT INTO public.catalog_items
+             (item_name, item_category, base_price, unit_label, job_category, ac_type, btu_min, btu_max, is_active, is_customer_visible,
+              short_description, long_description, highlights, service_conditions,
+              booking_mode, booking_service_key, booking_ac_type, booking_btu, booking_wash_variant, is_featured, is_autoplay_enabled)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
+           RETURNING item_id`,
+          [
+            v.item_name, v.item_category, v.base_price, v.unit_label, v.job_category, v.ac_type, v.btu_min, v.btu_max, v.is_active, v.is_customer_visible,
+            mv.short_description, mv.long_description, mv.highlights ? JSON.stringify(mv.highlights) : null, mv.service_conditions,
+            mv.booking_mode, mv.booking_service_key, mv.booking_ac_type, mv.booking_btu, mv.booking_wash_variant, mv.is_featured, mv.is_autoplay_enabled,
+          ]
+        );
+      } else if (marketplaceReady) {
+        insertRes = await client.query(
           `INSERT INTO public.catalog_items
              (item_name, item_category, base_price, unit_label, job_category, ac_type, btu_min, btu_max, is_active, is_customer_visible,
               short_description, long_description, highlights, service_conditions,
@@ -737,14 +809,16 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
             mv.short_description, mv.long_description, mv.highlights ? JSON.stringify(mv.highlights) : null, mv.service_conditions,
             mv.booking_mode, mv.booking_service_key, mv.booking_ac_type, mv.booking_btu, mv.booking_wash_variant, mv.is_featured,
           ]
-        )
-        : await client.query(
+        );
+      } else {
+        insertRes = await client.query(
           `INSERT INTO public.catalog_items
              (item_name, item_category, base_price, unit_label, job_category, ac_type, btu_min, btu_max, is_active, is_customer_visible)
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
            RETURNING item_id`,
           [v.item_name, v.item_category, v.base_price, v.unit_label, v.job_category, v.ac_type, v.btu_min, v.btu_max, v.is_active, v.is_customer_visible]
         );
+      }
       const itemId = insertRes.rows[0].item_id;
 
       if (pricingResult.value) {
@@ -759,7 +833,7 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
 
       await client.query("COMMIT");
 
-      const select = buildCatalogSelect({ pricingReady: schemaReady, marketplaceReady });
+      const select = buildCatalogSelect({ pricingReady: schemaReady, marketplaceReady, autoplayReady });
       const final = await client.query(`${select} WHERE ci.item_id = $1`, [itemId]);
       await attachCatalogImages(client, final.rows, marketplaceReady);
       res.status(201).json(serializeAdminCatalogRow(final.rows[0]));
@@ -778,7 +852,8 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
 
     const schemaReady = await isMediaPricingSchemaReady(pool);
     const marketplaceReady = await isMarketplaceSchemaReady(pool);
-    const select = buildCatalogSelect({ pricingReady: schemaReady, marketplaceReady });
+    const autoplayReady = await isAutoplaySchemaReady(pool);
+    const select = buildCatalogSelect({ pricingReady: schemaReady, marketplaceReady, autoplayReady });
     const existingResult = await pool.query(`${select} WHERE ci.item_id = $1`, [itemId]);
     const existing = existingResult.rows[0];
     if (!existing) return res.status(404).json({ error: "ไม่พบรายการนี้" });
@@ -807,7 +882,24 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
-      if (marketplaceReady) {
+      if (marketplaceReady && autoplayReady) {
+        await client.query(
+          `UPDATE public.catalog_items
+              SET item_name=$1, item_category=$2, base_price=$3, unit_label=$4,
+                  job_category=$5, ac_type=$6, btu_min=$7, btu_max=$8,
+                  is_active=$9, is_customer_visible=$10,
+                  short_description=$11, long_description=$12, highlights=$13, service_conditions=$14,
+                  booking_mode=$15, booking_service_key=$16, booking_ac_type=$17, booking_btu=$18,
+                  booking_wash_variant=$19, is_featured=$20, is_autoplay_enabled=$21
+            WHERE item_id = $22`,
+          [
+            v.item_name, v.item_category, v.base_price, v.unit_label, v.job_category, v.ac_type, v.btu_min, v.btu_max, v.is_active, v.is_customer_visible,
+            mv.short_description, mv.long_description, mv.highlights ? JSON.stringify(mv.highlights) : null, mv.service_conditions,
+            mv.booking_mode, mv.booking_service_key, mv.booking_ac_type, mv.booking_btu, mv.booking_wash_variant, mv.is_featured, mv.is_autoplay_enabled,
+            itemId,
+          ]
+        );
+      } else if (marketplaceReady) {
         await client.query(
           `UPDATE public.catalog_items
               SET item_name=$1, item_category=$2, base_price=$3, unit_label=$4,
@@ -865,6 +957,77 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
     }
   });
 
+  router.delete("/admin/catalog/items/:itemId", requireAdminSession, async (req, res) => {
+    try {
+      const itemId = String(req.params.itemId || "").trim();
+      if (!/^\d+$/.test(itemId)) return res.status(400).json({ error: "item_id ไม่ถูกต้อง" });
+
+      const marketplaceReady = await isMarketplaceSchemaReady(pool);
+
+      const client = await pool.connect();
+      let existing;
+      let galleryImages = [];
+      try {
+        await client.query("BEGIN");
+
+        const existingResult = await client.query(
+          `SELECT item_id, image_public_id FROM public.catalog_items WHERE item_id = $1 FOR UPDATE`,
+          [itemId]
+        );
+        existing = existingResult.rows[0];
+        if (!existing) {
+          await client.query("ROLLBACK");
+          return res.status(404).json({ error: "ไม่พบรายการนี้" });
+        }
+
+        if (marketplaceReady) {
+          const galleryResult = await client.query(
+            `SELECT image_public_id FROM public.catalog_item_images WHERE item_id = $1 AND image_public_id IS NOT NULL`,
+            [itemId]
+          );
+          galleryImages = galleryResult.rows;
+        }
+
+        // Deleting the row is the source of truth for "this item is gone" — gallery
+        // rows are removed via the existing ON DELETE CASCADE FK, and the linked price
+        // rule (customer_service_price_rules) is intentionally never touched here so
+        // old jobs priced against it keep working. Cloudinary cleanup happens after
+        // commit, best-effort, and never re-creates the item if it fails.
+        await client.query(`DELETE FROM public.catalog_items WHERE item_id = $1`, [itemId]);
+
+        await client.query("COMMIT");
+      } catch (e) {
+        await client.query("ROLLBACK").catch(() => {});
+        throw e;
+      } finally {
+        client.release();
+      }
+
+      const publicIdsToClean = [];
+      if (existing.image_public_id) publicIdsToClean.push(existing.image_public_id);
+      for (const row of galleryImages) {
+        if (row.image_public_id) publicIdsToClean.push(row.image_public_id);
+      }
+
+      let cloudinaryWarning = null;
+      for (const publicId of publicIdsToClean) {
+        try {
+          await deleteCatalogImage(publicId);
+        } catch (cleanupError) {
+          console.error("cloudinary cleanup after item delete failed", safeImageErrorMessage(cleanupError));
+          cloudinaryWarning = "ลบสินค้าแล้ว แต่ล้างรูปบน Cloudinary บางรูปไม่สำเร็จ";
+        }
+      }
+
+      const response = { ok: true, item_id: Number(itemId) };
+      if (cloudinaryWarning) response.warning = cloudinaryWarning;
+      res.json(response);
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "ลบรายการไม่สำเร็จ" });
+    }
+  });
+
   router.post(
     "/admin/catalog/items/:itemId/image",
     requireAdminSession,
@@ -916,7 +1079,8 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
         }
 
         const marketplaceReady = await isMarketplaceSchemaReady(pool);
-        const select = buildCatalogSelect({ pricingReady: true, marketplaceReady });
+        const autoplayReady = await isAutoplaySchemaReady(pool);
+        const select = buildCatalogSelect({ pricingReady: true, marketplaceReady, autoplayReady });
         const final = await pool.query(`${select} WHERE ci.item_id = $1`, [itemId]);
         await attachCatalogImages(pool, final.rows, marketplaceReady);
         res.json(serializeAdminCatalogRow(final.rows[0]));
@@ -965,7 +1129,8 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
       }
 
       const marketplaceReady = await isMarketplaceSchemaReady(pool);
-      const select = buildCatalogSelect({ pricingReady: true, marketplaceReady });
+      const autoplayReady = await isAutoplaySchemaReady(pool);
+      const select = buildCatalogSelect({ pricingReady: true, marketplaceReady, autoplayReady });
       const final = await pool.query(`${select} WHERE ci.item_id = $1`, [itemId]);
       await attachCatalogImages(pool, final.rows, marketplaceReady);
       res.json(serializeAdminCatalogRow(final.rows[0]));
@@ -1053,7 +1218,12 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
                FROM public.catalog_item_images WHERE item_id = $1`,
             [itemId]
           );
-          const isFirstImage = Number(countResult.rows[0].cnt) === 0;
+          const currentCount = Number(countResult.rows[0].cnt);
+          if (currentCount >= MAX_CATALOG_IMAGES_PER_ITEM) {
+            await client.query("ROLLBACK");
+            return res.status(409).json({ error: `รายการนี้มีรูปภาพครบ ${MAX_CATALOG_IMAGES_PER_ITEM} รูปแล้ว ไม่สามารถเพิ่มรูปได้อีก` });
+          }
+          const isFirstImage = currentCount === 0;
           const nextSortOrder = Number(countResult.rows[0].max_sort) + 1;
 
           uploaded = await uploadCatalogImage({
@@ -1268,3 +1438,4 @@ module.exports.serializeCatalogImage = serializeCatalogImage;
 module.exports.validatePricingInput = validatePricingInput;
 module.exports.validateMarketplaceFields = validateMarketplaceFields;
 module.exports.buildCatalogSelect = buildCatalogSelect;
+module.exports.MAX_CATALOG_IMAGES_PER_ITEM = MAX_CATALOG_IMAGES_PER_ITEM;
