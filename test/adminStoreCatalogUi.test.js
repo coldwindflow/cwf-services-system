@@ -48,13 +48,29 @@ test("main page contains header, add-button, search, filter, card list and store
   assert.match(catalogHtmlSource, /id="catalog_preview"/);
 });
 
-test("admin-store-catalog.js builds a modal/bottom-sheet with 5 sections", () => {
+test("admin-store-catalog.js builds a modal/bottom-sheet with 7 non-redundant sections, with price-rule-matching fields collapsed into an accordion", () => {
   assert.match(catalogJsSource, /cwf-modal-backdrop/);
-  assert.match(catalogJsSource, /1\) ข้อมูลบริการ/);
-  assert.match(catalogJsSource, /2\) รูปบริการ/);
+  assert.match(catalogJsSource, /1\) ข้อมูลหลัก/);
+  assert.match(catalogJsSource, /2\) รูปภาพสินค้า/);
   assert.match(catalogJsSource, /3\) ราคาและโปรโมชั่น/);
-  assert.match(catalogJsSource, /4\) การแสดงผล/);
-  assert.match(catalogJsSource, /5\) ขั้นสูง/);
+  assert.match(catalogJsSource, /4\) การจอง/);
+  assert.match(catalogJsSource, /5\) รายละเอียด/);
+  assert.match(catalogJsSource, /6\) การแสดงผล/);
+  assert.match(catalogJsSource, /7\) ข้อมูลจับคู่ระบบราคา/);
+  // legacy cover image and the multi-image gallery must be merged into one section, not split
+  assert.match(catalogJsSource, /2\) รูปภาพสินค้า[\s\S]*?id="cm_image_input"[\s\S]*?id="cm_gallery_section"/);
+  // base_price must live with pricing, not under a separate "advanced" section
+  assert.doesNotMatch(catalogJsSource, /ขั้นสูง/);
+  assert.match(catalogJsSource, /3\) ราคาและโปรโมชั่น[\s\S]*?id="cm_base_price"/);
+  // price-rule-matching fields must be collapsed by default (native <details>, no "open" attribute)
+  const accordionMatch = catalogJsSource.match(/<details class="asc-section asc-accordion">[\s\S]*?<\/details>/);
+  assert.ok(accordionMatch, "price-rule-matching accordion not found");
+  assert.doesNotMatch(accordionMatch[0], /<details[^>]* open/);
+  assert.match(accordionMatch[0], /id="cm_job_category"/);
+  assert.match(accordionMatch[0], /id="cm_ac_type"/);
+  assert.match(accordionMatch[0], /id="cm_wash_variant"/);
+  assert.match(accordionMatch[0], /id="cm_btu_min"/);
+  assert.match(accordionMatch[0], /id="cm_btu_max"/);
 });
 
 test("modal contains normal_price and active_price fields", () => {
@@ -144,15 +160,14 @@ test("catalogModalPayload sends pricing.pricing_is_active, not pricing.is_active
 
 // ---------- Marketplace v2: admin UI ----------
 
-test("modal includes a marketplace section with booking_mode, is_featured, and description fields", () => {
-  assert.match(catalogJsSource, /6\) ข้อมูลตลาด \(Marketplace\)/);
-  assert.match(catalogJsSource, /id="cm_booking_mode"/);
+test("modal includes booking_mode and is_featured under their own sections, plus description fields under รายละเอียด", () => {
+  assert.match(catalogJsSource, /4\) การจอง[\s\S]*?id="cm_booking_mode"/);
   assert.match(catalogJsSource, /id="cm_booking_service_key"/);
   assert.match(catalogJsSource, /id="cm_booking_ac_type"/);
   assert.match(catalogJsSource, /id="cm_booking_btu"/);
   assert.match(catalogJsSource, /id="cm_booking_wash_variant"/);
-  assert.match(catalogJsSource, /id="cm_is_featured"/);
-  assert.match(catalogJsSource, /id="cm_short_description"/);
+  assert.match(catalogJsSource, /6\) การแสดงผล[\s\S]*?id="cm_is_featured"/);
+  assert.match(catalogJsSource, /5\) รายละเอียด[\s\S]*?id="cm_short_description"/);
   assert.match(catalogJsSource, /id="cm_long_description"/);
   assert.match(catalogJsSource, /id="cm_highlights"/);
   assert.match(catalogJsSource, /id="cm_service_conditions"/);
@@ -262,7 +277,7 @@ test("gallery file input supports selecting multiple files and enforces a max of
   assert.match(catalogJsSource, /<input id="cm_gallery_input" type="file" accept="[^"]+" multiple>/);
 });
 
-test("onGalleryImagePicked uploads multiple files sequentially, truncates over the remaining slot count, and hides the input while uploading", () => {
+test("onGalleryImagePicked uploads multiple files sequentially via a per-file status queue, truncates over the remaining slot count, and hides the input while uploading", () => {
   const fnMatch = catalogJsSource.match(/async function onGalleryImagePicked\(event\)[\s\S]*?\n}\n/);
   assert.ok(fnMatch, "onGalleryImagePicked function not found");
   const body = fnMatch[0];
@@ -271,11 +286,29 @@ test("onGalleryImagePicked uploads multiple files sequentially, truncates over t
   assert.match(body, /files\.slice\(0, remaining\)/);
   assert.match(body, /galleryUploading = true;/);
   assert.match(body, /galleryUploading = false;/);
-  assert.match(body, /for \(const file of toUpload\)/);
+  assert.match(body, /galleryUploadQueue = toUpload\.map\(/);
+  assert.match(body, /status: "pending",/);
+  assert.match(body, /for \(const queued of galleryUploadQueue\)/);
+  assert.match(body, /queued\.status = "uploading";/);
+  assert.match(body, /queued\.status = "done";/);
+  assert.match(body, /queued\.status = "error";/);
+  assert.match(body, /URL\.revokeObjectURL\(queued\.localUrl\);/);
 
   const renderMatch = catalogJsSource.match(/function renderGalleryManager\(\)[\s\S]*?\n}\n/);
   assert.ok(renderMatch, "renderGalleryManager function not found");
-  assert.match(renderMatch[0], /const inputArea = galleryUploading/);
+  assert.match(renderMatch[0], /if \(galleryUploading\) \{/);
+  assert.match(renderMatch[0], /<input id="cm_gallery_input"/);
+});
+
+test("the gallery upload queue shows a per-file pending/uploading/done/error status and an x/N upload progress count", () => {
+  assert.match(catalogJsSource, /function galleryStatusLabel\(status\)/);
+  assert.match(catalogJsSource, /if \(status === "uploading"\) return "กำลังอัปโหลด\.\.\.";/);
+  assert.match(catalogJsSource, /if \(status === "done"\) return "สำเร็จ";/);
+  assert.match(catalogJsSource, /if \(status === "error"\) return "ล้มเหลว";/);
+  assert.match(catalogJsSource, /function galleryQueueThumbHtml\(queued\)/);
+  assert.match(catalogJsSource, /asc-gallery-thumb-status-\$\{queued\.status\}/);
+  const renderMatch = catalogJsSource.match(/function renderGalleryManager\(\)[\s\S]*?\n}\n/);
+  assert.match(renderMatch[0], /กำลังอัปโหลด \$\{doneCount\}\/\$\{galleryUploadQueue\.length\} รูป/);
 });
 
 test("the more-sheet has a delete option that opens the delete confirmation modal", () => {

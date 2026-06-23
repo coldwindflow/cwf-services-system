@@ -3670,9 +3670,20 @@ body.has-contact-sheet { overflow: hidden; }
   margin-top: 2px;
 }
 .store-standard-stars { display: inline-flex; gap: 1px; line-height: 1; }
-.store-standard-star { color: #e5e7eb; font-size: 11px; }
+.store-standard-star { position: relative; color: #e5e7eb; font-size: 11px; }
 .store-standard-star.is-filled { color: #f5b700; }
+.store-standard-star.is-half { color: #e5e7eb; }
+.store-standard-star.is-half::before {
+  content: "★";
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 50%;
+  overflow: hidden;
+  color: #f5b700;
+}
 .store-standard-label { color: #92660a; }
+.store-standard-count { color: #92660a; font-weight: 500; }
 
 .store-card-price {
   display: flex;

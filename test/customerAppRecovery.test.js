@@ -902,6 +902,25 @@ test("store card shows the CWF featured ribbon only for featured items, and a fi
   assert.equal((body.innerHTML.match(/store-standard-star is-filled/g) || []).length, 10);
 });
 
+test("standard-service badge renders real rating_average/review_count with half stars and a visible count, but falls back to a fake-review-free 5-star badge when there is no real data", async () => {
+  const context = makeContext();
+  const root = loadCustomerFrontend(context);
+  root.api.loadCatalogItems = async () => [
+    { item_id: 1, item_name: "มีรีวิวจริง", item_category: "ล้างแอร์", base_price: 700, unit_label: "เครื่อง", rating_average: 4.5, review_count: 12 },
+    { item_id: 2, item_name: "ยังไม่มีรีวิว", item_category: "ล้างแอร์", base_price: 700, unit_label: "เครื่อง" },
+  ];
+
+  const container = new FakeMount();
+  root.store.render(container);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const body = container.querySelector("[data-store-body]");
+  assert.match(body.innerHTML, /store-standard-star is-half/);
+  assert.match(body.innerHTML, /store-standard-count">\(12\)<\/span>/);
+  assert.equal((body.innerHTML.match(/store-standard-count/g) || []).length, 1);
+  assert.equal((body.innerHTML.match(/store-standard-star is-filled/g) || []).length, 4 + 5);
+});
+
 test("store card and product detail gallery flag autoplay only for multi-image items with is_autoplay_enabled true", async () => {
   const context = makeContext();
   const root = loadCustomerFrontend(context);

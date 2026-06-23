@@ -7,6 +7,7 @@ let moreSheetItemId = null;
 let galleryImages = [];
 let galleryLoading = false;
 let galleryUploading = false;
+let galleryUploadQueue = [];
 let deleteModalItemId = null;
 const BOOKING_MODES = ["bookable", "contact_admin"];
 // Must mirror the backend's MAX_CATALOG_IMAGES_PER_ITEM (server/routes/catalog/items.js)
@@ -63,28 +64,16 @@ function ensureCatalogModal() {
       <div class="cwf-modal-body">
 
         <div class="asc-section">
-          <div class="asc-section-title">1) ข้อมูลบริการ</div>
+          <div class="asc-section-title">1) ข้อมูลหลัก</div>
           <div class="asc-field"><label>ชื่อรายการ *</label><input id="cm_item_name" placeholder="เช่น ล้างแอร์ผนัง"></div>
           <div class="asc-grid2">
             <div class="asc-field"><label>หมวดหมู่ *</label><input id="cm_item_category" placeholder="เช่น ล้างแอร์"></div>
             <div class="asc-field"><label>หน่วย *</label><input id="cm_unit_label" placeholder="เช่น เครื่อง, งาน"></div>
           </div>
-          <div class="asc-grid2">
-            <div class="asc-field"><label>ประเภทงาน *</label><input id="cm_job_category" placeholder="เช่น ล้าง, ซ่อม"></div>
-            <div class="asc-field"><label>ประเภทแอร์ *</label><input id="cm_ac_type" placeholder="เช่น ผนัง, แขวน"></div>
-          </div>
-          <div class="asc-grid2">
-            <div class="asc-field"><label>ลักษณะการล้าง *</label><input id="cm_wash_variant" placeholder="เช่น ล้างน้ำ, ล้างน้ำยา"></div>
-            <div></div>
-          </div>
-          <div class="asc-grid2">
-            <div class="asc-field"><label>BTU ต่ำสุด *</label><input id="cm_btu_min" type="number" step="1" min="1" placeholder="ว่าง = ไม่จำกัด"></div>
-            <div class="asc-field"><label>BTU สูงสุด *</label><input id="cm_btu_max" type="number" step="1" min="1" placeholder="ว่าง = ไม่จำกัด"></div>
-          </div>
         </div>
 
         <div class="asc-section">
-          <div class="asc-section-title">2) รูปบริการ</div>
+          <div class="asc-section-title">2) รูปภาพสินค้า</div>
           <div class="asc-image-preview-row">
             <img id="cm_image_preview" class="asc-image-preview" src="" alt="" style="display:none;">
             <div id="cm_image_placeholder" class="asc-item-thumb asc-placeholder">ไม่มีรูป</div>
@@ -100,11 +89,16 @@ function ensureCatalogModal() {
               <option value="0">ไม่เลื่อนอัตโนมัติ</option>
             </select>
           </div>
+          <div id="cm_gallery_section">
+            <div class="asc-section-title" style="margin-top:14px;">รูปภาพเพิ่มเติม (แกลเลอรี)</div>
+            <div id="cm_gallery_body"></div>
+          </div>
         </div>
 
         <div class="asc-section">
           <div class="asc-section-title">3) ราคาและโปรโมชั่น</div>
           <div class="asc-warning">${escapeHtml(PRICING_WARNING_TEXT)}</div>
+          <div class="asc-field"><label>ราคาฐาน (Base Price) *</label><input id="cm_base_price" type="number" step="1" min="0" placeholder="ใช้เมื่อยังไม่มีราคาโปรโมชัน"></div>
           <div class="asc-grid2">
             <div class="asc-field"><label>ราคาปกติ (บาท) *</label><input id="cm_normal_price" type="number" step="1" min="0"></div>
             <div class="asc-field"><label>ราคาขายจริง (บาท) *</label><input id="cm_active_price" type="number" step="1" min="0"></div>
@@ -129,30 +123,7 @@ function ensureCatalogModal() {
         </div>
 
         <div class="asc-section">
-          <div class="asc-section-title">4) การแสดงผล</div>
-          <div class="asc-grid2">
-            <div class="asc-field"><label>สถานะการใช้งาน *</label>
-              <select id="cm_is_active">
-                <option value="1">เปิดใช้งาน</option>
-                <option value="0">ปิดใช้งาน</option>
-              </select>
-            </div>
-            <div class="asc-field"><label>แสดงให้ลูกค้าเห็น *</label>
-              <select id="cm_is_customer_visible">
-                <option value="0">ไม่แสดง</option>
-                <option value="1">แสดง</option>
-              </select>
-            </div>
-          </div>
-        </div>
-
-        <div class="asc-section">
-          <div class="asc-section-title">5) ขั้นสูง</div>
-          <div class="asc-field"><label>ราคาฐาน (Base Price) *</label><input id="cm_base_price" type="number" step="1" min="0" placeholder="ใช้เมื่อยังไม่มีราคาโปรโมชัน"></div>
-        </div>
-
-        <div class="asc-section">
-          <div class="asc-section-title">6) ข้อมูลตลาด (Marketplace)</div>
+          <div class="asc-section-title">4) การจอง</div>
           <div class="asc-field"><label>การจอง *</label>
             <select id="cm_booking_mode">
               <option value="contact_admin">ติดต่อแอดมิน (ไม่จองออนไลน์)</option>
@@ -184,22 +155,56 @@ function ensureCatalogModal() {
               </div>
             </div>
           </div>
-          <div class="asc-field"><label>รายการแนะนำ (Featured) *</label>
-            <select id="cm_is_featured">
-              <option value="0">ไม่แนะนำ</option>
-              <option value="1">แนะนำ</option>
-            </select>
-          </div>
+        </div>
+
+        <div class="asc-section">
+          <div class="asc-section-title">5) รายละเอียด</div>
           <div class="asc-field"><label>คำอธิบายสั้น</label><textarea id="cm_short_description" rows="2" maxlength="300" placeholder="แสดงบนการ์ดร้านค้า"></textarea></div>
           <div class="asc-field"><label>คำอธิบายแบบเต็ม</label><textarea id="cm_long_description" rows="4" placeholder="แสดงในหน้ารายละเอียดสินค้า"></textarea></div>
           <div class="asc-field"><label>จุดเด่น (1 บรรทัดต่อ 1 รายการ)</label><textarea id="cm_highlights" rows="3" placeholder="เช่น&#10;ฟรีน้ำยา&#10;รับประกัน 30 วัน"></textarea></div>
           <div class="asc-field"><label>เงื่อนไขการให้บริการ</label><textarea id="cm_service_conditions" rows="3"></textarea></div>
         </div>
 
-        <div class="asc-section" id="cm_gallery_section">
-          <div class="asc-section-title">7) รูปภาพหลายรูป (แกลเลอรี)</div>
-          <div id="cm_gallery_body"></div>
+        <div class="asc-section">
+          <div class="asc-section-title">6) การแสดงผล</div>
+          <div class="asc-grid2">
+            <div class="asc-field"><label>สถานะการใช้งาน *</label>
+              <select id="cm_is_active">
+                <option value="1">เปิดใช้งาน</option>
+                <option value="0">ปิดใช้งาน</option>
+              </select>
+            </div>
+            <div class="asc-field"><label>แสดงให้ลูกค้าเห็น *</label>
+              <select id="cm_is_customer_visible">
+                <option value="0">ไม่แสดง</option>
+                <option value="1">แสดง</option>
+              </select>
+            </div>
+          </div>
+          <div class="asc-field"><label>รายการแนะนำ (Featured) *</label>
+            <select id="cm_is_featured">
+              <option value="0">ไม่แนะนำ</option>
+              <option value="1">แนะนำ</option>
+            </select>
+          </div>
         </div>
+
+        <details class="asc-section asc-accordion">
+          <summary class="asc-section-title asc-accordion-summary">7) ข้อมูลจับคู่ระบบราคา (กดเพื่อแก้ไข)</summary>
+          <div class="asc-warning">การแก้ไขค่าด้านล่างนี้จะเปลี่ยนการจับคู่กับระบบราคาอัตโนมัติ (customer_service_price_rules) โปรดมั่นใจก่อนแก้ไข</div>
+          <div class="asc-grid2">
+            <div class="asc-field"><label>ประเภทงาน *</label><input id="cm_job_category" placeholder="เช่น ล้าง, ซ่อม"></div>
+            <div class="asc-field"><label>ประเภทแอร์ *</label><input id="cm_ac_type" placeholder="เช่น ผนัง, แขวน"></div>
+          </div>
+          <div class="asc-grid2">
+            <div class="asc-field"><label>ลักษณะการล้าง *</label><input id="cm_wash_variant" placeholder="เช่น ล้างน้ำ, ล้างน้ำยา"></div>
+            <div></div>
+          </div>
+          <div class="asc-grid2">
+            <div class="asc-field"><label>BTU ต่ำสุด *</label><input id="cm_btu_min" type="number" step="1" min="1" placeholder="ว่าง = ไม่จำกัด"></div>
+            <div class="asc-field"><label>BTU สูงสุด *</label><input id="cm_btu_max" type="number" step="1" min="1" placeholder="ว่าง = ไม่จำกัด"></div>
+          </div>
+        </details>
 
         <div id="catalog_modal_error" class="asc-modal-error"></div>
       </div>
@@ -313,6 +318,7 @@ function resetCatalogModalFields() {
   updateBookingFieldsVisibility();
   galleryImages = [];
   galleryUploading = false;
+  galleryUploadQueue = [];
   renderGalleryManager();
   hideCatalogModalError();
 }
@@ -532,6 +538,21 @@ function galleryThumbHtml(image, index, total) {
   </div>`;
 }
 
+function galleryStatusLabel(status) {
+  if (status === "uploading") return "กำลังอัปโหลด...";
+  if (status === "done") return "สำเร็จ";
+  if (status === "error") return "ล้มเหลว";
+  return "รออัปโหลด";
+}
+
+function galleryQueueThumbHtml(queued) {
+  return `
+  <div class="asc-gallery-thumb asc-gallery-thumb-pending" data-queue-id="${escapeHtml(queued.localId)}">
+    <img src="${escapeHtml(queued.localUrl)}" alt="${escapeHtml(queued.name)}" loading="lazy">
+    <div class="asc-gallery-thumb-status asc-gallery-thumb-status-${queued.status}">${escapeHtml(galleryStatusLabel(queued.status))}</div>
+  </div>`;
+}
+
 function renderGalleryManager() {
   const body = el("cm_gallery_body");
   if (!editingItemId) {
@@ -542,18 +563,24 @@ function renderGalleryManager() {
     body.innerHTML = `<div class="asc-loading">กำลังโหลดรูปภาพ...</div>`;
     return;
   }
-  const grid = galleryImages.length
-    ? `<div class="asc-gallery-grid">${galleryImages.map((img, i) => galleryThumbHtml(img, i, galleryImages.length)).join("")}</div>`
+  const existingThumbs = galleryImages.map((img, i) => galleryThumbHtml(img, i, galleryImages.length)).join("");
+  const queueThumbs = galleryUploadQueue.map(galleryQueueThumbHtml).join("");
+  const grid = existingThumbs || queueThumbs
+    ? `<div class="asc-gallery-grid">${existingThumbs}${queueThumbs}</div>`
     : `<div class="asc-empty">ยังไม่มีรูปภาพในแกลเลอรี</div>`;
   const remaining = Math.max(0, MAX_GALLERY_IMAGES - galleryImages.length);
-  const inputArea = galleryUploading
-    ? `<div class="asc-loading">กำลังอัปโหลดรูปภาพ...</div>`
-    : remaining > 0
-      ? `<div class="asc-field" style="margin-top:8px;">
+  let inputArea;
+  if (galleryUploading) {
+    const doneCount = galleryUploadQueue.filter((q) => q.status === "done" || q.status === "error").length;
+    inputArea = `<div class="asc-loading">กำลังอัปโหลด ${doneCount}/${galleryUploadQueue.length} รูป</div>`;
+  } else if (remaining > 0) {
+    inputArea = `<div class="asc-field" style="margin-top:8px;">
           <input id="cm_gallery_input" type="file" accept="image/jpeg,image/png,image/webp" multiple>
           <div class="muted2 mini">JPEG/PNG/WEBP ไม่เกิน 5MB ต่อรูป (เพิ่มได้อีก ${remaining} จาก ${MAX_GALLERY_IMAGES} รูป)</div>
-        </div>`
-      : `<div class="muted2 mini" style="margin-top:8px;">มีรูปภาพครบ ${MAX_GALLERY_IMAGES} รูปแล้ว ลบรูปเดิมก่อนเพิ่มรูปใหม่</div>`;
+        </div>`;
+  } else {
+    inputArea = `<div class="muted2 mini" style="margin-top:8px;">มีรูปภาพครบ ${MAX_GALLERY_IMAGES} รูปแล้ว ลบรูปเดิมก่อนเพิ่มรูปใหม่</div>`;
+  }
   body.innerHTML = `${grid}${inputArea}`;
   const input = el("cm_gallery_input");
   if (input) input.addEventListener("change", onGalleryImagePicked);
@@ -583,19 +610,35 @@ async function onGalleryImagePicked(event) {
   }
   if (!toUpload.length) return;
 
+  galleryUploadQueue = toUpload.map((file, i) => ({
+    localId: `q${Date.now()}_${i}`,
+    file,
+    name: file.name || "รูปภาพ",
+    localUrl: URL.createObjectURL(file),
+    status: "pending",
+  }));
   galleryUploading = true;
   renderGalleryManager();
+
   const failures = [];
-  for (const file of toUpload) {
+  for (const queued of galleryUploadQueue) {
+    queued.status = "uploading";
+    renderGalleryManager();
     try {
       const formData = new FormData();
-      formData.append("image", file);
+      formData.append("image", queued.file);
       await apiFetch(`/admin/catalog/items/${editingItemId}/images`, { method: "POST", body: formData });
+      queued.status = "done";
     } catch (e) {
-      failures.push(file.name || "รูปภาพ");
+      queued.status = "error";
+      failures.push(queued.name);
     }
+    renderGalleryManager();
   }
+
   galleryUploading = false;
+  for (const queued of galleryUploadQueue) URL.revokeObjectURL(queued.localUrl);
+  galleryUploadQueue = [];
   await loadGalleryImages(editingItemId);
   if (failures.length) showToast(`อัปโหลดไม่สำเร็จ: ${failures.join(", ")}`, "error");
 }

@@ -87,17 +87,31 @@
     return `<span class="store-featured-ribbon">CWF แนะนำ</span>`;
   }
 
-  function standardRatingValue(item) {
-    const raw = Number(item && item.rating_value);
-    return Number.isFinite(raw) && raw >= 1 && raw <= 5 ? raw : 5;
+  // Future-rating-prop-ready: once a real review system exists, items carry
+  // rating_average (1-5, may be fractional) and review_count (>0). Until then
+  // there is no real data, so we show a full 5-star badge with no review
+  // count rather than fabricate one.
+  function standardRatingInfo(item) {
+    const avg = Number(item && item.rating_average);
+    const count = Number(item && item.review_count);
+    if (Number.isFinite(avg) && avg >= 1 && avg <= 5 && Number.isFinite(count) && count > 0) {
+      return { value: avg, count };
+    }
+    const legacy = Number(item && item.rating_value);
+    const value = Number.isFinite(legacy) && legacy >= 1 && legacy <= 5 ? legacy : 5;
+    return { value, count: 0 };
   }
 
   function renderStandardBadge(item) {
-    const rounded = Math.round(standardRatingValue(item));
-    const stars = Array.from({ length: 5 }, (_, i) =>
-      `<span class="store-standard-star${i < rounded ? " is-filled" : ""}" aria-hidden="true">★</span>`
-    ).join("");
-    return `<div class="store-standard-badge" title="มาตรฐานบริการ CWF"><span class="store-standard-stars">${stars}</span><span class="store-standard-label">มาตรฐานบริการ CWF</span></div>`;
+    const { value, count } = standardRatingInfo(item);
+    const full = Math.floor(value);
+    const hasHalf = full < 5 && value - full >= 0.5;
+    const stars = Array.from({ length: 5 }, (_, i) => {
+      const cls = i < full ? " is-filled" : i === full && hasHalf ? " is-half" : "";
+      return `<span class="store-standard-star${cls}" aria-hidden="true">★</span>`;
+    }).join("");
+    const countLabel = count > 0 ? `<span class="store-standard-count">(${count})</span>` : "";
+    return `<div class="store-standard-badge" title="มาตรฐานบริการ CWF"><span class="store-standard-stars">${stars}</span><span class="store-standard-label">มาตรฐานบริการ CWF</span>${countLabel}</div>`;
   }
 
   function renderCardGallery(item, name) {
