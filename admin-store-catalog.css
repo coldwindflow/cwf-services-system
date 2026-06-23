@@ -58,6 +58,40 @@
 .asc-badge-inactive{ background:#fee2e2; color:#b91c1c; }
 .asc-badge-visible{ background:#dbeafe; color:#1e40af; }
 .asc-badge-promo{ background:#fef3c7; color:#92400e; }
+.asc-badge-bookable{ background:#e0f2fe; color:#0369a1; }
+.asc-badge-contact{ background:#f1f5f9; color:#475569; }
+.asc-badge-featured{ background:#fde68a; color:#92400e; }
+.asc-badge-primary{ background:#dcfce7; color:#15803d; position:absolute; top:4px; left:4px; }
+
+.asc-gallery-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fill, minmax(96px, 1fr));
+  gap:8px;
+}
+.asc-gallery-thumb{
+  position:relative;
+  border:1px solid rgba(0,0,0,.08);
+  border-radius:10px;
+  padding:4px;
+  background:#fff;
+}
+.asc-gallery-thumb img{
+  width:100%;
+  height:88px;
+  object-fit:cover;
+  border-radius:8px;
+  background:#f1f5f9;
+}
+.asc-gallery-thumb-actions{
+  display:flex;
+  flex-wrap:wrap;
+  gap:4px;
+  margin-top:4px;
+}
+.asc-gallery-thumb-actions button{
+  font-size:11px;
+  padding:3px 6px;
+}
 
 .asc-item-actions{
   display:flex;

@@ -141,3 +141,80 @@ test("catalogModalPayload sends pricing.pricing_is_active, not pricing.is_active
   assert.match(catalogJsSource, /pricing_is_active: el\("cm_pricing_is_active"\)\.value === "1",/);
   assert.doesNotMatch(catalogJsSource, /pricing\.is_active\b/);
 });
+
+// ---------- Marketplace v2: admin UI ----------
+
+test("modal includes a marketplace section with booking_mode, is_featured, and description fields", () => {
+  assert.match(catalogJsSource, /6\) ข้อมูลตลาด \(Marketplace\)/);
+  assert.match(catalogJsSource, /id="cm_booking_mode"/);
+  assert.match(catalogJsSource, /id="cm_booking_service_key"/);
+  assert.match(catalogJsSource, /id="cm_booking_ac_type"/);
+  assert.match(catalogJsSource, /id="cm_booking_btu"/);
+  assert.match(catalogJsSource, /id="cm_booking_wash_variant"/);
+  assert.match(catalogJsSource, /id="cm_is_featured"/);
+  assert.match(catalogJsSource, /id="cm_short_description"/);
+  assert.match(catalogJsSource, /id="cm_long_description"/);
+  assert.match(catalogJsSource, /id="cm_highlights"/);
+  assert.match(catalogJsSource, /id="cm_service_conditions"/);
+});
+
+test("booking detail fields are wrapped in a container that toggles visibility based on booking_mode", () => {
+  assert.match(catalogJsSource, /id="cm_booking_fields" style="display:none;"/);
+  assert.match(catalogJsSource, /function updateBookingFieldsVisibility\(\)/);
+  assert.match(catalogJsSource, /el\("cm_booking_mode"\)\.addEventListener\("change", updateBookingFieldsVisibility\)/);
+});
+
+test("catalogModalPayload includes booking_mode, is_featured, highlights array, and description fields", () => {
+  assert.match(catalogJsSource, /booking_mode: el\("cm_booking_mode"\)\.value,/);
+  assert.match(catalogJsSource, /is_featured: el\("cm_is_featured"\)\.value === "1",/);
+  assert.match(catalogJsSource, /highlights: \(el\("cm_highlights"\)\.value \|\| ""\)\.split\("\\n"\)\.map\(\(line\) => line\.trim\(\)\)\.filter\(Boolean\),/);
+  assert.match(catalogJsSource, /short_description: trimmedOrEmpty\("cm_short_description"\),/);
+  assert.match(catalogJsSource, /long_description: trimmedOrEmpty\("cm_long_description"\),/);
+  assert.match(catalogJsSource, /service_conditions: trimmedOrEmpty\("cm_service_conditions"\),/);
+});
+
+test("client-side validation rejects a bookable item without booking_service_key or booking_ac_type", () => {
+  assert.match(catalogJsSource, /payload\.booking_mode === "bookable" && !payload\.booking_service_key && !payload\.booking_ac_type/);
+});
+
+test("openCatalogModalForEdit populates marketplace fields from the item, including a fallback booking_mode", () => {
+  assert.match(catalogJsSource, /el\("cm_booking_mode"\)\.value = BOOKING_MODES\.includes\(item\.booking_mode\) \? item\.booking_mode : "contact_admin";/);
+  assert.match(catalogJsSource, /el\("cm_highlights"\)\.value = Array\.isArray\(item\.highlights\) \? item\.highlights\.join\("\\n"\) : "";/);
+});
+
+test("catalog item cards show a bookable/contact-admin badge and a featured badge when applicable", () => {
+  assert.match(catalogJsSource, /item\.booking_mode === "bookable" \? `<span class="asc-badge asc-badge-bookable">/);
+  assert.match(catalogJsSource, /item\.is_featured \? `<span class="asc-badge asc-badge-featured">/);
+});
+
+test("a multi-image gallery manager section exists and is wired to the /images REST endpoints", () => {
+  assert.match(catalogJsSource, /id="cm_gallery_section"/);
+  assert.match(catalogJsSource, /function loadGalleryImages\(itemId\)/);
+  assert.match(catalogJsSource, /apiFetch\(`\/admin\/catalog\/items\/\$\{itemId\}\/images`\)/);
+  assert.match(catalogJsSource, /apiFetch\(`\/admin\/catalog\/items\/\$\{editingItemId\}\/images`, \{ method: "POST", body: formData \}\)/);
+  assert.match(catalogJsSource, /apiFetch\(`\/admin\/catalog\/items\/\$\{editingItemId\}\/images\/\$\{imageId\}`, \{ method: "DELETE" \}\)/);
+  assert.match(catalogJsSource, /apiFetch\(`\/admin\/catalog\/items\/\$\{editingItemId\}\/images\/\$\{imageId\}\/primary`, \{ method: "POST" \}\)/);
+  assert.match(catalogJsSource, /apiFetch\(`\/admin\/catalog\/items\/\$\{editingItemId\}\/images\/reorder`,/);
+});
+
+test("the gallery manager shows a save-first message instead of upload controls when there is no editingItemId yet", () => {
+  const fnMatch = catalogJsSource.match(/function renderGalleryManager\(\)[\s\S]*?\n}\n/);
+  assert.ok(fnMatch, "renderGalleryManager function not found");
+  assert.match(fnMatch[0], /if \(!editingItemId\) \{/);
+  assert.match(fnMatch[0], /บันทึกข้อมูลบริการก่อน/);
+});
+
+test("gallery delete and set-primary actions ask for confirmation only on delete", () => {
+  assert.match(catalogJsSource, /async function onGalleryDelete\(imageId\) \{[\s\S]*?confirm\(.*ลบรูปภาพ/);
+});
+
+test("admin-store-catalog.html script and stylesheet references were bumped to the marketplace v2 build id", () => {
+  assert.match(catalogHtmlSource, /admin-store-catalog\.css\?v=20260623_catalog_marketplace_v2/);
+  assert.match(catalogHtmlSource, /admin-store-catalog\.js\?v=20260623_catalog_marketplace_v2/);
+});
+
+test("admin-store-catalog.css defines gallery grid and badge styles for the marketplace UI", () => {
+  assert.match(catalogCssSource, /\.asc-gallery-grid\{/);
+  assert.match(catalogCssSource, /\.asc-badge-bookable\{/);
+  assert.match(catalogCssSource, /\.asc-badge-featured\{/);
+});
