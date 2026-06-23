@@ -7,7 +7,7 @@ const express = require("express");
 
 const createCatalogItemRoutes = require("../server/routes/catalog/items");
 
-function makePool(initialItems = [], initialRules = [], { schemaReady = true, marketplaceReady = false } = {}) {
+function makePool(initialItems = [], initialRules = [], { schemaReady = true, marketplaceReady = false, autoplayReady = false } = {}) {
   const state = {
     items: initialItems.map((x) => ({
       image_url: null, image_public_id: null, price_rule_id: null,
@@ -28,7 +28,7 @@ function makePool(initialItems = [], initialRules = [], { schemaReady = true, ma
 
   function joinedRow(item) {
     const rule = item.price_rule_id ? state.rules.find((r) => String(r.rule_id) === String(item.price_rule_id)) : null;
-    return {
+    const row = {
       ...item,
       rule_normal_price: rule ? rule.normal_price : null,
       rule_active_price: rule ? rule.active_price : null,
@@ -40,6 +40,10 @@ function makePool(initialItems = [], initialRules = [], { schemaReady = true, ma
       rule_label: rule ? rule.label : null,
       rule_priority: rule ? rule.priority : null,
     };
+    // Mirrors a real SELECT: is_autoplay_enabled is only a real, readable column once its
+    // own migration has run, regardless of what the in-memory fixture happens to hold.
+    if (!autoplayReady) delete row.is_autoplay_enabled;
+    return row;
   }
 
   function imagesForItem(itemId) {
@@ -52,6 +56,9 @@ function makePool(initialItems = [], initialRules = [], { schemaReady = true, ma
     state.queries.push({ sql, params });
     const s = String(sql);
 
+    if (s.includes("information_schema.columns") && s.includes("catalog_items") && s.includes("is_autoplay_enabled")) {
+      return { rows: [{ cnt: autoplayReady ? 1 : 0 }] };
+    }
     if (s.includes("information_schema.columns") && s.includes("catalog_items") && s.includes("short_description")) {
       return { rows: [{ cnt: marketplaceReady ? 10 : 0 }] };
     }
@@ -64,6 +71,22 @@ function makePool(initialItems = [], initialRules = [], { schemaReady = true, ma
 
     if (/^\s*(BEGIN|COMMIT|ROLLBACK)\s*;?\s*$/i.test(s)) return { rows: [] };
     if (s.includes("ALTER TABLE") || s.includes("CREATE INDEX") || s.includes("ADD CONSTRAINT") || s.includes("DO $$")) return { rows: [] };
+
+    if (s.includes("INSERT INTO public.catalog_items") && s.includes("is_autoplay_enabled")) {
+      const [
+        item_name, item_category, base_price, unit_label, job_category, ac_type, btu_min, btu_max, is_active, is_customer_visible,
+        short_description, long_description, highlights, service_conditions,
+        booking_mode, booking_service_key, booking_ac_type, booking_btu, booking_wash_variant, is_featured, is_autoplay_enabled,
+      ] = params;
+      const row = {
+        item_id: nextItemId++, item_name, item_category, base_price, unit_label, job_category, ac_type, btu_min, btu_max,
+        is_active, is_customer_visible, image_url: null, image_public_id: null, price_rule_id: null,
+        short_description, long_description, highlights: highlights ? JSON.parse(highlights) : null, service_conditions,
+        booking_mode, booking_service_key, booking_ac_type, booking_btu, booking_wash_variant, is_featured, is_autoplay_enabled,
+      };
+      state.items.push(row);
+      return { rows: [{ item_id: row.item_id }] };
+    }
 
     if (s.includes("INSERT INTO public.catalog_items") && s.includes("booking_mode")) {
       const [
@@ -133,6 +156,24 @@ function makePool(initialItems = [], initialRules = [], { schemaReady = true, ma
       const [item_id] = params;
       const row = state.items.find((x) => String(x.item_id) === String(item_id));
       if (row) Object.assign(row, { image_url: null, image_public_id: null });
+      return { rows: [] };
+    }
+
+    if (s.includes("SET item_name=$1") && s.includes("is_autoplay_enabled=$21")) {
+      const [
+        item_name, item_category, base_price, unit_label, job_category, ac_type, btu_min, btu_max, is_active, is_customer_visible,
+        short_description, long_description, highlights, service_conditions,
+        booking_mode, booking_service_key, booking_ac_type, booking_btu, booking_wash_variant, is_featured, is_autoplay_enabled,
+        item_id,
+      ] = params;
+      const row = state.items.find((x) => String(x.item_id) === String(item_id));
+      if (row) {
+        Object.assign(row, {
+          item_name, item_category, base_price, unit_label, job_category, ac_type, btu_min, btu_max, is_active, is_customer_visible,
+          short_description, long_description, highlights: highlights ? JSON.parse(highlights) : null, service_conditions,
+          booking_mode, booking_service_key, booking_ac_type, booking_btu, booking_wash_variant, is_featured, is_autoplay_enabled,
+        });
+      }
       return { rows: [] };
     }
 
@@ -1870,6 +1911,110 @@ test("admin POST rejects a bookable item with only booking_service_key set", asy
     });
     assert.equal(res.status, 400);
     assert.equal(pool.state.items.length, 3);
+  });
+});
+
+// ---------- Auto-slide (is_autoplay_enabled) ----------
+
+test("validateMarketplaceFields defaults is_autoplay_enabled to true", () => {
+  const result = validateMarketplaceFields({});
+  assert.equal(result.ok, true);
+  assert.equal(result.value.is_autoplay_enabled, true);
+});
+
+test("validateMarketplaceFields rejects a non-boolean is_autoplay_enabled", () => {
+  const result = validateMarketplaceFields({ is_autoplay_enabled: "not-a-boolean" });
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.some((e) => /is_autoplay_enabled/.test(e)));
+});
+
+test("public/detail/admin DTOs fail-safe is_autoplay_enabled to false before the autoplay migration has run", async () => {
+  const items = sampleItems();
+  items[0].is_autoplay_enabled = true; // even if the column somehow had a value pre-migration
+  const pool = makePool(items, [], { marketplaceReady: true, autoplayReady: false });
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const listRes = await fetch(`${base}/catalog/items?customer=1`);
+    const listBody = await listRes.json();
+    assert.equal(listBody.find((x) => x.item_id === 1).is_autoplay_enabled, false);
+
+    const adminRes = await fetch(`${base}/admin/catalog/items`);
+    const adminBody = await adminRes.json();
+    assert.equal(adminBody.find((x) => x.item_id === 1).is_autoplay_enabled, false);
+  });
+});
+
+test("admin POST creates an item with is_autoplay_enabled once the autoplay migration has run", async () => {
+  const pool = makePool(sampleItems(), [], { marketplaceReady: true, autoplayReady: true });
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ item_name: "ทดสอบ autoplay", is_autoplay_enabled: false }),
+    });
+    assert.equal(res.status, 201);
+    const body = await res.json();
+    assert.equal(body.is_autoplay_enabled, false);
+  });
+});
+
+test("admin POST defaults is_autoplay_enabled to true when omitted, once the autoplay migration has run", async () => {
+  const pool = makePool(sampleItems(), [], { marketplaceReady: true, autoplayReady: true });
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ item_name: "ทดสอบ autoplay default" }),
+    });
+    assert.equal(res.status, 201);
+    const body = await res.json();
+    assert.equal(body.is_autoplay_enabled, true);
+  });
+});
+
+test("admin PATCH round-trips is_autoplay_enabled and leaves it unchanged when not sent", async () => {
+  const items = sampleItems();
+  items[0].is_autoplay_enabled = false;
+  const pool = makePool(items, [], { marketplaceReady: true, autoplayReady: true });
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items/1`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ item_name: "ทดสอบ ไม่เปลี่ยน autoplay" }),
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.is_autoplay_enabled, false);
+
+    const res2 = await fetch(`${base}/admin/catalog/items/1`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ is_autoplay_enabled: true }),
+    });
+    const body2 = await res2.json();
+    assert.equal(body2.is_autoplay_enabled, true);
+  });
+});
+
+test("opening an item for edit and saving without changes round-trips is_autoplay_enabled unchanged", async () => {
+  const items = sampleItems();
+  items[0].is_autoplay_enabled = false;
+  items[0].is_featured = true;
+  const pool = makePool(items, [], { marketplaceReady: true, autoplayReady: true });
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items/1`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.is_autoplay_enabled, false);
+    assert.equal(body.is_featured, true);
   });
 });
 
