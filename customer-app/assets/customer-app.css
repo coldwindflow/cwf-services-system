@@ -3491,7 +3491,32 @@ body.has-contact-sheet { overflow: hidden; }
 }
 
 /* ===================== Store / Marketplace (Phase 2) ===================== */
-.store-hero p { margin-top: 6px; }
+/* Compact Store-only header; the shared .hero class stays untouched for other screens. */
+.store-compact-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  border-radius: var(--radius);
+  background: linear-gradient(135deg, var(--accent, #1f7bff), #0f4fb8);
+  color: #fff;
+  min-height: 0;
+}
+.store-compact-header h2 {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.3;
+}
+.store-compact-badge {
+  flex: 0 0 auto;
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+  white-space: nowrap;
+}
 .store-filters {
   display: grid;
   grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
@@ -3514,36 +3539,42 @@ body.has-contact-sheet { overflow: hidden; }
   .store-filters { grid-template-columns: 1fr; }
 }
 
-/* Mobile-first 2-column marketplace grid (Lazada/Shopee-style). */
+/* Mobile-first 2-column marketplace grid (Lazada/Shopee-style).
+   The app shell stays capped at max-width: 480px on every viewport (it's a
+   phone-sized column even on desktop), so the grid must not scale its
+   column count off viewport-width media queries -- the container never
+   actually grows past ~480px, and doing so squeezed cards into unreadable
+   slivers at wide viewports. Stay at 2 columns at every width. */
 .store-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
-}
-@media (min-width: 700px) {
-  .store-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
-}
-@media (min-width: 1024px) {
-  .store-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-}
-@media (min-width: 1280px) {
-  .store-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px; }
 }
 
 .store-card {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 10px;
+  padding: 0 0 10px;
   border-radius: var(--radius);
   border: 1px solid var(--line);
   background: #fff;
   min-width: 0;
   cursor: pointer;
+  overflow: hidden;
   transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
 .store-card:active { transform: scale(0.98); }
 .store-card:hover { box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08); }
+/* Image bleeds edge-to-edge; padding applies only to the text/price/CTA region below it. */
+.store-card-badges,
+.store-card-head,
+.store-standard-badge,
+.store-card-price,
+.store-card-actions {
+  padding-left: 10px;
+  padding-right: 10px;
+}
 .store-card-head {
   display: flex;
   flex-direction: column;
@@ -3632,15 +3663,19 @@ body.has-contact-sheet { overflow: hidden; }
   position: absolute;
   top: 8px;
   right: 0;
-  z-index: 2;
-  background: linear-gradient(135deg, var(--accent, #1f7bff), #0f4fb8);
+  z-index: 3;
+  background: linear-gradient(135deg, #1f7bff, #0f4fb8);
   color: #fff;
   font-size: 10.5px;
-  font-weight: 700;
+  font-weight: 800;
+  letter-spacing: 0.2px;
   padding: 4px 10px 4px 12px;
   border-radius: 999px 0 0 999px;
-  box-shadow: 0 2px 6px rgba(15, 79, 184, 0.35);
+  border-top: 1px solid rgba(255, 214, 92, 0.9);
+  border-bottom: 1px solid rgba(255, 214, 92, 0.9);
+  box-shadow: 0 3px 8px rgba(15, 79, 184, 0.45), inset 0 0 0 1px rgba(255, 255, 255, 0.15);
   line-height: 1.4;
+  pointer-events: none;
 }
 
 .store-card-badges {
@@ -3714,7 +3749,7 @@ body.has-contact-sheet { overflow: hidden; }
 }
 
 /* ===================== Store Product Detail ===================== */
-.store-detail-screen { padding-bottom: 96px; }
+.store-detail-screen { padding-bottom: calc(var(--nav-h) + var(--safe-b) + 80px); }
 .store-detail-back {
   display: inline-flex;
   align-items: center;
@@ -3799,11 +3834,13 @@ body.has-contact-sheet { overflow: hidden; }
   position: fixed;
   left: 0;
   right: 0;
-  bottom: 0;
-  z-index: 30;
+  /* Sits above the bottom-nav (height var(--nav-h), z-index 40) so the CTA is
+     never visually hidden behind it. */
+  bottom: calc(var(--nav-h) + var(--safe-b));
+  z-index: 35;
   display: flex;
   gap: 8px;
-  padding: 10px 14px calc(10px + env(safe-area-inset-bottom, 0px));
+  padding: 10px 14px;
   background: #fff;
   border-top: 1px solid var(--line);
   box-shadow: 0 -6px 18px rgba(15, 23, 42, 0.06);

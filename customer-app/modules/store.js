@@ -40,7 +40,17 @@
   }
 
   function promoBadgeText(item) {
-    return item.campaign_name || item.price_label || "โปรโมชัน";
+    return item.campaign_name || item.price_label || "โปร";
+  }
+
+  // The legacy catalog table constrains item_category to "service"/"product"
+  // in storage; that generic token carries no useful information for the
+  // customer, so it is hidden entirely rather than shown as a translated tag.
+  function categoryLabel(cat) {
+    const trimmed = String(cat || "").trim();
+    if (trimmed.toLowerCase() === "service") return "";
+    if (trimmed.toLowerCase() === "product") return "";
+    return trimmed;
   }
 
   function isBookable(item) {
@@ -117,7 +127,7 @@
       return `<span class="store-standard-star${cls}" aria-hidden="true">★</span>`;
     }).join("");
     if (!hasRealReviews) {
-      return `<div class="store-standard-badge" title="มาตรฐานบริการ CWF"><span class="store-standard-stars">${stars}</span><span class="store-standard-label">มาตรฐานบริการ CWF</span></div>`;
+      return `<div class="store-standard-badge" title="มาตรฐาน CWF"><span class="store-standard-stars">${stars}</span><span class="store-standard-label">มาตรฐาน CWF</span></div>`;
     }
     const valueLabel = `<span class="store-standard-value">${formatRatingAverage(value)}</span>`;
     const countLabel = `<span class="store-standard-count">(${count} รีวิว)</span>`;
@@ -145,7 +155,7 @@
   function renderBadges(item) {
     const badges = [];
     if (hasPromo(item)) badges.push(`<span class="store-badge store-badge-promo">${root.utils.escapeHtml(promoBadgeText(item))}</span>`);
-    if (isBookable(item)) badges.push(`<span class="store-badge store-badge-bookable">จองได้ทันที</span>`);
+    if (isBookable(item)) badges.push(`<span class="store-badge store-badge-bookable">จองได้</span>`);
     else badges.push(`<span class="store-badge store-badge-contact">ติดต่อแอดมิน</span>`);
     return badges.length ? `<div class="store-card-badges">${badges.join("")}</div>` : "";
   }
@@ -153,7 +163,7 @@
   function renderCard(item) {
     const id = String(item.item_id || "");
     const name = item.item_name || "-";
-    const category = item.item_category || "";
+    const category = categoryLabel(item.item_category);
     const unit = item.unit_label || "";
     const btu = btuRangeLabel(item);
     const meta = [item.job_category, item.ac_type, btu].filter(Boolean);
@@ -163,12 +173,12 @@
       <article class="store-card" data-store-item="${root.utils.escapeHtml(id)}" tabindex="0" role="button" aria-label="ดูรายละเอียด ${root.utils.escapeHtml(name)}">
         ${renderCardGallery(item, name)}
         ${renderBadges(item)}
-        ${renderStandardBadge(item)}
         <div class="store-card-head">
           ${category ? `<span class="tag">${root.utils.escapeHtml(category)}</span>` : ""}
           <strong>${root.utils.escapeHtml(name)}</strong>
+          ${meta.length ? `<div class="store-card-meta">${meta.map((m) => `<span>${root.utils.escapeHtml(m)}</span>`).join("")}</div>` : ""}
         </div>
-        ${meta.length ? `<div class="store-card-meta">${meta.map((m) => `<span>${root.utils.escapeHtml(m)}</span>`).join("")}</div>` : ""}
+        ${renderStandardBadge(item)}
         <div class="store-card-price">
           <span class="price-text${priceIsAsk(item) ? " is-estimate" : ""}">${root.utils.escapeHtml(priceLabel(item))}</span>
           ${promo ? `<span class="price-strike">${root.utils.escapeHtml(root.utils.formatBaht(item.normal_price))}</span>` : ""}
@@ -176,8 +186,8 @@
         </div>
         <div class="store-card-actions">
           ${bookable
-            ? `<button class="primary-btn" type="button" data-store-book="${root.utils.escapeHtml(id)}">จองบริการนี้</button>`
-            : `<button class="secondary-btn" type="button" data-store-contact="${root.utils.escapeHtml(id)}" data-store-contact-name="${root.utils.escapeHtml(name)}">สอบถามรายการนี้</button>`}
+            ? `<button class="primary-btn" type="button" data-store-book="${root.utils.escapeHtml(id)}">จองคิว</button>`
+            : `<button class="secondary-btn" type="button" data-store-contact="${root.utils.escapeHtml(id)}" data-store-contact-name="${root.utils.escapeHtml(name)}">สอบถามแอดมิน</button>`}
         </div>
       </article>
     `;
@@ -217,8 +227,9 @@
     `;
   }
 
-  const AUTOPLAY_INTERVAL_MS = 4500;
-  const AUTOPLAY_RESUME_DELAY_MS = 4500;
+  const AUTOPLAY_INTERVAL_MS = 3500;
+  const AUTOPLAY_RESUME_DELAY_MS = 5000;
+  const AUTOPLAY_JITTER_MS = 1200;
 
   function prefersReducedMotion() {
     try {
@@ -241,16 +252,23 @@
     let resumeTimer = null;
 
     function stop() {
-      if (timer) { clearInterval(timer); timer = null; }
+      if (timer) { clearTimeout(timer); timer = null; }
     }
+    // Uses a setTimeout chain (not setInterval) so a random jitter can be
+    // applied to the very first tick only; this keeps multiple visible
+    // cards from advancing in visual lock-step while still settling into
+    // the configured interval after the first transition.
     function start() {
       if (timer || paused || !visible) return;
-      timer = setInterval(() => {
+      function tick() {
         const width = Math.max(1, slides.clientWidth);
         const current = Math.round(slides.scrollLeft / width);
         const next = current >= count - 1 ? 0 : current + 1;
         slides.scrollTo({ left: next * width, behavior: "smooth" });
-      }, AUTOPLAY_INTERVAL_MS);
+        timer = setTimeout(tick, AUTOPLAY_INTERVAL_MS);
+      }
+      const jitter = Math.floor(Math.random() * AUTOPLAY_JITTER_MS);
+      timer = setTimeout(tick, AUTOPLAY_INTERVAL_MS + jitter);
     }
     function pauseForInteraction() {
       paused = true;
@@ -451,7 +469,7 @@
 
   function renderDetailContent(item) {
     const name = item.item_name || "-";
-    const category = item.item_category || "";
+    const category = categoryLabel(item.item_category);
     const unit = item.unit_label || "";
     const promo = hasPromo(item);
     const bookable = isBookable(item);
@@ -460,11 +478,11 @@
       <button class="store-detail-back" type="button" data-store-detail-back>${root.utils.icon("pin", 16)}กลับไปหน้าร้านค้า</button>
       ${renderDetailGallery(item, name)}
       ${renderBadges(item)}
-      ${renderStandardBadge(item)}
       <div class="store-detail-head">
         ${category ? `<span class="tag">${root.utils.escapeHtml(category)}</span>` : ""}
         <h2>${root.utils.escapeHtml(name)}</h2>
       </div>
+      ${renderStandardBadge(item)}
       <div class="store-detail-price">
         <span class="price-text${priceIsAsk(item) ? " is-estimate" : ""}">${root.utils.escapeHtml(priceLabel(item))}</span>
         ${promo ? `<span class="price-strike">${root.utils.escapeHtml(root.utils.formatBaht(item.normal_price))}</span>` : ""}
@@ -493,8 +511,8 @@
       ` : ""}
       <div class="store-detail-cta-bar">
         ${bookable
-          ? `<button class="primary-btn" type="button" data-store-detail-book>จองบริการนี้</button>`
-          : `<button class="primary-btn" type="button" data-store-detail-contact>สอบถามรายการนี้</button>`}
+          ? `<button class="primary-btn" type="button" data-store-detail-book>จองคิว</button>`
+          : `<button class="primary-btn" type="button" data-store-detail-contact>สอบถามแอดมิน</button>`}
       </div>
     `;
   }
@@ -606,10 +624,9 @@
       filterState = { search: "", category: "" };
       container.innerHTML = `
         <section class="screen store-screen">
-          <div class="hero store-hero">
-            <div class="hero-badge">ร้านค้า CWF</div>
+          <div class="store-compact-header">
+            <span class="store-compact-badge">ร้านค้า CWF</span>
             <h2>เลือกบริการและอุปกรณ์</h2>
-            <p>รายการที่แสดงมาจากระบบจริงของ CWF ราคาบนการ์ดเป็นราคาฐานหรือราคาเริ่มต้น สำหรับบริการที่รองรับสามารถไปยังหน้าจองได้ ส่วนรายการอื่นกรุณาติดต่อแอดมินเพื่อยืนยันรายละเอียดและราคา</p>
           </div>
           <div data-store-body>${renderBody()}</div>
           <div data-contact-sheet-mount></div>

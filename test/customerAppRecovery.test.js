@@ -228,7 +228,7 @@ test("Customer App build id is consistent across shell and service worker", () =
   const sw = read("customer-app/sw.js");
   const app = read("customer-app/assets/customer-app.js");
   const manifest = read("customer-app/manifest.webmanifest");
-  const build = "20260623_catalog_marketplace_v2";
+  const build = "20260623_store_marketplace_final";
 
   assert.match(index, new RegExp(`customer-app\\.css\\?v=${build}`));
   assert.match(index, new RegExp(`bookingUrgent\\.js\\?v=${build}`));
@@ -244,10 +244,18 @@ test("Customer App build id is consistent across shell and service worker", () =
 test("store module is loaded in index.html and precached in the service worker app shell", () => {
   const index = read("customer-app/index.html");
   const sw = read("customer-app/sw.js");
-  const build = "20260623_catalog_marketplace_v2";
+  const build = "20260623_store_marketplace_final";
 
   assert.match(index, new RegExp(`modules/store\\.js\\?v=${build}`));
   assert.match(sw, /`\.\/modules\/store\.js\?v=\$\{BUILD_ID\}`/);
+});
+
+test("store autoplay uses a ~3.5s interval, a ~5s resume delay after manual interaction, and a randomized first-tick jitter so cards do not advance in lock-step", () => {
+  const storeSrc = read("customer-app/modules/store.js");
+  assert.match(storeSrc, /const AUTOPLAY_INTERVAL_MS = 3500;/);
+  assert.match(storeSrc, /const AUTOPLAY_RESUME_DELAY_MS = 5000;/);
+  assert.match(storeSrc, /const AUTOPLAY_JITTER_MS = \d+;/);
+  assert.match(storeSrc, /Math\.random\(\) \* AUTOPLAY_JITTER_MS/);
 });
 
 test("bottom navigation has exactly 5 items in the required order with a centered primary booking action", () => {
@@ -739,6 +747,89 @@ test("store shows a real booking button only when the item's booking_mode is exp
   assert.match(body.innerHTML, /data-store-contact="2"/);
 });
 
+test("store card and product detail use the exact required CTA wording for bookable vs contact_admin items", async () => {
+  const context = makeContext();
+  const root = loadCustomerFrontend(context);
+  const items = [
+    { item_id: 1, item_name: "ล้างแอร์ผนัง", item_category: "ล้างแอร์", base_price: 700, unit_label: "เครื่อง", booking_mode: "bookable", booking_ac_type: "ผนัง", booking_btu: 12000 },
+    { item_id: 2, item_name: "ติดตั้งแอร์ใหม่", item_category: "ติดตั้ง", base_price: 0, unit_label: "งาน", booking_mode: "contact_admin" },
+  ];
+  root.api.loadCatalogItems = async () => items;
+  root.api.loadCatalogItem = async (id) => items.find((it) => String(it.item_id) === String(id));
+
+  const container = new FakeMount();
+  root.store.render(container);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const body = container.querySelector("[data-store-body]");
+  assert.match(body.innerHTML, /data-store-book="1"[^>]*>จองคิว</);
+  assert.match(body.innerHTML, /data-store-contact="2"[^>]*>สอบถามแอดมิน</);
+  assert.doesNotMatch(body.innerHTML, /จองบริการนี้/);
+  assert.doesNotMatch(body.innerHTML, /สอบถามรายการนี้/);
+
+  root.state.setRoute("storeItem-1");
+  root.store.renderDetail(container);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  let detailBody = container.querySelector("[data-store-detail-body]");
+  assert.match(detailBody.innerHTML, /data-store-detail-book[^>]*>จองคิว</);
+
+  root.state.setRoute("storeItem-2");
+  root.store.renderDetail(container);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  detailBody = container.querySelector("[data-store-detail-body]");
+  assert.match(detailBody.innerHTML, /data-store-detail-contact[^>]*>สอบถามแอดมิน</);
+  assert.doesNotMatch(detailBody.innerHTML, /จองคิว/);
+});
+
+test("store card and product detail render product name before the rating badge, and price right after the rating", async () => {
+  const context = makeContext();
+  const root = loadCustomerFrontend(context);
+  const item = { item_id: 1, item_name: "ล้างแอร์ผนัง", item_category: "ล้างแอร์", base_price: 700, unit_label: "เครื่อง" };
+  root.api.loadCatalogItems = async () => [item];
+  root.api.loadCatalogItem = async () => item;
+
+  const container = new FakeMount();
+  root.store.render(container);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const body = container.querySelector("[data-store-body]");
+  const nameIndex = body.innerHTML.indexOf("ล้างแอร์ผนัง");
+  const ratingIndex = body.innerHTML.indexOf("store-standard-badge");
+  const priceIndex = body.innerHTML.indexOf("store-card-price");
+  assert.ok(nameIndex > -1 && ratingIndex > -1 && priceIndex > -1);
+  assert.ok(nameIndex < ratingIndex);
+  assert.ok(ratingIndex < priceIndex);
+
+  root.state.setRoute("storeItem-1");
+  root.store.renderDetail(container);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const detailBody = container.querySelector("[data-store-detail-body]");
+  const detailNameIndex = detailBody.innerHTML.indexOf("ล้างแอร์ผนัง");
+  const detailRatingIndex = detailBody.innerHTML.indexOf("store-standard-badge");
+  const detailPriceIndex = detailBody.innerHTML.indexOf("store-detail-price");
+  assert.ok(detailNameIndex > -1 && detailRatingIndex > -1 && detailPriceIndex > -1);
+  assert.ok(detailNameIndex < detailRatingIndex);
+  assert.ok(detailRatingIndex < detailPriceIndex);
+});
+
+test("store hides the generic literal 'service'/'product' item_category entirely instead of showing it as a category tag", async () => {
+  const context = makeContext();
+  const root = loadCustomerFrontend(context);
+  root.api.loadCatalogItems = async () => [
+    { item_id: 1, item_name: "รายการทั่วไป", item_category: "service", base_price: 700, unit_label: "เครื่อง" },
+    { item_id: 2, item_name: "สินค้าทั่วไป", item_category: "product", base_price: 700, unit_label: "ชิ้น" },
+    { item_id: 3, item_name: "ล้างแอร์ผนัง", item_category: "ล้างแอร์", base_price: 700, unit_label: "เครื่อง" },
+  ];
+
+  const container = new FakeMount();
+  root.store.render(container);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const body = container.querySelector("[data-store-body]");
+  assert.doesNotMatch(body.innerHTML, /class="tag">service</);
+  assert.doesNotMatch(body.innerHTML, /class="tag">product</);
+  assert.doesNotMatch(body.innerHTML, /class="tag">บริการ</);
+  assert.doesNotMatch(body.innerHTML, /class="tag">สินค้า</);
+  assert.match(body.innerHTML, /class="tag">ล้างแอร์</);
+});
+
 test("store BTU label formats min/max/range/neither cases correctly", async () => {
   const context = makeContext();
   const root = loadCustomerFrontend(context);
@@ -848,13 +939,17 @@ test("store falls back to base_price when there is no active price rule", async 
   assert.doesNotMatch(body.innerHTML, /สอบถามราคา/);
 });
 
-test("store grid uses a 2-column-first mobile layout that expands at larger breakpoints", () => {
+test("store grid stays 2-column at every viewport width since the app shell never widens past its mobile column", () => {
   const css = read("customer-app/assets/customer-app.css");
   const gridBlock = css.slice(css.indexOf(".store-grid {"), css.indexOf(".store-grid {") + 400);
   assert.match(gridBlock, /grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/);
-  assert.match(css, /@media \(min-width: 700px\)[\s\S]{0,80}repeat\(3,/);
-  assert.match(css, /@media \(min-width: 1024px\)[\s\S]{0,80}repeat\(4,/);
-  assert.match(css, /@media \(min-width: 1280px\)[\s\S]{0,80}repeat\(5,/);
+  // .app-shell caps at max-width: 480px on every viewport, so escalating
+  // .store-grid to 3/4/5 columns via viewport-width media queries squeezed
+  // cards into unreadable slivers at desktop widths -- there must be no
+  // such escalation.
+  assert.doesNotMatch(css, /\.store-grid\s*\{\s*grid-template-columns:\s*repeat\(3,/);
+  assert.doesNotMatch(css, /\.store-grid\s*\{\s*grid-template-columns:\s*repeat\(4,/);
+  assert.doesNotMatch(css, /\.store-grid\s*\{\s*grid-template-columns:\s*repeat\(5,/);
 });
 
 test("store card shows a multi-image slider with dot indicators when an item has several images", async () => {
@@ -898,7 +993,7 @@ test("store card shows the CWF featured ribbon only for featured items, and a fi
   assert.match(body.innerHTML, /CWF แนะนำ/);
   assert.doesNotMatch(body.innerHTML, /store-badge-featured/);
   assert.equal((body.innerHTML.match(/store-standard-badge/g) || []).length, 2);
-  assert.equal((body.innerHTML.match(/store-standard-label">มาตรฐานบริการ CWF/g) || []).length, 2);
+  assert.equal((body.innerHTML.match(/store-standard-label">มาตรฐาน CWF/g) || []).length, 2);
   assert.equal((body.innerHTML.match(/store-standard-star is-filled/g) || []).length, 10);
 });
 
@@ -957,9 +1052,9 @@ test("standard-service badge ignores legacy rating_value and fails safe to the n
   await new Promise((resolve) => setTimeout(resolve, 0));
 
   const body = container.querySelector("[data-store-body]");
-  // every item must fail safe to the plain 5-star "มาตรฐานบริการ CWF" badge with zero visible review counts
+  // every item must fail safe to the plain 5-star "มาตรฐาน CWF" badge with zero visible review counts
   assert.equal((body.innerHTML.match(/store-standard-badge/g) || []).length, 5);
-  assert.equal((body.innerHTML.match(/store-standard-label">มาตรฐานบริการ CWF/g) || []).length, 5);
+  assert.equal((body.innerHTML.match(/store-standard-label">มาตรฐาน CWF/g) || []).length, 5);
   assert.equal((body.innerHTML.match(/store-standard-star is-filled/g) || []).length, 25);
   assert.doesNotMatch(body.innerHTML, /store-standard-count/);
   assert.doesNotMatch(body.innerHTML, /store-standard-star is-half/);
