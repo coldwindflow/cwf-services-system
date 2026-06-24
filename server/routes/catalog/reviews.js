@@ -14,6 +14,33 @@ const MAX_COMMENT_LENGTH = 500;
 const REVIEW_PUBLIC_PAGE_SIZE = 10;
 const REVIEW_PUBLIC_PAGE_SIZE_MAX = 50;
 
+// Minimal in-memory fixed-window limiter (mirrors the in-memory Map +
+// sweep-expired pattern already used by server/customerAuth.js's OAuth
+// state store). Scoped to this module only — not a new auth system, just a
+// per-process request throttle so review submission can't be hammered.
+function createFixedWindowLimiter({ windowMs, maxRequests, now = () => Date.now() }) {
+  const hits = new Map();
+  function sweepExpired(currentNow) {
+    for (const [key, entry] of hits.entries()) {
+      if (currentNow - entry.windowStart >= windowMs) hits.delete(key);
+    }
+  }
+  return {
+    consume(key) {
+      const currentNow = now();
+      sweepExpired(currentNow);
+      let entry = hits.get(key);
+      if (!entry || currentNow - entry.windowStart >= windowMs) {
+        entry = { count: 0, windowStart: currentNow };
+      }
+      entry.count += 1;
+      hits.set(key, entry);
+      return entry.count <= maxRequests;
+    },
+    _hits: hits,
+  };
+}
+
 function maskCustomerDisplayName(name) {
   const trimmed = String(name || "").trim();
   if (!trimmed) return "คุณลูกค้า";
@@ -52,6 +79,20 @@ module.exports = function createCatalogReviewRoutes(deps = {}) {
     throw new Error("createCatalogReviewRoutes requires a requireAdminSession middleware function");
   }
 
+  // Two independent buckets: per-customer (the genuine identity) and per-IP
+  // (defense-in-depth against one account hammering from many IPs is not the
+  // concern here — this guards against scripted abuse hitting the endpoint
+  // regardless of how many accounts it cycles through). Only the POST
+  // submission route consumes these; GET /reviews stays unrestricted.
+  const reviewSubmitCustomerLimiter = deps.reviewSubmitCustomerLimiter || createFixedWindowLimiter({
+    windowMs: deps.reviewSubmitCustomerLimitWindowMs || 10 * 60 * 1000,
+    maxRequests: deps.reviewSubmitCustomerLimitMax || 5,
+  });
+  const reviewSubmitIpLimiter = deps.reviewSubmitIpLimiter || createFixedWindowLimiter({
+    windowMs: deps.reviewSubmitIpLimitWindowMs || 10 * 60 * 1000,
+    maxRequests: deps.reviewSubmitIpLimitMax || 20,
+  });
+
   let reviewsSchemaReadyCache = false;
   async function isReviewsSchemaReady(db) {
     if (reviewsSchemaReadyCache) return true;
@@ -78,8 +119,13 @@ module.exports = function createCatalogReviewRoutes(deps = {}) {
   // for this item — the source of truth for both "is eligible at all" and
   // "which job should this review be attached to". Never trusts client input
   // for ownership: the job row itself must carry this customer's sub.
-  async function findEligibleJobsForReview(customerSub, itemId) {
-    const r = await pool.query(
+  //
+  // `db` is either the module pool (read-only eligibility check, no lock
+  // needed) or a transaction client (submission path, where forUpdate=true
+  // locks the matching job rows for the duration of the transaction so two
+  // concurrent submissions for the same job can't both see it as eligible).
+  async function findEligibleJobsForReview(db, customerSub, itemId, { forUpdate = false } = {}) {
+    const r = await db.query(
       `SELECT j.job_id, j.appointment_datetime
          FROM public.jobs j
         WHERE j.customer_sub = $1
@@ -88,7 +134,7 @@ module.exports = function createCatalogReviewRoutes(deps = {}) {
           AND NOT EXISTS (
             SELECT 1 FROM public.catalog_item_reviews r WHERE r.completed_job_id = j.job_id
           )
-        ORDER BY j.appointment_datetime DESC`,
+        ORDER BY j.appointment_datetime DESC${forUpdate ? "\n        FOR UPDATE OF j" : ""}`,
       [customerSub, itemId, Array.from(DONE_JOB_STATUSES)]
     );
     return r.rows;
@@ -159,7 +205,7 @@ module.exports = function createCatalogReviewRoutes(deps = {}) {
       const itemR = await pool.query(`SELECT item_id FROM public.catalog_items WHERE item_id = $1`, [itemId]);
       if (!itemR.rows.length) return res.json({ eligible: false, eligible_jobs: [] });
 
-      const jobs = await findEligibleJobsForReview(customerSub, itemId);
+      const jobs = await findEligibleJobsForReview(pool, customerSub, itemId);
       res.json({
         eligible: jobs.length > 0,
         eligible_jobs: jobs.map((j) => ({ job_id: Number(j.job_id), appointment_datetime: j.appointment_datetime })),
@@ -189,27 +235,46 @@ module.exports = function createCatalogReviewRoutes(deps = {}) {
       const customerSub = String(req.customer?.sub || "");
       if (!customerSub) return res.status(401).json({ error: "กรุณาเข้าสู่ระบบ" });
 
+      // Rate-limit before doing any DB work. Both buckets are always
+      // consumed (even on a non-eligible request) so the limit can't be
+      // bypassed by retrying with a different job_id.
+      const ip = String(req.ip || req.connection?.remoteAddress || "unknown");
+      const withinCustomerLimit = reviewSubmitCustomerLimiter.consume(`cust:${customerSub}`);
+      const withinIpLimit = reviewSubmitIpLimiter.consume(`ip:${ip}`);
+      if (!withinCustomerLimit || !withinIpLimit) {
+        return res.status(429).json({ error: "คุณส่งรีวิวบ่อยเกินไป กรุณาลองใหม่ในอีกสักครู่" });
+      }
+
       const validated = validateRatingAndComment(req.body || {});
       if (!validated.ok) return res.status(400).json({ error: validated.error });
 
       const requestedJobId = Number(req.body?.job_id);
-      const eligibleJobs = await findEligibleJobsForReview(customerSub, itemId);
-      const matchedJob = Number.isFinite(requestedJobId)
-        ? eligibleJobs.find((j) => Number(j.job_id) === requestedJobId)
-        : eligibleJobs[0];
-
-      if (!matchedJob) {
-        return res.status(403).json({ error: "คุณยังไม่มีงานที่เสร็จสมบูรณ์สำหรับสินค้า/บริการนี้ หรือเคยรีวิวงานนี้ไปแล้ว" });
-      }
 
       await client.query("BEGIN");
-      // customer_identity stores only the customer's own display name as it appeared
-      // at submission time (used solely to derive the public masked label, e.g.
-      // "คุณ ส***") — never the LINE sub, phone, or email. Ownership/eligibility is
-      // already fully re-verified above from jobs.customer_sub, not from this column.
-      const customerIdentity = String(req.customer?.name || "").trim() || "ลูกค้า";
       let insertResult;
+      let matchedJob;
       try {
+        // Re-verify everything inside the transaction, with the candidate
+        // job rows locked (FOR UPDATE) so a concurrent submission for the
+        // same job can't also see it as eligible before either commits:
+        // ownership (customer_sub), catalog linkage (catalog_item_id),
+        // genuine completion (job_status), and not-already-reviewed
+        // (NOT EXISTS against catalog_item_reviews) are all re-checked here,
+        // not trusted from any earlier read or from client input.
+        const eligibleJobs = await findEligibleJobsForReview(client, customerSub, itemId, { forUpdate: true });
+        matchedJob = Number.isFinite(requestedJobId)
+          ? eligibleJobs.find((j) => Number(j.job_id) === requestedJobId)
+          : eligibleJobs[0];
+
+        if (!matchedJob) {
+          await client.query("ROLLBACK");
+          return res.status(403).json({ error: "คุณยังไม่มีงานที่เสร็จสมบูรณ์สำหรับสินค้า/บริการนี้ หรือเคยรีวิวงานนี้ไปแล้ว" });
+        }
+
+        // customer_identity stores only the customer's own display name as it
+        // appeared at submission time (used solely to derive the public masked
+        // label, e.g. "คุณ ส***") — never the LINE sub, phone, or email.
+        const customerIdentity = String(req.customer?.name || "").trim() || "ลูกค้า";
         insertResult = await client.query(
           `INSERT INTO public.catalog_item_reviews
              (item_id, completed_job_id, customer_identity, rating, comment, moderation_status)
@@ -325,3 +390,4 @@ module.exports.MAX_COMMENT_LENGTH = MAX_COMMENT_LENGTH;
 module.exports.maskCustomerDisplayName = maskCustomerDisplayName;
 module.exports.validateRatingAndComment = validateRatingAndComment;
 module.exports.DONE_JOB_STATUSES = DONE_JOB_STATUSES;
+module.exports.createFixedWindowLimiter = createFixedWindowLimiter;

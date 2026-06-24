@@ -432,6 +432,116 @@ test("admin can approve, reject, hide, and restore-to-pending with an audit trai
   });
 });
 
+test("review submission is wrapped in a single transaction: BEGIN before the eligibility re-check, COMMIT only after a successful INSERT", async () => {
+  const pool = makePool({
+    items: [{ item_id: 1, item_name: "ล้างแอร์ผนัง" }],
+    jobs: [{ job_id: 10, customer_sub: "sub-1", catalog_item_id: 1, job_status: DONE_STATUS, appointment_datetime: "2026-06-01T00:00:00Z" }],
+  });
+  const calls = [];
+  const baseConnect = pool.connect.bind(pool);
+  pool.connect = async () => {
+    const real = await baseConnect();
+    return {
+      query: (sql, params) => { calls.push(String(sql).trim()); return real.query(sql, params); },
+      release: real.release,
+    };
+  };
+  const router = createCatalogReviewRoutes({ pool, requireCustomerJwt: requireCustomerJwtFor("sub-1", "ลูกค้า A"), requireAdminSession: denyAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/catalog/items/1/reviews`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ rating: 5 }),
+    });
+    assert.equal(res.status, 201);
+  });
+  const beginIdx = calls.findIndex((c) => /^BEGIN$/i.test(c));
+  const eligibilityIdx = calls.findIndex((c) => c.includes("SELECT j.job_id, j.appointment_datetime"));
+  const insertIdx = calls.findIndex((c) => c.includes("INSERT INTO public.catalog_item_reviews"));
+  const commitIdx = calls.findIndex((c) => /^COMMIT$/i.test(c));
+  assert.ok(beginIdx !== -1 && eligibilityIdx !== -1 && insertIdx !== -1 && commitIdx !== -1, calls.join(" | "));
+  assert.ok(beginIdx < eligibilityIdx, "BEGIN must come before the eligibility re-check");
+  assert.ok(eligibilityIdx < insertIdx, "eligibility re-check must happen before INSERT");
+  assert.ok(insertIdx < commitIdx, "INSERT must happen before COMMIT");
+  assert.match(calls[eligibilityIdx], /FOR UPDATE OF j/);
+});
+
+test("an ineligible submission rolls back the transaction instead of leaving it open", async () => {
+  const pool = makePool({ items: [{ item_id: 1, item_name: "ล้างแอร์ผนัง" }], jobs: [] });
+  const calls = [];
+  const baseConnect = pool.connect.bind(pool);
+  pool.connect = async () => {
+    const real = await baseConnect();
+    return {
+      query: (sql, params) => { calls.push(String(sql).trim()); return real.query(sql, params); },
+      release: real.release,
+    };
+  };
+  const router = createCatalogReviewRoutes({ pool, requireCustomerJwt: requireCustomerJwtFor("sub-1", "ลูกค้า A"), requireAdminSession: denyAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/catalog/items/1/reviews`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ rating: 5 }),
+    });
+    assert.equal(res.status, 403);
+  });
+  assert.ok(calls.some((c) => /^ROLLBACK$/i.test(c)));
+  assert.ok(!calls.some((c) => /^COMMIT$/i.test(c)));
+});
+
+test("review submission is rate-limited per customer without affecting public GET reviews", async () => {
+  const pool = makePool({
+    items: [{ item_id: 1, item_name: "ล้างแอร์ผนัง" }],
+    jobs: [],
+    reviews: [
+      { review_id: 1, item_id: 1, completed_job_id: 1, customer_identity: "x", rating: 5, comment: null, moderation_status: "approved", created_at: "2026-06-01T00:00:00Z" },
+    ],
+  });
+  const router = createCatalogReviewRoutes({
+    pool,
+    requireCustomerJwt: requireCustomerJwtFor("sub-1", "ลูกค้า A"),
+    requireAdminSession: denyAdmin,
+    reviewSubmitCustomerLimitMax: 2,
+    reviewSubmitCustomerLimitWindowMs: 60_000,
+    reviewSubmitIpLimitMax: 1000,
+  });
+  await withServer(router, async (base) => {
+    const post = () => fetch(`${base}/catalog/items/1/reviews`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ rating: 5 }),
+    });
+    const first = await post();
+    const second = await post();
+    const third = await post();
+    assert.equal(first.status, 403); // no eligible job, but counts toward the limit
+    assert.equal(second.status, 403);
+    assert.equal(third.status, 429);
+    const thirdBody = await third.json();
+    assert.match(thirdBody.error, /บ่อยเกินไป/);
+
+    // GET public reviews must be unaffected by the submission rate limit.
+    const getRes = await fetch(`${base}/catalog/items/1/reviews`);
+    assert.equal(getRes.status, 200);
+  });
+});
+
+test("review submission rate limit is tracked separately per IP bucket", async () => {
+  const pool = makePool({ items: [{ item_id: 1, item_name: "ล้างแอร์ผนัง" }], jobs: [] });
+  const router = createCatalogReviewRoutes({
+    pool,
+    requireCustomerJwt: requireCustomerJwtFor("sub-1", "ลูกค้า A"),
+    requireAdminSession: denyAdmin,
+    reviewSubmitCustomerLimitMax: 1000,
+    reviewSubmitIpLimitMax: 1,
+    reviewSubmitIpLimitWindowMs: 60_000,
+  });
+  await withServer(router, async (base) => {
+    const post = () => fetch(`${base}/catalog/items/1/reviews`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ rating: 5 }),
+    });
+    const first = await post();
+    const second = await post();
+    assert.equal(first.status, 403);
+    assert.equal(second.status, 429);
+  });
+});
+
 test("submitting a review before the migration has run returns 503 instead of a fake success", async () => {
   const pool = makePool({ schemaReady: false });
   const router = createCatalogReviewRoutes({ pool, requireCustomerJwt: requireCustomerJwtFor("sub-1", "ลูกค้า A"), requireAdminSession: denyAdmin });
