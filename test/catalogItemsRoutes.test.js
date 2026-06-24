@@ -7,7 +7,7 @@ const express = require("express");
 
 const createCatalogItemRoutes = require("../server/routes/catalog/items");
 
-function makePool(initialItems = [], initialRules = [], { schemaReady = true, marketplaceReady = false, autoplayReady = false } = {}) {
+function makePool(initialItems = [], initialRules = [], { schemaReady = true, marketplaceReady = false, autoplayReady = false, jobsCatalogLinkReady = false, jobs = [], jobUnits = [] } = {}) {
   const state = {
     items: initialItems.map((x) => ({
       image_url: null, image_public_id: null, price_rule_id: null,
@@ -18,6 +18,8 @@ function makePool(initialItems = [], initialRules = [], { schemaReady = true, ma
     })),
     rules: initialRules.map((x) => ({ ...x })),
     images: [],
+    jobs: jobs.map((x) => ({ ...x })),
+    jobUnits: jobUnits.map((x) => ({ ...x })),
     queries: [],
     connectCount: 0,
     releaseCount: 0,
@@ -67,6 +69,59 @@ function makePool(initialItems = [], initialRules = [], { schemaReady = true, ma
     }
     if (s.includes("information_schema.columns") && s.includes("catalog_items")) {
       return { rows: [{ cnt: schemaReady ? 3 : 0 }] };
+    }
+    if (s.includes("information_schema.columns") && s.includes("table_name = 'jobs'")) {
+      return { rows: [{ cnt: jobsCatalogLinkReady ? 2 : 0 }] };
+    }
+
+    // attachBookingCounts direct path: jobs.catalog_item_id set explicitly.
+    if (s.includes("FROM public.jobs") && s.includes("GROUP BY catalog_item_id")) {
+      const [ids, ...excludedStatuses] = params;
+      const byItem = new Map();
+      for (const job of state.jobs) {
+        if (job.catalog_item_id == null) continue;
+        if (!ids.map(Number).includes(Number(job.catalog_item_id))) continue;
+        if (excludedStatuses.includes(job.job_status)) continue;
+        if (job.canceled_at) continue;
+        byItem.set(Number(job.catalog_item_id), (byItem.get(Number(job.catalog_item_id)) || 0) + 1);
+      }
+      return { rows: Array.from(byItem.entries()).map(([item_id, cnt]) => ({ item_id, cnt })) };
+    }
+
+    // bulkResolveHistoricalItemMatches: jobs with no catalog_item_id, matched via job_units.
+    // Job-level consistency: a job only counts toward an item when EVERY one
+    // of its active units unambiguously matches that same single item.
+    if (s.includes("WITH active_units AS") && s.includes("JOIN public.jobs j")) {
+      const [itemIds] = params;
+      const excludedStatuses = ["ยกเลิก", "cancelled", "canceled", "ไม่พบช่างรับงาน"];
+      const byItem = new Map();
+      for (const job of state.jobs) {
+        if (job.catalog_item_id != null) continue;
+        if (excludedStatuses.includes(job.job_status)) continue;
+        if (job.canceled_at) continue;
+        const units = state.jobUnits.filter((u) => Number(u.job_id) === Number(job.job_id) &&
+          !["cancelled", "removed", "deleted", "void", "inactive"].includes(String(u.status || "pending").toLowerCase()));
+        if (!units.length) continue;
+        const matchedItemIds = new Set();
+        let allUnitsUnambiguous = true;
+        for (const unit of units) {
+          const matches = state.items.filter((it) =>
+            itemIds.map(Number).includes(Number(it.item_id)) &&
+            it.job_category === job.job_type &&
+            it.ac_type === unit.ac_type &&
+            (it.btu_min == null || it.btu_min <= unit.btu) &&
+            (it.btu_max == null || it.btu_max >= unit.btu)
+          );
+          if (matches.length !== 1) { allUnitsUnambiguous = false; break; }
+          matchedItemIds.add(Number(matches[0].item_id));
+        }
+        if (!allUnitsUnambiguous || matchedItemIds.size !== 1) continue;
+        const onlyItemId = matchedItemIds.values().next().value;
+        const seen = byItem.get(onlyItemId) || new Set();
+        seen.add(job.job_id);
+        byItem.set(onlyItemId, seen);
+      }
+      return { rows: Array.from(byItem.entries()).map(([item_id, jobIds]) => ({ item_id, cnt: jobIds.size })) };
     }
 
     if (/^\s*(BEGIN|COMMIT|ROLLBACK)\s*;?\s*$/i.test(s)) return { rows: [] };
@@ -434,6 +489,7 @@ function sampleItems() {
   ];
 }
 
+const DONE_STATUS = "เสร็จแล้ว";
 const JPEG_BYTES = Buffer.from([0xff, 0xd8, 0xff, 0xd9, 0x00, 0x01, 0x02, 0x03]);
 const PNG_BYTES = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x01]);
 
@@ -2531,5 +2587,128 @@ test("gallery image routes require admin session", async () => {
     assert.equal((await fetch(`${base}/admin/catalog/items/1/images/1`, { method: "DELETE" })).status, 401);
     assert.equal((await fetch(`${base}/admin/catalog/items/1/images/1/primary`, { method: "POST" })).status, 401);
     assert.equal((await fetch(`${base}/admin/catalog/items/1/images/reorder`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ image_ids: [1] }) })).status, 401);
+  });
+});
+
+// ---- Real booking_count (attachBookingCounts) ----
+
+test("booking_count is 0 for every item before the jobs.catalog_item_id migration has run", async () => {
+  const pool = makePool(sampleItems(), [], {
+    jobsCatalogLinkReady: false,
+    jobs: [{ job_id: 1, catalog_item_id: 1, job_status: DONE_STATUS, canceled_at: null }],
+  });
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/catalog/items`);
+    const body = await res.json();
+    assert.ok(body.every((x) => x.booking_count === 0));
+  });
+});
+
+test("booking_count counts DISTINCT job_id directly linked via jobs.catalog_item_id, excluding cancelled/rejected/no-technician jobs", async () => {
+  const pool = makePool(sampleItems(), [], {
+    jobsCatalogLinkReady: true,
+    jobs: [
+      { job_id: 1, catalog_item_id: 1, job_status: DONE_STATUS, canceled_at: null },
+      { job_id: 2, catalog_item_id: 1, job_status: DONE_STATUS, canceled_at: null },
+      { job_id: 3, catalog_item_id: 1, job_status: "ยกเลิก", canceled_at: null },
+      { job_id: 4, catalog_item_id: 1, job_status: DONE_STATUS, canceled_at: "2026-06-01T00:00:00Z" },
+      { job_id: 5, catalog_item_id: 1, job_status: "ไม่พบช่างรับงาน", canceled_at: null },
+    ],
+  });
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/catalog/items`);
+    const body = await res.json();
+    const item1 = body.find((x) => x.item_id === 1);
+    assert.equal(item1.booking_count, 2);
+  });
+});
+
+test("booking_count never counts job_units quantity, only distinct job_id", async () => {
+  const pool = makePool(sampleItems(), [], {
+    jobsCatalogLinkReady: true,
+    jobs: [{ job_id: 1, catalog_item_id: 1, job_status: DONE_STATUS, canceled_at: null }],
+    jobUnits: [
+      { job_id: 1, unit_id: 1, ac_type: "ผนัง", btu: 10000, status: "active" },
+      { job_id: 1, unit_id: 2, ac_type: "ผนัง", btu: 10000, status: "active" },
+      { job_id: 1, unit_id: 3, ac_type: "ผนัง", btu: 10000, status: "active" },
+    ],
+  });
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/catalog/items`);
+    const body = await res.json();
+    const item1 = body.find((x) => x.item_id === 1);
+    // job_id 1 is directly linked, so its multiple units must not multiply the count.
+    assert.equal(item1.booking_count, 1);
+  });
+});
+
+test("booking_count adds historical (unlinked) jobs matched unambiguously via job_units to the direct count", async () => {
+  const pool = makePool(sampleItems(), [], {
+    jobsCatalogLinkReady: true,
+    jobs: [
+      { job_id: 1, catalog_item_id: 1, job_status: DONE_STATUS, canceled_at: null },
+      { job_id: 2, catalog_item_id: null, job_type: "ล้าง", job_status: DONE_STATUS, canceled_at: null },
+    ],
+    jobUnits: [{ job_id: 2, unit_id: 1, ac_type: "ผนัง", btu: 10000, status: "active" }],
+  });
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/catalog/items`);
+    const body = await res.json();
+    const item1 = body.find((x) => x.item_id === 1);
+    assert.equal(item1.booking_count, 2);
+  });
+});
+
+test("booking_count never guesses a historical job whose unit ambiguously matches more than one catalog item", async () => {
+  const ambiguousItems = [
+    { item_id: 10, item_name: "ล้างแอร์ผนัง A", item_category: "ล้างแอร์", base_price: 700, unit_label: "เครื่อง", job_category: "ล้าง", ac_type: "ผนัง", btu_min: 9000, btu_max: 15000, is_active: true, is_customer_visible: true },
+    { item_id: 11, item_name: "ล้างแอร์ผนัง B", item_category: "ล้างแอร์", base_price: 800, unit_label: "เครื่อง", job_category: "ล้าง", ac_type: "ผนัง", btu_min: 9000, btu_max: 15000, is_active: true, is_customer_visible: true },
+  ];
+  const pool = makePool(ambiguousItems, [], {
+    jobsCatalogLinkReady: true,
+    jobs: [{ job_id: 1, catalog_item_id: null, job_type: "ล้าง", job_status: DONE_STATUS, canceled_at: null }],
+    jobUnits: [{ job_id: 1, unit_id: 1, ac_type: "ผนัง", btu: 10000, status: "active" }],
+  });
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/catalog/items`);
+    const body = await res.json();
+    assert.equal(body.find((x) => x.item_id === 10).booking_count, 0);
+    assert.equal(body.find((x) => x.item_id === 11).booking_count, 0);
+  });
+});
+
+test("booking_count is aggregated in at most two grouped queries for a list request, never one query per item", async () => {
+  const pool = makePool(sampleItems(), [], {
+    jobsCatalogLinkReady: true,
+    jobs: [
+      { job_id: 1, catalog_item_id: 1, job_status: DONE_STATUS, canceled_at: null },
+      { job_id: 2, catalog_item_id: null, job_type: "ซ่อม", job_status: DONE_STATUS, canceled_at: null },
+    ],
+  });
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    await fetch(`${base}/catalog/items`);
+    const bookingCountQueries = pool.state.queries.filter((q) =>
+      q.sql.includes("GROUP BY catalog_item_id") || (q.sql.includes("WITH active_units AS") && q.sql.includes("JOIN public.jobs j"))
+    );
+    assert.equal(bookingCountQueries.length, 2);
+  });
+});
+
+test("booking_count is also attached on the single-item public detail endpoint", async () => {
+  const pool = makePool(sampleItems(), [], {
+    jobsCatalogLinkReady: true,
+    jobs: [{ job_id: 1, catalog_item_id: 1, job_status: DONE_STATUS, canceled_at: null }],
+  });
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/catalog/items/1`);
+    const body = await res.json();
+    assert.equal(body.booking_count, 1);
   });
 });

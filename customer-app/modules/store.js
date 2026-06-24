@@ -133,19 +133,22 @@
     return rounded % 1 === 0 ? String(rounded) : rounded.toFixed(1);
   }
 
+  // No approved reviews yet: display-only 5-star default (never written to
+  // DB, never a fabricated average/count). Once a real approved review
+  // exists, this switches to the real average/count below.
   function renderRatingBadge(item) {
     const { value, count, hasReviews } = realRatingInfo(item);
-    const full = Math.floor(value);
-    const hasHalf = full < 5 && value - full >= 0.5;
+    const full = hasReviews ? Math.floor(value) : 5;
+    const hasHalf = hasReviews && full < 5 && value - full >= 0.5;
     const stars = Array.from({ length: 5 }, (_, i) => {
-      const filled = hasReviews && i < full;
-      const half = hasReviews && i === full && hasHalf;
+      const filled = i < full;
+      const half = i === full && hasHalf;
       const cls = filled ? " is-filled" : half ? " is-half" : "";
       return `<span class="store-rating-star${cls}" aria-hidden="true">${filled || half ? "★" : "☆"}</span>`;
     }).join("");
     const id = String(item.item_id || "");
     const valueLabel = hasReviews ? `<span class="store-rating-value">${formatRatingAverage(value)}</span>` : "";
-    const countLabel = `<span class="store-rating-count">(${count})</span>`;
+    const countLabel = hasReviews ? `<span class="store-rating-count">(${count})</span>` : "";
     return `
       <button type="button" class="store-rating-badge" data-store-rating="${root.utils.escapeHtml(id)}" title="ดูรีวิวจากลูกค้า">
         <span class="store-rating-label">รีวิว</span>
@@ -153,6 +156,15 @@
         ${valueLabel}${countLabel}
       </button>
     `;
+  }
+
+  // item.booking_count comes straight from the backend's real
+  // COUNT(DISTINCT job_id) aggregation (attachBookingCounts() in
+  // server/routes/catalog/items.js) — never hardcoded, never client-computed.
+  function renderBookingCountLabel(item) {
+    const count = Number(item && item.booking_count);
+    if (!Number.isFinite(count) || count <= 0) return "";
+    return `<div class="store-booking-count">จองแล้ว ${count.toLocaleString("th-TH")} งาน</div>`;
   }
 
   function renderCardGallery(item, name) {
@@ -208,6 +220,7 @@
           ${meta.length ? `<div class="store-card-meta">${meta.map((m) => `<span>${root.utils.escapeHtml(m)}</span>`).join("")}</div>` : ""}
         </div>
         ${renderRatingBadge(item)}
+        ${renderBookingCountLabel(item)}
         <div class="store-card-price">
           <span class="price-text${priceIsAsk(item) ? " is-estimate" : ""}">${root.utils.escapeHtml(priceLabel(item))}</span>
           ${promo ? `<span class="price-strike">${root.utils.escapeHtml(root.utils.formatBaht(item.normal_price))}</span>` : ""}
@@ -802,6 +815,7 @@
         <h2>${root.utils.escapeHtml(name)}</h2>
       </div>
       ${renderRatingBadge(item)}
+      ${renderBookingCountLabel(item)}
       <div class="store-detail-price">
         <span class="price-text${priceIsAsk(item) ? " is-estimate" : ""}">${root.utils.escapeHtml(priceLabel(item))}</span>
         ${promo ? `<span class="price-strike">${root.utils.escapeHtml(root.utils.formatBaht(item.normal_price))}</span>` : ""}

@@ -431,15 +431,51 @@ async function attachCatalogImages(pool, rows, marketplaceReady) {
   return rows;
 }
 
+// Same migration as catalog_item_reviews; gates whether rating aggregation
+// can take admin-assigned reviews (assigned_item_id, set on originally
+// ambiguous service_type/overall-scoped tracking reviews) into account.
+let reviewAssignmentSchemaReadyCache = false;
+async function isReviewAssignmentSchemaReady(pool) {
+  if (reviewAssignmentSchemaReadyCache) return true;
+  const r = await pool.query(`
+    SELECT COUNT(*)::int AS cnt FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = 'catalog_item_reviews' AND column_name = 'assigned_item_id'
+  `);
+  const ready = Number(r.rows?.[0]?.cnt || 0) === 1;
+  if (ready) reviewAssignmentSchemaReadyCache = true;
+  return ready;
+}
+
 // Attaches real review aggregates (approved reviews only) to each row in a single
 // grouped query, so the Store list never N+1s one rating query per item. Mirrors
 // attachCatalogImages's idiom. When the reviews schema hasn't been migrated yet
 // (or there are zero approved reviews), rows get rating_average=null/review_count=0
 // — never a fabricated default — so the renderer must show the honest "no reviews
-// yet" state.
+// yet" state. Once admin-assigned (assigned_item_id) takes effect, a review counts
+// toward the assigned item instead of its original item_id (which may be NULL for
+// service_type/overall-scoped reviews).
 async function attachCatalogRatings(pool, rows, reviewsReady) {
   if (!reviewsReady || !rows.length) {
     rows.forEach((row) => { row.rating_average = null; row.review_count = 0; });
+    return rows;
+  }
+  const assignmentReady = await isReviewAssignmentSchemaReady(pool);
+  if (assignmentReady) {
+    const ids = rows.map((row) => row.item_id);
+    const r = await pool.query(
+      `SELECT COALESCE(assigned_item_id, item_id) AS effective_item_id,
+              AVG(rating)::numeric AS rating_average, COUNT(*)::int AS review_count
+         FROM public.catalog_item_reviews
+        WHERE COALESCE(assigned_item_id, item_id) = ANY($1::bigint[]) AND moderation_status = 'approved'
+        GROUP BY effective_item_id`,
+      [ids]
+    );
+    const byItem = new Map(r.rows.map((row) => [Number(row.effective_item_id), row]));
+    rows.forEach((row) => {
+      const agg = byItem.get(Number(row.item_id));
+      row.rating_average = agg ? Number(agg.rating_average) : null;
+      row.review_count = agg ? Number(agg.review_count) : 0;
+    });
     return rows;
   }
   const ids = rows.map((row) => row.item_id);
@@ -456,6 +492,50 @@ async function attachCatalogRatings(pool, rows, reviewsReady) {
     row.rating_average = agg ? Number(agg.rating_average) : null;
     row.review_count = agg ? Number(agg.review_count) : 0;
   });
+  return rows;
+}
+
+// Real booking counts only ("จองแล้ว X งาน"). Counts DISTINCT job_id so a job
+// with multiple machines/units never inflates the count beyond 1 per job.
+// Excludes cancelled/rejected jobs; there is no test/soft-delete marker on
+// public.jobs to additionally exclude (verified against the schema this
+// migration extends).
+const { EXCLUDED_BOOKING_JOB_STATUSES, bulkResolveHistoricalItemMatches } = require("../../lib/historicalServiceResolver");
+
+// Attaches a real, live booking_count to each row in exactly two grouped
+// queries total (never one query per item), mirroring attachCatalogRatings's
+// idiom. Counts both Admin- and Customer-created jobs equally (job_status/
+// catalog_item_id linkage doesn't distinguish job_source).
+//
+// Two sources are combined:
+//   1. Direct: jobs.catalog_item_id set explicitly at booking time (new jobs).
+//   2. Historical: jobs with no catalog_item_id, matched deterministically via
+//      the shared historical-service resolver (server/lib/historicalServiceResolver.js)
+//      -- the same matching rule reused by tracking-review target derivation.
+async function attachBookingCounts(pool, rows, jobsCatalogLinkReady) {
+  rows.forEach((row) => { row.booking_count = 0; });
+  if (!jobsCatalogLinkReady || !rows.length) return rows;
+
+  const ids = rows.map((row) => Number(row.item_id));
+  const byItem = new Map();
+
+  const direct = await pool.query(
+    `SELECT catalog_item_id AS item_id, COUNT(DISTINCT job_id)::int AS cnt
+       FROM public.jobs
+      WHERE catalog_item_id = ANY($1::bigint[])
+        AND COALESCE(job_status, '') NOT IN (${EXCLUDED_BOOKING_JOB_STATUSES.map((_, i) => `$${i + 2}`).join(", ")})
+        AND canceled_at IS NULL
+      GROUP BY catalog_item_id`,
+    [ids, ...EXCLUDED_BOOKING_JOB_STATUSES]
+  );
+  direct.rows.forEach((r) => byItem.set(Number(r.item_id), Number(r.cnt)));
+
+  const historical = await bulkResolveHistoricalItemMatches(pool, ids);
+  historical.forEach((cnt, id) => {
+    byItem.set(id, (byItem.get(id) || 0) + cnt);
+  });
+
+  rows.forEach((row) => { row.booking_count = byItem.get(Number(row.item_id)) || 0; });
   return rows;
 }
 
@@ -579,6 +659,9 @@ function serializeCatalogRow(row) {
     // yet — the renderer must treat that as "no reviews", never a fabricated score.
     rating_average: row.rating_average == null ? null : Number(row.rating_average),
     review_count: Number(row.review_count || 0),
+    // Real COUNT(DISTINCT job_id) only (attachBookingCounts); 0 until the jobs
+    // catalog-link migration has run -- never a fabricated/hardcoded number.
+    booking_count: Number(row.booking_count || 0),
   };
 }
 
@@ -773,6 +856,22 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
     return ready;
   }
 
+  // Same migration as is_hot/catalog_item_reviews; gates booking_count
+  // aggregation (attachBookingCounts) on jobs.catalog_item_id actually existing.
+  let jobsCatalogLinkSchemaReadyCache = false;
+  async function isJobsCatalogLinkSchemaReady(db) {
+    if (jobsCatalogLinkSchemaReadyCache) return true;
+    const r = await db.query(`
+      SELECT COUNT(*)::int AS cnt
+      FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = 'jobs'
+        AND column_name IN ('catalog_item_id', 'customer_sub')
+    `);
+    const ready = Number(r.rows?.[0]?.cnt || 0) === 2;
+    if (ready) jobsCatalogLinkSchemaReadyCache = true;
+    return ready;
+  }
+
   router.get("/catalog/items", async (req, res) => {
     try {
       const pricingReady = await isMediaPricingSchemaReady(pool);
@@ -780,6 +879,7 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
       const autoplayReady = await isAutoplaySchemaReady(pool);
       const hotReady = await isHotSchemaReady(pool);
       const reviewsReady = await isReviewsSchemaReady(pool);
+      const jobsCatalogLinkReady = await isJobsCatalogLinkSchemaReady(pool);
       const select = buildCatalogSelect({ pricingReady, marketplaceReady, autoplayReady, hotReady });
       const customer = String(req.query.customer || "").trim() === "1";
       const job_category = (req.query.job_category || "").toString().trim();
@@ -806,6 +906,7 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
       );
       await attachCatalogImages(pool, r.rows, marketplaceReady);
       await attachCatalogRatings(pool, r.rows, reviewsReady);
+      await attachBookingCounts(pool, r.rows, jobsCatalogLinkReady);
       res.json(r.rows.map(serializeCatalogRow));
     } catch (e) {
       console.error(e);
@@ -823,6 +924,7 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
       const autoplayReady = await isAutoplaySchemaReady(pool);
       const hotReady = await isHotSchemaReady(pool);
       const reviewsReady = await isReviewsSchemaReady(pool);
+      const jobsCatalogLinkReady = await isJobsCatalogLinkSchemaReady(pool);
       const select = buildCatalogSelect({ pricingReady, marketplaceReady, autoplayReady, hotReady });
 
       const r = await pool.query(
@@ -833,6 +935,7 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
       if (!row) return res.status(404).json({ error: "ไม่พบรายการนี้" });
       await attachCatalogImages(pool, [row], marketplaceReady);
       await attachCatalogRatings(pool, [row], reviewsReady);
+      await attachBookingCounts(pool, [row], jobsCatalogLinkReady);
       res.json(serializeCatalogDetailRow(row));
     } catch (e) {
       console.error(e);
@@ -847,10 +950,12 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
       const autoplayReady = await isAutoplaySchemaReady(pool);
       const hotReady = await isHotSchemaReady(pool);
       const reviewsReady = await isReviewsSchemaReady(pool);
+      const jobsCatalogLinkReady = await isJobsCatalogLinkSchemaReady(pool);
       const select = buildCatalogSelect({ pricingReady, marketplaceReady, autoplayReady, hotReady });
       const r = await pool.query(`${select} ORDER BY ci.item_category, ci.item_name`);
       await attachCatalogImages(pool, r.rows, marketplaceReady);
       await attachCatalogRatings(pool, r.rows, reviewsReady);
+      await attachBookingCounts(pool, r.rows, jobsCatalogLinkReady);
       res.json(r.rows.map(serializeAdminCatalogRow));
     } catch (e) {
       console.error(e);

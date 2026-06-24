@@ -157,6 +157,23 @@
         body: payload,
       });
     },
+
+    // Tracking-page review: authorized by the job's own tracking/booking
+    // token (no Customer App login). Token only ever travels in this
+    // request -- never logged client-side either.
+    async loadTrackingReviewStatus(token) {
+      return requestJson("/public/catalog-reviews/status", {
+        query: { token },
+        cache: "no-store",
+      });
+    },
+
+    async submitTrackingReview(token, payload) {
+      return requestJson("/public/catalog-reviews", {
+        method: "POST",
+        body: { token, ...(payload || {}) },
+      });
+    },
   };
 
   root.api = api;

@@ -877,6 +877,67 @@
     `;
   }
 
+  // Separate, additional section from renderReview() above (which rates the
+  // technician via jobs.customer_rating/technician_reviews). This one rates
+  // the catalog item/service via public.catalog_item_reviews, authorized by
+  // the same tracking token -- no Customer App login required. Server is the
+  // sole source of truth for eligibility/target; this only reflects data.catalog_review.
+  function renderCatalogReview(data) {
+    if (!isDone(data)) return "";
+    const catalogReview = data.catalog_review;
+    if (!catalogReview) return "";
+
+    if (catalogReview.already_reviewed) {
+      const review = catalogReview.review || {};
+      const statusLabel = review.moderation_status === "approved"
+        ? "ได้รับการอนุมัติ"
+        : review.moderation_status === "rejected"
+          ? "ไม่ผ่านการตรวจสอบ"
+          : "รอแอดมินตรวจสอบ";
+      return `
+        <section class="tracking-extra-card catalog-review-summary-card">
+          <div class="section-head compact">
+            <span class="section-kicker">Service Review</span>
+            <h2>รีวิวบริการนี้</h2>
+          </div>
+          <p><strong>${esc(review.rating || "-")} / 5</strong> &middot; <span class="muted">${esc(statusLabel)}</span></p>
+          ${review.comment ? `<p class="muted preserve-lines">${esc(review.comment)}</p>` : ""}
+        </section>
+      `;
+    }
+
+    if (!catalogReview.eligible) return "";
+    const key = data.booking_token || data.booking_code || "";
+    if (!key) return "";
+    return `
+      <section class="tracking-extra-card catalog-review-form-card">
+        <div class="section-head compact">
+          <span class="section-kicker">Service Review</span>
+          <h2>รีวิวบริการนี้</h2>
+        </div>
+        <form data-catalog-review-form>
+          <input type="hidden" name="token" value="${esc(key)}">
+          <label class="field">
+            <span>คะแนนบริการ</span>
+            <select class="input" name="rating">
+              <option value="5">5 - ดีมาก</option>
+              <option value="4">4 - ดี</option>
+              <option value="3">3 - พอใช้</option>
+              <option value="2">2 - ควรปรับปรุง</option>
+              <option value="1">1 - ไม่พอใจ</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>ความเห็น</span>
+            <textarea class="input" name="comment" rows="3" placeholder="เขียนรีวิวบริการ (ถ้ามี)"></textarea>
+          </label>
+          <button class="primary-btn" type="submit">ส่งรีวิว</button>
+          <p class="muted" data-catalog-review-status></p>
+        </form>
+      </section>
+    `;
+  }
+
   function renderWarranty(data) {
     if (!isDone(data)) return "";
     return `
@@ -915,9 +976,16 @@
   }
 
   function renderAftercare(data) {
+    // Only one review form may ever be on screen at a time. The catalog
+    // review (server-derived item/service_type/overall target) is the
+    // primary form once available; the legacy technician-review form is
+    // shown only as a fallback when data.catalog_review is absent entirely
+    // (older API shape / migration not yet applied on this deployment).
+    const catalogReviewAvailable = data.catalog_review != null;
     const content = [
       renderReceipt(data),
-      renderReview(data),
+      catalogReviewAvailable ? "" : renderReview(data),
+      renderCatalogReview(data),
       renderWarranty(data),
     ].filter(Boolean).join("");
     return content || root.utils.stateBox("", "รายละเอียดหลังบริการจะแสดงหลังงานเสร็จ");
@@ -1170,6 +1238,30 @@
           setTimeout(() => lookup(container), 500);
         } catch (error) {
           if (status) status.textContent = error.message || "ส่งรีวิวไม่สำเร็จ";
+          if (submit) submit.disabled = false;
+        }
+      });
+    }
+
+    const catalogForm = container.querySelector("[data-catalog-review-form]");
+    if (catalogForm) {
+      catalogForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const status = catalogForm.querySelector("[data-catalog-review-status]");
+        const submit = catalogForm.querySelector("button[type='submit']");
+        const formData = Object.fromEntries(new FormData(catalogForm).entries());
+        const token = formData.token || "";
+        if (status) status.textContent = "กำลังส่งรีวิว...";
+        if (submit) submit.disabled = true;
+        try {
+          await root.api.submitTrackingReview(token, {
+            rating: Number(formData.rating || 5),
+            comment: formData.comment || "",
+          });
+          if (status) status.textContent = "ส่งรีวิวแล้ว รอแอดมินตรวจสอบ";
+          setTimeout(() => lookup(container), 500);
+        } catch (error) {
+          if (status) status.textContent = (error && error.message) || "ส่งรีวิวไม่สำเร็จ";
           if (submit) submit.disabled = false;
         }
       });

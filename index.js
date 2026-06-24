@@ -25513,6 +25513,43 @@ app.get("/public/track", async (req, res) => {
       photos = pr.rows || [];
     }
 
+    // Separate, additional surface from the technician review block below
+    // (jobs.customer_rating/customer_review + technician_reviews, untouched).
+    // Rates the catalog item/service via public.catalog_item_reviews, using
+    // the job's own tracking/booking token for authorization -- never
+    // requires a Customer App login. See server/routes/catalog/reviews.js
+    // (POST /public/catalog-reviews) for the actual submission route.
+    let catalogReview = null;
+    try {
+      const trackingReviewReady = await createCatalogReviewRoutes.isTrackingReviewSchemaReady(pool);
+      if (trackingReviewReady) {
+        const existingR = await pool.query(
+          `SELECT rating, comment, moderation_status, created_at
+             FROM public.catalog_item_reviews WHERE completed_job_id = $1`,
+          [row.job_id]
+        );
+        const existing = existingR.rows[0] || null;
+        const eligible = createCatalogReviewRoutes.isJobReviewEligible({
+          job_status: rawStatus,
+          canceled_at: row.canceled_at,
+        });
+        catalogReview = {
+          eligible: eligible && !existing,
+          already_reviewed: Boolean(existing),
+          review: existing
+            ? {
+                rating: Number(existing.rating),
+                comment: existing.comment || "",
+                moderation_status: existing.moderation_status,
+                created_at: existing.created_at,
+              }
+            : null,
+        };
+      }
+    } catch (e) {
+      console.warn("[public_track_catalog_review] load failed", { job_id: row.job_id, error: e.message });
+    }
+
     let publicUnits = [];
     if (isDone) {
       try {
@@ -25704,6 +25741,10 @@ if (FLAG_SHOW_TECH_TEAM_ON_TRACKING && canShowPublicTechnician) {
         complaint_text: row.customer_complaint || null,
         reviewed_at: row.reviewed_at || null,
       },
+
+      // Separate from `review` above (technician rating). Rates the
+      // catalog item/service via public.catalog_item_reviews instead.
+      catalog_review: catalogReview,
 
       technician: row.technician_username && canShowPublicTechnician
         ? {
