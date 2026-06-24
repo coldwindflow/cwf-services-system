@@ -61,7 +61,18 @@
 .asc-badge-bookable{ background:#e0f2fe; color:#0369a1; }
 .asc-badge-contact{ background:#f1f5f9; color:#475569; }
 .asc-badge-featured{ background:#fde68a; color:#92400e; }
+.asc-badge-hot{ background:linear-gradient(135deg, #ff5f3d, #e0211f); color:#fff; }
 .asc-badge-primary{ background:#dcfce7; color:#15803d; position:absolute; top:4px; left:4px; }
+.asc-badge-pending{ background:#fef3c7; color:#92400e; }
+.asc-badge-approved{ background:#dcfce7; color:#15803d; }
+.asc-badge-rejected{ background:#fee2e2; color:#b91c1c; }
+.asc-badge-hidden{ background:#f1f5f9; color:#475569; }
+
+.asc-review-card{ align-items:flex-start; flex-direction:column; }
+.asc-review-card .asc-item-main{ width:100%; }
+.asc-review-stars{ font-size:14px; color:#f5b700; margin-top:4px; }
+.asc-review-comment{ font-size:13px; color:#1f2937; margin-top:4px; white-space:pre-wrap; overflow-wrap:anywhere; }
+.asc-review-actions{ display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; width:100%; }
 
 .asc-gallery-grid{
   display:grid;

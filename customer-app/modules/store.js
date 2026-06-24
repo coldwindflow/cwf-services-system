@@ -39,10 +39,6 @@
     return Number.isFinite(normal) && Number.isFinite(sale) && sale < normal;
   }
 
-  function promoBadgeText(item) {
-    return item.campaign_name || item.price_label || "โปร";
-  }
-
   // The legacy catalog table constrains item_category to "service"/"product"
   // in storage; that generic token carries no useful information for the
   // customer, so it is hidden entirely rather than shown as a translated tag.
@@ -97,19 +93,39 @@
     return `<span class="store-featured-ribbon">CWF แนะนำ</span>`;
   }
 
-  // Future-rating-prop-ready: once a real review system exists, items carry
-  // rating_average (1-5, may be fractional) and review_count (>0). rating_value
-  // is legacy and is never read here — it must not become a second contract.
-  // Until rating_average/review_count are both present and valid there is no
-  // real data, so we fail safe to a full 5-star badge with no review count
-  // rather than fabricate one.
-  function standardRatingInfo(item) {
+  function renderHotBadge(item) {
+    if (!item.is_hot) return "";
+    return `<span class="store-hot-badge" aria-label="สินค้า HOT">HOT</span>`;
+  }
+
+  function salePercentOff(item) {
+    const normal = Number(item.normal_price);
+    const sale = Number(item.active_price);
+    if (!Number.isFinite(normal) || normal <= 0 || !Number.isFinite(sale) || sale >= normal) return null;
+    const pct = Math.round(((normal - sale) / normal) * 100);
+    return pct > 0 ? pct : null;
+  }
+
+  function renderSaleBadge(item) {
+    if (!hasPromo(item)) return "";
+    const pct = salePercentOff(item);
+    const text = pct ? `SALE -${pct}%` : "SALE";
+    return `<span class="store-sale-badge" aria-label="ลดราคา">${root.utils.escapeHtml(text)}</span>`;
+  }
+
+  // Real review aggregates only. item.rating_average/review_count come straight
+  // from the backend's catalog_item_reviews aggregation (approved reviews only —
+  // see attachCatalogRatings() in server/routes/catalog/items.js). There is no
+  // fallback/legacy rating field read here: until a real approved review exists,
+  // this must render an honest "no reviews yet" state (empty stars, count 0) —
+  // never a fabricated full-star score.
+  function realRatingInfo(item) {
     const avg = Number(item && item.rating_average);
     const count = Number(item && item.review_count);
     if (Number.isFinite(avg) && avg >= 1 && avg <= 5 && Number.isFinite(count) && count > 0) {
-      return { value: avg, count };
+      return { value: avg, count, hasReviews: true };
     }
-    return { value: 5, count: 0 };
+    return { value: 0, count: 0, hasReviews: false };
   }
 
   function formatRatingAverage(value) {
@@ -117,27 +133,39 @@
     return rounded % 1 === 0 ? String(rounded) : rounded.toFixed(1);
   }
 
-  function renderStandardBadge(item) {
-    const { value, count } = standardRatingInfo(item);
-    const hasRealReviews = count > 0;
+  function renderRatingBadge(item) {
+    const { value, count, hasReviews } = realRatingInfo(item);
     const full = Math.floor(value);
     const hasHalf = full < 5 && value - full >= 0.5;
     const stars = Array.from({ length: 5 }, (_, i) => {
-      const cls = i < full ? " is-filled" : i === full && hasHalf ? " is-half" : "";
-      return `<span class="store-standard-star${cls}" aria-hidden="true">★</span>`;
+      const filled = hasReviews && i < full;
+      const half = hasReviews && i === full && hasHalf;
+      const cls = filled ? " is-filled" : half ? " is-half" : "";
+      return `<span class="store-rating-star${cls}" aria-hidden="true">${filled || half ? "★" : "☆"}</span>`;
     }).join("");
-    if (!hasRealReviews) {
-      return `<div class="store-standard-badge" title="มาตรฐาน CWF"><span class="store-standard-stars">${stars}</span><span class="store-standard-label">มาตรฐาน CWF</span></div>`;
-    }
-    const valueLabel = `<span class="store-standard-value">${formatRatingAverage(value)}</span>`;
-    const countLabel = `<span class="store-standard-count">(${count} รีวิว)</span>`;
-    return `<div class="store-standard-badge store-standard-badge-real" title="คะแนนรีวิวจริง"><span class="store-standard-stars">${stars}</span>${valueLabel}${countLabel}</div>`;
+    const id = String(item.item_id || "");
+    const valueLabel = hasReviews ? `<span class="store-rating-value">${formatRatingAverage(value)}</span>` : "";
+    const countLabel = `<span class="store-rating-count">(${count})</span>`;
+    return `
+      <button type="button" class="store-rating-badge" data-store-rating="${root.utils.escapeHtml(id)}" title="ดูรีวิวจากลูกค้า">
+        <span class="store-rating-label">รีวิว</span>
+        <span class="store-rating-stars">${stars}</span>
+        ${valueLabel}${countLabel}
+      </button>
+    `;
   }
 
   function renderCardGallery(item, name) {
     const images = itemGalleryImages(item);
     if (!images.length) {
-      return `<div class="store-card-gallery"><div class="store-card-image-placeholder" aria-hidden="true">ไม่มีรูปภาพ</div></div>`;
+      return `
+        <div class="store-card-gallery">
+          ${renderHotBadge(item)}
+          ${renderFeaturedRibbon(item)}
+          <div class="store-card-image-placeholder" aria-hidden="true">ไม่มีรูปภาพ</div>
+          ${renderSaleBadge(item)}
+        </div>
+      `;
     }
     const autoplay = images.length > 1 && item.is_autoplay_enabled === true;
     const dots = images.length > 1
@@ -145,8 +173,10 @@
       : "";
     return `
       <div class="store-card-gallery"${autoplay ? ' data-store-autoplay="1"' : ""}>
+        ${renderHotBadge(item)}
         ${renderFeaturedRibbon(item)}
         <div class="store-card-slides" data-store-slides>${renderGallerySlides(images, name, "store-card-slide")}</div>
+        ${renderSaleBadge(item)}
         ${dots}
       </div>
     `;
@@ -154,7 +184,6 @@
 
   function renderBadges(item) {
     const badges = [];
-    if (hasPromo(item)) badges.push(`<span class="store-badge store-badge-promo">${root.utils.escapeHtml(promoBadgeText(item))}</span>`);
     if (isBookable(item)) badges.push(`<span class="store-badge store-badge-bookable">จองได้</span>`);
     else badges.push(`<span class="store-badge store-badge-contact">ติดต่อแอดมิน</span>`);
     return badges.length ? `<div class="store-card-badges">${badges.join("")}</div>` : "";
@@ -178,7 +207,7 @@
           <strong>${root.utils.escapeHtml(name)}</strong>
           ${meta.length ? `<div class="store-card-meta">${meta.map((m) => `<span>${root.utils.escapeHtml(m)}</span>`).join("")}</div>` : ""}
         </div>
-        ${renderStandardBadge(item)}
+        ${renderRatingBadge(item)}
         <div class="store-card-price">
           <span class="price-text${priceIsAsk(item) ? " is-estimate" : ""}">${root.utils.escapeHtml(priceLabel(item))}</span>
           ${promo ? `<span class="price-strike">${root.utils.escapeHtml(root.utils.formatBaht(item.normal_price))}</span>` : ""}
@@ -374,6 +403,13 @@
         root.ui.openContactSheet(container, { title: name });
       });
     });
+    container.querySelectorAll("[data-store-rating]").forEach((button) => {
+      button.addEventListener("click", (event) => {
+        event.stopPropagation && event.stopPropagation();
+        const id = button.getAttribute("data-store-rating");
+        goToDetail(id);
+      });
+    });
     bindGallerySliders(container);
   }
 
@@ -452,7 +488,14 @@
   function renderDetailGallery(item, name) {
     const images = itemGalleryImages(item);
     if (!images.length) {
-      return `<div class="store-detail-gallery"><div class="store-card-image-placeholder" aria-hidden="true">ไม่มีรูปภาพ</div></div>`;
+      return `
+        <div class="store-detail-gallery">
+          ${renderHotBadge(item)}
+          ${renderFeaturedRibbon(item)}
+          <div class="store-card-image-placeholder" aria-hidden="true">ไม่มีรูปภาพ</div>
+          ${renderSaleBadge(item)}
+        </div>
+      `;
     }
     const autoplay = images.length > 1 && item.is_autoplay_enabled === true;
     const dots = images.length > 1
@@ -460,11 +503,287 @@
       : "";
     return `
       <div class="store-detail-gallery"${autoplay ? ' data-store-autoplay="1"' : ""}>
+        ${renderHotBadge(item)}
         ${renderFeaturedRibbon(item)}
         <div class="store-detail-slides" data-store-detail-slides>${renderGallerySlides(images, name, "store-detail-slide")}</div>
+        ${renderSaleBadge(item)}
         ${dots}
       </div>
     `;
+  }
+
+  // ---------- Verified Customer Reviews (Product Detail) ----------
+
+  const REVIEWS_PAGE_SIZE = 10;
+
+  let reviewsState = { itemId: null, status: "idle", reviews: [], total: 0, ratingAverage: null, reviewCount: 0, offset: 0 };
+  let writeReviewState = {
+    open: false,
+    eligibilityStatus: "idle", // idle | loading | success | error
+    eligible: false,
+    eligibleJobs: [],
+    jobId: null,
+    rating: 0,
+    comment: "",
+    step: "form", // form | preview
+    submitting: false,
+    error: "",
+    success: false,
+  };
+
+  function resetReviewsState(itemId) {
+    reviewsState = { itemId, status: "idle", reviews: [], total: 0, ratingAverage: null, reviewCount: 0, offset: 0 };
+    writeReviewState = {
+      open: false, eligibilityStatus: "idle", eligible: false, eligibleJobs: [],
+      jobId: null, rating: 0, comment: "", step: "form", submitting: false, error: "", success: false,
+    };
+  }
+
+  function patchReviewsSection(container, item) {
+    const mount = container.querySelector("[data-store-reviews-section]");
+    if (!mount) return;
+    mount.innerHTML = renderReviewsSectionBody(item);
+    bindReviewsSection(container, item);
+  }
+
+  async function loadReviewsList(container, item, { append } = {}) {
+    const itemId = item.item_id;
+    reviewsState.status = append ? reviewsState.status : "loading";
+    if (!append) patchReviewsSection(container, item);
+    try {
+      const offset = append ? reviewsState.offset : 0;
+      const data = await root.api.loadCatalogItemReviews(itemId, { limit: REVIEWS_PAGE_SIZE, offset });
+      const incoming = root.utils.normalizeList(data, "reviews");
+      reviewsState = {
+        itemId,
+        status: "success",
+        reviews: append ? reviewsState.reviews.concat(incoming) : incoming,
+        total: Number(data?.total || 0),
+        ratingAverage: data?.rating_average == null ? null : Number(data.rating_average),
+        reviewCount: Number(data?.review_count || 0),
+        offset: offset + incoming.length,
+      };
+    } catch (error) {
+      reviewsState.status = "error";
+      reviewsState.error = error?.message || "โหลดรีวิวไม่สำเร็จ";
+    }
+    patchReviewsSection(container, item);
+  }
+
+  async function loadEligibility(container, item) {
+    if (!root.state.customer?.logged_in) return;
+    writeReviewState.eligibilityStatus = "loading";
+    try {
+      const data = await root.api.loadReviewEligibility(item.item_id);
+      writeReviewState.eligibilityStatus = "success";
+      writeReviewState.eligible = Boolean(data?.eligible);
+      writeReviewState.eligibleJobs = root.utils.normalizeList(data, "eligible_jobs");
+      writeReviewState.jobId = writeReviewState.eligibleJobs[0]?.job_id || null;
+    } catch (error) {
+      writeReviewState.eligibilityStatus = "error";
+      writeReviewState.eligible = false;
+    }
+    patchReviewsSection(container, item);
+  }
+
+  function renderReviewStars(currentRating, interactive) {
+    return Array.from({ length: 5 }, (_, i) => {
+      const n = i + 1;
+      const filled = n <= currentRating;
+      if (!interactive) return `<span class="store-review-star${filled ? " is-filled" : ""}" aria-hidden="true">${filled ? "★" : "☆"}</span>`;
+      return `<button type="button" class="store-review-star-btn${filled ? " is-filled" : ""}" data-review-star="${n}" aria-label="${n} ดาว">${filled ? "★" : "☆"}</button>`;
+    }).join("");
+  }
+
+  function renderWriteReviewPanel(item) {
+    if (!root.state.customer?.logged_in) {
+      return `
+        <div class="store-review-write-gate">
+          <p>เข้าสู่ระบบเพื่อเขียนรีวิวสำหรับงานที่คุณใช้บริการจริง</p>
+          <button type="button" class="secondary-btn" data-store-review-login>เข้าสู่ระบบ</button>
+        </div>
+      `;
+    }
+    if (writeReviewState.eligibilityStatus === "loading" || writeReviewState.eligibilityStatus === "idle") {
+      return `<div class="content-skeleton" aria-label="กำลังตรวจสอบสิทธิ์รีวิว"><span></span></div>`;
+    }
+    if (!writeReviewState.eligible) {
+      return `<p class="store-review-ineligible">คุณยังไม่มีงานที่เสร็จสมบูรณ์สำหรับสินค้า/บริการนี้ที่สามารถรีวิวได้ในขณะนี้</p>`;
+    }
+    if (writeReviewState.success) {
+      return root.utils.stateBox("success", "ส่งรีวิวแล้ว รอแอดมินตรวจสอบ");
+    }
+    if (!writeReviewState.open) {
+      return `<button type="button" class="secondary-btn" data-store-review-open>เขียนรีวิว</button>`;
+    }
+
+    const jobPicker = writeReviewState.eligibleJobs.length > 1 ? `
+      <label class="store-review-field">
+        <span>เลือกงานที่ต้องการรีวิว</span>
+        <select data-store-review-job>
+          ${writeReviewState.eligibleJobs.map((j) => `<option value="${root.utils.escapeHtml(j.job_id)}"${String(j.job_id) === String(writeReviewState.jobId) ? " selected" : ""}>${root.utils.escapeHtml(String(j.appointment_datetime || "").slice(0, 16).replace("T", " "))}</option>`).join("")}
+        </select>
+      </label>
+    ` : "";
+
+    if (writeReviewState.step === "preview") {
+      return `
+        <div class="store-review-form store-review-preview">
+          <h4>ตรวจสอบรีวิวก่อนส่ง</h4>
+          <div class="store-review-stars-display">${renderReviewStars(writeReviewState.rating, false)}</div>
+          <p class="store-review-preview-comment">${root.utils.escapeHtml(writeReviewState.comment || "(ไม่มีความเห็นเพิ่มเติม)")}</p>
+          ${writeReviewState.error ? root.utils.stateBox("error", writeReviewState.error) : ""}
+          <div class="store-review-form-actions">
+            <button type="button" class="secondary-btn" data-store-review-back ${writeReviewState.submitting ? "disabled" : ""}>กลับไปแก้ไข</button>
+            <button type="button" class="primary-btn" data-store-review-confirm ${writeReviewState.submitting ? "disabled" : ""}>${writeReviewState.submitting ? "กำลังส่ง..." : "ยืนยันส่งรีวิว"}</button>
+          </div>
+        </div>
+      `;
+    }
+
+    return `
+      <div class="store-review-form">
+        <h4>เขียนรีวิว</h4>
+        ${jobPicker}
+        <label class="store-review-field">
+          <span>ให้คะแนน</span>
+          <div class="store-review-stars-input" data-store-review-stars>${renderReviewStars(writeReviewState.rating, true)}</div>
+        </label>
+        <label class="store-review-field">
+          <span>ความเห็น (ไม่บังคับ)</span>
+          <textarea data-store-review-comment maxlength="500" placeholder="บอกเล่าประสบการณ์ใช้บริการของคุณ">${root.utils.escapeHtml(writeReviewState.comment)}</textarea>
+        </label>
+        ${writeReviewState.error ? root.utils.stateBox("error", writeReviewState.error) : ""}
+        <div class="store-review-form-actions">
+          <button type="button" class="secondary-btn" data-store-review-cancel>ยกเลิก</button>
+          <button type="button" class="primary-btn" data-store-review-next>ตรวจสอบรีวิว</button>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderReviewsList() {
+    if (reviewsState.status === "loading" && !reviewsState.reviews.length) {
+      return `<div class="content-skeleton" aria-label="กำลังโหลดรีวิว"><span></span><span></span></div>`;
+    }
+    if (reviewsState.status === "error") {
+      return root.utils.stateBox("error", reviewsState.error || "โหลดรีวิวไม่สำเร็จ");
+    }
+    if (!reviewsState.reviews.length) {
+      return `<p class="store-reviews-empty">ยังไม่มีรีวิวสำหรับสินค้า/บริการนี้</p>`;
+    }
+    const items = reviewsState.reviews.map((r) => `
+      <div class="store-review-item">
+        <div class="store-review-item-head">
+          <span class="store-review-item-name">${root.utils.escapeHtml(r.display_name || "ลูกค้า")}</span>
+          <span class="store-review-item-stars">${renderReviewStars(Number(r.rating || 0), false)}</span>
+        </div>
+        ${r.comment ? `<p class="store-review-item-comment">${root.utils.escapeHtml(r.comment)}</p>` : ""}
+        <span class="store-review-item-date">${root.utils.escapeHtml(String(r.created_at || "").slice(0, 10))}</span>
+      </div>
+    `).join("");
+    const hasMore = reviewsState.reviews.length < reviewsState.total;
+    return `
+      <div class="store-reviews-list">${items}</div>
+      ${hasMore ? `<button type="button" class="secondary-btn store-reviews-load-more" data-store-reviews-more>โหลดรีวิวเพิ่ม</button>` : ""}
+    `;
+  }
+
+  function renderReviewsSectionBody(item) {
+    const avg = reviewsState.ratingAverage;
+    const count = reviewsState.reviewCount;
+    const hasReviews = Number.isFinite(avg) && avg >= 1 && count > 0;
+    return `
+      <h3>รีวิวจากลูกค้า</h3>
+      <div class="store-reviews-summary">
+        <span class="store-rating-label">รีวิว</span>
+        <span class="store-rating-stars">${renderReviewStars(hasReviews ? Math.round(avg) : 0, false)}</span>
+        ${hasReviews ? `<span class="store-rating-value">${formatRatingAverage(avg)}</span>` : ""}
+        <span class="store-rating-count">(${count})</span>
+      </div>
+      <div class="store-reviews-list-mount">${renderReviewsList()}</div>
+      <div class="store-review-write-mount">${renderWriteReviewPanel(item)}</div>
+    `;
+  }
+
+  function bindReviewsSection(container, item) {
+    const section = container.querySelector("[data-store-reviews-section]");
+    if (!section) return;
+
+    const moreButton = section.querySelector("[data-store-reviews-more]");
+    if (moreButton) moreButton.addEventListener("click", () => loadReviewsList(container, item, { append: true }));
+
+    const loginButton = section.querySelector("[data-store-review-login]");
+    if (loginButton) loginButton.addEventListener("click", () => root.utils.routeTo("profile"));
+
+    const openButton = section.querySelector("[data-store-review-open]");
+    if (openButton) openButton.addEventListener("click", () => {
+      writeReviewState.open = true;
+      patchReviewsSection(container, item);
+    });
+
+    const cancelButton = section.querySelector("[data-store-review-cancel]");
+    if (cancelButton) cancelButton.addEventListener("click", () => {
+      writeReviewState.open = false;
+      writeReviewState.rating = 0;
+      writeReviewState.comment = "";
+      writeReviewState.error = "";
+      patchReviewsSection(container, item);
+    });
+
+    const jobSelect = section.querySelector("[data-store-review-job]");
+    if (jobSelect) jobSelect.addEventListener("change", () => { writeReviewState.jobId = jobSelect.value; });
+
+    section.querySelectorAll("[data-review-star]").forEach((button) => {
+      button.addEventListener("click", () => {
+        writeReviewState.rating = Number(button.getAttribute("data-review-star") || 0);
+        patchReviewsSection(container, item);
+      });
+    });
+
+    const commentInput = section.querySelector("[data-store-review-comment]");
+    if (commentInput) commentInput.addEventListener("input", () => { writeReviewState.comment = commentInput.value; });
+
+    const nextButton = section.querySelector("[data-store-review-next]");
+    if (nextButton) nextButton.addEventListener("click", () => {
+      if (!writeReviewState.rating) {
+        writeReviewState.error = "กรุณาให้คะแนน 1-5 ดาว";
+        patchReviewsSection(container, item);
+        return;
+      }
+      writeReviewState.error = "";
+      writeReviewState.step = "preview";
+      patchReviewsSection(container, item);
+    });
+
+    const backButton = section.querySelector("[data-store-review-back]");
+    if (backButton) backButton.addEventListener("click", () => {
+      writeReviewState.step = "form";
+      patchReviewsSection(container, item);
+    });
+
+    const confirmButton = section.querySelector("[data-store-review-confirm]");
+    if (confirmButton) confirmButton.addEventListener("click", async () => {
+      if (writeReviewState.submitting) return;
+      writeReviewState.submitting = true;
+      writeReviewState.error = "";
+      patchReviewsSection(container, item);
+      try {
+        await root.api.submitCatalogItemReview(item.item_id, {
+          job_id: writeReviewState.jobId,
+          rating: writeReviewState.rating,
+          comment: writeReviewState.comment,
+        });
+        writeReviewState.submitting = false;
+        writeReviewState.open = false;
+        writeReviewState.success = true;
+        patchReviewsSection(container, item);
+      } catch (error) {
+        writeReviewState.submitting = false;
+        writeReviewState.error = error?.message || "ส่งรีวิวไม่สำเร็จ";
+        patchReviewsSection(container, item);
+      }
+    });
   }
 
   function renderDetailContent(item) {
@@ -482,7 +801,7 @@
         ${category ? `<span class="tag">${root.utils.escapeHtml(category)}</span>` : ""}
         <h2>${root.utils.escapeHtml(name)}</h2>
       </div>
-      ${renderStandardBadge(item)}
+      ${renderRatingBadge(item)}
       <div class="store-detail-price">
         <span class="price-text${priceIsAsk(item) ? " is-estimate" : ""}">${root.utils.escapeHtml(priceLabel(item))}</span>
         ${promo ? `<span class="price-strike">${root.utils.escapeHtml(root.utils.formatBaht(item.normal_price))}</span>` : ""}
@@ -509,6 +828,9 @@
           <p>${root.utils.escapeHtml(item.service_conditions)}</p>
         </div>
       ` : ""}
+      <div class="store-detail-section store-reviews-section" data-store-reviews-section>
+        ${renderReviewsSectionBody(item)}
+      </div>
       <div class="store-detail-cta-bar">
         ${bookable
           ? `<button class="primary-btn" type="button" data-store-detail-book>จองคิว</button>`
@@ -591,6 +913,14 @@
         root.ui.openContactSheet(container, { title: item?.item_name || "รายการนี้" });
       });
     }
+    container.querySelectorAll("[data-store-rating]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const section = container.querySelector("[data-store-reviews-section]");
+        if (section) section.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    });
+    const item = root.state.storeDetail?.data;
+    if (item) bindReviewsSection(container, item);
     bindDetailGallery(container);
   }
 
@@ -602,6 +932,7 @@
   }
 
   async function loadDetail(container, itemId) {
+    resetReviewsState(itemId);
     if (!itemId) {
       root.state.setStoreDetail({ status: "error", itemId: "", data: null, error: "ไม่พบรายการนี้" });
       patchDetailBody(container);
@@ -612,6 +943,10 @@
     try {
       const data = await root.api.loadCatalogItem(itemId);
       root.state.setStoreDetail({ status: "success", itemId, data, error: "" });
+      patchDetailBody(container);
+      loadReviewsList(container, data);
+      loadEligibility(container, data);
+      return;
     } catch (error) {
       const message = error?.status === 404 ? "ไม่พบรายการนี้" : (error?.message || "โหลดข้อมูลไม่สำเร็จ");
       root.state.setStoreDetail({ status: "error", itemId, data: null, error: message });

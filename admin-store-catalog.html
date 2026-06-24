@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Admin • รายการบริการในร้านค้า</title>
   <link rel="stylesheet" href="/style.css"/>
-  <link rel="stylesheet" href="/admin-store-catalog.css?v=20260623_catalog_marketplace_v2"/>
+  <link rel="stylesheet" href="/admin-store-catalog.css?v=20260624_catalog_hot_sale_reviews"/>
 </head>
 <body>
   <div class="topbar">
@@ -47,9 +47,28 @@
       <div class="muted2 mini" style="margin-top:4px">แสดงเฉพาะรายการที่ "เปิดใช้งาน" และ "แสดงให้ลูกค้าเห็น" พร้อมกัน ตามข้อมูลจริงที่โหลดมาด้านบน</div>
       <div id="catalog_preview" style="margin-top:10px"></div>
     </div>
+
+    <div class="card asc-reviews-card" style="margin-top:12px">
+      <b>⭐ ตรวจสอบรีวิวลูกค้า (Moderation)</b>
+      <div class="muted2 mini" style="margin-top:4px">อนุมัติ/ปฏิเสธ/ซ่อนรีวิวจริงจากลูกค้า มีผลต่อค่าเฉลี่ยและจำนวนรีวิวที่แสดงในร้านค้าทันที</div>
+      <div class="asc-toolbar-row" style="margin-top:10px">
+        <select id="review_filter_status" class="asc-filter">
+          <option value="">ทุกสถานะ</option>
+          <option value="pending">รออนุมัติ</option>
+          <option value="approved">อนุมัติแล้ว</option>
+          <option value="rejected">ปฏิเสธแล้ว</option>
+          <option value="hidden">ซ่อนอยู่</option>
+        </select>
+        <select id="review_filter_item" class="asc-filter">
+          <option value="">ทุกรายการ</option>
+        </select>
+        <button id="btnReloadReviews" class="secondary btn-small" type="button">รีเฟรช</button>
+      </div>
+      <div id="review_list" class="asc-card-list" style="margin-top:10px">กำลังโหลดรีวิว...</div>
+    </div>
   </div>
 
   <script src="/admin-v2-common.js?v=20260622_admin_menu_catalog_entry"></script>
-  <script src="/admin-store-catalog.js?v=20260623_catalog_marketplace_v2"></script>
+  <script src="/admin-store-catalog.js?v=20260624_catalog_hot_sale_reviews"></script>
 </body>
 </html>

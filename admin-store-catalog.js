@@ -186,11 +186,19 @@ function ensureCatalogModal() {
               </select>
             </div>
           </div>
-          <div class="asc-field"><label>รายการแนะนำ (Featured) *</label>
-            <select id="cm_is_featured">
-              <option value="0">ไม่แนะนำ</option>
-              <option value="1">แนะนำ</option>
-            </select>
+          <div class="asc-grid2">
+            <div class="asc-field"><label>รายการแนะนำ (Featured) *</label>
+              <select id="cm_is_featured">
+                <option value="0">ไม่แนะนำ</option>
+                <option value="1">แนะนำ</option>
+              </select>
+            </div>
+            <div class="asc-field"><label>ป้าย HOT *</label>
+              <select id="cm_is_hot">
+                <option value="0">ไม่ใช่ HOT</option>
+                <option value="1">เป็น HOT</option>
+              </select>
+            </div>
           </div>
         </div>
 
@@ -316,6 +324,7 @@ function resetCatalogModalFields() {
   el("cm_booking_btu").value = "";
   el("cm_booking_wash_variant").value = "";
   el("cm_is_featured").value = "0";
+  el("cm_is_hot").value = "0";
   el("cm_short_description").value = "";
   el("cm_long_description").value = "";
   el("cm_highlights").value = "";
@@ -382,6 +391,7 @@ function openCatalogModalForEdit(itemId) {
   el("cm_booking_btu").value = item.booking_btu || "";
   el("cm_booking_wash_variant").value = item.booking_wash_variant || "";
   el("cm_is_featured").value = item.is_featured ? "1" : "0";
+  el("cm_is_hot").value = item.is_hot ? "1" : "0";
   el("cm_short_description").value = item.short_description || "";
   el("cm_long_description").value = item.long_description || "";
   el("cm_highlights").value = Array.isArray(item.highlights) ? item.highlights.join("\n") : "";
@@ -421,6 +431,7 @@ function catalogModalPayload() {
     booking_btu: trimmedOrEmpty("cm_booking_btu"),
     booking_wash_variant: trimmedOrEmpty("cm_booking_wash_variant"),
     is_featured: el("cm_is_featured").value === "1",
+    is_hot: el("cm_is_hot").value === "1",
     short_description: trimmedOrEmpty("cm_short_description"),
     long_description: trimmedOrEmpty("cm_long_description"),
     highlights: (el("cm_highlights").value || "").split("\n").map((line) => line.trim()).filter(Boolean),
@@ -970,6 +981,7 @@ function catalogItemCard(item) {
         ${hasPromo ? `<span class="asc-badge asc-badge-promo">${escapeHtml(item.campaign_name || "โปรโมชัน")}</span>` : ""}
         ${item.booking_mode === "bookable" ? `<span class="asc-badge asc-badge-bookable">จองออนไลน์ได้</span>` : `<span class="asc-badge asc-badge-contact">ติดต่อแอดมิน</span>`}
         ${item.is_featured ? `<span class="asc-badge asc-badge-featured">แนะนำ</span>` : ""}
+        ${item.is_hot ? `<span class="asc-badge asc-badge-hot">HOT</span>` : ""}
       </div>
     </div>
     <div class="asc-item-actions">
@@ -1027,6 +1039,123 @@ function bindCatalogListActions() {
   });
 }
 
+/* ---------- Review moderation ---------- */
+
+let reviewItems = [];
+let reviewActionPending = null;
+
+function reviewStatusLabel(status) {
+  if (status === "approved") return "อนุมัติแล้ว";
+  if (status === "rejected") return "ปฏิเสธแล้ว";
+  if (status === "hidden") return "ซ่อนอยู่";
+  return "รออนุมัติ";
+}
+
+function fmtDateTime(value) {
+  if (!value) return "-";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return String(value);
+  return d.toLocaleString("th-TH", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+}
+
+function reviewStarsHtml(rating) {
+  const n = Math.max(0, Math.min(5, Number(rating) || 0));
+  return Array.from({ length: 5 }, (_, i) => (i < n ? "★" : "☆")).join("");
+}
+
+function reviewActionButtons(review) {
+  const buttons = [];
+  if (review.moderation_status !== "approved") buttons.push(`<button class="secondary btn-small" type="button" data-ract="approved" data-review-id="${review.review_id}">อนุมัติ</button>`);
+  if (review.moderation_status !== "rejected") buttons.push(`<button class="secondary btn-small" type="button" data-ract="rejected" data-review-id="${review.review_id}">ปฏิเสธ</button>`);
+  if (review.moderation_status !== "hidden") buttons.push(`<button class="secondary btn-small" type="button" data-ract="hidden" data-review-id="${review.review_id}">ซ่อน</button>`);
+  if (review.moderation_status === "hidden" || review.moderation_status === "rejected") {
+    buttons.push(`<button class="secondary btn-small" type="button" data-ract="pending" data-review-id="${review.review_id}">คืนเป็นรออนุมัติ</button>`);
+  }
+  return buttons.join("");
+}
+
+function reviewCardHtml(review) {
+  return `
+  <div class="asc-item-card asc-review-card" data-review-id="${review.review_id}">
+    <div class="asc-item-main">
+      <div class="asc-item-title">${escapeHtml(review.item_name || "-")} <span class="asc-badge asc-badge-${review.moderation_status}">${reviewStatusLabel(review.moderation_status)}</span></div>
+      <div class="asc-item-meta">${escapeHtml(review.customer_identity || "ลูกค้า")} • งาน #${escapeHtml(String(review.completed_job_id || "-"))} • ${fmtDateTime(review.created_at)}</div>
+      <div class="asc-review-stars">${reviewStarsHtml(review.rating)}</div>
+      ${review.comment ? `<div class="asc-review-comment">${escapeHtml(review.comment)}</div>` : `<div class="muted2 mini">ไม่มีความเห็นเพิ่มเติม</div>`}
+      ${review.moderated_by ? `<div class="muted2 mini">ตรวจสอบล่าสุดโดย ${escapeHtml(review.moderated_by)} เมื่อ ${fmtDateTime(review.moderated_at)}</div>` : ""}
+    </div>
+    <div class="asc-item-actions asc-review-actions">${reviewActionButtons(review)}</div>
+  </div>`;
+}
+
+function renderReviewItemFilterOptions() {
+  const select = el("review_filter_item");
+  const current = select.value;
+  const seen = new Map();
+  reviewItems.forEach((r) => { if (!seen.has(r.item_id)) seen.set(r.item_id, r.item_name); });
+  select.innerHTML = `<option value="">ทุกรายการ</option>${Array.from(seen.entries()).map(([id, name]) => `<option value="${id}">${escapeHtml(name)}</option>`).join("")}`;
+  select.value = current;
+}
+
+function renderReviewList() {
+  const box = el("review_list");
+  const statusFilter = el("review_filter_status").value;
+  const itemFilter = el("review_filter_item").value;
+  const filtered = reviewItems.filter((r) => {
+    if (statusFilter && r.moderation_status !== statusFilter) return false;
+    if (itemFilter && String(r.item_id) !== String(itemFilter)) return false;
+    return true;
+  });
+  if (!filtered.length) {
+    box.innerHTML = `<div class="asc-empty">ไม่พบรีวิวที่ตรงกับตัวกรอง</div>`;
+    return;
+  }
+  box.innerHTML = filtered.map(reviewCardHtml).join("");
+}
+
+async function loadReviews() {
+  const box = el("review_list");
+  box.innerHTML = `<div class="asc-loading">กำลังโหลดรีวิว...</div>`;
+  try {
+    reviewItems = await apiFetch("/admin/catalog/reviews");
+    renderReviewItemFilterOptions();
+    renderReviewList();
+  } catch (e) {
+    box.innerHTML = `<div class="asc-error">โหลดรีวิวไม่สำเร็จ: ${escapeHtml(e.message || "")}</div>`;
+  }
+}
+
+async function setReviewModerationStatus(reviewId, nextStatus) {
+  if (reviewActionPending) return;
+  const review = reviewItems.find((r) => Number(r.review_id) === Number(reviewId));
+  if (!review) return;
+  const confirmLabels = { approved: "อนุมัติ", rejected: "ปฏิเสธ", hidden: "ซ่อน", pending: "คืนเป็นรออนุมัติ" };
+  const confirmed = confirm(`ต้องการ${confirmLabels[nextStatus] || nextStatus}รีวิวนี้หรือไม่?`);
+  if (!confirmed) return;
+  reviewActionPending = reviewId;
+  try {
+    const updated = await apiFetch(`/admin/catalog/reviews/${reviewId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ moderation_status: nextStatus }),
+    });
+    Object.assign(review, updated);
+    renderReviewList();
+    showToast("อัปเดตสถานะรีวิวแล้ว", "success");
+  } catch (e) {
+    showToast(e.message || "อัปเดตสถานะรีวิวไม่สำเร็จ", "error");
+  } finally {
+    reviewActionPending = null;
+  }
+}
+
+function bindReviewListActions() {
+  el("review_list").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-ract]");
+    if (!button) return;
+    setReviewModerationStatus(Number(button.getAttribute("data-review-id")), button.getAttribute("data-ract"));
+  });
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   bindCatalogListActions();
   el("btnNewItem").addEventListener("click", openCatalogModalForNew);
@@ -1035,4 +1164,10 @@ document.addEventListener("DOMContentLoaded", () => {
   el("catalog_filter_active").addEventListener("change", renderCatalogList);
   el("catalog_filter_visible").addEventListener("change", renderCatalogList);
   loadCatalogItems();
+
+  bindReviewListActions();
+  el("btnReloadReviews").addEventListener("click", loadReviews);
+  el("review_filter_status").addEventListener("change", renderReviewList);
+  el("review_filter_item").addEventListener("change", renderReviewList);
+  loadReviews();
 });
