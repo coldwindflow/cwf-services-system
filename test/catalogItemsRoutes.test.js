@@ -810,7 +810,17 @@ test("SQL injection attempts cannot change query structure", async () => {
 
 test("index.js passes the real requireAdminSession middleware into createCatalogItemRoutes", () => {
   const source = fs.readFileSync(path.join(__dirname, "..", "index.js"), "utf8");
-  assert.match(source, /app\.use\(createCatalogItemRoutes\(\{\s*pool,\s*requireAdminSession\s*\}\)\)/);
+  assert.match(source, /app\.use\(createCatalogItemRoutes\(\{\s*pool,\s*requireAdminSession,/);
+});
+
+test("index.js wires the real public slot-engine deps into createCatalogItemRoutes (has_queue_today must use real slots, not just eligibility)", () => {
+  const source = fs.readFileSync(path.join(__dirname, "..", "index.js"), "utf8");
+  const match = source.match(/app\.use\(createCatalogItemRoutes\(\{[^}]*\}\)\);/);
+  assert.ok(match, "createCatalogItemRoutes call site not found");
+  assert.match(match[0], /listBusyBlocksForTechOnDate/);
+  assert.match(match[0], /buildStartIntervalsByCollision/);
+  assert.match(match[0], /toMin/);
+  assert.match(match[0], /minToHHMM/);
 });
 
 test("admin POST rejects an invalid is_active value and never writes to the DB", async () => {
@@ -2818,13 +2828,42 @@ test("booking_count is also attached on the single-item public detail endpoint",
 });
 
 // ---- has_queue_today (real technician-eligibility check, never hardcoded) ----
-// Verifies matrix/calendar/capacity eligibility PLUS a same-day cutoff check
-// (a technician whose work window for today has already ended never counts),
-// derived from the real getNowBangkokParts clock unless a test injects a
-// fixed one for determinism.
+// Verifies an actual bookable start slot today (cutoff + collision), not just
+// matrix/calendar/capacity eligibility -- mirrors the real public slot engine's
+// deps shape (see customerSameDayTiming.test.js for the same pattern).
 
-function queueSlotDeps({ nowParts } = {}) {
-  return nowParts ? { getNowBangkokParts: () => nowParts } : {};
+function queueToMin(value) {
+  const [h, m] = String(value).split(":").map(Number);
+  return h * 60 + m;
+}
+
+function queueMinToHHMM(value) {
+  return `${String(Math.floor(value / 60)).padStart(2, "0")}:${String(value % 60).padStart(2, "0")}`;
+}
+
+function queueIntervalsFromBusy(blocks, startMin, endMin, durationMin) {
+  const dur = Math.max(1, Number(durationMin || 0));
+  const busy = (blocks || []).slice().sort((a, b) => a.startMin - b.startMin);
+  const out = [];
+  let cursor = startMin;
+  for (const b of busy) {
+    const bs = Math.max(startMin, Number(b.startMin));
+    const be = Math.min(endMin, Number(b.busyEndMin ?? b.endMin));
+    if (bs - cursor >= dur) out.push({ startMin: cursor, endMin: bs - dur });
+    cursor = Math.max(cursor, be);
+  }
+  if (endMin - cursor >= dur) out.push({ startMin: cursor, endMin: endMin - dur });
+  return out;
+}
+
+function queueSlotDeps({ busyBlocks = [], nowParts } = {}) {
+  return {
+    listBusyBlocksForTechOnDate: async () => busyBlocks,
+    buildStartIntervalsByCollision: queueIntervalsFromBusy,
+    toMin: queueToMin,
+    minToHHMM: queueMinToHHMM,
+    ...(nowParts ? { getNowBangkokParts: () => nowParts } : {}),
+  };
 }
 
 function bookableWashWallItem(overrides = {}) {
@@ -2898,6 +2937,23 @@ test("has_queue_today is false when the current time has already passed the tech
   const router = createCatalogItemRoutes({
     pool, requireAdminSession: allowAdmin,
     ...queueSlotDeps({ nowParts: { ymd: getBangkokNow().ymd, hour: 19, minute: 0 } }),
+  });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/catalog/items?customer=1`);
+    const body = await res.json();
+    assert.equal(body.find((x) => x.item_id === 1).has_queue_today, false);
+  });
+});
+
+test("has_queue_today is false when the technician's whole window today is already booked solid (collision-full)", async () => {
+  createCatalogItemRoutes.__resetQueueTodayCacheForTests();
+  const pool = makePool([bookableWashWallItem()], [], { marketplaceReady: true, ...eligibleTodayFixtures() });
+  const router = createCatalogItemRoutes({
+    pool, requireAdminSession: allowAdmin,
+    ...queueSlotDeps({
+      nowParts: QUEUE_TODAY_MORNING_NOW,
+      busyBlocks: [{ startMin: queueToMin("09:00"), busyEndMin: queueToMin("18:00") }],
+    }),
   });
   await withServer(router, async (base) => {
     const res = await fetch(`${base}/catalog/items?customer=1`);
