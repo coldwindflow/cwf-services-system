@@ -79,30 +79,111 @@
     return "ไม่ระบุ BTU";
   }
 
-  // "Family" = same job_category + ac_type, spanning different wash methods
-  // (ล้างปกติ/ล้างพรีเมียม/แขวนคอยล์/ตัดล้างใหญ่) -- used for related-products.
-  // "Variant group" = family + the specific wash method, spanning different BTU
-  // bands of that one method -- used for the BTU/spec selector. Both keys are
-  // built only from real per-row catalog fields, never a fabricated mapping.
+  // ---------- Canonical product-family resolver ----------
+  // Raw catalog rows are not guaranteed to use one consistent token for the
+  // same real-world concept (e.g. ac_type might say "ผนัง" or "wall", a free-
+  // text job_category might say "ล้างแอร์" or "wash"). Grouping logic must
+  // never compare those raw strings directly -- it must resolve them to one
+  // of a small, fixed set of canonical tokens first. Resolution order always
+  // prefers the most authoritative, already-constrained field first
+  // (booking_ac_type / booking_wash_variant, validated server-side against a
+  // fixed enum -- see ALLOWED_BOOKING_AC_TYPES/ALLOWED_BOOKING_WASH_VARIANTS
+  // in server/routes/catalog/items.js) before falling back to the free-text
+  // display field, and only as a last resort to a deterministic keyword match
+  // against the item name. Returns null when nothing recognizable is found --
+  // never a guessed/fuzzy cross-category match.
+  function normalizeForMatch(value) {
+    return String(value || "").trim().toLowerCase();
+  }
+
+  function canonicalAcType(item) {
+    const candidates = [item.booking_ac_type, item.ac_type, item.item_name];
+    for (const raw of candidates) {
+      const norm = normalizeForMatch(raw);
+      if (!norm) continue;
+      if (/ผนัง|wall/.test(norm)) return "wall";
+      if (/สี่ทิศทาง|four.?way|cassette/.test(norm)) return "fourway";
+      if (/แขวน(?!คอยล์)|hanging/.test(norm)) return "hanging";
+      if (/เปลือย|ใต้ฝ้า|ceiling/.test(norm)) return "ceiling";
+    }
+    return null;
+  }
+
+  function canonicalJobCategory(item) {
+    const candidates = [item.job_category, item.item_category];
+    for (const raw of candidates) {
+      const norm = normalizeForMatch(raw);
+      if (!norm) continue;
+      if (/ล้าง|wash|clean/.test(norm)) return "wash";
+      if (/ซ่อม|repair/.test(norm)) return "repair";
+      if (/ติดตั้ง|install/.test(norm)) return "install";
+      if (/ตรวจเช็ค|ตรวจสอบ|inspect/.test(norm)) return "inspection";
+    }
+    return null;
+  }
+
+  function canonicalWashVariant(item) {
+    const candidates = [item.booking_wash_variant];
+    for (const raw of candidates) {
+      const norm = normalizeForMatch(raw);
+      if (!norm) continue;
+      if (/ตัดล้าง|overhaul|ใหญ่/.test(norm)) return "overhaul";
+      if (/แขวนคอยล์|coil/.test(norm)) return "coil";
+      if (/พรีเมียม|premium/.test(norm)) return "premium";
+      if (/ปกติ|ธรรมดา|normal/.test(norm)) return "normal";
+    }
+    return null;
+  }
+
+  // Best real BTU figure available for an item, preferring the bookable
+  // booking_btu (a single supported value), then the display btu_min/btu_max
+  // range. Returns null when no real BTU figure exists at all.
+  function itemBtuValue(item) {
+    const btu = Number(item.booking_btu);
+    if (Number.isFinite(btu) && btu > 0) return btu;
+    const min = Number(item.btu_min);
+    if (Number.isFinite(min) && min > 0) return min;
+    const max = Number(item.btu_max);
+    if (Number.isFinite(max) && max > 0) return max;
+    return null;
+  }
+
+  // "Family" = same canonical job category + canonical AC type, spanning
+  // different wash methods (ล้างปกติ/ล้างพรีเมียม/แขวนคอยล์/ตัดล้างใหญ่) --
+  // used for related-products. "Variant group" = family + the specific
+  // canonical wash method, spanning different BTU bands of that one method --
+  // used for the BTU/spec selector. Returns null when the item's job category
+  // or AC type cannot be resolved at all, so unrelated/unrecognized items
+  // never get fuzzily grouped together.
   function familyKey(item) {
-    return `${item.job_category || ""}|${item.ac_type || ""}`;
+    const job = canonicalJobCategory(item);
+    const ac = canonicalAcType(item);
+    if (!job || !ac) return null;
+    return `${job}|${ac}`;
   }
 
   function variantGroupKey(item) {
-    return `${item.job_category || ""}|${item.ac_type || ""}|${item.booking_wash_variant || ""}`;
+    const fam = familyKey(item);
+    if (!fam) return null;
+    return `${fam}|${canonicalWashVariant(item) || ""}`;
   }
 
-  // Siblings sharing this item's exact variant group (same method, different
-  // BTU). Only meaningful for bookable items with a real booking_wash_variant;
-  // otherwise there is nothing to group, so the item is its own only "sibling".
+  // Siblings sharing this item's exact variant group (same canonical job
+  // category + AC type + wash method, differing only by BTU/price/item_id).
+  // Bookable items whose AC type doesn't require a wash method (e.g.
+  // สี่ทิศทาง/แขวน/เปลือยใต้ฝ้า) still group correctly since both sides of the
+  // comparison share the same (empty) wash-variant token. Only meaningful for
+  // bookable items with a resolvable canonical group; otherwise there is
+  // nothing real to group, so the item is its own only "sibling".
   function variantSiblings(item, allItems) {
-    if (!item || item.booking_mode !== "bookable" || !item.booking_wash_variant) return [item];
+    if (!item || item.booking_mode !== "bookable") return [item];
     const key = variantGroupKey(item);
+    if (!key) return [item];
     const list = (allItems || []).filter((it) => it.booking_mode === "bookable" && variantGroupKey(it) === key);
     if (!list.some((it) => String(it.item_id) === String(item.item_id))) list.push(item);
     return list.slice().sort((a, b) => {
-      const aBtu = Number(a.btu_min) || Number(a.booking_btu) || 0;
-      const bBtu = Number(b.btu_min) || Number(b.booking_btu) || 0;
+      const aBtu = itemBtuValue(a) || 0;
+      const bBtu = itemBtuValue(b) || 0;
       return aBtu - bBtu;
     });
   }
@@ -116,23 +197,56 @@
     return (siblings || []).find((s) => String(s.item_id) === String(selectedVariantItemId)) || item;
   }
 
-  // Up to 4 same-family items, one representative per distinct wash variant
-  // (BTU siblings within one variant are not repeated -- those are shown in
-  // the BTU selector instead). Includes the item currently being viewed as
-  // the first card (marked is_current) so all real wash-method variants in
-  // the family are visible, not just the other three. Real catalog data only.
+  // Picks the one item to represent a wash-method group in the related
+  // slider: prefer the candidate whose real BTU is closest to the item
+  // currently being viewed (so the slider naturally suggests a comparable
+  // size), and among customer-visible/active candidates first. Falls back to
+  // the first candidate at all when nothing carries a real BTU value or an
+  // is_active/is_customer_visible flag -- never fabricates a choice.
+  function pickRepresentative(candidates, currentBtu) {
+    const visible = candidates.filter((it) => it.is_active !== false && it.is_customer_visible !== false);
+    const pool = visible.length ? visible : candidates;
+    if (currentBtu != null) {
+      let best = null;
+      let bestDiff = Infinity;
+      for (const it of pool) {
+        const btu = itemBtuValue(it);
+        if (btu == null) continue;
+        const diff = Math.abs(btu - currentBtu);
+        if (diff < bestDiff) {
+          bestDiff = diff;
+          best = it;
+        }
+      }
+      if (best) return best;
+    }
+    return pool[0] || candidates[0];
+  }
+
+  // Up to 4 same-family items, one representative per distinct canonical wash
+  // method (BTU siblings within one method are never repeated -- those are
+  // shown in the BTU selector instead). Includes the item currently being
+  // viewed as the first card (marked is_current) so all real wash-method
+  // variants in the family are visible, not just the other three. Real
+  // catalog data only -- never a fabricated/placeholder card.
   function relatedFamilyItems(item, allItems) {
-    if (!item || !item.job_category || !item.ac_type) return [];
     const fam = familyKey(item);
-    const seenVariants = new Set([variantGroupKey(item)]);
-    const others = [];
+    if (!fam) return [];
+    const currentBtu = itemBtuValue(item);
+    const currentVariant = canonicalWashVariant(item) || "";
+    const groups = new Map();
     for (const it of allItems || []) {
       if (String(it.item_id) === String(item.item_id)) continue;
       if (familyKey(it) !== fam) continue;
-      const vk = variantGroupKey(it);
-      if (seenVariants.has(vk)) continue;
-      seenVariants.add(vk);
-      others.push(it);
+      const wv = canonicalWashVariant(it) || "";
+      if (!groups.has(wv)) groups.set(wv, []);
+      groups.get(wv).push(it);
+    }
+    const others = [];
+    for (const [wv, candidates] of groups) {
+      if (wv === currentVariant) continue;
+      const rep = pickRepresentative(candidates, currentBtu);
+      if (rep) others.push(rep);
       if (others.length >= 3) break;
     }
     if (!others.length) return [];
@@ -609,11 +723,34 @@
   // requirement #5). Reset whenever a new detail item is loaded.
   let selectedVariantItemId = null;
 
+  // Icon shown to the left of each accordion header -- a fixed, deterministic
+  // mapping by section title (presentation only, not derived from any
+  // per-item data) so every card is instantly recognizable as a tappable row.
+  const ACCORDION_ICONS = {
+    "จุดเด่นของบริการ": "sparkle",
+    "รายละเอียดบริการ": "chat",
+    "เหมาะกับแอร์แบบไหน": "wrench",
+    "เงื่อนไขบริการ": "shield",
+    "เปรียบเทียบวิธีล้าง": "clock",
+  };
+
+  // Premium white-card accordion row (iOS/Shopee style): icon, title + a
+  // small "แตะเพื่อดูรายละเอียด" affordance hint, and a chevron that rotates
+  // open -- never the old bare "+"/"-" text marker, so it reads as an
+  // obviously tappable row rather than plain text.
   function renderAccordionSection(title, bodyHtml, { open } = {}) {
     if (!bodyHtml) return "";
+    const icon = ACCORDION_ICONS[title] || "sparkle";
     return `
       <details class="store-detail-accordion"${open ? " open" : ""}>
-        <summary>${root.utils.escapeHtml(title)}</summary>
+        <summary>
+          <span class="store-detail-accordion-icon">${root.utils.icon(icon, 18)}</span>
+          <span class="store-detail-accordion-text">
+            <span class="store-detail-accordion-title">${root.utils.escapeHtml(title)}</span>
+            <span class="store-detail-accordion-hint">แตะเพื่อดูรายละเอียด</span>
+          </span>
+          <span class="store-detail-accordion-chevron" aria-hidden="true">›</span>
+        </summary>
         <div class="store-detail-accordion-body">${bodyHtml}</div>
       </details>
     `;
@@ -626,11 +763,16 @@
       <div class="store-detail-variant-selector" data-store-variant-selector>
         <span class="store-detail-variant-label">เลือกขนาด BTU</span>
         <div class="store-detail-variant-options">
-          ${siblings.map((s) => `
-            <button type="button" class="store-detail-variant-option${String(s.item_id) === String(selectedId) ? " is-selected" : ""}" data-store-variant-option="${root.utils.escapeHtml(String(s.item_id))}">
-              ${root.utils.escapeHtml(variantBtuLabel(s))}
-            </button>
-          `).join("")}
+          ${siblings.map((s) => {
+            const selected = String(s.item_id) === String(selectedId);
+            return `
+              <button type="button" class="store-detail-variant-option${selected ? " is-selected" : ""}" data-store-variant-option="${root.utils.escapeHtml(String(s.item_id))}">
+                ${selected ? `<span class="store-detail-variant-check" aria-hidden="true">✓</span>` : ""}
+                <span class="store-detail-variant-spec">${root.utils.escapeHtml(variantBtuLabel(s))}</span>
+                <span class="store-detail-variant-price">${root.utils.escapeHtml(priceLabel(s))}</span>
+              </button>
+            `;
+          }).join("")}
         </div>
       </div>
     `;
@@ -639,9 +781,11 @@
   function renderRelatedProducts(item, allItems) {
     const related = relatedFamilyItems(item, allItems);
     if (!related.length) return "";
+    const isWallWash = canonicalAcType(item) === "wall" && canonicalJobCategory(item) === "wash";
+    const heading = isWallWash ? "เลือกวิธีล้างที่เหมาะกับคุณ" : "บริการที่เกี่ยวข้อง";
     return `
       <div class="store-detail-related" data-store-related>
-        <h3>บริการที่เกี่ยวข้อง</h3>
+        <h3>${root.utils.escapeHtml(heading)}</h3>
         <div class="store-related-slider">
           ${related.map((r) => {
             const images = itemGalleryImages(r);
@@ -674,38 +818,25 @@
   // Static, factual comparison content (not derived from per-item DB fields --
   // these four wash methods are fixed domain concepts shared by every wall-AC
   // wash item, not a guess about any specific catalog row's price/availability).
+  // Wording is limited strictly to CWF-verified service steps -- no
+  // disinfection/germ-kill claims, no guaranteed-leak-fix claims, and no
+  // "removes the coil" claim (only แขวนคอยล์ removes panels/trays, not the coil).
   const WALL_AC_CLEANING_COMPARISON = [
     {
       title: "ล้างปกติ",
-      bestFor: "แอร์ที่ดูแลสม่ำเสมอ ไม่มีกลิ่นอับหรือคราบสะสมมาก",
-      thoroughness: "ล้างฟิลเตอร์ คอยล์เย็น คอยล์ร้อน และฉีดอัดท่อน้ำทิ้ง",
-      advantages: "เร็ว ราคาประหยัด เหมาะกับการล้างตามรอบปกติ",
-      depth: "ล้างจากภายนอกตัวเครื่อง ไม่ถอดชิ้นส่วนภายใน",
-      dirtLevel: "เหมาะกับสิ่งสกปรกระดับน้อยถึงปานกลาง",
+      steps: "ล้างฟิลเตอร์ คอยล์เย็น คอยล์ร้อน และฉีดอัดท่อน้ำทิ้ง",
     },
     {
       title: "ล้างพรีเมียม",
-      bestFor: "แอร์ที่ใช้งานหนักหรือไม่ได้ล้างมานาน",
-      thoroughness: "ล้างละเอียดคอยล์เย็น-คอยล์ร้อน ถอดรางน้ำทิ้งและโพรงกระรอกออกล้าง พร้อมฉีดอัดท่อน้ำทิ้ง",
-      advantages: "ลดกลิ่นอับ ลดเชื้อแบคทีเรีย อากาศเย็นสะอาดขึ้น",
-      depth: "เปิดฝาครอบและล้างชิ้นส่วนภายในมากกว่าล้างปกติ",
-      dirtLevel: "เหมาะกับสิ่งสกปรกระดับปานกลางถึงมาก",
+      steps: "ล้างละเอียดคอยล์เย็น-คอยล์ร้อน ถอดรางน้ำทิ้ง ทำความสะอาดโพรงกระรอก และฉีดอัดท่อน้ำทิ้ง",
     },
     {
       title: "แขวนคอยล์",
-      bestFor: "แอร์ที่มีน้ำหยด ตันบ่อย หรือคอยล์สกปรกมาก",
-      thoroughness: "ถอดแผงไฟและถาดหลังออกมาทำความสะอาดอย่างละเอียด",
-      advantages: "ล้างได้ทั่วถึงทุกซอกของคอยล์ แก้ปัญหาน้ำหยดได้ตรงจุด",
-      depth: "ถอดชิ้นส่วนคอยล์ออกจากตัวเครื่องเพื่อล้าง",
-      dirtLevel: "เหมาะกับสิ่งสกปรกระดับมากถึงมากที่สุด",
+      steps: "ถอดแผงไฟ ถอดถาดหลัง และทำความสะอาดภายในอย่างละเอียด",
     },
     {
       title: "ตัดล้างใหญ่",
-      bestFor: "แอร์ที่ไม่เคยล้างใหญ่มานาน หรือมีปัญหาสะสมหลายจุด",
-      thoroughness: "ถอดล้างทั้งตัวเครื่อง ทำความสะอาดครบทุกระบบ โดยประเมินหน้างานก่อนเริ่มงาน",
-      advantages: "ครอบคลุมที่สุด เหมาะกับการแก้ปัญหาสะสมระยะยาว",
-      depth: "เปิดและถอดชิ้นส่วนภายในเกือบทั้งหมดเพื่อล้างลึกที่สุด",
-      dirtLevel: "เหมาะกับสิ่งสกปรกสะสมมากที่สุด",
+      steps: "ถอดล้างทั้งตัว ทำความสะอาดครบระบบ ต้องประเมินสภาพเครื่องและหน้างานก่อน",
     },
   ];
 
@@ -716,11 +847,7 @@
           <div class="store-compare-card">
             <h4>${root.utils.escapeHtml(c.title)}</h4>
             <dl>
-              <dt>เหมาะกับ</dt><dd>${root.utils.escapeHtml(c.bestFor)}</dd>
-              <dt>ความละเอียด</dt><dd>${root.utils.escapeHtml(c.thoroughness)}</dd>
-              <dt>ข้อดี</dt><dd>${root.utils.escapeHtml(c.advantages)}</dd>
-              <dt>ความลึกในการเข้าถึงเครื่อง</dt><dd>${root.utils.escapeHtml(c.depth)}</dd>
-              <dt>ระดับความสกปรกที่เหมาะสม</dt><dd>${root.utils.escapeHtml(c.dirtLevel)}</dd>
+              <dt>ขั้นตอน</dt><dd>${root.utils.escapeHtml(c.steps)}</dd>
             </dl>
           </div>
         `).join("")}
@@ -1012,7 +1139,10 @@
     const unit = displayItem.unit_label || "";
     const promo = hasPromo(displayItem);
     const bookable = isBookable(displayItem);
-    const showCompare = item.ac_type === "ผนัง" && item.job_category === "ล้าง";
+    const showCompare = canonicalAcType(item) === "wall" && canonicalJobCategory(item) === "wash";
+    const ctaButton = bookable
+      ? `<button class="primary-btn" type="button" data-store-detail-book="1">จองคิว</button>`
+      : `<button class="primary-btn" type="button" data-store-detail-contact="1">สอบถามแอดมิน</button>`;
 
     return `
       <button class="store-detail-back" type="button" data-store-detail-back>${root.utils.icon("pin", 16)}กลับไปหน้าร้านค้า</button>
@@ -1031,7 +1161,7 @@
       </div>
       ${renderVariantSelector(item, siblings)}
       ${displayItem.short_description ? `<div class="store-detail-section store-detail-summary"><p>${root.utils.escapeHtml(displayItem.short_description)}</p></div>` : ""}
-      ${renderRelatedProducts(item, allItems)}
+      <div class="store-detail-inline-cta">${ctaButton}</div>
       <div class="store-detail-accordion-group">
         ${renderAccordionSection("จุดเด่นของบริการ", highlights.length ? `
           <ul class="store-detail-highlights">
@@ -1039,22 +1169,19 @@
           </ul>
         ` : "")}
         ${renderAccordionSection("รายละเอียดบริการ", item.long_description ? `<p>${root.utils.escapeHtml(item.long_description)}</p>` : "")}
-        ${renderAccordionSection("ประเภทแอร์ที่เหมาะสม", item.ac_type ? `
+        ${renderAccordionSection("เหมาะกับแอร์แบบไหน", item.ac_type ? `
           <ul class="store-detail-highlights">
             <li>${root.utils.icon("sparkle", 16)}<span>${root.utils.escapeHtml(item.ac_type)}</span></li>
           </ul>
         ` : "")}
         ${renderAccordionSection("เงื่อนไขบริการ", item.service_conditions ? `<p>${root.utils.escapeHtml(item.service_conditions)}</p>` : "")}
-        ${showCompare ? renderAccordionSection("เปรียบเทียบวิธีล้างแอร์ผนัง", renderCleaningComparison()) : ""}
+        ${showCompare ? renderAccordionSection("เปรียบเทียบวิธีล้าง", renderCleaningComparison()) : ""}
       </div>
+      ${renderRelatedProducts(item, allItems)}
       <div class="store-detail-section store-reviews-section" data-store-reviews-section>
         ${renderReviewsSectionBody(item)}
       </div>
-      <div class="store-detail-cta-bar">
-        ${bookable
-          ? `<button class="primary-btn" type="button" data-store-detail-book>จองคิว</button>`
-          : `<button class="primary-btn" type="button" data-store-detail-contact>สอบถามแอดมิน</button>`}
-      </div>
+      <div class="store-detail-cta-bar">${ctaButton}</div>
     `;
   }
 
@@ -1113,8 +1240,7 @@
     });
     const retry = container.querySelector("[data-store-detail-retry]");
     if (retry) retry.addEventListener("click", () => loadDetail(container, detailItemId()));
-    const bookButton = container.querySelector("[data-store-detail-book]");
-    if (bookButton) {
+    container.querySelectorAll("[data-store-detail-book]").forEach((bookButton) => {
       bookButton.addEventListener("click", () => {
         const item = root.state.storeDetail?.data;
         if (!item) return;
@@ -1127,14 +1253,13 @@
         }
         root.utils.routeTo("scheduled");
       });
-    }
-    const contactButton = container.querySelector("[data-store-detail-contact]");
-    if (contactButton) {
+    });
+    container.querySelectorAll("[data-store-detail-contact]").forEach((contactButton) => {
       contactButton.addEventListener("click", () => {
         const item = root.state.storeDetail?.data;
         root.ui.openContactSheet(container, { title: item?.item_name || "รายการนี้" });
       });
-    }
+    });
     container.querySelectorAll("[data-store-rating]").forEach((button) => {
       button.addEventListener("click", () => {
         const section = container.querySelector("[data-store-reviews-section]");
