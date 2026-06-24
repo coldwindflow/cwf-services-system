@@ -1,7 +1,7 @@
 const { money, intOrNull, boolish } = require("../../customerPricing");
 const cloudinaryImageUpload = require("../../lib/cloudinaryImageUpload");
 const customerAvailability = require("../../services/public/customerAvailability");
-const { getBangkokNow } = require("../../services/jobTiming");
+const { getBangkokNow, computeJobTiming } = require("../../services/jobTiming");
 
 const MAX_CATALOG_IMAGES_PER_ITEM = 4;
 
@@ -588,24 +588,41 @@ async function listTechniciansForQueueCheck(pool, techType, opts = {}) {
 const QUEUE_TODAY_CACHE_TTL_MS = 60_000;
 const queueTodayCache = new Map();
 
-async function hasTechnicianQueueToday(pool, { jobCategory, acType, washVariant }) {
-  const today = getBangkokNow().ymd;
+async function hasTechnicianQueueToday(pool, { jobCategory, acType, washVariant }, slotDeps = {}) {
+  const getNowBangkokParts = slotDeps.getNowBangkokParts || getBangkokNow;
+  const today = getNowBangkokParts().ymd;
   const cacheKey = `${jobCategory}|${acType}|${washVariant || ""}|${today}`;
   const cached = queueTodayCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) return cached.value;
 
+  const { listBusyBlocksForTechOnDate, buildStartIntervalsByCollision, toMin, minToHHMM } = slotDeps;
+  if (!listBusyBlocksForTechOnDate || !buildStartIntervalsByCollision || !toMin || !minToHHMM) {
+    queueTodayCache.set(cacheKey, { value: false, expiresAt: Date.now() + QUEUE_TODAY_CACHE_TTL_MS });
+    return false;
+  }
+
   const deps = {
     pool,
     listTechniciansByType: (techType, opts) => listTechniciansForQueueCheck(pool, techType, opts),
+    listBusyBlocksForTechOnDate,
+    buildStartIntervalsByCollision,
+    toMin,
+    minToHHMM,
+    getNowBangkokParts,
   };
-  const eligible = await customerAvailability.eligibleCustomerTechnicians(deps, {
+  const durationMin = computeJobTiming(
+    { job_type: jobCategory, ac_type: acType, wash_variant: washVariant, machine_count: 1 },
+    { source: "catalog_queue_today" }
+  ).service_duration_min;
+  const result = await customerAvailability.computePublicCustomerSlots(deps, {
     date: today,
     tech_type: "company",
     job_type: jobCategory,
     ac_type: acType,
     wash_variant: washVariant || undefined,
+    duration_min: durationMin,
   });
-  const value = Array.isArray(eligible) && eligible.length > 0;
+  const value = Array.isArray(result && result.slots) && result.slots.some((s) => s.available);
   queueTodayCache.set(cacheKey, { value, expiresAt: Date.now() + QUEUE_TODAY_CACHE_TTL_MS });
   return value;
 }
@@ -615,7 +632,7 @@ async function hasTechnicianQueueToday(pool, { jobCategory, acType, washVariant 
 // fail-open contract as attachBookingCounts: a failure here (e.g. the
 // technician-matrix tables aren't ready yet) must never block the Store
 // from loading -- it just leaves has_queue_today=false for the affected rows.
-async function attachTodayQueueAvailability(pool, rows) {
+async function attachTodayQueueAvailability(pool, rows, slotDeps = {}) {
   rows.forEach((row) => { row.has_queue_today = false; });
   const bookableRows = rows.filter((row) => row.booking_mode === "bookable" && row.job_category && row.booking_ac_type);
   if (!bookableRows.length) return rows;
@@ -629,7 +646,7 @@ async function attachTodayQueueAvailability(pool, rows) {
         jobCategory: row.job_category,
         acType: row.booking_ac_type,
         washVariant: row.booking_wash_variant,
-      }));
+      }, slotDeps));
     }
     bookableRows.forEach((row) => {
       const key = `${row.job_category}|${row.booking_ac_type}|${row.booking_wash_variant || ""}`;
@@ -865,6 +882,13 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
   if (typeof requireAdminSession !== "function") {
     throw new Error("createCatalogItemRoutes requires a requireAdminSession middleware function");
   }
+  const queueSlotDeps = {
+    listBusyBlocksForTechOnDate: deps.listBusyBlocksForTechOnDate,
+    buildStartIntervalsByCollision: deps.buildStartIntervalsByCollision,
+    toMin: deps.toMin,
+    minToHHMM: deps.minToHHMM,
+    getNowBangkokParts: deps.getNowBangkokParts,
+  };
   const uploadCatalogImage = deps.uploadCatalogImage || cloudinaryImageUpload.uploadCatalogImage;
   const deleteCatalogImage = deps.deleteCatalogImage || cloudinaryImageUpload.deleteCatalogImage;
   const upload = multer({
@@ -1012,7 +1036,7 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
       await attachCatalogImages(pool, r.rows, marketplaceReady);
       await attachCatalogRatings(pool, r.rows, reviewsReady);
       await attachBookingCounts(pool, r.rows, jobsCatalogLinkReady);
-      await attachTodayQueueAvailability(pool, r.rows);
+      await attachTodayQueueAvailability(pool, r.rows, queueSlotDeps);
       res.json(r.rows.map(serializeCatalogRow));
     } catch (e) {
       console.error(e);
@@ -1042,7 +1066,7 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
       await attachCatalogImages(pool, [row], marketplaceReady);
       await attachCatalogRatings(pool, [row], reviewsReady);
       await attachBookingCounts(pool, [row], jobsCatalogLinkReady);
-      await attachTodayQueueAvailability(pool, [row]);
+      await attachTodayQueueAvailability(pool, [row], queueSlotDeps);
       res.json(serializeCatalogDetailRow(row));
     } catch (e) {
       console.error(e);

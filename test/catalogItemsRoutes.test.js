@@ -810,7 +810,17 @@ test("SQL injection attempts cannot change query structure", async () => {
 
 test("index.js passes the real requireAdminSession middleware into createCatalogItemRoutes", () => {
   const source = fs.readFileSync(path.join(__dirname, "..", "index.js"), "utf8");
-  assert.match(source, /app\.use\(createCatalogItemRoutes\(\{\s*pool,\s*requireAdminSession\s*\}\)\)/);
+  assert.match(source, /app\.use\(createCatalogItemRoutes\(\{\s*pool,\s*requireAdminSession,/);
+});
+
+test("index.js wires the real public slot-engine deps into createCatalogItemRoutes (has_queue_today must use real slots, not just eligibility)", () => {
+  const source = fs.readFileSync(path.join(__dirname, "..", "index.js"), "utf8");
+  const match = source.match(/app\.use\(createCatalogItemRoutes\(\{[^}]*\}\)\);/);
+  assert.ok(match, "createCatalogItemRoutes call site not found");
+  assert.match(match[0], /listBusyBlocksForTechOnDate/);
+  assert.match(match[0], /buildStartIntervalsByCollision/);
+  assert.match(match[0], /toMin/);
+  assert.match(match[0], /minToHHMM/);
 });
 
 test("admin POST rejects an invalid is_active value and never writes to the DB", async () => {
@@ -2818,6 +2828,43 @@ test("booking_count is also attached on the single-item public detail endpoint",
 });
 
 // ---- has_queue_today (real technician-eligibility check, never hardcoded) ----
+// Verifies an actual bookable start slot today (cutoff + collision), not just
+// matrix/calendar/capacity eligibility -- mirrors the real public slot engine's
+// deps shape (see customerSameDayTiming.test.js for the same pattern).
+
+function queueToMin(value) {
+  const [h, m] = String(value).split(":").map(Number);
+  return h * 60 + m;
+}
+
+function queueMinToHHMM(value) {
+  return `${String(Math.floor(value / 60)).padStart(2, "0")}:${String(value % 60).padStart(2, "0")}`;
+}
+
+function queueIntervalsFromBusy(blocks, startMin, endMin, durationMin) {
+  const dur = Math.max(1, Number(durationMin || 0));
+  const busy = (blocks || []).slice().sort((a, b) => a.startMin - b.startMin);
+  const out = [];
+  let cursor = startMin;
+  for (const b of busy) {
+    const bs = Math.max(startMin, Number(b.startMin));
+    const be = Math.min(endMin, Number(b.busyEndMin ?? b.endMin));
+    if (bs - cursor >= dur) out.push({ startMin: cursor, endMin: bs - dur });
+    cursor = Math.max(cursor, be);
+  }
+  if (endMin - cursor >= dur) out.push({ startMin: cursor, endMin: endMin - dur });
+  return out;
+}
+
+function queueSlotDeps({ busyBlocks = [], nowParts } = {}) {
+  return {
+    listBusyBlocksForTechOnDate: async () => busyBlocks,
+    buildStartIntervalsByCollision: queueIntervalsFromBusy,
+    toMin: queueToMin,
+    minToHHMM: queueMinToHHMM,
+    ...(nowParts ? { getNowBangkokParts: () => nowParts } : {}),
+  };
+}
 
 function bookableWashWallItem(overrides = {}) {
   return {
@@ -2837,10 +2884,12 @@ function eligibleTodayFixtures() {
   };
 }
 
-test("has_queue_today is true on the list endpoint when a real technician is eligible today", async () => {
+const QUEUE_TODAY_MORNING_NOW = { ymd: getBangkokNow().ymd, hour: 9, minute: 0 };
+
+test("has_queue_today is true on the list endpoint when a real bookable start slot exists today", async () => {
   createCatalogItemRoutes.__resetQueueTodayCacheForTests();
   const pool = makePool([bookableWashWallItem()], [], { marketplaceReady: true, ...eligibleTodayFixtures() });
-  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin, ...queueSlotDeps({ nowParts: QUEUE_TODAY_MORNING_NOW }) });
   await withServer(router, async (base) => {
     const res = await fetch(`${base}/catalog/items?customer=1`);
     const body = await res.json();
@@ -2852,7 +2901,7 @@ test("has_queue_today is true on the list endpoint when a real technician is eli
 test("has_queue_today is true and consistent on the single-item detail endpoint", async () => {
   createCatalogItemRoutes.__resetQueueTodayCacheForTests();
   const pool = makePool([bookableWashWallItem()], [], { marketplaceReady: true, ...eligibleTodayFixtures() });
-  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin, ...queueSlotDeps({ nowParts: QUEUE_TODAY_MORNING_NOW }) });
   await withServer(router, async (base) => {
     const res = await fetch(`${base}/catalog/items/1`);
     const body = await res.json();
@@ -2863,7 +2912,7 @@ test("has_queue_today is true and consistent on the single-item detail endpoint"
 test("has_queue_today is false (never guessed true) when no real technician is eligible today", async () => {
   createCatalogItemRoutes.__resetQueueTodayCacheForTests();
   const pool = makePool([bookableWashWallItem()], [], { marketplaceReady: true });
-  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin, ...queueSlotDeps({ nowParts: QUEUE_TODAY_MORNING_NOW }) });
   await withServer(router, async (base) => {
     const res = await fetch(`${base}/catalog/items?customer=1`);
     const body = await res.json();
@@ -2874,7 +2923,60 @@ test("has_queue_today is false (never guessed true) when no real technician is e
 test("has_queue_today is false for contact_admin items even with an eligible technician", async () => {
   createCatalogItemRoutes.__resetQueueTodayCacheForTests();
   const pool = makePool([bookableWashWallItem({ booking_mode: "contact_admin" })], [], { marketplaceReady: true, ...eligibleTodayFixtures() });
-  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin, ...queueSlotDeps({ nowParts: QUEUE_TODAY_MORNING_NOW }) });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/catalog/items?customer=1`);
+    const body = await res.json();
+    assert.equal(body.find((x) => x.item_id === 1).has_queue_today, false);
+  });
+});
+
+test("has_queue_today is false when the current time has already passed the technician's end-of-day window", async () => {
+  createCatalogItemRoutes.__resetQueueTodayCacheForTests();
+  const pool = makePool([bookableWashWallItem()], [], { marketplaceReady: true, ...eligibleTodayFixtures() });
+  const router = createCatalogItemRoutes({
+    pool, requireAdminSession: allowAdmin,
+    ...queueSlotDeps({ nowParts: { ymd: getBangkokNow().ymd, hour: 19, minute: 0 } }),
+  });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/catalog/items?customer=1`);
+    const body = await res.json();
+    assert.equal(body.find((x) => x.item_id === 1).has_queue_today, false);
+  });
+});
+
+test("has_queue_today is false when the technician's whole window today is already booked solid (collision-full)", async () => {
+  createCatalogItemRoutes.__resetQueueTodayCacheForTests();
+  const pool = makePool([bookableWashWallItem()], [], { marketplaceReady: true, ...eligibleTodayFixtures() });
+  const router = createCatalogItemRoutes({
+    pool, requireAdminSession: allowAdmin,
+    ...queueSlotDeps({
+      nowParts: QUEUE_TODAY_MORNING_NOW,
+      busyBlocks: [{ startMin: queueToMin("09:00"), busyEndMin: queueToMin("18:00") }],
+    }),
+  });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/catalog/items?customer=1`);
+    const body = await res.json();
+    assert.equal(body.find((x) => x.item_id === 1).has_queue_today, false);
+  });
+});
+
+test("has_queue_today is false when the technician's daily job capacity is already used up today", async () => {
+  createCatalogItemRoutes.__resetQueueTodayCacheForTests();
+  const today = getBangkokNow().ymd;
+  const pool = makePool([bookableWashWallItem()], [], {
+    marketplaceReady: true,
+    technicians: [{ username: "tech1", employment_type: "company", accept_status: "ready", customer_slot_visible: true }],
+    serviceMatrix: [{ username: "tech1", matrix_json: { job_types: { wash: true }, ac_types: { wall: true }, wash_wall_variants: { normal: true } } }],
+    calendarRows: [{ technician_username: "tech1", work_date: today, can_accept_advance_job: true, start_time: "09:00:00", end_time: "18:00:00", max_jobs_per_day: 1, max_units_per_day: null }],
+  });
+  const originalQuery = pool.query;
+  pool.query = async (sql, params) => {
+    if (String(sql).includes("WITH assigned AS")) return { rows: [{ technician_username: "tech1", jobs_count: 1, units_count: 1 }] };
+    return originalQuery(sql, params);
+  };
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin, ...queueSlotDeps({ nowParts: QUEUE_TODAY_MORNING_NOW }) });
   await withServer(router, async (base) => {
     const res = await fetch(`${base}/catalog/items?customer=1`);
     const body = await res.json();
@@ -2890,7 +2992,7 @@ test("has_queue_today fails open to false (never crashes the Store listing) when
     if (String(sql).includes("FROM public.technician_service_matrix")) throw new Error("simulated queue-today failure");
     return originalQuery(sql, params);
   };
-  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin, ...queueSlotDeps({ nowParts: QUEUE_TODAY_MORNING_NOW }) });
   await withServer(router, async (base) => {
     const res = await fetch(`${base}/catalog/items?customer=1`);
     const body = await res.json();
@@ -2906,7 +3008,7 @@ test("has_queue_today reuses one cached eligibility check across multiple items 
     bookableWashWallItem({ item_id: 2, item_name: "ล้างแอร์ผนัง B" }),
   ];
   const pool = makePool(items, [], { marketplaceReady: true, ...eligibleTodayFixtures() });
-  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin, ...queueSlotDeps({ nowParts: QUEUE_TODAY_MORNING_NOW }) });
   await withServer(router, async (base) => {
     const res = await fetch(`${base}/catalog/items?customer=1`);
     const body = await res.json();

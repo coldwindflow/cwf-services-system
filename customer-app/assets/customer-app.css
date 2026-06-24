@@ -4003,6 +4003,24 @@ body.has-contact-sheet { overflow: hidden; }
   overflow: hidden;
 }
 .store-related-card .price-text { font-size: 12.5px; }
+.store-related-card.is-current {
+  cursor: default;
+  position: relative;
+}
+.store-related-card.is-current .store-related-card-image-wrap {
+  outline: 2px solid var(--brand, #2f6fed);
+  outline-offset: 2px;
+}
+.store-related-card-badge {
+  align-self: flex-start;
+  background: var(--brand, #2f6fed);
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: 999px;
+}
 
 /* Collapsible product-detail accordion (native <details>/<summary>; default
    collapsed except where explicitly opened). */

@@ -116,24 +116,27 @@
     return (siblings || []).find((s) => String(s.item_id) === String(selectedVariantItemId)) || item;
   }
 
-  // Up to 4 same-family items, one representative per distinct wash variant,
-  // excluding this item's own variant group (those are BTU siblings, shown in
-  // the selector instead). Real catalog data only.
+  // Up to 4 same-family items, one representative per distinct wash variant
+  // (BTU siblings within one variant are not repeated -- those are shown in
+  // the BTU selector instead). Includes the item currently being viewed as
+  // the first card (marked is_current) so all real wash-method variants in
+  // the family are visible, not just the other three. Real catalog data only.
   function relatedFamilyItems(item, allItems) {
     if (!item || !item.job_category || !item.ac_type) return [];
     const fam = familyKey(item);
     const seenVariants = new Set([variantGroupKey(item)]);
-    const result = [];
+    const others = [];
     for (const it of allItems || []) {
       if (String(it.item_id) === String(item.item_id)) continue;
       if (familyKey(it) !== fam) continue;
       const vk = variantGroupKey(it);
       if (seenVariants.has(vk)) continue;
       seenVariants.add(vk);
-      result.push(it);
-      if (result.length >= 4) break;
+      others.push(it);
+      if (others.length >= 3) break;
     }
-    return result;
+    if (!others.length) return [];
+    return [{ ...item, is_current: true }, ...others];
   }
 
   function applyFilters(items) {
@@ -645,6 +648,16 @@
             const thumb = images.length
               ? `<img class="store-related-card-image" src="${root.utils.escapeHtml(images[0].image_url)}" alt="${root.utils.escapeHtml(images[0].alt_text || r.item_name || "")}" loading="lazy" onerror="this.style.visibility='hidden';">`
               : `<div class="store-card-image-placeholder" aria-hidden="true">ไม่มีรูปภาพ</div>`;
+            if (r.is_current) {
+              return `
+                <div class="store-related-card is-current" aria-current="true">
+                  <span class="store-related-card-badge">กำลังดู</span>
+                  <div class="store-related-card-image-wrap">${thumb}</div>
+                  <strong>${root.utils.escapeHtml(r.item_name || "-")}</strong>
+                  <span class="price-text${priceIsAsk(r) ? " is-estimate" : ""}">${root.utils.escapeHtml(priceLabel(r))}</span>
+                </div>
+              `;
+            }
             return `
               <button type="button" class="store-related-card" data-store-related-item="${root.utils.escapeHtml(String(r.item_id))}" aria-label="ดูรายละเอียด ${root.utils.escapeHtml(r.item_name || "")}">
                 <div class="store-related-card-image-wrap">${thumb}</div>
@@ -665,7 +678,7 @@
     {
       title: "ล้างปกติ",
       bestFor: "แอร์ที่ดูแลสม่ำเสมอ ไม่มีกลิ่นอับหรือคราบสะสมมาก",
-      thoroughness: "ล้างคอยล์เย็น แผ่นกรอง และถาดน้ำทิ้งจากภายนอกตัวเครื่อง",
+      thoroughness: "ล้างฟิลเตอร์ คอยล์เย็น คอยล์ร้อน และฉีดอัดท่อน้ำทิ้ง",
       advantages: "เร็ว ราคาประหยัด เหมาะกับการล้างตามรอบปกติ",
       depth: "ล้างจากภายนอกตัวเครื่อง ไม่ถอดชิ้นส่วนภายใน",
       dirtLevel: "เหมาะกับสิ่งสกปรกระดับน้อยถึงปานกลาง",
@@ -673,7 +686,7 @@
     {
       title: "ล้างพรีเมียม",
       bestFor: "แอร์ที่ใช้งานหนักหรือไม่ได้ล้างมานาน",
-      thoroughness: "ล้างลึกถึงคอยล์เย็น พัดลม พร้อมฟอกฆ่าเชื้อเพิ่มเติม",
+      thoroughness: "ล้างละเอียดคอยล์เย็น-คอยล์ร้อน ถอดรางน้ำทิ้งและโพรงกระรอกออกล้าง พร้อมฉีดอัดท่อน้ำทิ้ง",
       advantages: "ลดกลิ่นอับ ลดเชื้อแบคทีเรีย อากาศเย็นสะอาดขึ้น",
       depth: "เปิดฝาครอบและล้างชิ้นส่วนภายในมากกว่าล้างปกติ",
       dirtLevel: "เหมาะกับสิ่งสกปรกระดับปานกลางถึงมาก",
@@ -681,7 +694,7 @@
     {
       title: "แขวนคอยล์",
       bestFor: "แอร์ที่มีน้ำหยด ตันบ่อย หรือคอยล์สกปรกมาก",
-      thoroughness: "ถอดคอยล์เย็นออกมาล้างแบบแขวนนอกตัวเครื่อง",
+      thoroughness: "ถอดแผงไฟและถาดหลังออกมาทำความสะอาดอย่างละเอียด",
       advantages: "ล้างได้ทั่วถึงทุกซอกของคอยล์ แก้ปัญหาน้ำหยดได้ตรงจุด",
       depth: "ถอดชิ้นส่วนคอยล์ออกจากตัวเครื่องเพื่อล้าง",
       dirtLevel: "เหมาะกับสิ่งสกปรกระดับมากถึงมากที่สุด",
@@ -689,7 +702,7 @@
     {
       title: "ตัดล้างใหญ่",
       bestFor: "แอร์ที่ไม่เคยล้างใหญ่มานาน หรือมีปัญหาสะสมหลายจุด",
-      thoroughness: "ล้างและตรวจเช็คทุกชิ้นส่วนหลักของเครื่องอย่างละเอียด",
+      thoroughness: "ถอดล้างทั้งตัวเครื่อง ทำความสะอาดครบทุกระบบ โดยประเมินหน้างานก่อนเริ่มงาน",
       advantages: "ครอบคลุมที่สุด เหมาะกับการแก้ปัญหาสะสมระยะยาว",
       depth: "เปิดและถอดชิ้นส่วนภายในเกือบทั้งหมดเพื่อล้างลึกที่สุด",
       dirtLevel: "เหมาะกับสิ่งสกปรกสะสมมากที่สุด",

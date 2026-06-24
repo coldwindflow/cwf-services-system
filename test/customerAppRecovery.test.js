@@ -1549,7 +1549,7 @@ test("product detail restructures into a top always-visible zone plus default-co
   assert.match(html, /ช่างผ่านการคัดกรอง/);
 });
 
-test("related products slider shows up to 4 real same-family items, excludes the current item's own wash-variant group and mismatched categories, and is clickable", async () => {
+test("related products slider shows up to 4 real same-family items, includes the currently-viewed item marked as such, excludes BTU siblings of its own wash-variant and mismatched categories, and is clickable", async () => {
   const context = makeContext();
   const root = loadCustomerFrontend(context);
   root.state.setRoute("storeItem-10");
@@ -1584,6 +1584,12 @@ test("related products slider shows up to 4 real same-family items, excludes the
 
   const relatedSection = html.slice(html.indexOf("บริการที่เกี่ยวข้อง"));
   assert.equal((relatedSection.match(/data-store-related-item="/g) || []).length, 3);
+  // The currently-viewed item (10, "ล้างธรรมดา") is included too, marked as
+  // currently viewing rather than as a clickable "related" card -- all 4 real
+  // wash methods are now visible, not just the other 3.
+  assert.match(relatedSection, /store-related-card is-current/);
+  assert.match(relatedSection, /กำลังดู/);
+  assert.equal((relatedSection.match(/store-related-card-image-wrap/g) || []).length, 4);
 
   const relatedButtons = container.querySelectorAll("[data-store-related-item]");
   const target = relatedButtons.find((b) => b.getAttribute("data-store-related-item") === "12");
