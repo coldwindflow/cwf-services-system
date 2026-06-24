@@ -1,7 +1,7 @@
 const { money, intOrNull, boolish } = require("../../customerPricing");
 const cloudinaryImageUpload = require("../../lib/cloudinaryImageUpload");
 const customerAvailability = require("../../services/public/customerAvailability");
-const { getBangkokNow, computeJobTiming } = require("../../services/jobTiming");
+const { getBangkokNow, computeJobTiming, minimumStartForDate } = require("../../services/jobTiming");
 
 const MAX_CATALOG_IMAGES_PER_ITEM = 4;
 
@@ -578,12 +578,22 @@ async function listTechniciansForQueueCheck(pool, techType, opts = {}) {
   return r.rows || [];
 }
 
+function queueCutoffToMin(hhmm) {
+  const m = /^(\d{2}):(\d{2})$/.exec(String(hhmm || ""));
+  if (!m) return NaN;
+  return Number(m[1]) * 60 + Number(m[2]);
+}
+
 // "มีคิววันนี้" is real today-availability, derived the same way the booking
 // flow itself decides eligibility (server/services/public/customerAvailability's
 // eligibleCustomerTechnicians: service-matrix match + today's advance-calendar
-// gate + remaining daily capacity) -- never a guess, never hardcoded. Scoped to
-// a single in-process cache per (job/ac/wash) combo so a Store list page with
-// many items only re-runs the eligibility check once per distinct service
+// gate + remaining daily capacity), PLUS a same-day cutoff check so a
+// technician whose work window for today has already ended never shows a
+// false "has queue today" badge. (Existing-job collision within the
+// remaining window is not checked here -- that's the real booking flow's
+// job at reservation time, not the Store badge's.) Scoped to a single
+// in-process cache per (job/ac/wash) combo so a Store list page with many
+// items only re-runs the eligibility check once per distinct service
 // combination, not once per item.
 const QUEUE_TODAY_CACHE_TTL_MS = 60_000;
 const queueTodayCache = new Map();
@@ -595,34 +605,32 @@ async function hasTechnicianQueueToday(pool, { jobCategory, acType, washVariant 
   const cached = queueTodayCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) return cached.value;
 
-  const { listBusyBlocksForTechOnDate, buildStartIntervalsByCollision, toMin, minToHHMM } = slotDeps;
-  if (!listBusyBlocksForTechOnDate || !buildStartIntervalsByCollision || !toMin || !minToHHMM) {
-    queueTodayCache.set(cacheKey, { value: false, expiresAt: Date.now() + QUEUE_TODAY_CACHE_TTL_MS });
-    return false;
-  }
-
   const deps = {
     pool,
     listTechniciansByType: (techType, opts) => listTechniciansForQueueCheck(pool, techType, opts),
-    listBusyBlocksForTechOnDate,
-    buildStartIntervalsByCollision,
-    toMin,
-    minToHHMM,
-    getNowBangkokParts,
   };
-  const durationMin = computeJobTiming(
-    { job_type: jobCategory, ac_type: acType, wash_variant: washVariant, machine_count: 1 },
-    { source: "catalog_queue_today" }
-  ).service_duration_min;
-  const result = await customerAvailability.computePublicCustomerSlots(deps, {
+  const eligible = await customerAvailability.eligibleCustomerTechnicians(deps, {
     date: today,
     tech_type: "company",
     job_type: jobCategory,
     ac_type: acType,
     wash_variant: washVariant || undefined,
-    duration_min: durationMin,
   });
-  const value = Array.isArray(result && result.slots) && result.slots.some((s) => s.available);
+
+  const durationMin = computeJobTiming(
+    { job_type: jobCategory, ac_type: acType, wash_variant: washVariant, machine_count: 1 },
+    { source: "catalog_queue_today" }
+  ).service_duration_min;
+  const cutoff = minimumStartForDate(today, {
+    ui_start_min: 0,
+    ui_end_min: 24 * 60,
+    now_parts: getNowBangkokParts(),
+  });
+  const cutoffMin = cutoff.minimum_start_min;
+  const value = (Array.isArray(eligible) ? eligible : []).some((tech) => {
+    const endMin = queueCutoffToMin(String((tech.advance_calendar || {}).end_time || "").slice(0, 5));
+    return Number.isFinite(endMin) && (endMin - cutoffMin) >= durationMin;
+  });
   queueTodayCache.set(cacheKey, { value, expiresAt: Date.now() + QUEUE_TODAY_CACHE_TTL_MS });
   return value;
 }
@@ -882,13 +890,7 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
   if (typeof requireAdminSession !== "function") {
     throw new Error("createCatalogItemRoutes requires a requireAdminSession middleware function");
   }
-  const queueSlotDeps = {
-    listBusyBlocksForTechOnDate: deps.listBusyBlocksForTechOnDate,
-    buildStartIntervalsByCollision: deps.buildStartIntervalsByCollision,
-    toMin: deps.toMin,
-    minToHHMM: deps.minToHHMM,
-    getNowBangkokParts: deps.getNowBangkokParts,
-  };
+  const queueSlotDeps = deps.getNowBangkokParts ? { getNowBangkokParts: deps.getNowBangkokParts } : {};
   const uploadCatalogImage = deps.uploadCatalogImage || cloudinaryImageUpload.uploadCatalogImage;
   const deleteCatalogImage = deps.deleteCatalogImage || cloudinaryImageUpload.deleteCatalogImage;
   const upload = multer({
