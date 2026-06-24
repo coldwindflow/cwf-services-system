@@ -3786,6 +3786,13 @@ body.has-contact-sheet { overflow: hidden; }
 .store-rating-value { color: #92660a; font-weight: 700; }
 .store-rating-count { color: #92660a; font-weight: 500; }
 
+.store-booking-count {
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--muted);
+  margin-top: 1px;
+}
+
 .store-card-price {
   display: flex;
   align-items: baseline;

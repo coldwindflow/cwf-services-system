@@ -5,9 +5,21 @@ const express = require("express");
 
 const createCatalogReviewRoutes = require("../server/routes/catalog/reviews");
 
+// isTrackingReviewSchemaReady caches "ready" at module scope (deliberately,
+// so index.js's /public/track route shares the same cached check). That
+// means once any test in this file makes it ready=true, it stays true for
+// the rest of the process. Tests that specifically need to observe the
+// not-ready (pre-migration) path must force a fresh module instance.
+const reviewsModulePath = require.resolve("../server/routes/catalog/reviews");
+function freshCreateCatalogReviewRoutes(...args) {
+  delete require.cache[reviewsModulePath];
+  const fresh = require(reviewsModulePath);
+  return fresh(...args);
+}
+
 const DONE_STATUS = "เสร็จแล้ว";
 
-function makePool({ schemaReady = true, items = [], jobs = [], reviews = [] } = {}) {
+function makePool({ schemaReady = true, trackingSchemaReady = false, items = [], jobs = [], reviews = [] } = {}) {
   const state = {
     items: items.map((x) => ({ ...x })),
     jobs: jobs.map((x) => ({ ...x })),
@@ -23,6 +35,36 @@ function makePool({ schemaReady = true, items = [], jobs = [], reviews = [] } = 
     }
     if (s.includes("information_schema.columns") && s.includes("catalog_item_id', 'customer_sub")) {
       return { rows: [{ cnt: schemaReady ? 2 : 0 }] };
+    }
+    if (s.includes("information_schema.columns") && s.includes("table_name = 'catalog_item_reviews'") && s.includes("review_source")) {
+      return { rows: [{ cnt: trackingSchemaReady ? 4 : 0 }] };
+    }
+    // historicalServiceResolver's own jobs.catalog_item_id readiness check (singular column_name, no customer_sub).
+    if (s.includes("table_name = 'jobs'") && s.includes("column_name = 'catalog_item_id'") && !s.includes("customer_sub")) {
+      return { rows: [{ cnt: schemaReady ? 1 : 0 }] };
+    }
+
+    if (s.includes("FROM public.jobs") && s.includes("WHERE booking_token = $1 OR booking_code = $1")) {
+      const [token] = params;
+      const job = state.jobs.find((j) => j.booking_token === token || j.booking_code === token);
+      return { rows: job ? [{ ...job }] : [] };
+    }
+
+    if (s.includes("FROM public.jobs WHERE job_id = $1")) {
+      const [jobId] = params;
+      const job = state.jobs.find((j) => Number(j.job_id) === Number(jobId));
+      if (!job) return { rows: [] };
+      return { rows: [{ job_id: job.job_id, job_type: job.job_type, catalog_item_id: schemaReady ? (job.catalog_item_id ?? null) : null }] };
+    }
+
+    if (s.includes("FROM public.job_units ju") && s.includes("WHERE ju.job_id = $1")) {
+      return { rows: [] }; // no job_units fixtures exercised here; see historicalServiceResolver.test.js for unit-matching coverage
+    }
+
+    if (s.includes("SELECT review_id, rating, comment, moderation_status, created_at") && s.includes("WHERE completed_job_id = $1")) {
+      const [jobId] = params;
+      const row = state.reviews.find((r) => Number(r.completed_job_id) === Number(jobId));
+      return { rows: row ? [{ ...row }] : [] };
     }
 
     if (/^\s*BEGIN\s*$/i.test(s.trim())) return { rows: [] };
@@ -49,6 +91,37 @@ function makePool({ schemaReady = true, items = [], jobs = [], reviews = [] } = 
       return { rows: found ? [{ item_id: found.item_id }] : [] };
     }
 
+    if (s.includes("INSERT INTO public.catalog_item_reviews") && s.includes("tracking_token_hash")) {
+      const [itemId, jobId, customerIdentity, rating, comment, reviewScope, serviceType, tokenHash] = params;
+      if (state.racyDuplicateJobIds?.has(Number(jobId)) || state.reviews.some((r) => Number(r.completed_job_id) === Number(jobId))) {
+        const err = new Error("duplicate key value violates unique constraint");
+        err.code = "23505";
+        throw err;
+      }
+      const row = {
+        review_id: nextReviewId++,
+        item_id: itemId == null ? null : Number(itemId),
+        completed_job_id: Number(jobId),
+        customer_identity: customerIdentity,
+        rating: Number(rating),
+        comment,
+        moderation_status: "pending",
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        moderated_at: null,
+        moderated_by: null,
+        review_source: "tracking",
+        review_scope: reviewScope,
+        service_type: serviceType,
+        tracking_token_hash: tokenHash,
+        assigned_item_id: null,
+        assigned_by: null,
+        assigned_at: null,
+      };
+      state.reviews.push(row);
+      return { rows: [{ review_id: row.review_id, created_at: row.created_at }] };
+    }
+
     if (s.includes("INSERT INTO public.catalog_item_reviews")) {
       const [itemId, jobId, customerIdentity, rating, comment] = params;
       if (state.racyDuplicateJobIds?.has(Number(jobId)) || state.reviews.some((r) => Number(r.completed_job_id) === Number(jobId))) {
@@ -68,6 +141,12 @@ function makePool({ schemaReady = true, items = [], jobs = [], reviews = [] } = 
         updated_at: new Date().toISOString(),
         moderated_at: null,
         moderated_by: null,
+        review_source: "customer_app",
+        review_scope: "item",
+        service_type: null,
+        assigned_item_id: null,
+        assigned_by: null,
+        assigned_at: null,
       };
       state.reviews.push(row);
       return { rows: [{ review_id: row.review_id, created_at: row.created_at }] };
@@ -93,11 +172,16 @@ function makePool({ schemaReady = true, items = [], jobs = [], reviews = [] } = 
       let rows = state.reviews.map((r) => ({
         ...r,
         item_name: (state.items.find((it) => Number(it.item_id) === Number(r.item_id)) || {}).item_name || "?",
+        assigned_item_name: r.assigned_item_id == null ? null : ((state.items.find((it) => Number(it.item_id) === Number(r.assigned_item_id)) || {}).item_name || "?"),
       }));
       let idx = 0;
       if (s.includes("r.moderation_status = $")) {
         idx += 1;
         rows = rows.filter((r) => r.moderation_status === params[idx - 1]);
+      }
+      if (s.includes("r.review_source = $")) {
+        idx += 1;
+        rows = rows.filter((r) => r.review_source === params[idx - 1]);
       }
       if (s.includes("r.item_id = $")) {
         idx += 1;
@@ -107,13 +191,28 @@ function makePool({ schemaReady = true, items = [], jobs = [], reviews = [] } = 
     }
 
     if (s.includes("UPDATE public.catalog_item_reviews")) {
-      const [nextStatus, moderatedBy, reviewId] = params;
+      const reviewId = params[params.length - 1];
       const row = state.reviews.find((r) => Number(r.review_id) === Number(reviewId));
       if (!row) return { rows: [] };
-      row.moderation_status = nextStatus;
-      row.moderated_by = moderatedBy;
-      row.moderated_at = new Date().toISOString();
-      return { rows: [{ review_id: row.review_id, moderation_status: row.moderation_status, moderated_at: row.moderated_at, moderated_by: row.moderated_by }] };
+      // Walk "SET col = $n" pairs in the same order they appear in the SQL,
+      // matching them positionally against params (literal NOW() sets carry no param).
+      const setClauses = s.split("SET")[1].split("WHERE")[0].split(",").map((c) => c.trim());
+      let pIdx = 0;
+      for (const clause of setClauses) {
+        const paramMatch = clause.match(/^(\w+)\s*=\s*\$(\d+)$/);
+        if (paramMatch) { row[paramMatch[1]] = params[pIdx++]; continue; }
+        const nowMatch = clause.match(/^(\w+)\s*=\s*NOW\(\)$/);
+        if (nowMatch) row[nowMatch[1]] = new Date().toISOString();
+      }
+      return { rows: [{
+        review_id: row.review_id,
+        moderation_status: row.moderation_status,
+        moderated_at: row.moderated_at,
+        moderated_by: row.moderated_by,
+        assigned_item_id: row.assigned_item_id ?? null,
+        assigned_by: row.assigned_by ?? null,
+        assigned_at: row.assigned_at ?? null,
+      }] };
     }
 
     throw new Error(`unhandled query in fake pool: ${s.slice(0, 120)}`);
@@ -548,6 +647,304 @@ test("submitting a review before the migration has run returns 503 instead of a 
   await withServer(router, async (base) => {
     const res = await fetch(`${base}/catalog/items/1/reviews`, {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ rating: 5 }),
+    });
+    assert.equal(res.status, 503);
+  });
+});
+
+// ---- Tracking-page reviews (no Customer App login, authorized by the job's
+// own booking_token/booking_code) ----
+
+test("GET /public/catalog-reviews/status is honest-empty before the tracking-review migration has run", async () => {
+  const pool = makePool({ trackingSchemaReady: false });
+  const router = createCatalogReviewRoutes({ pool, requireCustomerJwt: requireCustomerJwtFor(null), requireAdminSession: denyAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/public/catalog-reviews/status?token=tok-1`);
+    const body = await res.json();
+    assert.equal(res.status, 200);
+    assert.deepEqual(body, { eligible: false, already_reviewed: false });
+  });
+});
+
+test("GET /public/catalog-reviews/status requires a token and 404s for an unknown token", async () => {
+  const pool = makePool({ trackingSchemaReady: true });
+  const router = createCatalogReviewRoutes({ pool, requireCustomerJwt: requireCustomerJwtFor(null), requireAdminSession: denyAdmin });
+  await withServer(router, async (base) => {
+    const missing = await fetch(`${base}/public/catalog-reviews/status`);
+    assert.equal(missing.status, 400);
+
+    const unknown = await fetch(`${base}/public/catalog-reviews/status?token=does-not-exist`);
+    assert.equal(unknown.status, 404);
+  });
+});
+
+test("GET /public/catalog-reviews/status reflects eligible/already-reviewed state derived entirely from the job behind the token", async () => {
+  const pool = makePool({
+    trackingSchemaReady: true,
+    jobs: [
+      { job_id: 10, job_type: "ล้าง", catalog_item_id: 1, job_status: DONE_STATUS, canceled_at: null, booking_token: "tok-eligible", customer_name: "สมชาย" },
+      { job_id: 11, job_type: "ล้าง", catalog_item_id: 1, job_status: "รอดำเนินการ", canceled_at: null, booking_token: "tok-pending", customer_name: "สมหญิง" },
+    ],
+    reviews: [{ review_id: 1, item_id: 1, completed_job_id: 10, customer_identity: "สมชาย", rating: 5, comment: "ดี", moderation_status: "pending", created_at: "2026-06-01T00:00:00Z" }],
+  });
+  const router = createCatalogReviewRoutes({ pool, requireCustomerJwt: requireCustomerJwtFor(null), requireAdminSession: denyAdmin });
+  await withServer(router, async (base) => {
+    const reviewed = await (await fetch(`${base}/public/catalog-reviews/status?token=tok-eligible`)).json();
+    assert.equal(reviewed.already_reviewed, true);
+    assert.equal(reviewed.eligible, false);
+    assert.equal(reviewed.review.rating, 5);
+
+    const notDone = await (await fetch(`${base}/public/catalog-reviews/status?token=tok-pending`)).json();
+    assert.equal(notDone.eligible, false);
+    assert.equal(notDone.already_reviewed, false);
+  });
+});
+
+test("POST /public/catalog-reviews never trusts client-supplied job_id/item_id and derives the target from the token's real job", async () => {
+  const pool = makePool({
+    trackingSchemaReady: true,
+    jobs: [{ job_id: 20, job_type: "ล้าง", catalog_item_id: 1, job_status: DONE_STATUS, canceled_at: null, booking_token: "tok-20", customer_name: "สมชาย" }],
+  });
+  const router = createCatalogReviewRoutes({ pool, requireCustomerJwt: requireCustomerJwtFor(null), requireAdminSession: denyAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/public/catalog-reviews`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ token: "tok-20", rating: 5, comment: "ดีมาก", job_id: 999, item_id: 999 }),
+    });
+    const body = await res.json();
+    assert.equal(res.status, 201);
+    assert.equal(pool.state.reviews.length, 1);
+    assert.equal(pool.state.reviews[0].completed_job_id, 20);
+    assert.equal(pool.state.reviews[0].item_id, 1); // resolved from the job's own catalog_item_id, never the client's item_id
+    assert.equal(pool.state.reviews[0].review_source, "tracking");
+    assert.equal(pool.state.reviews[0].moderation_status, "pending");
+    assert.equal(body.moderation_status, "pending");
+  });
+});
+
+test("POST /public/catalog-reviews stores only a SHA-256 hash of the token, never the plaintext", async () => {
+  const pool = makePool({
+    trackingSchemaReady: true,
+    jobs: [{ job_id: 21, job_type: "ล้าง", catalog_item_id: 1, job_status: DONE_STATUS, canceled_at: null, booking_token: "super-secret-token", customer_name: "สมชาย" }],
+  });
+  const router = createCatalogReviewRoutes({ pool, requireCustomerJwt: requireCustomerJwtFor(null), requireAdminSession: denyAdmin });
+  await withServer(router, async (base) => {
+    await fetch(`${base}/public/catalog-reviews`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ token: "super-secret-token", rating: 5 }),
+    });
+    const stored = pool.state.reviews[0].tracking_token_hash;
+    assert.ok(stored);
+    assert.notEqual(stored, "super-secret-token");
+    assert.equal(stored.length, 64); // hex sha256
+  });
+});
+
+test("POST /public/catalog-reviews rejects a job that is not genuinely completed or has been cancelled", async () => {
+  const pool = makePool({
+    trackingSchemaReady: true,
+    jobs: [
+      { job_id: 22, job_type: "ล้าง", catalog_item_id: 1, job_status: "รอดำเนินการ", canceled_at: null, booking_token: "tok-pending", customer_name: "สมชาย" },
+      { job_id: 23, job_type: "ล้าง", catalog_item_id: 1, job_status: DONE_STATUS, canceled_at: "2026-06-01T00:00:00Z", booking_token: "tok-canceled", customer_name: "สมหญิง" },
+    ],
+  });
+  const router = createCatalogReviewRoutes({ pool, requireCustomerJwt: requireCustomerJwtFor(null), requireAdminSession: denyAdmin });
+  await withServer(router, async (base) => {
+    const pending = await fetch(`${base}/public/catalog-reviews`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token: "tok-pending", rating: 5 }),
+    });
+    assert.equal(pending.status, 403);
+
+    const canceled = await fetch(`${base}/public/catalog-reviews`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token: "tok-canceled", rating: 5 }),
+    });
+    assert.equal(canceled.status, 403);
+    assert.equal(pool.state.reviews.length, 0);
+  });
+});
+
+test("POST /public/catalog-reviews rejects an unknown token and a missing token, without leaking which is which beyond a generic error", async () => {
+  const pool = makePool({ trackingSchemaReady: true });
+  const router = createCatalogReviewRoutes({ pool, requireCustomerJwt: requireCustomerJwtFor(null), requireAdminSession: denyAdmin });
+  await withServer(router, async (base) => {
+    const missing = await fetch(`${base}/public/catalog-reviews`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ rating: 5 }),
+    });
+    assert.equal(missing.status, 400);
+
+    const unknown = await fetch(`${base}/public/catalog-reviews`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token: "ghost", rating: 5 }),
+    });
+    assert.equal(unknown.status, 403);
+  });
+});
+
+test("a duplicate tracking-review submission for the same job is rejected and never inserts a second row", async () => {
+  const pool = makePool({
+    trackingSchemaReady: true,
+    jobs: [{ job_id: 24, job_type: "ล้าง", catalog_item_id: 1, job_status: DONE_STATUS, canceled_at: null, booking_token: "tok-24", customer_name: "สมชาย" }],
+    reviews: [{ review_id: 1, item_id: 1, completed_job_id: 24, customer_identity: "สมชาย", rating: 4, comment: null, moderation_status: "approved", created_at: "2026-06-01T00:00:00Z" }],
+  });
+  const router = createCatalogReviewRoutes({ pool, requireCustomerJwt: requireCustomerJwtFor(null), requireAdminSession: denyAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/public/catalog-reviews`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token: "tok-24", rating: 5 }),
+    });
+    assert.equal(res.status, 409); // caught by the DB unique constraint on completed_job_id, same path as the concurrent-duplicate test below
+    assert.equal(pool.state.reviews.length, 1);
+  });
+});
+
+test("a concurrent duplicate tracking-review caught only by the DB unique constraint returns 409, not a 500", async () => {
+  const pool = makePool({
+    trackingSchemaReady: true,
+    jobs: [{ job_id: 25, job_type: "ล้าง", catalog_item_id: 1, job_status: DONE_STATUS, canceled_at: null, booking_token: "tok-25", customer_name: "สมชาย" }],
+  });
+  pool.state.racyDuplicateJobIds = new Set([25]);
+  const router = createCatalogReviewRoutes({ pool, requireCustomerJwt: requireCustomerJwtFor(null), requireAdminSession: denyAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/public/catalog-reviews`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token: "tok-25", rating: 5 }),
+    });
+    assert.equal(res.status, 409);
+    assert.equal(pool.state.reviews.length, 0);
+  });
+});
+
+test("a job with no determinable catalog item but a known job_type falls back to a service_type-scoped tracking review", async () => {
+  const pool = makePool({
+    trackingSchemaReady: true,
+    jobs: [{ job_id: 26, job_type: "ซ่อม", catalog_item_id: null, job_status: DONE_STATUS, canceled_at: null, booking_token: "tok-26", customer_name: "สมชาย" }],
+  });
+  const router = createCatalogReviewRoutes({ pool, requireCustomerJwt: requireCustomerJwtFor(null), requireAdminSession: denyAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/public/catalog-reviews`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token: "tok-26", rating: 4 }),
+    });
+    assert.equal(res.status, 201);
+    assert.equal(pool.state.reviews[0].item_id, null);
+    assert.equal(pool.state.reviews[0].review_scope, "service_type");
+    assert.equal(pool.state.reviews[0].service_type, "ซ่อมแอร์");
+  });
+});
+
+test("a job with an unmappable job_type falls back to an overall-scoped tracking review that is still submittable", async () => {
+  const pool = makePool({
+    trackingSchemaReady: true,
+    jobs: [{ job_id: 27, job_type: "ย้าย", catalog_item_id: null, job_status: DONE_STATUS, canceled_at: null, booking_token: "tok-27", customer_name: "สมชาย" }],
+  });
+  const router = createCatalogReviewRoutes({ pool, requireCustomerJwt: requireCustomerJwtFor(null), requireAdminSession: denyAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/public/catalog-reviews`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token: "tok-27", rating: 3 }),
+    });
+    assert.equal(res.status, 201);
+    assert.equal(pool.state.reviews[0].item_id, null);
+    assert.equal(pool.state.reviews[0].review_scope, "overall");
+    assert.equal(pool.state.reviews[0].service_type, null);
+  });
+});
+
+test("submitting a tracking review before the migration has run returns 503 instead of a fake success", async () => {
+  const pool = makePool({ trackingSchemaReady: false });
+  const router = freshCreateCatalogReviewRoutes({ pool, requireCustomerJwt: requireCustomerJwtFor(null), requireAdminSession: denyAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/public/catalog-reviews`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token: "tok-x", rating: 5 }),
+    });
+    assert.equal(res.status, 503);
+  });
+});
+
+test("tracking-review submission is rate-limited per token hash without affecting GET status", async () => {
+  const pool = makePool({
+    trackingSchemaReady: true,
+    jobs: [{ job_id: 28, job_type: "ล้าง", catalog_item_id: 1, job_status: DONE_STATUS, canceled_at: null, booking_token: "tok-28", customer_name: "สมชาย" }],
+  });
+  pool.state.racyDuplicateJobIds = new Set([28]); // force every insert to "fail" so the limiter (not eligibility) is what's under test
+  const router = createCatalogReviewRoutes({
+    pool,
+    requireCustomerJwt: requireCustomerJwtFor(null),
+    requireAdminSession: denyAdmin,
+    trackingReviewSubmitTokenLimitMax: 1,
+    trackingReviewSubmitIpLimitMax: 1000,
+  });
+  await withServer(router, async (base) => {
+    const post = () => fetch(`${base}/public/catalog-reviews`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token: "tok-28", rating: 5 }),
+    });
+    const first = await post();
+    const second = await post();
+    assert.equal(first.status, 409);
+    assert.equal(second.status, 429);
+
+    const status = await fetch(`${base}/public/catalog-reviews/status?token=tok-28`);
+    assert.equal(status.status, 200);
+  });
+});
+
+test("admin moderation queue includes tracking-sourced and itemless (service_type/overall) reviews, with review_source and service_type visible", async () => {
+  const pool = makePool({
+    trackingSchemaReady: true,
+    items: [{ item_id: 1, item_name: "ล้างแอร์ผนัง" }],
+    reviews: [
+      { review_id: 1, item_id: 1, completed_job_id: 10, customer_identity: "A", rating: 5, comment: "ดี", moderation_status: "pending", created_at: "2026-06-01T00:00:00Z", review_source: "customer_app", review_scope: "item", service_type: null },
+      { review_id: 2, item_id: null, completed_job_id: 11, customer_identity: "B", rating: 4, comment: "โอเค", moderation_status: "pending", created_at: "2026-06-02T00:00:00Z", review_source: "tracking", review_scope: "service_type", service_type: "ซ่อมแอร์" },
+      { review_id: 3, item_id: null, completed_job_id: 12, customer_identity: "C", rating: 3, comment: null, moderation_status: "pending", created_at: "2026-06-03T00:00:00Z", review_source: "tracking", review_scope: "overall", service_type: null },
+    ],
+  });
+  const router = createCatalogReviewRoutes({ pool, requireCustomerJwt: requireCustomerJwtFor(null), requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const all = await (await fetch(`${base}/admin/catalog/reviews`)).json();
+    assert.equal(all.length, 3);
+    const itemless = all.filter((r) => r.item_id === null);
+    assert.equal(itemless.length, 2); // proves the admin list uses LEFT JOIN, not INNER JOIN, against catalog_items
+    const trackingOnly = await (await fetch(`${base}/admin/catalog/reviews?source=tracking`)).json();
+    assert.equal(trackingOnly.length, 2);
+    const serviceTypeReview = all.find((r) => r.review_id === 2);
+    assert.equal(serviceTypeReview.review_scope, "service_type");
+    assert.equal(serviceTypeReview.service_type, "ซ่อมแอร์");
+  });
+});
+
+test("admin can assign/reassign an ambiguous tracking review to a specific catalog item, audited separately from moderation", async () => {
+  const pool = makePool({
+    trackingSchemaReady: true,
+    items: [{ item_id: 1, item_name: "ล้างแอร์ผนัง" }, { item_id: 2, item_name: "ซ่อมแอร์" }],
+    reviews: [{ review_id: 1, item_id: null, completed_job_id: 11, customer_identity: "B", rating: 4, comment: "โอเค", moderation_status: "pending", created_at: "2026-06-02T00:00:00Z", review_source: "tracking", review_scope: "service_type", service_type: "ซ่อมแอร์" }],
+  });
+  const router = createCatalogReviewRoutes({ pool, requireCustomerJwt: requireCustomerJwtFor(null), requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const invalidItem = await fetch(`${base}/admin/catalog/reviews/1`, {
+      method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ assigned_item_id: 999 }),
+    });
+    assert.equal(invalidItem.status, 404);
+
+    const assign = await fetch(`${base}/admin/catalog/reviews/1`, {
+      method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ assigned_item_id: 2 }),
+    });
+    const assignBody = await assign.json();
+    assert.equal(assign.status, 200);
+    assert.equal(assignBody.assigned_item_id, 2);
+    assert.equal(assignBody.assigned_by, "admin1");
+    assert.ok(assignBody.assigned_at);
+    // the review's original scope/target is preserved -- assignment is additive, not a mutation of item_id
+    assert.equal(pool.state.reviews[0].item_id, null);
+    assert.equal(pool.state.reviews[0].review_scope, "service_type");
+  });
+});
+
+test("admin review assignment is rejected before the tracking-review migration has run", async () => {
+  const pool = makePool({
+    trackingSchemaReady: false,
+    items: [{ item_id: 1, item_name: "ล้างแอร์ผนัง" }],
+    reviews: [{ review_id: 1, item_id: 1, completed_job_id: 10, customer_identity: "A", rating: 5, comment: "ดี", moderation_status: "pending", created_at: "2026-06-01T00:00:00Z" }],
+  });
+  const router = freshCreateCatalogReviewRoutes({ pool, requireCustomerJwt: requireCustomerJwtFor(null), requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/reviews/1`, {
+      method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ assigned_item_id: 1 }),
     });
     assert.equal(res.status, 503);
   });

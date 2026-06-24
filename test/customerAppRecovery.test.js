@@ -995,12 +995,14 @@ test("store card shows the CWF featured ribbon only for featured items, and an h
   assert.equal((body.innerHTML.match(/store-rating-badge/g) || []).length, 2);
   assert.equal((body.innerHTML.match(/store-rating-label">รีวิว/g) || []).length, 2);
   assert.doesNotMatch(body.innerHTML, /มาตรฐาน CWF/);
-  // neither item has real reviews yet, so both must render honest empty stars and a (0) count
-  assert.equal((body.innerHTML.match(/store-rating-star is-filled/g) || []).length, 0);
-  assert.equal((body.innerHTML.match(/store-rating-count">\(0\)<\/span>/g) || []).length, 2);
+  // neither item has real reviews yet, so both must render the default
+  // display-only 5-filled-star badge with no value/count label.
+  assert.equal((body.innerHTML.match(/store-rating-star is-filled/g) || []).length, 10);
+  assert.doesNotMatch(body.innerHTML, /store-rating-count/);
+  assert.doesNotMatch(body.innerHTML, /store-rating-value/);
 });
 
-test("rating badge renders real rating_average/review_count with half stars and a visible count, but falls back to an honest zero-review badge when there is no real data", async () => {
+test("rating badge renders real rating_average/review_count with half stars and a visible count, but falls back to the default 5-star badge when there is no real data", async () => {
   const context = makeContext();
   const root = loadCustomerFrontend(context);
   root.api.loadCatalogItems = async () => [
@@ -1016,8 +1018,9 @@ test("rating badge renders real rating_average/review_count with half stars and 
   assert.match(body.innerHTML, /store-rating-star is-half/);
   assert.match(body.innerHTML, /store-rating-value">4\.5<\/span>/);
   assert.match(body.innerHTML, /store-rating-count">\(12\)<\/span>/);
-  assert.match(body.innerHTML, /store-rating-count">\(0\)<\/span>/);
-  assert.equal((body.innerHTML.match(/store-rating-star is-filled/g) || []).length, 4);
+  // item 1 (real data) contributes 4 filled stars + 1 half; item 2 (no
+  // reviews yet) contributes 5 filled stars from the default badge.
+  assert.equal((body.innerHTML.match(/store-rating-star is-filled/g) || []).length, 9);
 });
 
 test("rating badge star fill logic only shows a half star once the fractional part reaches 0.5; below that it rounds down to full/empty stars only", async () => {
@@ -1038,7 +1041,7 @@ test("rating badge star fill logic only shows a half star once the fractional pa
   assert.equal((body.innerHTML.match(/store-rating-star is-filled/g) || []).length, 4);
 });
 
-test("rating badge ignores legacy rating_value and fails safe to the no-fake-review honest badge on invalid/null rating_average or review_count", async () => {
+test("rating badge ignores legacy rating_value and fails safe to the default 5-star badge on invalid/null rating_average or review_count", async () => {
   const context = makeContext();
   const root = loadCustomerFrontend(context);
   root.api.loadCatalogItems = async () => [
@@ -1055,12 +1058,12 @@ test("rating badge ignores legacy rating_value and fails safe to the no-fake-rev
   await new Promise((resolve) => setTimeout(resolve, 0));
 
   const body = container.querySelector("[data-store-body]");
-  // every item must fail safe to the honest zero-star, zero-count badge -- never a fabricated average
+  // every item must fail safe to the default 5-filled-star badge -- never a fabricated average/count
   assert.equal((body.innerHTML.match(/store-rating-badge/g) || []).length, 5);
-  assert.equal((body.innerHTML.match(/store-rating-count">\(0\)<\/span>/g) || []).length, 5);
-  assert.equal((body.innerHTML.match(/store-rating-star is-filled/g) || []).length, 0);
+  assert.equal((body.innerHTML.match(/store-rating-star is-filled/g) || []).length, 25);
   assert.doesNotMatch(body.innerHTML, /store-rating-star is-half/);
   assert.doesNotMatch(body.innerHTML, /store-rating-value/);
+  assert.doesNotMatch(body.innerHTML, /store-rating-count/);
 });
 
 test("rating badge never displays a fabricated 5.0 average or the phrase \"มาตรฐาน CWF\"/\"คะแนนลูกค้า\" anywhere in its markup", async () => {
