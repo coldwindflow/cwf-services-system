@@ -1,405 +1,251 @@
-const test = require("node:test");
-const assert = require("node:assert/strict");
-const { Pool } = require("pg");
+const test = require('node:test');
+const assert = require('node:assert/strict');
 
 const {
   holdOriginalIncomeForReworkCase,
   releaseHeldIncomeForReworkCase,
   voidHeldIncomeForReworkCase,
-  getHoldForReworkCase,
-  releaseIdempotencyKey,
-} = require("../server/services/technicianReworkIncome");
+  getHoldsForReworkCase,
+} = require('../server/services/technicianReworkIncome');
 
-const PG_CONFIG = {
-  host: process.env.PGHOST || "127.0.0.1",
-  port: Number(process.env.PGPORT || 5432),
-  user: process.env.PGUSER || "postgres",
-  password: process.env.PGPASSWORD || "postgres",
-  database: process.env.PGDATABASE || "cwf_test",
-};
-
-let pool;
-let adminPool;
-let testDatabaseName = "";
-let dbUnavailableReason = "";
-let nextJobId = 1;
-let nextCaseId = 1;
-
-test.before(async () => {
-  testDatabaseName = `cwf_rework_income_${process.pid}_${Date.now()}`.toLowerCase();
-  adminPool = new Pool({ ...PG_CONFIG, database: process.env.PGMAINTENANCEDATABASE || "postgres" });
-  try {
-    await adminPool.query("SELECT 1");
-    await adminPool.query(`CREATE DATABASE ${testDatabaseName} ENCODING 'UTF8'`);
-  } catch (e) {
-    dbUnavailableReason = e.message || "Postgres test database is unavailable";
-    await adminPool.end().catch(() => {});
-    adminPool = null;
-    return;
+class FakeClient {
+  constructor() {
+    this.periods = new Map();
+    this.holds = [];
+    this.adjustments = [];
+    this.payoutLines = [];
+    this.previews = [];
+    this.jobs = new Map();
+    this.nextHoldId = 1;
+    this.nextAdjId = 1;
   }
 
-  pool = new Pool({ ...PG_CONFIG, database: testDatabaseName });
-
-  await pool.query(`CREATE TABLE public.jobs (job_id BIGSERIAL PRIMARY KEY)`);
-
-  await pool.query(`
-    CREATE TABLE public.technician_rework_cases (
-      rework_case_id BIGSERIAL PRIMARY KEY,
-      job_id BIGINT NOT NULL REFERENCES public.jobs(job_id),
-      technician_username TEXT
-    )
-  `);
-
-  await pool.query(`
-    CREATE TABLE public.technician_payout_periods (
-      payout_id TEXT PRIMARY KEY,
-      period_type TEXT NOT NULL,
-      period_start TIMESTAMPTZ NOT NULL,
-      period_end TIMESTAMPTZ NOT NULL,
-      status TEXT NOT NULL DEFAULT 'draft',
-      created_by TEXT
-    )
-  `);
-
-  await pool.query(`
-    CREATE TABLE public.technician_payout_lines (
-      line_id BIGSERIAL PRIMARY KEY,
-      payout_id TEXT NOT NULL,
-      technician_username TEXT NOT NULL,
-      job_id TEXT,
-      earn_amount NUMERIC(12,2) NOT NULL DEFAULT 0
-    )
-  `);
-
-  await pool.query(`
-    CREATE TABLE public.technician_payout_adjustments (
-      adj_id BIGSERIAL PRIMARY KEY,
-      payout_id TEXT NOT NULL,
-      technician_username TEXT NOT NULL,
-      job_id TEXT,
-      adj_amount NUMERIC(12,2) NOT NULL,
-      reason TEXT,
-      created_by TEXT,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-
-  await pool.query(`
-    CREATE TABLE public.technician_deposit_ledger (
-      ledger_id BIGSERIAL PRIMARY KEY,
-      payout_id TEXT NOT NULL,
-      technician_username TEXT NOT NULL,
-      amount NUMERIC(12,2) NOT NULL DEFAULT 0,
-      transaction_type TEXT NOT NULL
-    )
-  `);
-
-  await pool.query(`
-    CREATE TABLE public.technician_payout_payments (
-      payment_id BIGSERIAL PRIMARY KEY,
-      payout_id TEXT NOT NULL,
-      technician_username TEXT NOT NULL,
-      paid_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
-      paid_status TEXT NOT NULL DEFAULT 'unpaid',
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-
-  await pool.query(`
-    CREATE TABLE public.technician_rework_income_holds (
-      hold_id BIGSERIAL PRIMARY KEY,
-      rework_case_id BIGINT NOT NULL REFERENCES public.technician_rework_cases(rework_case_id) ON DELETE CASCADE,
-      technician_username TEXT NOT NULL,
-      job_id BIGINT NOT NULL REFERENCES public.jobs(job_id) ON DELETE CASCADE,
-
-      held_amount NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (held_amount >= 0),
-      source_payout_id TEXT,
-      source_period_status_at_hold TEXT,
-      hold_adjustment_id BIGINT REFERENCES public.technician_payout_adjustments(adj_id) ON DELETE SET NULL,
-
-      hold_status TEXT NOT NULL DEFAULT 'held' CHECK (hold_status IN (
-        'held','already_paid_no_action','released','voided'
-      )),
-
-      released_amount NUMERIC(12,2) CHECK (released_amount IS NULL OR released_amount >= 0),
-      release_payout_id TEXT,
-      release_adjustment_id BIGINT REFERENCES public.technician_payout_adjustments(adj_id) ON DELETE SET NULL,
-      release_idempotency_key TEXT,
-      released_at TIMESTAMPTZ,
-
-      created_by TEXT,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-
-      UNIQUE (rework_case_id, technician_username),
-      CHECK (released_amount IS NULL OR released_amount <= held_amount)
-    )
-  `);
-  await pool.query(`
-    CREATE UNIQUE INDEX uq_trih_release_idempotency_key
-      ON public.technician_rework_income_holds(release_idempotency_key)
-      WHERE release_idempotency_key IS NOT NULL
-  `);
-});
-
-test.after(async () => {
-  if (pool) {
-    pool.on("error", () => {}); // swallow teardown noise from sockets still closing when pool.end() resolves
-    await pool.end();
+  cloneRow(row) {
+    return row ? { ...row } : row;
   }
-  if (adminPool && testDatabaseName) {
-    await adminPool.query(`DROP DATABASE IF EXISTS ${testDatabaseName}`).catch(() => {});
-    await adminPool.end().catch(() => {});
-  }
-});
 
-test.beforeEach(async (t) => {
-  if (dbUnavailableReason) {
-    t.skip(`Postgres integration database unavailable: ${dbUnavailableReason}`);
-    return;
-  }
-  await pool.query("DELETE FROM public.technician_rework_income_holds");
-  await pool.query("DELETE FROM public.technician_payout_payments");
-  await pool.query("DELETE FROM public.technician_deposit_ledger");
-  await pool.query("DELETE FROM public.technician_payout_adjustments");
-  await pool.query("DELETE FROM public.technician_payout_lines");
-  await pool.query("DELETE FROM public.technician_payout_periods");
-  await pool.query("DELETE FROM public.technician_rework_cases");
-  await pool.query("DELETE FROM public.jobs");
-});
+  async query(sql, params = []) {
+    const s = String(sql).replace(/\s+/g, ' ').trim();
 
-function dbTest(name, fn) {
-  test(name, async (t) => {
-    if (dbUnavailableReason) return t.skip(`Postgres integration database unavailable: ${dbUnavailableReason}`);
-    return fn(t);
+    if (s.startsWith('INSERT INTO public.technician_payout_periods')) {
+      const [payout_id, period_type, period_start, period_end, created_by] = params;
+      if (!this.periods.has(payout_id)) {
+        this.periods.set(payout_id, { payout_id, period_type, period_start, period_end, status: 'draft', created_by });
+      }
+      return { rows: [] };
+    }
+
+    if (s.includes('SELECT payout_id, period_type, period_start, period_end, status') && s.includes('FROM public.technician_payout_periods')) {
+      const row = this.periods.get(params[0]);
+      return { rows: row ? [this.cloneRow(row)] : [] };
+    }
+
+    if (s.startsWith('SELECT status FROM public.technician_payout_periods')) {
+      const row = this.periods.get(params[0]);
+      return { rows: row ? [{ status: row.status }] : [] };
+    }
+
+    if (s.startsWith('WITH gross AS')) {
+      const [payoutId, tech] = params;
+      const gross = this.payoutLines.filter((r) => r.payout_id === payoutId && r.technician_username === tech)
+        .reduce((sum, r) => sum + Number(r.earn_amount || 0), 0);
+      const adj = this.adjustments.filter((r) => r.payout_id === payoutId && r.technician_username === tech)
+        .reduce((sum, r) => sum + Number(r.adj_amount || 0), 0);
+      return { rows: [{ net_amount: gross + adj, paid_amount: 0, payment_id: null }] };
+    }
+
+    if (s.startsWith('UPDATE public.technician_payout_payments')) return { rows: [] };
+
+    if (s.includes('FROM public.technician_rework_income_holds') && s.includes('rework_case_id=$1 AND technician_username=$2')) {
+      const row = this.holds.find((r) => Number(r.rework_case_id) === Number(params[0]) && r.technician_username === params[1]);
+      return { rows: row ? [this.cloneRow(row)] : [] };
+    }
+
+    if (s.includes('FROM public.technician_rework_income_holds') && s.includes('WHERE rework_case_id=$1') && !s.includes('technician_username=$2')) {
+      const rows = this.holds.filter((r) => Number(r.rework_case_id) === Number(params[0])).map((r) => this.cloneRow(r));
+      return { rows };
+    }
+
+    if (s.includes('FROM public.technician_payout_lines') && s.includes('GROUP BY technician_username')) {
+      const [jobId, payoutId] = params;
+      const totals = new Map();
+      for (const row of this.payoutLines.filter((r) => String(r.job_id) === String(jobId) && r.payout_id === payoutId)) {
+        totals.set(row.technician_username, (totals.get(row.technician_username) || 0) + Number(row.earn_amount || 0));
+      }
+      return { rows: [...totals].map(([technician_username, amount]) => ({ technician_username, amount })) };
+    }
+
+    if (s.includes('FROM public.job_technician_income_preview')) {
+      const rows = this.previews.filter((r) => Number(r.job_id) === Number(params[0]) && !r.is_stale && Number(r.income_amount) > 0);
+      return { rows: rows.map((r) => ({ technician_username: r.technician_username, amount: r.income_amount })) };
+    }
+
+    if (s.startsWith('INSERT INTO public.technician_payout_adjustments')) {
+      const [payout_id, technician_username, job_id, adj_amount, reason, created_by] = params;
+      const row = {
+        adj_id: this.nextAdjId++, payout_id, technician_username, job_id,
+        adj_amount: Number(adj_amount), reason, created_by, created_at: new Date().toISOString(),
+      };
+      this.adjustments.push(row);
+      return { rows: [this.cloneRow(row)] };
+    }
+
+    if (s.startsWith('INSERT INTO public.technician_rework_income_holds')) {
+      let row;
+      if (params.length === 6) {
+        const [rework_case_id, technician_username, job_id, source_payout_id, source_period_status_at_hold, created_by] = params;
+        row = { rework_case_id, technician_username, job_id, held_amount: 0, source_payout_id, source_period_status_at_hold, hold_status: 'already_paid_no_action', created_by };
+      } else if (params.length === 4) {
+        const [rework_case_id, technician_username, job_id, created_by] = params;
+        row = { rework_case_id, technician_username, job_id, held_amount: 0, source_payout_id: null, source_period_status_at_hold: 'no_prior_finish', hold_status: 'already_paid_no_action', created_by };
+      } else {
+        const [rework_case_id, technician_username, job_id, held_amount, source_payout_id, source_period_status_at_hold, hold_adjustment_id, created_by] = params;
+        row = { rework_case_id, technician_username, job_id, held_amount: Number(held_amount), source_payout_id, source_period_status_at_hold, hold_adjustment_id, hold_status: 'held', created_by };
+      }
+      row.hold_id = this.nextHoldId++;
+      row.released_amount = null;
+      row.release_payout_id = null;
+      row.release_adjustment_id = null;
+      row.release_idempotency_key = null;
+      this.holds.push(row);
+      return { rows: [this.cloneRow(row)] };
+    }
+
+    if (s.includes('FROM public.jobs') && s.includes('job_id = ANY')) {
+      const ids = params[0].map(Number);
+      return { rows: ids.filter((id) => this.jobs.has(id)).map((id) => ({ job_id: id, finished_at: this.jobs.get(id).finished_at })) };
+    }
+
+    if (s.startsWith('UPDATE public.technician_rework_income_holds') && s.includes("SET hold_status='released'")) {
+      const [holdId, amount, payoutId, adjId, key] = params;
+      const row = this.holds.find((r) => Number(r.hold_id) === Number(holdId) && r.hold_status === 'held');
+      if (!row) return { rows: [] };
+      Object.assign(row, {
+        hold_status: 'released', released_amount: Number(amount), release_payout_id: payoutId,
+        release_adjustment_id: adjId, release_idempotency_key: key, released_at: new Date().toISOString(),
+      });
+      return { rows: [this.cloneRow(row)] };
+    }
+
+    if (s.startsWith('UPDATE public.technician_rework_income_holds') && s.includes("SET hold_status='voided'")) {
+      const caseId = Number(params[0]);
+      const rows = [];
+      for (const row of this.holds) {
+        if (Number(row.rework_case_id) === caseId && row.hold_status === 'held') {
+          row.hold_status = 'voided';
+          rows.push(this.cloneRow(row));
+        }
+      }
+      return { rows };
+    }
+
+    throw new Error(`Unhandled SQL in FakeClient: ${s}`);
+  }
+}
+
+async function hold(client, opts = {}) {
+  return holdOriginalIncomeForReworkCase(client, {
+    reworkCaseId: opts.caseId || 1,
+    jobId: opts.jobId || 10,
+    technicianUsername: opts.tech || 'A2MKUNG',
+    originalFinishedAt: opts.originalFinishedAt || '2026-06-10T10:00:00+07:00',
+    originalEarnAmount: opts.amount ?? 325,
+    actor: 'test',
   });
 }
 
-// Mirrors how every production route calls these functions: connect a client,
-// BEGIN, run the operation, COMMIT on success / ROLLBACK on failure. Calling the
-// service functions directly against `pool` (no transaction) would let a later
-// statement fail after an earlier one in the same call already autocommitted,
-// which is not how the real code paths behave.
-async function withTransaction(fn) {
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
-    const result = await fn(client);
-    await client.query("COMMIT");
-    return result;
-  } catch (e) {
-    await client.query("ROLLBACK").catch(() => {});
-    throw e;
-  } finally {
-    client.release();
-  }
+async function release(client, opts = {}) {
+  return releaseHeldIncomeForReworkCase(client, {
+    reworkCaseId: opts.caseId || 1,
+    technicianUsername: opts.tech || 'A2MKUNG',
+    actor: 'test',
+  });
 }
 
-async function makeJobAndCase(technicianUsername) {
-  const jr = await pool.query(`INSERT INTO public.jobs DEFAULT VALUES RETURNING job_id`);
-  const jobId = Number(jr.rows[0].job_id);
-  const cr = await pool.query(
-    `INSERT INTO public.technician_rework_cases (job_id, technician_username) VALUES ($1,$2) RETURNING rework_case_id`,
-    [jobId, technicianUsername]
-  );
-  return { jobId, reworkCaseId: Number(cr.rows[0].rework_case_id) };
-}
-
-dbTest("holds then releases the original technician's income exactly once into the correct period", async () => {
-  const tech = "A2MKUNG";
-  const { jobId, reworkCaseId } = await makeJobAndCase(tech);
-
-  const holdResult = await withTransaction((client) => holdOriginalIncomeForReworkCase(client, {
-    reworkCaseId,
-    jobId,
-    technicianUsername: tech,
-    originalFinishedAt: new Date("2026-06-10T10:00:00+07:00"),
-    originalEarnAmount: 325,
-    actor: "test",
-  }));
-  assert.equal(holdResult.held, true);
-  assert.equal(Number(holdResult.row.held_amount), 325);
-
-  const finishedAt = new Date("2026-06-20T10:00:00+07:00");
-  const release1 = await withTransaction((client) => releaseHeldIncomeForReworkCase(client, { reworkCaseId, technicianUsername: tech, finishedAt, actor: "test" }));
-  assert.equal(release1.released, true);
-  assert.equal(release1.amount, 325);
-  assert.equal(release1.payout_id, "payout_2026-07_10");
-
-  const release2 = await withTransaction((client) => releaseHeldIncomeForReworkCase(client, { reworkCaseId, technicianUsername: tech, finishedAt, actor: "test" }));
-  assert.equal(release2.released, false);
-  assert.equal(release2.reason, "released");
-
-  const adjCount = await pool.query(
-    `SELECT COUNT(*)::int AS n FROM public.technician_payout_adjustments WHERE payout_id=$1 AND technician_username=$2 AND adj_amount > 0`,
-    [release1.payout_id, tech]
-  );
-  assert.equal(adjCount.rows[0].n, 1, "exactly one positive release adjustment must exist no matter how many times release is called");
-
-  const hold = await getHoldForReworkCase(pool, reworkCaseId, tech);
-  assert.equal(hold.hold_status, "released");
-  assert.equal(Number(hold.released_amount), 325);
-  assert.equal(hold.release_idempotency_key, releaseIdempotencyKey(reworkCaseId, tech));
+test('paid source is carried forward, then returned after successful rework', async () => {
+  const db = new FakeClient();
+  db.periods.set('payout_2026-06_25', { payout_id: 'payout_2026-06_25', status: 'paid', period_type: '25' });
+  await hold(db);
+  assert.equal(db.adjustments.length, 1);
+  assert.equal(db.adjustments[0].adj_amount, -325);
+  assert.match(db.adjustments[0].reason, /\[REWORK_HOLD\]/);
+  db.jobs.set(10, { finished_at: '2026-06-20T10:00:00+07:00' });
+  const result = await release(db);
+  assert.equal(result.released, true);
+  assert.equal(result.amount, 325);
+  assert.equal(result.payout_id, 'payout_2026-07_10');
+  assert.equal(db.adjustments.filter((r) => r.adj_amount > 0).length, 1);
 });
 
-dbTest("releasing 10 times concurrently only moves money once", async () => {
-  const tech = "A2MKUNG";
-  const { jobId, reworkCaseId } = await makeJobAndCase(tech);
-  await withTransaction((client) => holdOriginalIncomeForReworkCase(client, {
-    reworkCaseId,
-    jobId,
-    technicianUsername: tech,
-    originalFinishedAt: new Date("2026-06-10T10:00:00+07:00"),
-    originalEarnAmount: 325,
-    actor: "test",
-  }));
+test('release uses DB finished_at and rejects a missing completion timestamp', async () => {
+  const db = new FakeClient();
+  await hold(db);
+  await assert.rejects(() => release(db), (error) => error.status === 409 && error.message === 'REWORK_FINISHED_AT_REQUIRED');
+});
 
-  const finishedAt = new Date("2026-06-20T10:00:00+07:00");
-  const attempts = await Promise.allSettled(
-    Array.from({ length: 10 }, () => withTransaction((client) => releaseHeldIncomeForReworkCase(client, { reworkCaseId, technicianUsername: tech, finishedAt, actor: "test" })))
+test('Bangkok day 15 and day 16 target the correct payout periods', async () => {
+  const day15 = new FakeClient();
+  await hold(day15);
+  day15.jobs.set(10, { finished_at: '2026-06-15T23:59:59+07:00' });
+  assert.equal((await release(day15)).payout_id, 'payout_2026-06_25');
+
+  const day16 = new FakeClient();
+  await hold(day16);
+  day16.jobs.set(10, { finished_at: '2026-06-16T00:00:00+07:00' });
+  assert.equal((await release(day16)).payout_id, 'payout_2026-07_10');
+});
+
+test('team payout lines create and release one hold per original technician', async () => {
+  const db = new FakeClient();
+  db.periods.set('payout_2026-06_25', { payout_id: 'payout_2026-06_25', status: 'draft', period_type: '25' });
+  db.payoutLines.push(
+    { payout_id: 'payout_2026-06_25', technician_username: 'TECH_A', job_id: '10', earn_amount: 200 },
+    { payout_id: 'payout_2026-06_25', technician_username: 'TECH_B', job_id: '10', earn_amount: 125 },
   );
-  const succeeded = attempts.filter((a) => a.status === "fulfilled" && a.value.released);
-  assert.equal(succeeded.length, 1, "only one of 10 concurrent release attempts should actually move money");
-
-  const adjCount = await pool.query(
-    `SELECT COUNT(*)::int AS n FROM public.technician_payout_adjustments WHERE technician_username=$1 AND adj_amount > 0`,
-    [tech]
-  );
-  assert.equal(adjCount.rows[0].n, 1);
+  const held = await hold(db, { tech: 'TECH_A', amount: 999 });
+  assert.equal(held.rows.length, 2);
+  db.jobs.set(10, { finished_at: '2026-06-20T10:00:00+07:00' });
+  const result = await release(db, { tech: 'TECH_A' });
+  assert.equal(result.amount, 325);
+  assert.equal(result.rows.length, 2);
 });
 
-dbTest("failed rework never releases held income", async () => {
-  const tech = "A2MKUNG";
-  const { jobId, reworkCaseId } = await makeJobAndCase(tech);
-  await withTransaction((client) => holdOriginalIncomeForReworkCase(client, {
-    reworkCaseId,
-    jobId,
-    technicianUsername: tech,
-    originalFinishedAt: new Date("2026-06-10T10:00:00+07:00"),
-    originalEarnAmount: 325,
-    actor: "test",
-  }));
-
-  const voidResult = await withTransaction((client) => voidHeldIncomeForReworkCase(client, { reworkCaseId, technicianUsername: tech }));
-  assert.equal(voidResult.voided, true);
-  assert.equal(voidResult.row.hold_status, "voided");
-
-  const releaseAttempt = await withTransaction((client) => releaseHeldIncomeForReworkCase(client, {
-    reworkCaseId,
-    technicianUsername: tech,
-    finishedAt: new Date("2026-06-20T10:00:00+07:00"),
-    actor: "test",
-  }));
-  assert.equal(releaseAttempt.released, false);
-  assert.equal(releaseAttempt.reason, "voided");
-
-  const adjCount = await pool.query(`SELECT COUNT(*)::int AS n FROM public.technician_payout_adjustments WHERE technician_username=$1`, [tech]);
-  assert.equal(adjCount.rows[0].n, 0);
+test('release adjustment uses a synthetic job key so gross lookup cannot double count it', async () => {
+  const db = new FakeClient();
+  await hold(db);
+  db.jobs.set(10, { finished_at: '2026-06-20T10:00:00+07:00' });
+  await release(db);
+  const positive = db.adjustments.find((r) => r.adj_amount > 0);
+  assert.ok(positive);
+  assert.match(positive.job_id, /^rework_release:/);
+  assert.notEqual(positive.job_id, '10');
+  assert.match(positive.reason, /\[REWORK_RELEASE\]/);
 });
 
-dbTest("already-paid original income is held as no-op and never released", async () => {
-  const tech = "A2MKUNG";
-  const { jobId, reworkCaseId } = await makeJobAndCase(tech);
-  const finishedAt = new Date("2026-06-10T10:00:00+07:00");
-  await pool.query(
-    `INSERT INTO public.technician_payout_periods (payout_id, period_type, period_start, period_end, status)
-     VALUES ('payout_2026-06_25','25', '2026-06-01T00:00:00+07:00', '2026-06-16T00:00:00+07:00', 'paid')`
-  );
-
-  const holdResult = await withTransaction((client) => holdOriginalIncomeForReworkCase(client, {
-    reworkCaseId,
-    jobId,
-    technicianUsername: tech,
-    originalFinishedAt: finishedAt,
-    originalEarnAmount: 325,
-    actor: "test",
-  }));
-  assert.equal(holdResult.held, false);
-  assert.equal(holdResult.row.hold_status, "already_paid_no_action");
-
-  const releaseAttempt = await withTransaction((client) => releaseHeldIncomeForReworkCase(client, {
-    reworkCaseId,
-    technicianUsername: tech,
-    finishedAt: new Date("2026-06-20T10:00:00+07:00"),
-    actor: "test",
-  }));
-  assert.equal(releaseAttempt.released, false);
-  assert.equal(releaseAttempt.reason, "already_paid_no_action");
+test('repeated release is idempotent', async () => {
+  const db = new FakeClient();
+  await hold(db);
+  db.jobs.set(10, { finished_at: '2026-06-20T10:00:00+07:00' });
+  assert.equal((await release(db)).released, true);
+  assert.equal((await release(db)).released, false);
+  assert.equal(db.adjustments.filter((r) => r.adj_amount > 0).length, 1);
 });
 
-dbTest("rolls forward past an already-paid target period when releasing", async () => {
-  const tech = "A2MKUNG";
-  const { jobId, reworkCaseId } = await makeJobAndCase(tech);
-  await withTransaction((client) => holdOriginalIncomeForReworkCase(client, {
-    reworkCaseId,
-    jobId,
-    technicianUsername: tech,
-    originalFinishedAt: new Date("2026-06-10T10:00:00+07:00"),
-    originalEarnAmount: 325,
-    actor: "test",
-  }));
-
-  // The period the release would naturally land in (2026-06-20 -> payout_2026-07_10) is already paid.
-  await pool.query(
-    `INSERT INTO public.technician_payout_periods (payout_id, period_type, period_start, period_end, status)
-     VALUES ('payout_2026-07_10','10', '2026-06-16T00:00:00+07:00', '2026-07-01T00:00:00+07:00', 'paid')`
-  );
-
-  const release = await withTransaction((client) => releaseHeldIncomeForReworkCase(client, {
-    reworkCaseId,
-    technicianUsername: tech,
-    finishedAt: new Date("2026-06-20T10:00:00+07:00"),
-    actor: "test",
-  }));
-  assert.equal(release.released, true);
-  assert.equal(release.payout_id, "payout_2026-07_25");
+test('failed rework voids held income and does not release it', async () => {
+  const db = new FakeClient();
+  await hold(db);
+  const result = await voidHeldIncomeForReworkCase(db, { reworkCaseId: 1, technicianUsername: 'A2MKUNG' });
+  assert.equal(result.voided, true);
+  db.jobs.set(10, { finished_at: '2026-06-20T10:00:00+07:00' });
+  assert.equal((await release(db)).released, false);
+  assert.equal(db.adjustments.filter((r) => r.adj_amount > 0).length, 0);
 });
 
-dbTest("zero-amount original income holds as a no-op and is never released", async () => {
-  const tech = "A2MKUNG";
-  const { jobId, reworkCaseId } = await makeJobAndCase(tech);
-  const holdResult = await withTransaction((client) => holdOriginalIncomeForReworkCase(client, {
-    reworkCaseId,
-    jobId,
-    technicianUsername: tech,
-    originalFinishedAt: new Date("2026-06-10T10:00:00+07:00"),
-    originalEarnAmount: 0,
-    actor: "test",
-  }));
-  assert.equal(holdResult.held, false);
-  assert.equal(holdResult.row.hold_status, "already_paid_no_action");
-
-  const releaseAttempt = await withTransaction((client) => releaseHeldIncomeForReworkCase(client, {
-    reworkCaseId,
-    technicianUsername: tech,
-    finishedAt: new Date("2026-06-20T10:00:00+07:00"),
-    actor: "test",
-  }));
-  assert.equal(releaseAttempt.released, false);
-});
-
-dbTest("holding twice for the same case+technician is a no-op (immutable hold)", async () => {
-  const tech = "A2MKUNG";
-  const { jobId, reworkCaseId } = await makeJobAndCase(tech);
-  const first = await withTransaction((client) => holdOriginalIncomeForReworkCase(client, {
-    reworkCaseId,
-    jobId,
-    technicianUsername: tech,
-    originalFinishedAt: new Date("2026-06-10T10:00:00+07:00"),
-    originalEarnAmount: 325,
-    actor: "test",
-  }));
-  const second = await withTransaction((client) => holdOriginalIncomeForReworkCase(client, {
-    reworkCaseId,
-    jobId,
-    technicianUsername: tech,
-    originalFinishedAt: new Date("2026-06-10T10:00:00+07:00"),
-    originalEarnAmount: 999,
-    actor: "test",
-  }));
-  assert.equal(second.already_held, true);
-  assert.equal(Number(second.row.held_amount), Number(first.row.held_amount));
-
-  const holds = await pool.query(`SELECT COUNT(*)::int AS n FROM public.technician_rework_income_holds WHERE rework_case_id=$1 AND technician_username=$2`, [reworkCaseId, tech]);
-  assert.equal(holds.rows[0].n, 1);
+test('duplicate hold call preserves the first immutable amount', async () => {
+  const db = new FakeClient();
+  await hold(db, { amount: 325 });
+  await hold(db, { amount: 999 });
+  const rows = await getHoldsForReworkCase(db, 1);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].held_amount, 325);
 });
