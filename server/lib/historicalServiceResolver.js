@@ -25,6 +25,22 @@ function jobTypeToServiceType(jobType) {
   return JOB_TYPE_TO_SERVICE_TYPE[String(jobType || "").trim()] || null;
 }
 
+// public.job_units.btu is TEXT on some deployments (legacy rows), while
+// catalog_items.btu_min/btu_max are INTEGER. A bare comparison between the
+// two ("integer <= text") throws 42883 "operator does not exist" and kills
+// the whole query. This SQL expression safely casts to numeric only when
+// the trimmed, comma-stripped text is a plain decimal; anything else
+// (NULL, "", "ไม่ระบุ", "N/A", ...) becomes SQL NULL instead of erroring, so
+// callers can simply require "<expr> IS NOT NULL" before matching on it.
+// Centralized here so the bulk and single-job queries can't drift apart.
+function btuValueSql(column) {
+  return `(CASE
+       WHEN REPLACE(BTRIM(COALESCE(${column}::text, '')), ',', '') ~ '^[0-9]+(\\.[0-9]+)?$'
+       THEN REPLACE(BTRIM(${column}::text), ',', '')::numeric
+       ELSE NULL
+     END)`;
+}
+
 // jobs.catalog_item_id (and customer_sub) ship in the same earlier migration
 // this resolver builds on; guard against querying a column that doesn't
 // exist yet on a deployment where that migration hasn't run.
@@ -58,7 +74,7 @@ async function bulkResolveHistoricalItemMatches(db, itemIds) {
   const excludedParams = EXCLUDED_BOOKING_JOB_STATUSES.map((_, i) => `$${i + 2}`).join(", ");
   const r = await db.query(
     `WITH active_units AS (
-       SELECT ju.unit_id, ju.job_id, ju.ac_type, ju.btu, j.job_type
+       SELECT ju.unit_id, ju.job_id, ju.ac_type, ${btuValueSql("ju.btu")} AS btu_value, j.job_type
          FROM public.job_units ju
          JOIN public.jobs j ON j.job_id = ju.job_id
         WHERE j.catalog_item_id IS NULL
@@ -77,8 +93,9 @@ async function bulkResolveHistoricalItemMatches(db, itemIds) {
               ON ci.item_id = ANY($1::bigint[])
              AND ci.job_category = au.job_type
              AND ci.ac_type = au.ac_type
-             AND (ci.btu_min IS NULL OR ci.btu_min <= au.btu)
-             AND (ci.btu_max IS NULL OR ci.btu_max >= au.btu)
+             AND au.btu_value IS NOT NULL
+             AND (ci.btu_min IS NULL OR ci.btu_min <= au.btu_value)
+             AND (ci.btu_max IS NULL OR ci.btu_max >= au.btu_value)
      ),
      job_item_matched_units AS (
        SELECT job_id, item_id, COUNT(DISTINCT unit_id)::int AS matched_units,
@@ -140,17 +157,22 @@ async function resolveHistoricalServiceTarget(db, jobId) {
   let unambiguousItemId = null;
   if (totalUnits > 0) {
     const unitR = await db.query(
-      `WITH unit_matches AS (
-         SELECT ju.unit_id, ci.item_id,
-                COUNT(*) OVER (PARTITION BY ju.unit_id) AS match_count
+      `WITH active_units AS (
+         SELECT ju.unit_id, ju.ac_type, ${btuValueSql("ju.btu")} AS btu_value
            FROM public.job_units ju
-           JOIN public.catalog_items ci
-                ON ci.job_category = $2
-               AND ci.ac_type = ju.ac_type
-               AND (ci.btu_min IS NULL OR ci.btu_min <= ju.btu)
-               AND (ci.btu_max IS NULL OR ci.btu_max >= ju.btu)
           WHERE ju.job_id = $1
             AND LOWER(COALESCE(NULLIF(ju.status, ''), 'pending')) NOT IN ('cancelled', 'removed', 'deleted', 'void', 'inactive')
+       ),
+       unit_matches AS (
+         SELECT au.unit_id, ci.item_id,
+                COUNT(*) OVER (PARTITION BY au.unit_id) AS match_count
+           FROM active_units au
+           JOIN public.catalog_items ci
+                ON ci.job_category = $2
+               AND ci.ac_type = au.ac_type
+               AND au.btu_value IS NOT NULL
+               AND (ci.btu_min IS NULL OR ci.btu_min <= au.btu_value)
+               AND (ci.btu_max IS NULL OR ci.btu_max >= au.btu_value)
        )
        SELECT item_id, COUNT(DISTINCT unit_id)::int AS matched_units
          FROM unit_matches
@@ -181,6 +203,7 @@ module.exports = {
   EXCLUDED_BOOKING_JOB_STATUSES,
   JOB_TYPE_TO_SERVICE_TYPE,
   jobTypeToServiceType,
+  btuValueSql,
   bulkResolveHistoricalItemMatches,
   resolveHistoricalServiceTarget,
 };

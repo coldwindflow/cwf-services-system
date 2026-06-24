@@ -21,15 +21,24 @@ function makeDb({ linkReady = true, jobs = [], jobUnits = [], items = [] } = {})
       !["cancelled", "removed", "deleted", "void", "inactive"].includes(String(u.status || "pending").toLowerCase()));
   }
 
+  // Mirrors btuValueSql: only a plain (optionally comma-grouped) decimal
+  // string normalizes to a number; anything else (NULL, "", "ไม่ระบุ", ...)
+  // becomes null, same as the SQL CASE expression evaluating to SQL NULL.
+  function normalizeBtu(btu) {
+    const text = String(btu == null ? "" : btu).trim().replace(/,/g, "");
+    return /^[0-9]+(\.[0-9]+)?$/.test(text) ? Number(text) : null;
+  }
+
   function unitMatchesForJob(jobId, jobType, candidateItemIds = null) {
     const units = activeUnitsForJob(jobId);
     return units.map((u) => {
-      const matches = items.filter((it) =>
+      const btuValue = normalizeBtu(u.btu);
+      const matches = btuValue == null ? [] : items.filter((it) =>
         (candidateItemIds == null || candidateItemIds.includes(Number(it.item_id))) &&
         it.job_category === jobType &&
         it.ac_type === u.ac_type &&
-        (it.btu_min == null || it.btu_min <= u.btu) &&
-        (it.btu_max == null || it.btu_max >= u.btu)
+        (it.btu_min == null || it.btu_min <= btuValue) &&
+        (it.btu_max == null || it.btu_max >= btuValue)
       );
       return { unit_id: u.unit_id, matches };
     });
@@ -43,7 +52,7 @@ function makeDb({ linkReady = true, jobs = [], jobUnits = [], items = [] } = {})
     }
 
     // bulkResolveHistoricalItemMatches (distinct bulk CTE chain: active_units -> job_unit_totals -> unit_matches -> job_item_matched_units -> job_item_candidates).
-    if (s.includes("WITH active_units AS")) {
+    if (s.includes("WITH active_units AS") && s.includes("job_unit_totals")) {
       const [itemIds] = params;
       const candidates = itemIds.map(Number);
       const byItem = new Map();
@@ -83,7 +92,7 @@ function makeDb({ linkReady = true, jobs = [], jobUnits = [], items = [] } = {})
     }
 
     // resolveHistoricalServiceTarget: per-item matched-unit grouping.
-    if (s.includes("WITH unit_matches AS") && s.includes("WHERE ju.job_id = $1")) {
+    if (s.includes("WITH active_units AS") && s.includes("WHERE ju.job_id = $1")) {
       const [jobId, jobType] = params;
       const matchedUnitsByItem = new Map();
       for (const { matches } of unitMatchesForJob(jobId, jobType)) {
@@ -307,4 +316,75 @@ test("resolveHistoricalServiceTarget never resolves item scope when two units un
   const db = makeDb({ items, jobs, jobUnits });
   const result = await resolveHistoricalServiceTarget(db, 13);
   assert.deepEqual(result, { scope: "service_type", itemId: null, serviceType: "ซ่อมแอร์" });
+});
+
+// --- BTU text-format safety (production fix: job_units.btu is TEXT on some
+// deployments; a bare comparison against catalog_items' INTEGER btu_min/
+// btu_max throws 42883 "operator does not exist: integer <= text"). ---
+
+test("resolveHistoricalServiceTarget matches a comma-grouped BTU string (\"12,000\")", async () => {
+  const items = [{ item_id: 5, job_category: "ซ่อม", ac_type: "wall", btu_min: 9000, btu_max: 15000 }];
+  const jobs = [{ job_id: 20, job_type: "ซ่อม", catalog_item_id: null }];
+  const jobUnits = [{ unit_id: 1, job_id: 20, ac_type: "wall", btu: "12,000", status: "active" }];
+  const db = makeDb({ items, jobs, jobUnits });
+  const result = await resolveHistoricalServiceTarget(db, 20);
+  assert.deepEqual(result, { scope: "item", itemId: 5, serviceType: null });
+});
+
+test("resolveHistoricalServiceTarget matches a plain BTU string (\"12000\")", async () => {
+  const items = [{ item_id: 5, job_category: "ซ่อม", ac_type: "wall", btu_min: 9000, btu_max: 15000 }];
+  const jobs = [{ job_id: 21, job_type: "ซ่อม", catalog_item_id: null }];
+  const jobUnits = [{ unit_id: 1, job_id: 21, ac_type: "wall", btu: "12000", status: "active" }];
+  const db = makeDb({ items, jobs, jobUnits });
+  const result = await resolveHistoricalServiceTarget(db, 21);
+  assert.deepEqual(result, { scope: "item", itemId: 5, serviceType: null });
+});
+
+test("resolveHistoricalServiceTarget matches a decimal BTU string (\"12000.0\")", async () => {
+  const items = [{ item_id: 5, job_category: "ซ่อม", ac_type: "wall", btu_min: 9000, btu_max: 15000 }];
+  const jobs = [{ job_id: 22, job_type: "ซ่อม", catalog_item_id: null }];
+  const jobUnits = [{ unit_id: 1, job_id: 22, ac_type: "wall", btu: "12000.0", status: "active" }];
+  const db = makeDb({ items, jobs, jobUnits });
+  const result = await resolveHistoricalServiceTarget(db, 22);
+  assert.deepEqual(result, { scope: "item", itemId: 5, serviceType: null });
+});
+
+test("resolveHistoricalServiceTarget never throws and never matches an item for an empty BTU string", async () => {
+  const items = [{ item_id: 5, job_category: "ซ่อม", ac_type: "wall", btu_min: 9000, btu_max: 15000 }];
+  const jobs = [{ job_id: 23, job_type: "ซ่อม", catalog_item_id: null }];
+  const jobUnits = [{ unit_id: 1, job_id: 23, ac_type: "wall", btu: "", status: "active" }];
+  const db = makeDb({ items, jobs, jobUnits });
+  const result = await resolveHistoricalServiceTarget(db, 23);
+  assert.deepEqual(result, { scope: "service_type", itemId: null, serviceType: "ซ่อมแอร์" });
+});
+
+test("resolveHistoricalServiceTarget never throws and never matches an item for a non-numeric BTU value (\"ไม่ระบุ\")", async () => {
+  const items = [{ item_id: 5, job_category: "ซ่อม", ac_type: "wall", btu_min: 9000, btu_max: 15000 }];
+  const jobs = [{ job_id: 24, job_type: "ซ่อม", catalog_item_id: null }];
+  const jobUnits = [{ unit_id: 1, job_id: 24, ac_type: "wall", btu: "ไม่ระบุ", status: "active" }];
+  const db = makeDb({ items, jobs, jobUnits });
+  const result = await resolveHistoricalServiceTarget(db, 24);
+  assert.deepEqual(result, { scope: "service_type", itemId: null, serviceType: "ซ่อมแอร์" });
+});
+
+test("resolveHistoricalServiceTarget falls back to service_type when one of two units has an unparseable BTU (job-level consistency still enforced)", async () => {
+  const items = [{ item_id: 5, job_category: "ซ่อม", ac_type: "wall", btu_min: 9000, btu_max: 15000 }];
+  const jobs = [{ job_id: 25, job_type: "ซ่อม", catalog_item_id: null }];
+  const jobUnits = [
+    { unit_id: 1, job_id: 25, ac_type: "wall", btu: "12000", status: "active" }, // matches item 5
+    { unit_id: 2, job_id: 25, ac_type: "wall", btu: "N/A", status: "active" }, // unparseable, still an active unit, matches nothing
+  ];
+  const db = makeDb({ items, jobs, jobUnits });
+  const result = await resolveHistoricalServiceTarget(db, 25);
+  assert.deepEqual(result, { scope: "service_type", itemId: null, serviceType: "ซ่อมแอร์" });
+});
+
+test("bulkResolveHistoricalItemMatches never throws and never counts a job when its unit has a text-format/unparseable BTU value", async () => {
+  const items = [{ item_id: 1, job_category: "ล้าง", ac_type: "wall", btu_min: 9000, btu_max: 12000 }];
+  const jobs = [{ job_id: 400, job_type: "ล้าง", catalog_item_id: null, job_status: "เสร็จแล้ว", canceled_at: null }];
+  const jobUnits = [{ unit_id: 1, job_id: 400, ac_type: "wall", btu: "ไม่ระบุ", status: "active" }];
+  const db = makeDb({ items, jobs, jobUnits });
+
+  const byItem = await bulkResolveHistoricalItemMatches(db, [1]);
+  assert.equal(byItem.get(1), undefined);
 });

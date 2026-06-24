@@ -517,25 +517,35 @@ async function attachBookingCounts(pool, rows, jobsCatalogLinkReady) {
   if (!jobsCatalogLinkReady || !rows.length) return rows;
 
   const ids = rows.map((row) => Number(row.item_id));
-  const byItem = new Map();
 
-  const direct = await pool.query(
-    `SELECT catalog_item_id AS item_id, COUNT(DISTINCT job_id)::int AS cnt
-       FROM public.jobs
-      WHERE catalog_item_id = ANY($1::bigint[])
-        AND COALESCE(job_status, '') NOT IN (${EXCLUDED_BOOKING_JOB_STATUSES.map((_, i) => `$${i + 2}`).join(", ")})
-        AND canceled_at IS NULL
-      GROUP BY catalog_item_id`,
-    [ids, ...EXCLUDED_BOOKING_JOB_STATUSES]
-  );
-  direct.rows.forEach((r) => byItem.set(Number(r.item_id), Number(r.cnt)));
+  // booking_count is supplementary enrichment, not core catalog data: a
+  // failure here (e.g. a legacy BTU value the resolver can't normalize)
+  // must never take down the whole Store listing. Fail open to 0 and let
+  // the catalog response continue with status 200; only the main catalog
+  // query above is allowed to surface as a real error.
+  try {
+    const byItem = new Map();
 
-  const historical = await bulkResolveHistoricalItemMatches(pool, ids);
-  historical.forEach((cnt, id) => {
-    byItem.set(id, (byItem.get(id) || 0) + cnt);
-  });
+    const direct = await pool.query(
+      `SELECT catalog_item_id AS item_id, COUNT(DISTINCT job_id)::int AS cnt
+         FROM public.jobs
+        WHERE catalog_item_id = ANY($1::bigint[])
+          AND COALESCE(job_status, '') NOT IN (${EXCLUDED_BOOKING_JOB_STATUSES.map((_, i) => `$${i + 2}`).join(", ")})
+          AND canceled_at IS NULL
+        GROUP BY catalog_item_id`,
+      [ids, ...EXCLUDED_BOOKING_JOB_STATUSES]
+    );
+    direct.rows.forEach((r) => byItem.set(Number(r.item_id), Number(r.cnt)));
 
-  rows.forEach((row) => { row.booking_count = byItem.get(Number(row.item_id)) || 0; });
+    const historical = await bulkResolveHistoricalItemMatches(pool, ids);
+    historical.forEach((cnt, id) => {
+      byItem.set(id, (byItem.get(id) || 0) + cnt);
+    });
+
+    rows.forEach((row) => { row.booking_count = byItem.get(Number(row.item_id)) || 0; });
+  } catch (e) {
+    console.warn("[catalog_booking_count] aggregation failed", e && e.code ? { code: e.code } : undefined);
+  }
   return rows;
 }
 
