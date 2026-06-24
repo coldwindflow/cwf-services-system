@@ -110,7 +110,7 @@
   }
 
   function canonicalJobCategory(item) {
-    const candidates = [item.job_category, item.item_category];
+    const candidates = [item.job_category, item.item_category, item.item_name];
     for (const raw of candidates) {
       const norm = normalizeForMatch(raw);
       if (!norm) continue;
@@ -122,8 +122,14 @@
     return null;
   }
 
+  // booking_wash_variant is the authoritative, server-validated field (see
+  // ALLOWED_BOOKING_WASH_VARIANTS); older catalog rows predating that field
+  // often have it null/missing entirely but still encode the real wash
+  // method in their item_name (e.g. "ล้างแอร์ผนัง ล้างปกติ"), so item_name is
+  // checked as the last-resort deterministic fallback -- never fuzzy, and
+  // only ever returns one of the 4 fixed canonical wash-method tokens.
   function canonicalWashVariant(item) {
-    const candidates = [item.booking_wash_variant];
+    const candidates = [item.booking_wash_variant, item.item_name];
     for (const raw of candidates) {
       const norm = normalizeForMatch(raw);
       if (!norm) continue;
@@ -133,6 +139,15 @@
       if (/ปกติ|ธรรมดา|normal/.test(norm)) return "normal";
     }
     return null;
+  }
+
+  // Only canonical wall + wash items are split into 4 distinct wash-method
+  // variant groups (ล้างปกติ/ล้างพรีเมียม/แขวนคอยล์/ตัดล้างใหญ่). Other AC
+  // types/job categories never need a wash-method axis at all, so an
+  // unresolved wash variant there is not an error -- both sides of a BTU
+  // comparison simply share the same (empty) wash-variant token.
+  function requiresWashVariant(item) {
+    return canonicalAcType(item) === "wall" && canonicalJobCategory(item) === "wash";
   }
 
   // Best real BTU figure available for an item, preferring the bookable
@@ -165,7 +180,13 @@
   function variantGroupKey(item) {
     const fam = familyKey(item);
     if (!fam) return null;
-    return `${fam}|${canonicalWashVariant(item) || ""}`;
+    const wash = canonicalWashVariant(item);
+    // A wall-wash item whose wash method cannot be resolved at all must never
+    // be grouped under the shared empty-token bucket -- that would silently
+    // merge it with siblings of a real, different wash method instead of
+    // standing alone (it always stands alone until its method is known).
+    if (!wash && requiresWashVariant(item)) return null;
+    return `${fam}|${wash || ""}`;
   }
 
   // Siblings sharing this item's exact variant group (same canonical job
@@ -238,9 +259,14 @@
     for (const it of allItems || []) {
       if (String(it.item_id) === String(item.item_id)) continue;
       if (familyKey(it) !== fam) continue;
-      const wv = canonicalWashVariant(it) || "";
-      if (!groups.has(wv)) groups.set(wv, []);
-      groups.get(wv).push(it);
+      const wv = canonicalWashVariant(it);
+      // An item whose wash method can't be resolved at all (wall-wash with no
+      // matching field or item-name keyword) never counts as a representative
+      // "method" card -- we don't actually know which of the 4 methods it is.
+      if (!wv && requiresWashVariant(it)) continue;
+      const key = wv || "";
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(it);
     }
     const others = [];
     for (const [wv, candidates] of groups) {

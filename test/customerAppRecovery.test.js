@@ -1790,3 +1790,136 @@ test("canonical resolver never mixes repair items with wash items, and never put
   assert.equal(options.length, 0, "a different wash method (ล้างพรีเมียม) must never enter the ล้างธรรมดา BTU selector");
   assert.doesNotMatch(body.innerHTML, /data-store-related-item="72"/, "repair items must never be mixed into a wash item's related family");
 });
+
+// ---------- Production-shaped legacy rows: booking_wash_variant is missing
+// entirely (predates that field), so the wash method must be resolved from
+// item_name as a deterministic last-resort fallback -- never left as an
+// empty token that silently merges unrelated wash methods together.
+
+test("legacy rows with no booking_wash_variant resolve ล้างปกติ/ล้างธรรมดา from item_name into the same BTU variant group, price changes on selection, and booking uses the selected real item_id", async () => {
+  const context = makeContext();
+  const root = loadCustomerFrontend(context);
+  root.state.setRoute("storeItem-80");
+  const items = [
+    { item_id: 80, item_name: "ล้างแอร์ผนัง ล้างปกติ 9000", item_category: "ล้างแอร์", base_price: 500, unit_label: "เครื่อง", short_description: "เหมาะกับแอร์ขนาดเล็ก", booking_mode: "bookable", job_category: "ล้าง", ac_type: "ผนัง", btu_min: 9000, btu_max: 15000, booking_ac_type: "ผนัง", booking_btu: 9000 },
+    { item_id: 81, item_name: "ล้างแอร์ผนัง ล้างธรรมดา 18000+", item_category: "ล้างแอร์", base_price: 750, unit_label: "เครื่อง", short_description: "เหมาะกับแอร์ขนาดใหญ่", booking_mode: "bookable", job_category: "ล้าง", ac_type: "ผนัง", btu_min: 18000, booking_ac_type: "ผนัง", booking_btu: 18000 },
+  ];
+  root.api.loadCatalogItem = async () => items[0];
+  root.api.loadCatalogItems = async () => items;
+
+  const container = new FakeMount();
+  root.store.renderDetail(container);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  let body = container.querySelector("[data-store-detail-body]");
+  let options = container.querySelectorAll("[data-store-variant-option]");
+  assert.equal(options.length, 2, "ล้างปกติ/ล้างธรรมดา item_name fallback must resolve to the same canonical wash variant");
+  assert.match(body.innerHTML, /500/);
+
+  const bigOption = options.find((o) => o.getAttribute("data-store-variant-option") === "81");
+  assert.ok(bigOption, "18,000+ option not found");
+  await bigOption.click();
+
+  body = container.querySelector("[data-store-detail-body]");
+  assert.match(body.innerHTML, /750/);
+
+  // catalogItemToCommerceDraft requires the real booking_wash_variant enum
+  // field (server-validated) to build an actual booking payload -- the
+  // item_name-derived canonical wash variant is for display/grouping only
+  // and must never be used to fabricate that real booking field. With it
+  // missing, tapping book correctly falls back to the contact-admin sheet
+  // for whichever variant (81) was selected, rather than silently booking
+  // with an unverified wash method.
+  let contactTitle = null;
+  root.ui.openContactSheet = (_container, { title }) => { contactTitle = title; };
+  const bookButtons = container.querySelectorAll("[data-store-detail-book]");
+  assert.ok(bookButtons.length >= 1);
+  await bookButtons[0].click();
+  assert.equal(contactTitle, "ล้างแอร์ผนัง ล้างธรรมดา 18000+");
+});
+
+test("legacy rows with no booking_wash_variant show all 4 real wash methods (resolved from item_name) in the related slider, exactly once each", async () => {
+  const context = makeContext();
+  const root = loadCustomerFrontend(context);
+  root.state.setRoute("storeItem-90");
+  const items = [
+    { item_id: 90, item_name: "ล้างแอร์ผนัง ล้างปกติ", item_category: "ล้างแอร์", base_price: 500, unit_label: "เครื่อง", booking_mode: "bookable", job_category: "ล้าง", ac_type: "ผนัง", booking_ac_type: "ผนัง", booking_btu: 9000 },
+    { item_id: 91, item_name: "ล้างแอร์ผนัง ล้างพรีเมียม", item_category: "ล้างแอร์", base_price: 650, unit_label: "เครื่อง", booking_mode: "bookable", job_category: "ล้าง", ac_type: "ผนัง", booking_ac_type: "ผนัง", booking_btu: 9000 },
+    { item_id: 92, item_name: "ล้างแอร์ผนัง แขวนคอยล์", item_category: "ล้างแอร์", base_price: 900, unit_label: "เครื่อง", booking_mode: "bookable", job_category: "ล้าง", ac_type: "ผนัง", booking_ac_type: "ผนัง", booking_btu: 9000 },
+    { item_id: 93, item_name: "ล้างแอร์ผนัง ตัดล้างใหญ่", item_category: "ล้างแอร์", base_price: 1500, unit_label: "เครื่อง", booking_mode: "bookable", job_category: "ล้าง", ac_type: "ผนัง", booking_ac_type: "ผนัง", booking_btu: 9000 },
+  ];
+  root.api.loadCatalogItem = async () => items[0];
+  root.api.loadCatalogItems = async () => items;
+
+  const container = new FakeMount();
+  root.store.renderDetail(container);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const body = container.querySelector("[data-store-detail-body]");
+  const html = body.innerHTML;
+  const relatedSection = html.slice(html.indexOf("เลือกวิธีล้างที่เหมาะกับคุณ"));
+  assert.equal((relatedSection.match(/store-related-card-image-wrap/g) || []).length, 4, "all 4 real wash methods must appear exactly once");
+  assert.match(relatedSection, /data-store-related-item="91"/);
+  assert.match(relatedSection, /data-store-related-item="92"/);
+  assert.match(relatedSection, /data-store-related-item="93"/);
+});
+
+test("a wall-wash item whose wash method cannot be resolved from any field or item_name keyword is never merged into another item's BTU group or counted as a related-slider method", async () => {
+  const context = makeContext();
+  const root = loadCustomerFrontend(context);
+  root.state.setRoute("storeItem-100");
+  const items = [
+    { item_id: 100, item_name: "ล้างแอร์ผนัง ล้างปกติ", item_category: "ล้างแอร์", base_price: 500, unit_label: "เครื่อง", booking_mode: "bookable", job_category: "ล้าง", ac_type: "ผนัง", booking_ac_type: "ผนัง", booking_btu: 9000 },
+    { item_id: 101, item_name: "ล้างแอร์ผนัง", item_category: "ล้างแอร์", base_price: 520, unit_label: "เครื่อง", booking_mode: "bookable", job_category: "ล้าง", ac_type: "ผนัง", booking_ac_type: "ผนัง", booking_btu: 12000 },
+  ];
+  root.api.loadCatalogItem = async () => items[0];
+  root.api.loadCatalogItems = async () => items;
+
+  const container = new FakeMount();
+  root.store.renderDetail(container);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  let body = container.querySelector("[data-store-detail-body]");
+  let options = container.querySelectorAll("[data-store-variant-option]");
+  assert.equal(options.length, 0, "the resolvable item must not gain an unresolved-method sibling in its BTU selector");
+  assert.doesNotMatch(body.innerHTML, /data-store-related-item="101"/, "an unresolved wash method must never be counted as a related-slider method card");
+
+  const context2 = makeContext();
+  const root2 = loadCustomerFrontend(context2);
+  root2.state.setRoute("storeItem-101");
+  root2.api.loadCatalogItem = async () => items[1];
+  root2.api.loadCatalogItems = async () => items;
+  const container2 = new FakeMount();
+  root2.store.renderDetail(container2);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  body = container2.querySelector("[data-store-detail-body]");
+  options = container2.querySelectorAll("[data-store-variant-option]");
+  assert.equal(options.length, 0, "the unresolved item itself must never gain a sibling either");
+});
+
+test("job_category and item_category empty: wash resolves from item_name alone, and a repair item named only in item_name is never mixed into the wash family", async () => {
+  const context = makeContext();
+  const root = loadCustomerFrontend(context);
+  root.state.setRoute("storeItem-110");
+  const items = [
+    { item_id: 110, item_name: "ล้างแอร์ผนัง ล้างปกติ", base_price: 500, unit_label: "เครื่อง", booking_mode: "bookable", ac_type: "ผนัง", booking_ac_type: "ผนัง", booking_btu: 9000 },
+    { item_id: 111, item_name: "ล้างแอร์ผนัง ล้างพรีเมียม", base_price: 650, unit_label: "เครื่อง", booking_mode: "bookable", ac_type: "ผนัง", booking_ac_type: "ผนัง", booking_btu: 9000 },
+    { item_id: 112, item_name: "ซ่อมแอร์ผนัง", base_price: 1200, unit_label: "งาน", booking_mode: "bookable", ac_type: "ผนัง", booking_ac_type: "ผนัง" },
+  ];
+  root.api.loadCatalogItem = async () => items[0];
+  root.api.loadCatalogItems = async () => items;
+
+  const container = new FakeMount();
+  root.store.renderDetail(container);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const body = container.querySelector("[data-store-detail-body]");
+  const html = body.innerHTML;
+  assert.match(html, /data-store-related-item="111"/, "job_category/item_category empty must still resolve wash via item_name");
+  assert.doesNotMatch(html, /data-store-related-item="112"/, "a repair item named only in item_name must never be mixed into the wash family");
+});
