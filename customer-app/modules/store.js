@@ -65,6 +65,80 @@
     return "";
   }
 
+  // Shopee/Lazada-style variant-option wording ("18,000 BTU ขึ้นไป"), distinct
+  // from btuRangeLabel()'s wording used elsewhere on the card/detail page.
+  function variantBtuLabel(item) {
+    const min = Number(item.btu_min);
+    const max = Number(item.btu_max);
+    const hasMin = Number.isFinite(min) && min > 0;
+    const hasMax = Number.isFinite(max) && max > 0;
+    if (hasMin && hasMax && min !== max) return `${min.toLocaleString("th-TH")}–${max.toLocaleString("th-TH")} BTU`;
+    if (hasMin && hasMax) return `${min.toLocaleString("th-TH")} BTU`;
+    if (hasMin) return `${min.toLocaleString("th-TH")} BTU ขึ้นไป`;
+    if (hasMax) return `ไม่เกิน ${max.toLocaleString("th-TH")} BTU`;
+    return "ไม่ระบุ BTU";
+  }
+
+  // "Family" = same job_category + ac_type, spanning different wash methods
+  // (ล้างปกติ/ล้างพรีเมียม/แขวนคอยล์/ตัดล้างใหญ่) -- used for related-products.
+  // "Variant group" = family + the specific wash method, spanning different BTU
+  // bands of that one method -- used for the BTU/spec selector. Both keys are
+  // built only from real per-row catalog fields, never a fabricated mapping.
+  function familyKey(item) {
+    return `${item.job_category || ""}|${item.ac_type || ""}`;
+  }
+
+  function variantGroupKey(item) {
+    return `${item.job_category || ""}|${item.ac_type || ""}|${item.booking_wash_variant || ""}`;
+  }
+
+  // Siblings sharing this item's exact variant group (same method, different
+  // BTU). Only meaningful for bookable items with a real booking_wash_variant;
+  // otherwise there is nothing to group, so the item is its own only "sibling".
+  function variantSiblings(item, allItems) {
+    if (!item || item.booking_mode !== "bookable" || !item.booking_wash_variant) return [item];
+    const key = variantGroupKey(item);
+    const list = (allItems || []).filter((it) => it.booking_mode === "bookable" && variantGroupKey(it) === key);
+    if (!list.some((it) => String(it.item_id) === String(item.item_id))) list.push(item);
+    return list.slice().sort((a, b) => {
+      const aBtu = Number(a.btu_min) || Number(a.booking_btu) || 0;
+      const bBtu = Number(b.btu_min) || Number(b.booking_btu) || 0;
+      return aBtu - bBtu;
+    });
+  }
+
+  // The item the customer is currently viewing price/short-info for: either the
+  // originally loaded detail item, or whichever sibling they tapped in the BTU
+  // selector. Never a network re-fetch -- purely a client-side selection among
+  // already-known real catalog rows.
+  function currentVariantDisplayItem(item, siblings) {
+    if (!selectedVariantItemId || String(selectedVariantItemId) === String(item.item_id)) return item;
+    return (siblings || []).find((s) => String(s.item_id) === String(selectedVariantItemId)) || item;
+  }
+
+  // Up to 4 same-family items, one representative per distinct wash variant
+  // (BTU siblings within one variant are not repeated -- those are shown in
+  // the BTU selector instead). Includes the item currently being viewed as
+  // the first card (marked is_current) so all real wash-method variants in
+  // the family are visible, not just the other three. Real catalog data only.
+  function relatedFamilyItems(item, allItems) {
+    if (!item || !item.job_category || !item.ac_type) return [];
+    const fam = familyKey(item);
+    const seenVariants = new Set([variantGroupKey(item)]);
+    const others = [];
+    for (const it of allItems || []) {
+      if (String(it.item_id) === String(item.item_id)) continue;
+      if (familyKey(it) !== fam) continue;
+      const vk = variantGroupKey(it);
+      if (seenVariants.has(vk)) continue;
+      seenVariants.add(vk);
+      others.push(it);
+      if (others.length >= 3) break;
+    }
+    if (!others.length) return [];
+    return [{ ...item, is_current: true }, ...others];
+  }
+
   function applyFilters(items) {
     const search = filterState.search.trim().toLowerCase();
     const category = filterState.category;
@@ -194,10 +268,16 @@
     `;
   }
 
+  // "มีคิววันนี้" only ever reflects item.has_queue_today, a real
+  // technician-eligibility check computed server-side (attachTodayQueueAvailability
+  // in server/routes/catalog/items.js) -- never guessed/hardcoded true for all
+  // items. Items without a queue today keep the existing "จองได้" wording.
   function renderBadges(item) {
     const badges = [];
-    if (isBookable(item)) badges.push(`<span class="store-badge store-badge-bookable">จองได้</span>`);
-    else badges.push(`<span class="store-badge store-badge-contact">ติดต่อแอดมิน</span>`);
+    if (isBookable(item)) {
+      if (item.has_queue_today === true) badges.push(`<span class="store-badge store-badge-queue-today">มีคิววันนี้</span>`);
+      else badges.push(`<span class="store-badge store-badge-bookable">จองได้</span>`);
+    } else badges.push(`<span class="store-badge store-badge-contact">ติดต่อแอดมิน</span>`);
     return badges.length ? `<div class="store-card-badges">${badges.join("")}</div>` : "";
   }
 
@@ -525,6 +605,129 @@
     `;
   }
 
+  // Currently selected BTU/spec sibling on the product detail page (per
+  // requirement #5). Reset whenever a new detail item is loaded.
+  let selectedVariantItemId = null;
+
+  function renderAccordionSection(title, bodyHtml, { open } = {}) {
+    if (!bodyHtml) return "";
+    return `
+      <details class="store-detail-accordion"${open ? " open" : ""}>
+        <summary>${root.utils.escapeHtml(title)}</summary>
+        <div class="store-detail-accordion-body">${bodyHtml}</div>
+      </details>
+    `;
+  }
+
+  function renderVariantSelector(item, siblings) {
+    if (!siblings || siblings.length < 2) return "";
+    const selectedId = selectedVariantItemId || item.item_id;
+    return `
+      <div class="store-detail-variant-selector" data-store-variant-selector>
+        <span class="store-detail-variant-label">เลือกขนาด BTU</span>
+        <div class="store-detail-variant-options">
+          ${siblings.map((s) => `
+            <button type="button" class="store-detail-variant-option${String(s.item_id) === String(selectedId) ? " is-selected" : ""}" data-store-variant-option="${root.utils.escapeHtml(String(s.item_id))}">
+              ${root.utils.escapeHtml(variantBtuLabel(s))}
+            </button>
+          `).join("")}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderRelatedProducts(item, allItems) {
+    const related = relatedFamilyItems(item, allItems);
+    if (!related.length) return "";
+    return `
+      <div class="store-detail-related" data-store-related>
+        <h3>บริการที่เกี่ยวข้อง</h3>
+        <div class="store-related-slider">
+          ${related.map((r) => {
+            const images = itemGalleryImages(r);
+            const thumb = images.length
+              ? `<img class="store-related-card-image" src="${root.utils.escapeHtml(images[0].image_url)}" alt="${root.utils.escapeHtml(images[0].alt_text || r.item_name || "")}" loading="lazy" onerror="this.style.visibility='hidden';">`
+              : `<div class="store-card-image-placeholder" aria-hidden="true">ไม่มีรูปภาพ</div>`;
+            if (r.is_current) {
+              return `
+                <div class="store-related-card is-current" aria-current="true">
+                  <span class="store-related-card-badge">กำลังดู</span>
+                  <div class="store-related-card-image-wrap">${thumb}</div>
+                  <strong>${root.utils.escapeHtml(r.item_name || "-")}</strong>
+                  <span class="price-text${priceIsAsk(r) ? " is-estimate" : ""}">${root.utils.escapeHtml(priceLabel(r))}</span>
+                </div>
+              `;
+            }
+            return `
+              <button type="button" class="store-related-card" data-store-related-item="${root.utils.escapeHtml(String(r.item_id))}" aria-label="ดูรายละเอียด ${root.utils.escapeHtml(r.item_name || "")}">
+                <div class="store-related-card-image-wrap">${thumb}</div>
+                <strong>${root.utils.escapeHtml(r.item_name || "-")}</strong>
+                <span class="price-text${priceIsAsk(r) ? " is-estimate" : ""}">${root.utils.escapeHtml(priceLabel(r))}</span>
+              </button>
+            `;
+          }).join("")}
+        </div>
+      </div>
+    `;
+  }
+
+  // Static, factual comparison content (not derived from per-item DB fields --
+  // these four wash methods are fixed domain concepts shared by every wall-AC
+  // wash item, not a guess about any specific catalog row's price/availability).
+  const WALL_AC_CLEANING_COMPARISON = [
+    {
+      title: "ล้างปกติ",
+      bestFor: "แอร์ที่ดูแลสม่ำเสมอ ไม่มีกลิ่นอับหรือคราบสะสมมาก",
+      thoroughness: "ล้างฟิลเตอร์ คอยล์เย็น คอยล์ร้อน และฉีดอัดท่อน้ำทิ้ง",
+      advantages: "เร็ว ราคาประหยัด เหมาะกับการล้างตามรอบปกติ",
+      depth: "ล้างจากภายนอกตัวเครื่อง ไม่ถอดชิ้นส่วนภายใน",
+      dirtLevel: "เหมาะกับสิ่งสกปรกระดับน้อยถึงปานกลาง",
+    },
+    {
+      title: "ล้างพรีเมียม",
+      bestFor: "แอร์ที่ใช้งานหนักหรือไม่ได้ล้างมานาน",
+      thoroughness: "ล้างละเอียดคอยล์เย็น-คอยล์ร้อน ถอดรางน้ำทิ้งและโพรงกระรอกออกล้าง พร้อมฉีดอัดท่อน้ำทิ้ง",
+      advantages: "ลดกลิ่นอับ ลดเชื้อแบคทีเรีย อากาศเย็นสะอาดขึ้น",
+      depth: "เปิดฝาครอบและล้างชิ้นส่วนภายในมากกว่าล้างปกติ",
+      dirtLevel: "เหมาะกับสิ่งสกปรกระดับปานกลางถึงมาก",
+    },
+    {
+      title: "แขวนคอยล์",
+      bestFor: "แอร์ที่มีน้ำหยด ตันบ่อย หรือคอยล์สกปรกมาก",
+      thoroughness: "ถอดแผงไฟและถาดหลังออกมาทำความสะอาดอย่างละเอียด",
+      advantages: "ล้างได้ทั่วถึงทุกซอกของคอยล์ แก้ปัญหาน้ำหยดได้ตรงจุด",
+      depth: "ถอดชิ้นส่วนคอยล์ออกจากตัวเครื่องเพื่อล้าง",
+      dirtLevel: "เหมาะกับสิ่งสกปรกระดับมากถึงมากที่สุด",
+    },
+    {
+      title: "ตัดล้างใหญ่",
+      bestFor: "แอร์ที่ไม่เคยล้างใหญ่มานาน หรือมีปัญหาสะสมหลายจุด",
+      thoroughness: "ถอดล้างทั้งตัวเครื่อง ทำความสะอาดครบทุกระบบ โดยประเมินหน้างานก่อนเริ่มงาน",
+      advantages: "ครอบคลุมที่สุด เหมาะกับการแก้ปัญหาสะสมระยะยาว",
+      depth: "เปิดและถอดชิ้นส่วนภายในเกือบทั้งหมดเพื่อล้างลึกที่สุด",
+      dirtLevel: "เหมาะกับสิ่งสกปรกสะสมมากที่สุด",
+    },
+  ];
+
+  function renderCleaningComparison() {
+    return `
+      <div class="store-compare-grid">
+        ${WALL_AC_CLEANING_COMPARISON.map((c) => `
+          <div class="store-compare-card">
+            <h4>${root.utils.escapeHtml(c.title)}</h4>
+            <dl>
+              <dt>เหมาะกับ</dt><dd>${root.utils.escapeHtml(c.bestFor)}</dd>
+              <dt>ความละเอียด</dt><dd>${root.utils.escapeHtml(c.thoroughness)}</dd>
+              <dt>ข้อดี</dt><dd>${root.utils.escapeHtml(c.advantages)}</dd>
+              <dt>ความลึกในการเข้าถึงเครื่อง</dt><dd>${root.utils.escapeHtml(c.depth)}</dd>
+              <dt>ระดับความสกปรกที่เหมาะสม</dt><dd>${root.utils.escapeHtml(c.dirtLevel)}</dd>
+            </dl>
+          </div>
+        `).join("")}
+      </div>
+    `;
+  }
+
   // ---------- Verified Customer Reviews (Product Detail) ----------
 
   const REVIEWS_PAGE_SIZE = 10;
@@ -802,10 +1005,15 @@
   function renderDetailContent(item) {
     const name = item.item_name || "-";
     const category = categoryLabel(item.item_category);
-    const unit = item.unit_label || "";
-    const promo = hasPromo(item);
-    const bookable = isBookable(item);
     const highlights = Array.isArray(item.highlights) ? item.highlights : [];
+    const allItems = (root.state.catalog && root.state.catalog.items) || [];
+    const siblings = variantSiblings(item, allItems);
+    const displayItem = currentVariantDisplayItem(item, siblings);
+    const unit = displayItem.unit_label || "";
+    const promo = hasPromo(displayItem);
+    const bookable = isBookable(displayItem);
+    const showCompare = item.ac_type === "ผนัง" && item.job_category === "ล้าง";
+
     return `
       <button class="store-detail-back" type="button" data-store-detail-back>${root.utils.icon("pin", 16)}กลับไปหน้าร้านค้า</button>
       ${renderDetailGallery(item, name)}
@@ -816,32 +1024,29 @@
       </div>
       ${renderRatingBadge(item)}
       ${renderBookingCountLabel(item)}
-      <div class="store-detail-price">
-        <span class="price-text${priceIsAsk(item) ? " is-estimate" : ""}">${root.utils.escapeHtml(priceLabel(item))}</span>
-        ${promo ? `<span class="price-strike">${root.utils.escapeHtml(root.utils.formatBaht(item.normal_price))}</span>` : ""}
-        ${unit && !priceIsAsk(item) ? `<span class="muted">/ ${root.utils.escapeHtml(unit)}</span>` : ""}
+      <div class="store-detail-price" data-store-detail-price>
+        <span class="price-text${priceIsAsk(displayItem) ? " is-estimate" : ""}">${root.utils.escapeHtml(priceLabel(displayItem))}</span>
+        ${promo ? `<span class="price-strike">${root.utils.escapeHtml(root.utils.formatBaht(displayItem.normal_price))}</span>` : ""}
+        ${unit && !priceIsAsk(displayItem) ? `<span class="muted">/ ${root.utils.escapeHtml(unit)}</span>` : ""}
       </div>
-      ${item.short_description ? `<div class="store-detail-section"><p>${root.utils.escapeHtml(item.short_description)}</p></div>` : ""}
-      ${highlights.length ? `
-        <div class="store-detail-section">
-          <h3>จุดเด่นของบริการ</h3>
+      ${renderVariantSelector(item, siblings)}
+      ${displayItem.short_description ? `<div class="store-detail-section store-detail-summary"><p>${root.utils.escapeHtml(displayItem.short_description)}</p></div>` : ""}
+      ${renderRelatedProducts(item, allItems)}
+      <div class="store-detail-accordion-group">
+        ${renderAccordionSection("จุดเด่นของบริการ", highlights.length ? `
           <ul class="store-detail-highlights">
             ${highlights.map((h) => `<li>${root.utils.icon("sparkle", 16)}<span>${root.utils.escapeHtml(h)}</span></li>`).join("")}
           </ul>
-        </div>
-      ` : ""}
-      ${item.long_description ? `
-        <div class="store-detail-section">
-          <h3>รายละเอียดบริการ</h3>
-          <p>${root.utils.escapeHtml(item.long_description)}</p>
-        </div>
-      ` : ""}
-      ${item.service_conditions ? `
-        <div class="store-detail-section">
-          <h3>เงื่อนไขบริการ</h3>
-          <p>${root.utils.escapeHtml(item.service_conditions)}</p>
-        </div>
-      ` : ""}
+        ` : "")}
+        ${renderAccordionSection("รายละเอียดบริการ", item.long_description ? `<p>${root.utils.escapeHtml(item.long_description)}</p>` : "")}
+        ${renderAccordionSection("ประเภทแอร์ที่เหมาะสม", item.ac_type ? `
+          <ul class="store-detail-highlights">
+            <li>${root.utils.icon("sparkle", 16)}<span>${root.utils.escapeHtml(item.ac_type)}</span></li>
+          </ul>
+        ` : "")}
+        ${renderAccordionSection("เงื่อนไขบริการ", item.service_conditions ? `<p>${root.utils.escapeHtml(item.service_conditions)}</p>` : "")}
+        ${showCompare ? renderAccordionSection("เปรียบเทียบวิธีล้างแอร์ผนัง", renderCleaningComparison()) : ""}
+      </div>
       <div class="store-detail-section store-reviews-section" data-store-reviews-section>
         ${renderReviewsSectionBody(item)}
       </div>
@@ -912,9 +1117,12 @@
     if (bookButton) {
       bookButton.addEventListener("click", () => {
         const item = root.state.storeDetail?.data;
-        const draftItem = root.services.catalogItemToCommerceDraft(item);
+        if (!item) return;
+        const allItems = (root.state.catalog && root.state.catalog.items) || [];
+        const target = currentVariantDisplayItem(item, variantSiblings(item, allItems));
+        const draftItem = root.services.catalogItemToCommerceDraft(target);
         if (!draftItem || !root.services.applyCommerceDraft("scheduled", draftItem)) {
-          root.ui.openContactSheet(container, { title: item?.item_name || "รายการนี้" });
+          root.ui.openContactSheet(container, { title: target?.item_name || item?.item_name || "รายการนี้" });
           return;
         }
         root.utils.routeTo("scheduled");
@@ -933,6 +1141,15 @@
         if (section) section.scrollIntoView({ behavior: "smooth", block: "start" });
       });
     });
+    container.querySelectorAll("[data-store-variant-option]").forEach((button) => {
+      button.addEventListener("click", () => {
+        selectedVariantItemId = button.getAttribute("data-store-variant-option");
+        patchDetailBody(container);
+      });
+    });
+    container.querySelectorAll("[data-store-related-item]").forEach((card) => {
+      card.addEventListener("click", () => goToDetail(card.getAttribute("data-store-related-item")));
+    });
     const item = root.state.storeDetail?.data;
     if (item) bindReviewsSection(container, item);
     bindDetailGallery(container);
@@ -945,8 +1162,25 @@
     bindDetailBody(container);
   }
 
+  // Lets the detail page show related-products/variant-selector data sourced
+  // from the full catalog list even when the customer navigated straight to a
+  // detail URL without first visiting the Store list page.
+  async function ensureCatalogListLoaded() {
+    const bucket = root.state.catalog || { status: "idle", items: [] };
+    if (bucket.status === "success" && Array.isArray(bucket.items) && bucket.items.length) return bucket.items;
+    try {
+      const data = await root.api.loadCatalogItems();
+      const items = root.utils.normalizeList(data, "items");
+      root.state.setCollection("catalog", { status: "success", items, error: "" });
+      return items;
+    } catch (_error) {
+      return bucket.items || [];
+    }
+  }
+
   async function loadDetail(container, itemId) {
     resetReviewsState(itemId);
+    selectedVariantItemId = null;
     if (!itemId) {
       root.state.setStoreDetail({ status: "error", itemId: "", data: null, error: "ไม่พบรายการนี้" });
       patchDetailBody(container);
@@ -960,6 +1194,9 @@
       patchDetailBody(container);
       loadReviewsList(container, data);
       loadEligibility(container, data);
+      ensureCatalogListLoaded().then((items) => {
+        if (items.length && String(root.state.storeDetail?.itemId) === String(itemId)) patchDetailBody(container);
+      });
       return;
     } catch (error) {
       const message = error?.status === 404 ? "ไม่พบรายการนี้" : (error?.message || "โหลดข้อมูลไม่สำเร็จ");

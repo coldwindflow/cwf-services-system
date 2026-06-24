@@ -6,9 +6,13 @@ const http = require("node:http");
 const express = require("express");
 
 const createCatalogItemRoutes = require("../server/routes/catalog/items");
+const { getBangkokNow } = require("../server/services/jobTiming");
 
-function makePool(initialItems = [], initialRules = [], { schemaReady = true, marketplaceReady = false, autoplayReady = false, jobsCatalogLinkReady = false, jobs = [], jobUnits = [], forceBookingCountError = false } = {}) {
+function makePool(initialItems = [], initialRules = [], { schemaReady = true, marketplaceReady = false, autoplayReady = false, jobsCatalogLinkReady = false, jobs = [], jobUnits = [], forceBookingCountError = false, technicians = [], serviceMatrix = [], calendarRows = [] } = {}) {
   const state = {
+    technicians: technicians.map((x) => ({ ...x })),
+    serviceMatrix: serviceMatrix.map((x) => ({ ...x })),
+    calendarRows: calendarRows.map((x) => ({ ...x })),
     items: initialItems.map((x) => ({
       image_url: null, image_public_id: null, price_rule_id: null,
       short_description: null, long_description: null, highlights: null, service_conditions: null,
@@ -126,6 +130,46 @@ function makePool(initialItems = [], initialRules = [], { schemaReady = true, ma
       }
       return { rows: Array.from(byItem.entries()).map(([item_id, jobIds]) => ({ item_id, cnt: jobIds.size })) };
     }
+
+    // listTechniciansForQueueCheck (attachTodayQueueAvailability's local proxy
+    // for index.js's listTechniciansByType).
+    if (s.includes("FROM public.users u") && s.includes("LEFT JOIN public.technician_profiles")) {
+      const [techType, includePaused, isAll] = params;
+      const rows = state.technicians.filter((t) => {
+        if (!includePaused && (t.accept_status || "ready") === "paused") return false;
+        if (isAll) return true;
+        if (techType === "company") return ["company", "custom", "special_only"].includes(t.employment_type || "company");
+        return (t.employment_type || "company") === techType;
+      }).map((t) => ({
+        username: t.username,
+        employment_type: t.employment_type || "company",
+        accept_status: t.accept_status || "ready",
+        customer_slot_visible: t.customer_slot_visible === true,
+      }));
+      return { rows };
+    }
+
+    // customerAvailability.loadServiceMatrixMap
+    if (s.includes("FROM public.technician_service_matrix")) {
+      const [usernames] = params;
+      const rows = state.serviceMatrix
+        .filter((m) => usernames.map(String).includes(String(m.username)))
+        .map((m) => ({ username: m.username, matrix_json: m.matrix_json }));
+      return { rows };
+    }
+
+    // customerAvailability.loadAdvanceCalendarMap
+    if (s.includes("FROM public.technician_monthly_work_calendar")) {
+      const [usernames, date] = params;
+      const rows = state.calendarRows.filter((c) =>
+        usernames.map(String).includes(String(c.technician_username)) && String(c.work_date) === String(date)
+      );
+      return { rows };
+    }
+
+    // customerAvailability.loadDailyUsageMap -- tests never pre-seed competing
+    // bookings for the queue-today check, so capacity is always open.
+    if (s.includes("WITH assigned AS")) return { rows: [] };
 
     if (/^\s*(BEGIN|COMMIT|ROLLBACK)\s*;?\s*$/i.test(s)) return { rows: [] };
     if (s.includes("ALTER TABLE") || s.includes("CREATE INDEX") || s.includes("ADD CONSTRAINT") || s.includes("DO $$")) return { rows: [] };
@@ -766,7 +810,17 @@ test("SQL injection attempts cannot change query structure", async () => {
 
 test("index.js passes the real requireAdminSession middleware into createCatalogItemRoutes", () => {
   const source = fs.readFileSync(path.join(__dirname, "..", "index.js"), "utf8");
-  assert.match(source, /app\.use\(createCatalogItemRoutes\(\{\s*pool,\s*requireAdminSession\s*\}\)\)/);
+  assert.match(source, /app\.use\(createCatalogItemRoutes\(\{\s*pool,\s*requireAdminSession,/);
+});
+
+test("index.js wires the real public slot-engine deps into createCatalogItemRoutes (has_queue_today must use real slots, not just eligibility)", () => {
+  const source = fs.readFileSync(path.join(__dirname, "..", "index.js"), "utf8");
+  const match = source.match(/app\.use\(createCatalogItemRoutes\(\{[^}]*\}\)\);/);
+  assert.ok(match, "createCatalogItemRoutes call site not found");
+  assert.match(match[0], /listBusyBlocksForTechOnDate/);
+  assert.match(match[0], /buildStartIntervalsByCollision/);
+  assert.match(match[0], /toMin/);
+  assert.match(match[0], /minToHHMM/);
 });
 
 test("admin POST rejects an invalid is_active value and never writes to the DB", async () => {
@@ -2770,5 +2824,196 @@ test("booking_count is also attached on the single-item public detail endpoint",
     const res = await fetch(`${base}/catalog/items/1`);
     const body = await res.json();
     assert.equal(body.booking_count, 1);
+  });
+});
+
+// ---- has_queue_today (real technician-eligibility check, never hardcoded) ----
+// Verifies an actual bookable start slot today (cutoff + collision), not just
+// matrix/calendar/capacity eligibility -- mirrors the real public slot engine's
+// deps shape (see customerSameDayTiming.test.js for the same pattern).
+
+function queueToMin(value) {
+  const [h, m] = String(value).split(":").map(Number);
+  return h * 60 + m;
+}
+
+function queueMinToHHMM(value) {
+  return `${String(Math.floor(value / 60)).padStart(2, "0")}:${String(value % 60).padStart(2, "0")}`;
+}
+
+function queueIntervalsFromBusy(blocks, startMin, endMin, durationMin) {
+  const dur = Math.max(1, Number(durationMin || 0));
+  const busy = (blocks || []).slice().sort((a, b) => a.startMin - b.startMin);
+  const out = [];
+  let cursor = startMin;
+  for (const b of busy) {
+    const bs = Math.max(startMin, Number(b.startMin));
+    const be = Math.min(endMin, Number(b.busyEndMin ?? b.endMin));
+    if (bs - cursor >= dur) out.push({ startMin: cursor, endMin: bs - dur });
+    cursor = Math.max(cursor, be);
+  }
+  if (endMin - cursor >= dur) out.push({ startMin: cursor, endMin: endMin - dur });
+  return out;
+}
+
+function queueSlotDeps({ busyBlocks = [], nowParts } = {}) {
+  return {
+    listBusyBlocksForTechOnDate: async () => busyBlocks,
+    buildStartIntervalsByCollision: queueIntervalsFromBusy,
+    toMin: queueToMin,
+    minToHHMM: queueMinToHHMM,
+    ...(nowParts ? { getNowBangkokParts: () => nowParts } : {}),
+  };
+}
+
+function bookableWashWallItem(overrides = {}) {
+  return {
+    item_id: 1, item_name: "ล้างแอร์ผนัง", item_category: "ล้างแอร์", base_price: 700, unit_label: "เครื่อง",
+    job_category: "ล้าง", ac_type: "ผนัง", btu_min: 9000, btu_max: 12000, is_active: true, is_customer_visible: true,
+    booking_mode: "bookable", booking_ac_type: "ผนัง", booking_btu: 9000, booking_wash_variant: "ล้างธรรมดา",
+    ...overrides,
+  };
+}
+
+function eligibleTodayFixtures() {
+  const today = getBangkokNow().ymd;
+  return {
+    technicians: [{ username: "tech1", employment_type: "company", accept_status: "ready", customer_slot_visible: true }],
+    serviceMatrix: [{ username: "tech1", matrix_json: { job_types: { wash: true }, ac_types: { wall: true }, wash_wall_variants: { normal: true } } }],
+    calendarRows: [{ technician_username: "tech1", work_date: today, can_accept_advance_job: true, start_time: "09:00:00", end_time: "18:00:00", max_jobs_per_day: null, max_units_per_day: null }],
+  };
+}
+
+const QUEUE_TODAY_MORNING_NOW = { ymd: getBangkokNow().ymd, hour: 9, minute: 0 };
+
+test("has_queue_today is true on the list endpoint when a real bookable start slot exists today", async () => {
+  createCatalogItemRoutes.__resetQueueTodayCacheForTests();
+  const pool = makePool([bookableWashWallItem()], [], { marketplaceReady: true, ...eligibleTodayFixtures() });
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin, ...queueSlotDeps({ nowParts: QUEUE_TODAY_MORNING_NOW }) });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/catalog/items?customer=1`);
+    const body = await res.json();
+    assert.equal(res.status, 200);
+    assert.equal(body.find((x) => x.item_id === 1).has_queue_today, true);
+  });
+});
+
+test("has_queue_today is true and consistent on the single-item detail endpoint", async () => {
+  createCatalogItemRoutes.__resetQueueTodayCacheForTests();
+  const pool = makePool([bookableWashWallItem()], [], { marketplaceReady: true, ...eligibleTodayFixtures() });
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin, ...queueSlotDeps({ nowParts: QUEUE_TODAY_MORNING_NOW }) });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/catalog/items/1`);
+    const body = await res.json();
+    assert.equal(body.has_queue_today, true);
+  });
+});
+
+test("has_queue_today is false (never guessed true) when no real technician is eligible today", async () => {
+  createCatalogItemRoutes.__resetQueueTodayCacheForTests();
+  const pool = makePool([bookableWashWallItem()], [], { marketplaceReady: true });
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin, ...queueSlotDeps({ nowParts: QUEUE_TODAY_MORNING_NOW }) });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/catalog/items?customer=1`);
+    const body = await res.json();
+    assert.equal(body.find((x) => x.item_id === 1).has_queue_today, false);
+  });
+});
+
+test("has_queue_today is false for contact_admin items even with an eligible technician", async () => {
+  createCatalogItemRoutes.__resetQueueTodayCacheForTests();
+  const pool = makePool([bookableWashWallItem({ booking_mode: "contact_admin" })], [], { marketplaceReady: true, ...eligibleTodayFixtures() });
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin, ...queueSlotDeps({ nowParts: QUEUE_TODAY_MORNING_NOW }) });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/catalog/items?customer=1`);
+    const body = await res.json();
+    assert.equal(body.find((x) => x.item_id === 1).has_queue_today, false);
+  });
+});
+
+test("has_queue_today is false when the current time has already passed the technician's end-of-day window", async () => {
+  createCatalogItemRoutes.__resetQueueTodayCacheForTests();
+  const pool = makePool([bookableWashWallItem()], [], { marketplaceReady: true, ...eligibleTodayFixtures() });
+  const router = createCatalogItemRoutes({
+    pool, requireAdminSession: allowAdmin,
+    ...queueSlotDeps({ nowParts: { ymd: getBangkokNow().ymd, hour: 19, minute: 0 } }),
+  });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/catalog/items?customer=1`);
+    const body = await res.json();
+    assert.equal(body.find((x) => x.item_id === 1).has_queue_today, false);
+  });
+});
+
+test("has_queue_today is false when the technician's whole window today is already booked solid (collision-full)", async () => {
+  createCatalogItemRoutes.__resetQueueTodayCacheForTests();
+  const pool = makePool([bookableWashWallItem()], [], { marketplaceReady: true, ...eligibleTodayFixtures() });
+  const router = createCatalogItemRoutes({
+    pool, requireAdminSession: allowAdmin,
+    ...queueSlotDeps({
+      nowParts: QUEUE_TODAY_MORNING_NOW,
+      busyBlocks: [{ startMin: queueToMin("09:00"), busyEndMin: queueToMin("18:00") }],
+    }),
+  });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/catalog/items?customer=1`);
+    const body = await res.json();
+    assert.equal(body.find((x) => x.item_id === 1).has_queue_today, false);
+  });
+});
+
+test("has_queue_today is false when the technician's daily job capacity is already used up today", async () => {
+  createCatalogItemRoutes.__resetQueueTodayCacheForTests();
+  const today = getBangkokNow().ymd;
+  const pool = makePool([bookableWashWallItem()], [], {
+    marketplaceReady: true,
+    technicians: [{ username: "tech1", employment_type: "company", accept_status: "ready", customer_slot_visible: true }],
+    serviceMatrix: [{ username: "tech1", matrix_json: { job_types: { wash: true }, ac_types: { wall: true }, wash_wall_variants: { normal: true } } }],
+    calendarRows: [{ technician_username: "tech1", work_date: today, can_accept_advance_job: true, start_time: "09:00:00", end_time: "18:00:00", max_jobs_per_day: 1, max_units_per_day: null }],
+  });
+  const originalQuery = pool.query;
+  pool.query = async (sql, params) => {
+    if (String(sql).includes("WITH assigned AS")) return { rows: [{ technician_username: "tech1", jobs_count: 1, units_count: 1 }] };
+    return originalQuery(sql, params);
+  };
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin, ...queueSlotDeps({ nowParts: QUEUE_TODAY_MORNING_NOW }) });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/catalog/items?customer=1`);
+    const body = await res.json();
+    assert.equal(body.find((x) => x.item_id === 1).has_queue_today, false);
+  });
+});
+
+test("has_queue_today fails open to false (never crashes the Store listing) when the eligibility check throws", async () => {
+  createCatalogItemRoutes.__resetQueueTodayCacheForTests();
+  const pool = makePool([bookableWashWallItem()], [], { marketplaceReady: true, ...eligibleTodayFixtures() });
+  const originalQuery = pool.query;
+  pool.query = async (sql, params) => {
+    if (String(sql).includes("FROM public.technician_service_matrix")) throw new Error("simulated queue-today failure");
+    return originalQuery(sql, params);
+  };
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin, ...queueSlotDeps({ nowParts: QUEUE_TODAY_MORNING_NOW }) });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/catalog/items?customer=1`);
+    const body = await res.json();
+    assert.equal(res.status, 200);
+    assert.equal(body.find((x) => x.item_id === 1).has_queue_today, false);
+  });
+});
+
+test("has_queue_today reuses one cached eligibility check across multiple items with identical service criteria", async () => {
+  createCatalogItemRoutes.__resetQueueTodayCacheForTests();
+  const items = [
+    bookableWashWallItem({ item_id: 1, item_name: "ล้างแอร์ผนัง A" }),
+    bookableWashWallItem({ item_id: 2, item_name: "ล้างแอร์ผนัง B" }),
+  ];
+  const pool = makePool(items, [], { marketplaceReady: true, ...eligibleTodayFixtures() });
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin, ...queueSlotDeps({ nowParts: QUEUE_TODAY_MORNING_NOW }) });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/catalog/items?customer=1`);
+    const body = await res.json();
+    assert.ok(body.every((x) => x.has_queue_today === true));
+    const matrixQueries = pool.state.queries.filter((q) => q.sql.includes("FROM public.technician_service_matrix"));
+    assert.equal(matrixQueries.length, 1);
   });
 });

@@ -1,5 +1,7 @@
 const { money, intOrNull, boolish } = require("../../customerPricing");
 const cloudinaryImageUpload = require("../../lib/cloudinaryImageUpload");
+const customerAvailability = require("../../services/public/customerAvailability");
+const { getBangkokNow, computeJobTiming } = require("../../services/jobTiming");
 
 const MAX_CATALOG_IMAGES_PER_ITEM = 4;
 
@@ -549,6 +551,113 @@ async function attachBookingCounts(pool, rows, jobsCatalogLinkReady) {
   return rows;
 }
 
+// Mirrors index.js's listTechniciansByType() read-only query exactly (same
+// table, same filters), so this stays a faithful proxy for the real
+// scheduling engine's technician pool instead of an approximate guess.
+// Re-implemented locally rather than imported because the original is a
+// closure over index.js's module-level `pool` and isn't exported.
+async function listTechniciansForQueueCheck(pool, techType, opts = {}) {
+  const t = String(techType || "company").trim().toLowerCase();
+  const includePaused = Boolean(opts.include_paused);
+  const isAll = t === "all";
+  const r = await pool.query(
+    `SELECT u.username,
+            COALESCE(p.employment_type,'company') AS employment_type,
+            COALESCE(p.accept_status,'ready') AS accept_status,
+            p.customer_slot_visible AS customer_slot_visible
+       FROM public.users u
+       LEFT JOIN public.technician_profiles p ON p.username = u.username
+      WHERE u.role = 'technician'
+        AND ($2::boolean IS TRUE OR COALESCE(p.accept_status,'ready') <> 'paused')
+        AND ($3::boolean IS TRUE OR (
+              ($1 = 'company' AND COALESCE(p.employment_type,'company') IN ('company','custom','special_only'))
+           OR ($1 <> 'company' AND COALESCE(p.employment_type,'company') = $1)
+        ))`,
+    [t, includePaused, isAll]
+  );
+  return r.rows || [];
+}
+
+// "มีคิววันนี้" is real today-availability, derived the same way the booking
+// flow itself decides eligibility (server/services/public/customerAvailability's
+// eligibleCustomerTechnicians: service-matrix match + today's advance-calendar
+// gate + remaining daily capacity) -- never a guess, never hardcoded. Scoped to
+// a single in-process cache per (job/ac/wash) combo so a Store list page with
+// many items only re-runs the eligibility check once per distinct service
+// combination, not once per item.
+const QUEUE_TODAY_CACHE_TTL_MS = 60_000;
+const queueTodayCache = new Map();
+
+async function hasTechnicianQueueToday(pool, { jobCategory, acType, washVariant }, slotDeps = {}) {
+  const getNowBangkokParts = slotDeps.getNowBangkokParts || getBangkokNow;
+  const today = getNowBangkokParts().ymd;
+  const cacheKey = `${jobCategory}|${acType}|${washVariant || ""}|${today}`;
+  const cached = queueTodayCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
+
+  const { listBusyBlocksForTechOnDate, buildStartIntervalsByCollision, toMin, minToHHMM } = slotDeps;
+  if (!listBusyBlocksForTechOnDate || !buildStartIntervalsByCollision || !toMin || !minToHHMM) {
+    queueTodayCache.set(cacheKey, { value: false, expiresAt: Date.now() + QUEUE_TODAY_CACHE_TTL_MS });
+    return false;
+  }
+
+  const deps = {
+    pool,
+    listTechniciansByType: (techType, opts) => listTechniciansForQueueCheck(pool, techType, opts),
+    listBusyBlocksForTechOnDate,
+    buildStartIntervalsByCollision,
+    toMin,
+    minToHHMM,
+    getNowBangkokParts,
+  };
+  const durationMin = computeJobTiming(
+    { job_type: jobCategory, ac_type: acType, wash_variant: washVariant, machine_count: 1 },
+    { source: "catalog_queue_today" }
+  ).service_duration_min;
+  const result = await customerAvailability.computePublicCustomerSlots(deps, {
+    date: today,
+    tech_type: "company",
+    job_type: jobCategory,
+    ac_type: acType,
+    wash_variant: washVariant || undefined,
+    duration_min: durationMin,
+  });
+  const value = Array.isArray(result && result.slots) && result.slots.some((s) => s.available);
+  queueTodayCache.set(cacheKey, { value, expiresAt: Date.now() + QUEUE_TODAY_CACHE_TTL_MS });
+  return value;
+}
+
+// Attaches has_queue_today to bookable rows only (a non-bookable/"contact
+// admin" item never shows a queue badge). Supplementary enrichment, same
+// fail-open contract as attachBookingCounts: a failure here (e.g. the
+// technician-matrix tables aren't ready yet) must never block the Store
+// from loading -- it just leaves has_queue_today=false for the affected rows.
+async function attachTodayQueueAvailability(pool, rows, slotDeps = {}) {
+  rows.forEach((row) => { row.has_queue_today = false; });
+  const bookableRows = rows.filter((row) => row.booking_mode === "bookable" && row.job_category && row.booking_ac_type);
+  if (!bookableRows.length) return rows;
+
+  try {
+    const seen = new Map();
+    for (const row of bookableRows) {
+      const key = `${row.job_category}|${row.booking_ac_type}|${row.booking_wash_variant || ""}`;
+      if (seen.has(key)) continue;
+      seen.set(key, await hasTechnicianQueueToday(pool, {
+        jobCategory: row.job_category,
+        acType: row.booking_ac_type,
+        washVariant: row.booking_wash_variant,
+      }, slotDeps));
+    }
+    bookableRows.forEach((row) => {
+      const key = `${row.job_category}|${row.booking_ac_type}|${row.booking_wash_variant || ""}`;
+      row.has_queue_today = Boolean(seen.get(key));
+    });
+  } catch (e) {
+    console.warn("[catalog_queue_today] availability check failed", e && e.code ? { code: e.code } : undefined);
+  }
+  return rows;
+}
+
 function serializeCatalogImage(imgRow) {
   return {
     image_id: imgRow.image_id,
@@ -672,6 +781,9 @@ function serializeCatalogRow(row) {
     // Real COUNT(DISTINCT job_id) only (attachBookingCounts); 0 until the jobs
     // catalog-link migration has run -- never a fabricated/hardcoded number.
     booking_count: Number(row.booking_count || 0),
+    // Real technician-eligibility check for today (attachTodayQueueAvailability);
+    // false until that's run -- never a hardcoded/guessed true.
+    has_queue_today: Boolean(row.has_queue_today),
   };
 }
 
@@ -770,6 +882,13 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
   if (typeof requireAdminSession !== "function") {
     throw new Error("createCatalogItemRoutes requires a requireAdminSession middleware function");
   }
+  const queueSlotDeps = {
+    listBusyBlocksForTechOnDate: deps.listBusyBlocksForTechOnDate,
+    buildStartIntervalsByCollision: deps.buildStartIntervalsByCollision,
+    toMin: deps.toMin,
+    minToHHMM: deps.minToHHMM,
+    getNowBangkokParts: deps.getNowBangkokParts,
+  };
   const uploadCatalogImage = deps.uploadCatalogImage || cloudinaryImageUpload.uploadCatalogImage;
   const deleteCatalogImage = deps.deleteCatalogImage || cloudinaryImageUpload.deleteCatalogImage;
   const upload = multer({
@@ -917,6 +1036,7 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
       await attachCatalogImages(pool, r.rows, marketplaceReady);
       await attachCatalogRatings(pool, r.rows, reviewsReady);
       await attachBookingCounts(pool, r.rows, jobsCatalogLinkReady);
+      await attachTodayQueueAvailability(pool, r.rows, queueSlotDeps);
       res.json(r.rows.map(serializeCatalogRow));
     } catch (e) {
       console.error(e);
@@ -946,6 +1066,7 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
       await attachCatalogImages(pool, [row], marketplaceReady);
       await attachCatalogRatings(pool, [row], reviewsReady);
       await attachBookingCounts(pool, [row], jobsCatalogLinkReady);
+      await attachTodayQueueAvailability(pool, [row], queueSlotDeps);
       res.json(serializeCatalogDetailRow(row));
     } catch (e) {
       console.error(e);
@@ -1720,3 +1841,7 @@ module.exports.buildCatalogSelect = buildCatalogSelect;
 module.exports.MAX_CATALOG_IMAGES_PER_ITEM = MAX_CATALOG_IMAGES_PER_ITEM;
 module.exports.validateHotField = validateHotField;
 module.exports.attachCatalogRatings = attachCatalogRatings;
+// Test-only: queueTodayCache is a 60s in-process TTL cache, deliberately shared
+// across requests within a process. Tests that need a fresh eligibility check
+// (rather than another test's cached value) must clear it first.
+module.exports.__resetQueueTodayCacheForTests = () => queueTodayCache.clear();

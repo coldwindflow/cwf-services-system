@@ -12957,7 +12957,14 @@ app.use(createTechnicianDirectoryRoutes({ pool }));
 // =======================================
 // 📦 CATALOG
 // =======================================
-app.use(createCatalogItemRoutes({ pool, requireAdminSession }));
+app.use(createCatalogItemRoutes({
+  pool,
+  requireAdminSession,
+  listBusyBlocksForTechOnDate,
+  buildStartIntervalsByCollision,
+  toMin,
+  minToHHMM,
+}));
 app.use(createCatalogReviewRoutes({ pool, requireCustomerJwt, requireAdminSession }));
 
 
@@ -23488,7 +23495,7 @@ function isTechOffOnDate(techRow, dateStr, offMap, opts = {}) {
   return weekly.has(dow);
 }
 
-async function listAssignedJobsForTechOnDate(username, dateStr, ignoreJobId) {
+async function listAssignedJobsForTechOnDate(username, dateStr, ignoreJobId, poolOverride) {
   // ✅ Timezone-robust filter (source of truth: Asia/Bangkok)
   // กรองด้วยช่วงเวลา [dayStart, dayEnd) แบบ Bangkok offset แล้ว cast เป็น timestamptz เสมอ
   // โดยเราได้บังคับ timezone ของ session ที่ db.js แล้ว (options: -c timezone=Asia/Bangkok)
@@ -23513,7 +23520,7 @@ async function listAssignedJobsForTechOnDate(username, dateStr, ignoreJobId) {
   // - งานเดียวกันอาจแบ่งรายการให้หลายช่าง (job_items.assigned_technician_username)
   // - duration_min ของ jobs เป็น “รวมใบงาน/หัวหน้าทีม” จึงห้ามเอาไปล็อกคิวทุกคน
   // ทางแก้: คืน assigned_items เฉพาะของช่างคนนั้น แล้วคำนวณ duration ต่อคน (per-tech) ตอนทำ availability/collision
-  const r = await pool.query(
+  const r = await (poolOverride || pool).query(
     `
     SELECT
       j.job_id,
@@ -23776,10 +23783,10 @@ async function listJobBlocksForTechOnDate(username, dateStr, ignoreJobId){
   return mergeMinIntervals(raw);
 }
 
-async function listBusyBlocksForTechOnDate(username, dateStr, ignoreJobId){
+async function listBusyBlocksForTechOnDate(username, dateStr, ignoreJobId, poolOverride){
   // Returns merged BUSY blocks (with conservative buffer) in Bangkok minutes:
   // [{job_id,startMin,busyEndMin,startIso,durationMin}]
-  const jobs = await listAssignedJobsForTechOnDate(username, dateStr, ignoreJobId);
+  const jobs = await listAssignedJobsForTechOnDate(username, dateStr, ignoreJobId, poolOverride);
   const raw = [];
   for(const j of (jobs||[])){
     const startDate = new Date(j.appointment_datetime);

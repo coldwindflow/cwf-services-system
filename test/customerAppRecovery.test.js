@@ -1478,3 +1478,226 @@ test("tracking page never renders both data-review-form and data-catalog-review-
     assert.ok(!(hasLegacy && hasCatalog), `both forms rendered for state ${JSON.stringify(extra)}`);
   }
 });
+
+// ---------- Store/Product-Detail marketplace UX overhaul ----------
+
+test("store availability badge shows มีคิววันนี้ only when item.has_queue_today is true (real data, never hardcoded for all items), and stays consistent between the list and the detail page", async () => {
+  const context = makeContext();
+  const root = loadCustomerFrontend(context);
+  root.api.loadCatalogItems = async () => [
+    { item_id: 1, item_name: "ล้างแอร์ A", item_category: "ล้างแอร์", base_price: 700, unit_label: "เครื่อง", booking_mode: "bookable", has_queue_today: true },
+    { item_id: 2, item_name: "ล้างแอร์ B", item_category: "ล้างแอร์", base_price: 700, unit_label: "เครื่อง", booking_mode: "bookable", has_queue_today: false },
+  ];
+
+  const container = new FakeMount();
+  root.store.render(container);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const body = container.querySelector("[data-store-body]");
+  assert.match(body.innerHTML, /มีคิววันนี้/);
+  const itemBChunk = body.innerHTML.slice(body.innerHTML.indexOf('data-store-item="2"'));
+  const itemBCard = itemBChunk.slice(0, itemBChunk.indexOf("</article>"));
+  assert.match(itemBCard, /จองได้/);
+  assert.doesNotMatch(itemBCard, /มีคิววันนี้/);
+
+  root.state.setRoute("storeItem-1");
+  root.api.loadCatalogItem = async () => ({ item_id: 1, item_name: "ล้างแอร์ A", item_category: "ล้างแอร์", base_price: 700, unit_label: "เครื่อง", booking_mode: "bookable", has_queue_today: true });
+  const detailContainer = new FakeMount();
+  root.store.renderDetail(detailContainer);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const detailBody = detailContainer.querySelector("[data-store-detail-body]");
+  assert.match(detailBody.innerHTML, /มีคิววันนี้/);
+});
+
+test("product detail restructures into a top always-visible zone plus default-collapsed accordion sections for highlights/full details/suitable AC types/conditions", async () => {
+  const context = makeContext();
+  const root = loadCustomerFrontend(context);
+  root.state.setRoute("storeItem-5");
+  root.api.loadCatalogItem = async () => ({
+    item_id: 5, item_name: "ล้างแอร์เปลือยใต้ฝ้า", item_category: "ล้างแอร์", base_price: 650, unit_label: "เครื่อง",
+    booking_mode: "bookable", job_category: "ล้าง", ac_type: "เปลือยใต้ฝ้า",
+    short_description: "ล้างทำความสะอาดแอร์เปลือยใต้ฝ้าโดยช่างมืออาชีพ",
+    long_description: "รายละเอียดบริการแบบยาวมาก ๆ ที่อธิบายขั้นตอนทั้งหมด",
+    service_conditions: "ลูกค้าต้องเตรียมพื้นที่ให้ช่างเข้าถึงเครื่องได้สะดวก",
+    highlights: ["ช่างผ่านการคัดกรอง", "รับประกันงาน 7 วัน"],
+  });
+
+  const container = new FakeMount();
+  root.store.renderDetail(container);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const body = container.querySelector("[data-store-detail-body]");
+  const html = body.innerHTML;
+
+  assert.match(html, /class="[^"]*store-detail-summary[^"]*"/);
+  assert.match(html, /ล้างทำความสะอาดแอร์เปลือยใต้ฝ้าโดยช่างมืออาชีพ/);
+
+  const detailsBlocks = [...html.matchAll(/<details class="store-detail-accordion"([^>]*)>[\s\S]*?<summary>([^<]+)<\/summary>/g)];
+  assert.ok(detailsBlocks.length >= 4, "expected at least 4 accordion sections");
+  detailsBlocks.forEach(([, attrs]) => assert.doesNotMatch(attrs, /open/));
+  const headings = detailsBlocks.map((m) => m[2]);
+  assert.ok(headings.includes("จุดเด่นของบริการ"));
+  assert.ok(headings.includes("รายละเอียดบริการ"));
+  assert.ok(headings.includes("ประเภทแอร์ที่เหมาะสม"));
+  assert.ok(headings.includes("เงื่อนไขบริการ"));
+
+  // Collapsed accordion content is still present in the markup (native
+  // <details>), so the customer can search/find it and existing regex-based
+  // content checks keep working even though it is visually collapsed.
+  assert.match(html, /รายละเอียดบริการแบบยาวมาก ๆ ที่อธิบายขั้นตอนทั้งหมด/);
+  assert.match(html, /ลูกค้าต้องเตรียมพื้นที่ให้ช่างเข้าถึงเครื่องได้สะดวก/);
+  assert.match(html, /ช่างผ่านการคัดกรอง/);
+});
+
+test("related products slider shows up to 4 real same-family items, includes the currently-viewed item marked as such, excludes BTU siblings of its own wash-variant and mismatched categories, and is clickable", async () => {
+  const context = makeContext();
+  const root = loadCustomerFrontend(context);
+  root.state.setRoute("storeItem-10");
+  const familyItems = [
+    { item_id: 10, item_name: "ล้างแอร์ผนัง ล้างธรรมดา 9000-15000", item_category: "ล้างแอร์", base_price: 500, unit_label: "เครื่อง", booking_mode: "bookable", job_category: "ล้าง", ac_type: "ผนัง", btu_min: 9000, btu_max: 15000, booking_ac_type: "ผนัง", booking_wash_variant: "ล้างธรรมดา", booking_btu: 9000 },
+    { item_id: 11, item_name: "ล้างแอร์ผนัง ล้างธรรมดา 18000+", item_category: "ล้างแอร์", base_price: 700, unit_label: "เครื่อง", booking_mode: "bookable", job_category: "ล้าง", ac_type: "ผนัง", btu_min: 18000, booking_ac_type: "ผนัง", booking_wash_variant: "ล้างธรรมดา", booking_btu: 18000 },
+    { item_id: 12, item_name: "ล้างแอร์ผนัง ล้างพรีเมียม", item_category: "ล้างแอร์", base_price: 650, unit_label: "เครื่อง", booking_mode: "bookable", job_category: "ล้าง", ac_type: "ผนัง", btu_min: 9000, btu_max: 15000, booking_ac_type: "ผนัง", booking_wash_variant: "ล้างพรีเมียม", booking_btu: 9000 },
+    { item_id: 13, item_name: "ล้างแอร์ผนัง แขวนคอยล์", item_category: "ล้างแอร์", base_price: 900, unit_label: "เครื่อง", booking_mode: "bookable", job_category: "ล้าง", ac_type: "ผนัง", booking_ac_type: "ผนัง", booking_wash_variant: "ล้างแขวนคอยล์", booking_btu: 9000 },
+    { item_id: 14, item_name: "ล้างแอร์ผนัง ตัดล้างใหญ่", item_category: "ล้างแอร์", base_price: 1500, unit_label: "เครื่อง", booking_mode: "bookable", job_category: "ล้าง", ac_type: "ผนัง", booking_ac_type: "ผนัง", booking_wash_variant: "ล้างแบบตัดล้าง", booking_btu: 9000 },
+    { item_id: 99, item_name: "ซ่อมคอมเพรสเซอร์", item_category: "ซ่อมแอร์", base_price: 1200, unit_label: "งาน", booking_mode: "bookable", job_category: "ซ่อม", ac_type: "ผนัง" },
+  ];
+  root.api.loadCatalogItem = async () => familyItems[0];
+  root.api.loadCatalogItems = async () => familyItems;
+
+  const container = new FakeMount();
+  root.store.renderDetail(container);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const body = container.querySelector("[data-store-detail-body]");
+  const html = body.innerHTML;
+
+  assert.match(html, /บริการที่เกี่ยวข้อง/);
+  assert.match(html, /data-store-related-item="12"/);
+  assert.match(html, /data-store-related-item="13"/);
+  assert.match(html, /data-store-related-item="14"/);
+  // Same wash-variant sibling (11) belongs to the BTU selector, not "related".
+  assert.doesNotMatch(html, /data-store-related-item="11"/);
+  assert.doesNotMatch(html, /data-store-related-item="10"/);
+  // Mismatched category/job_type never appears among related items.
+  assert.doesNotMatch(html, /data-store-related-item="99"/);
+
+  const relatedSection = html.slice(html.indexOf("บริการที่เกี่ยวข้อง"));
+  assert.equal((relatedSection.match(/data-store-related-item="/g) || []).length, 3);
+  // The currently-viewed item (10, "ล้างธรรมดา") is included too, marked as
+  // currently viewing rather than as a clickable "related" card -- all 4 real
+  // wash methods are now visible, not just the other 3.
+  assert.match(relatedSection, /store-related-card is-current/);
+  assert.match(relatedSection, /กำลังดู/);
+  assert.equal((relatedSection.match(/store-related-card-image-wrap/g) || []).length, 4);
+
+  const relatedButtons = container.querySelectorAll("[data-store-related-item]");
+  const target = relatedButtons.find((b) => b.getAttribute("data-store-related-item") === "12");
+  assert.ok(target, "related card for item 12 not found");
+  await target.click();
+  assert.equal(context.window.location.hash, "#storeItem-12");
+});
+
+test("related products slider shows fewer than 4 cards when fewer real same-family siblings exist", async () => {
+  const context = makeContext();
+  const root = loadCustomerFrontend(context);
+  root.state.setRoute("storeItem-20");
+  const items = [
+    { item_id: 20, item_name: "ล้างแอร์สี่ทิศทาง ล้างธรรมดา", item_category: "ล้างแอร์", base_price: 600, unit_label: "เครื่อง", booking_mode: "bookable", job_category: "ล้าง", ac_type: "สี่ทิศทาง", booking_ac_type: "สี่ทิศทาง", booking_wash_variant: "ล้างธรรมดา", booking_btu: 12000 },
+    { item_id: 21, item_name: "ล้างแอร์สี่ทิศทาง ล้างพรีเมียม", item_category: "ล้างแอร์", base_price: 800, unit_label: "เครื่อง", booking_mode: "bookable", job_category: "ล้าง", ac_type: "สี่ทิศทาง", booking_ac_type: "สี่ทิศทาง", booking_wash_variant: "ล้างพรีเมียม", booking_btu: 12000 },
+  ];
+  root.api.loadCatalogItem = async () => items[0];
+  root.api.loadCatalogItems = async () => items;
+
+  const container = new FakeMount();
+  root.store.renderDetail(container);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const body = container.querySelector("[data-store-detail-body]");
+  const html = body.innerHTML;
+  assert.match(html, /data-store-related-item="21"/);
+  assert.equal((html.match(/data-store-related-item="/g) || []).length, 1);
+});
+
+test("BTU/spec variant selector changes price and short info on selection without a new network fetch, and the book button routes to the selected variant", async () => {
+  const context = makeContext();
+  const root = loadCustomerFrontend(context);
+  root.state.setRoute("storeItem-10");
+  const items = [
+    { item_id: 10, item_name: "ล้างแอร์ผนัง ล้างธรรมดา", item_category: "ล้างแอร์", base_price: 500, unit_label: "เครื่อง", short_description: "เหมาะกับแอร์ขนาดเล็ก-กลาง", booking_mode: "bookable", job_category: "ล้าง", ac_type: "ผนัง", btu_min: 9000, btu_max: 15000, booking_ac_type: "ผนัง", booking_wash_variant: "ล้างธรรมดา", booking_btu: 9000 },
+    { item_id: 11, item_name: "ล้างแอร์ผนัง ล้างธรรมดา ใหญ่", item_category: "ล้างแอร์", base_price: 750, unit_label: "เครื่อง", short_description: "เหมาะกับแอร์ขนาดใหญ่", booking_mode: "bookable", job_category: "ล้าง", ac_type: "ผนัง", btu_min: 18000, booking_ac_type: "ผนัง", booking_wash_variant: "ล้างธรรมดา", booking_btu: 18000 },
+  ];
+  let detailCalls = 0;
+  let listCalls = 0;
+  root.api.loadCatalogItem = async () => { detailCalls += 1; return items[0]; };
+  root.api.loadCatalogItems = async () => { listCalls += 1; return items; };
+
+  const container = new FakeMount();
+  root.store.renderDetail(container);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  let body = container.querySelector("[data-store-detail-body]");
+  assert.match(body.innerHTML, /9,000–15,000 BTU/);
+  assert.match(body.innerHTML, /18,000 BTU ขึ้นไป/);
+  assert.match(body.innerHTML, /500/);
+  assert.match(body.innerHTML, /เหมาะกับแอร์ขนาดเล็ก-กลาง/);
+  assert.equal(detailCalls, 1);
+  assert.equal(listCalls, 1);
+
+  const options = container.querySelectorAll("[data-store-variant-option]");
+  const bigOption = options.find((o) => o.getAttribute("data-store-variant-option") === "11");
+  assert.ok(bigOption, "18,000 BTU option not found");
+  await bigOption.click();
+
+  assert.equal(detailCalls, 1, "switching the BTU variant must never trigger a new detail fetch");
+  assert.equal(listCalls, 1, "switching the BTU variant must never trigger a new catalog list fetch");
+
+  body = container.querySelector("[data-store-detail-body]");
+  assert.match(body.innerHTML, /750/);
+  assert.match(body.innerHTML, /เหมาะกับแอร์ขนาดใหญ่/);
+
+  const bookButton = container.querySelector("[data-store-detail-book]");
+  assert.ok(bookButton);
+  await bookButton.click();
+  assert.equal(root.state.draft.scheduled.catalog_item_id, 11);
+  assert.equal(root.state.draft.scheduled.btu, "18000");
+});
+
+test("4-way wall-AC cleaning-method comparison section only appears for wall AC (ผนัง) wash items, and lists all four real methods", async () => {
+  const context = makeContext();
+  const root = loadCustomerFrontend(context);
+
+  root.state.setRoute("storeItem-30");
+  root.api.loadCatalogItem = async () => ({
+    item_id: 30, item_name: "ล้างแอร์ผนัง", item_category: "ล้างแอร์", base_price: 500, unit_label: "เครื่อง",
+    booking_mode: "bookable", job_category: "ล้าง", ac_type: "ผนัง",
+  });
+  root.api.loadCatalogItems = async () => [];
+  const container = new FakeMount();
+  root.store.renderDetail(container);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const html = container.querySelector("[data-store-detail-body]").innerHTML;
+  assert.match(html, /เปรียบเทียบวิธีล้างแอร์ผนัง/);
+  assert.match(html, /ล้างปกติ/);
+  assert.match(html, /ล้างพรีเมียม/);
+  assert.match(html, /แขวนคอยล์/);
+  assert.match(html, /ตัดล้างใหญ่/);
+
+  const context2 = makeContext();
+  const root2 = loadCustomerFrontend(context2);
+  root2.state.setRoute("storeItem-31");
+  root2.api.loadCatalogItem = async () => ({
+    item_id: 31, item_name: "ล้างแอร์แขวน", item_category: "ล้างแอร์", base_price: 600, unit_label: "เครื่อง",
+    booking_mode: "bookable", job_category: "ล้าง", ac_type: "แขวน",
+  });
+  root2.api.loadCatalogItems = async () => [];
+  const container2 = new FakeMount();
+  root2.store.renderDetail(container2);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const html2 = container2.querySelector("[data-store-detail-body]").innerHTML;
+  assert.doesNotMatch(html2, /เปรียบเทียบวิธีล้างแอร์ผนัง/);
+});
