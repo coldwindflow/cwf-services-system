@@ -708,6 +708,10 @@
 
   function buildSubmitPayload() {
     const d = draft();
+    const services = root.services.normalizeServiceLines(d);
+    const catalogItemId = services.length === 1 && Number.isFinite(Number(d.catalog_item_id)) && Number(d.catalog_item_id) > 0
+      ? Number(d.catalog_item_id)
+      : null;
     return {
       customer_name: String(d.customer_name || "").trim(),
       customer_phone: String(d.customer_phone || "").trim(),
@@ -720,6 +724,7 @@
       job_zone: String(d.job_zone || "").trim(),
       service_kind: "clean",
       allow_time_proposal: d.allow_time_proposal === true,
+      catalog_item_id: catalogItemId,
       ...payloadFromDraft(),
     };
   }

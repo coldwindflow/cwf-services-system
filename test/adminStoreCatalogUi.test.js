@@ -367,9 +367,9 @@ test("gallery delete and set-primary actions ask for confirmation only on delete
   assert.match(catalogJsSource, /async function onGalleryDelete\(imageId\) \{[\s\S]*?confirm\(.*ลบรูปภาพ/);
 });
 
-test("admin-store-catalog.html script and stylesheet references were bumped to the marketplace v2 build id", () => {
-  assert.match(catalogHtmlSource, /admin-store-catalog\.css\?v=20260623_catalog_marketplace_v2/);
-  assert.match(catalogHtmlSource, /admin-store-catalog\.js\?v=20260623_catalog_marketplace_v2/);
+test("admin-store-catalog.html script and stylesheet references were bumped to the hot/sale/reviews build id", () => {
+  assert.match(catalogHtmlSource, /admin-store-catalog\.css\?v=20260624_catalog_hot_sale_reviews/);
+  assert.match(catalogHtmlSource, /admin-store-catalog\.js\?v=20260624_catalog_hot_sale_reviews/);
 });
 
 test("admin-store-catalog.css defines gallery grid and badge styles for the marketplace UI", () => {
@@ -508,4 +508,67 @@ test("confirmDeleteCatalogItem calls the real DELETE endpoint and surfaces a Clo
   assert.match(body, /apiFetch\(`\/admin\/catalog\/items\/\$\{itemId\}`, \{ method: "DELETE" \}\)/);
   assert.match(body, /if \(result && result\.warning\) showToast\(result\.warning, "error"\);/);
   assert.match(body, /else showToast\("ลบรายการแล้ว", "success"\);/);
+});
+
+// ---------- HOT badge admin toggle ----------
+
+test("modal includes an is_hot toggle alongside is_featured under section 6, with reset and edit-populate wiring", () => {
+  assert.match(catalogJsSource, /6\) การแสดงผล[\s\S]*?id="cm_is_featured"[\s\S]{0,400}id="cm_is_hot"/);
+  assert.match(catalogJsSource, /el\("cm_is_hot"\)\.value = "0";/);
+  assert.match(catalogJsSource, /el\("cm_is_hot"\)\.value = item\.is_hot \? "1" : "0";/);
+});
+
+test("catalogModalPayload includes is_hot as a boolean derived from the select", () => {
+  assert.match(catalogJsSource, /is_hot: el\("cm_is_hot"\)\.value === "1",/);
+});
+
+test("catalog item cards show a HOT badge only when is_hot is true", () => {
+  assert.match(catalogJsSource, /item\.is_hot \? `<span class="asc-badge asc-badge-hot">HOT<\/span>` : ""/);
+});
+
+// ---------- Review moderation panel ----------
+
+test("admin page has a review moderation card with status/item filters and a reload button", () => {
+  const catalogHtmlSource = fs.readFileSync(path.join(__dirname, "..", "admin-store-catalog.html"), "utf8");
+  assert.match(catalogHtmlSource, /id="review_filter_status"/);
+  assert.match(catalogHtmlSource, /id="review_filter_item"/);
+  assert.match(catalogHtmlSource, /id="btnReloadReviews"/);
+  assert.match(catalogHtmlSource, /id="review_list"/);
+});
+
+test("loadReviews fetches the admin moderation endpoint and renderReviewList applies status/item filters", () => {
+  assert.match(catalogJsSource, /async function loadReviews\(\)[\s\S]*?apiFetch\("\/admin\/catalog\/reviews"\)/);
+  assert.match(catalogJsSource, /function renderReviewList\(\)/);
+  assert.match(catalogJsSource, /el\("review_filter_status"\)\.value/);
+  assert.match(catalogJsSource, /el\("review_filter_item"\)\.value/);
+});
+
+test("setReviewModerationStatus confirms before acting, PATCHes the review, and updates state without a full reload", () => {
+  const fnMatch = catalogJsSource.match(/async function setReviewModerationStatus\(reviewId, nextStatus\)[\s\S]*?\n}\n/);
+  assert.ok(fnMatch, "setReviewModerationStatus function not found");
+  const body = fnMatch[0];
+  assert.match(body, /confirm\(/);
+  assert.match(body, /apiFetch\(`\/admin\/catalog\/reviews\/\$\{reviewId\}`, \{\s*method: "PATCH",\s*body: JSON\.stringify\(\{ moderation_status: nextStatus \}\),\s*\}\)/);
+  assert.match(body, /Object\.assign\(review, updated\)/);
+  assert.match(body, /showToast\(/);
+});
+
+test("review action buttons never expose customer phone/email/internal IDs beyond completed_job_id and a display identity", () => {
+  const fnMatch = catalogJsSource.match(/function reviewCardHtml\(review\)[\s\S]*?\n}\n/);
+  assert.ok(fnMatch, "reviewCardHtml function not found");
+  const body = fnMatch[0];
+  assert.doesNotMatch(body, /\bphone\b/i);
+  assert.doesNotMatch(body, /\bemail\b/i);
+  assert.match(body, /review\.customer_identity/);
+  assert.match(body, /review\.completed_job_id/);
+});
+
+test("review action buttons support approve/reject/hide/restore-to-pending depending on current status", () => {
+  const fnMatch = catalogJsSource.match(/function reviewActionButtons\(review\)[\s\S]*?\n}\n/);
+  assert.ok(fnMatch, "reviewActionButtons function not found");
+  const body = fnMatch[0];
+  assert.match(body, /"approved"/);
+  assert.match(body, /"rejected"/);
+  assert.match(body, /"hidden"/);
+  assert.match(body, /"pending"/);
 });

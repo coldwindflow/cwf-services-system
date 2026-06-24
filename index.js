@@ -41,6 +41,7 @@ const { createTechnicianJobMoneyHelpers } = require("./server/technicianJobMoney
 const createSystemRoutes = require("./server/routes/system");
 const createTechnicianDirectoryRoutes = require("./server/routes/users/technicians");
 const createCatalogItemRoutes = require("./server/routes/catalog/items");
+const createCatalogReviewRoutes = require("./server/routes/catalog/reviews");
 const createServiceZoneRoutes = require("./server/routes/serviceZones");
 const createPageRoutes = require("./server/routes/pages");
 const createDocumentRoutes = require("./server/routes/docs");
@@ -12957,6 +12958,7 @@ app.use(createTechnicianDirectoryRoutes({ pool }));
 // 📦 CATALOG
 // =======================================
 app.use(createCatalogItemRoutes({ pool, requireAdminSession }));
+app.use(createCatalogReviewRoutes({ pool, requireCustomerJwt, requireAdminSession }));
 
 
 app.post("/catalog/items", requireAdminSession, async (req, res) => {
@@ -24806,6 +24808,26 @@ function handlePublicCustomerUrgentBook(req, res) {
   return handleAdminBookV2(req, res);
 }
 
+// ✅ Fail-safe capability check: jobs.catalog_item_id / jobs.customer_sub are
+// additive columns from a migration that may not have run yet. Never assume
+// they exist — insert NULL/omit them until the schema is confirmed ready.
+let jobsCatalogLinkSchemaReadyCache = false;
+async function isJobsCatalogLinkSchemaReady() {
+  if (jobsCatalogLinkSchemaReadyCache) return true;
+  try {
+    const r = await pool.query(
+      `SELECT COUNT(*)::int AS cnt FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'jobs'
+          AND column_name IN ('catalog_item_id', 'customer_sub')`
+    );
+    const ready = Number(r.rows?.[0]?.cnt || 0) === 2;
+    if (ready) jobsCatalogLinkSchemaReadyCache = true;
+    return ready;
+  } catch (_) {
+    return false;
+  }
+}
+
 app.post("/public/book", async (req, res) => {
   // ✅ ลูกค้าจองคิว (ไม่บังคับกรอก lat/lng) + เลือกรายการบริการ/สินค้าได้
   // - โปรโมชั่น: ให้แอดมินเป็นคนใส่/ลบเท่านั้น (ฝั่งลูกค้าไม่รับ promo_id)
@@ -24829,6 +24851,7 @@ app.post("/public/book", async (req, res) => {
     wash_variant,
     repair_variant,
     services,
+    catalog_item_id, // optional: links this booking to the Store catalog item it was booked for
   } = req.body || {};
 
   if (isCustomerAppUrgentBook(req.body || {})) {
@@ -24838,6 +24861,25 @@ app.post("/public/book", async (req, res) => {
   if (!customer_name || !job_type || !appointment_datetime || !address_text) {
     return res.status(400).json({ error: "กรอกข้อมูลไม่ครบ (ชื่อ/ประเภทงาน/วันนัด/ที่อยู่)" });
   }
+
+  // ✅ Soft customer identity: never required, never trusted blindly elsewhere —
+  // this is only a best-effort linkage so a logged-in customer can later prove
+  // ownership of *this* job for review eligibility. Booking proceeds for guests too.
+  let customerSubForJob = null;
+  try {
+    const jwtSecretForBook = getJwtSecret();
+    const cwfToken = parseCookieValue(req, "cwf_token");
+    if (jwtSecretForBook && cwfToken) {
+      const customerPayload = jwtVerify(cwfToken, jwtSecretForBook);
+      if (customerPayload && customerPayload.sub) {
+        customerSubForJob = String(customerPayload.sub);
+      }
+    }
+  } catch (_) {
+    customerSubForJob = null;
+  }
+  const catalogItemIdForJob = Number(catalog_item_id);
+  const safeCatalogItemIdForJob = Number.isFinite(catalogItemIdForJob) && catalogItemIdForJob > 0 ? catalogItemIdForJob : null;
 
   // ✅ sanitize items (ไม่เชื่อราคา/ชื่อจากฝั่งลูกค้า)
   const safeItemsIn = Array.isArray(items) ? items : [];
@@ -25170,34 +25212,46 @@ if (itemIdQty.length) {
     // - urgent (ยิงงานด่วน)      => offer  (ไป flow offer)
     const dispatchMode = (bm === 'urgent') ? 'offer' : 'normal';
 
+    const catalogLinkReady = await isJobsCatalogLinkSchemaReady();
+    const jobInsertColumns = [
+      "customer_name", "customer_phone", "job_type", "appointment_datetime", "job_price",
+      "address_text", "technician_team", "technician_username", "job_status",
+      "booking_token", "job_source", "dispatch_mode", "customer_note",
+      "maps_url", "job_zone", "duration_min", "booking_mode", "allow_time_proposal",
+    ];
+    const jobInsertValuesSql = ["$1", "$2", "$3", "$4", "$5", "$6", "NULL", "$16", "$11", "$7", "'customer'", "$14", "$8", "$9", "$10", "$12", "$13", "$15"];
+    const jobInsertParams = [
+      String(customer_name).trim(),
+      (customer_phone || "").toString().trim(),
+      String(job_type).trim(),
+      appointment_datetime,
+      Number(base_total || 0),
+      String(address_text).trim(),
+      token,
+      (customer_note || "").toString(),
+      (maps_url || "").toString(),
+      (job_zone || "").toString(),
+      bm === 'urgent' ? (urgentOfferEnabled ? 'รอช่างยืนยัน' : 'ไม่พบช่างรับงาน') : 'รอตรวจสอบ',
+      duration_min_v2,
+      (bm === 'urgent' ? 'urgent' : 'scheduled'),
+      dispatchMode,
+      allowTimeProposal,
+      draftReservationTech ? draftReservationTech.username : null,
+    ];
+    if (catalogLinkReady) {
+      jobInsertColumns.push("catalog_item_id", "customer_sub");
+      jobInsertParams.push(safeCatalogItemIdForJob, customerSubForJob);
+      jobInsertValuesSql.push(`$${jobInsertParams.length - 1}`, `$${jobInsertParams.length}`);
+    }
+
     const r = await client.query(
       `
       INSERT INTO public.jobs
-      (customer_name, customer_phone, job_type, appointment_datetime, job_price,
-       address_text, technician_team, technician_username, job_status,
-       booking_token, job_source, dispatch_mode, customer_note,
-       maps_url, job_zone, duration_min, booking_mode, allow_time_proposal)
-      VALUES ($1,$2,$3,$4,$5,$6,NULL,$16,$11,$7,'customer',$14,$8,$9,$10,$12,$13,$15)
+      (${jobInsertColumns.join(", ")})
+      VALUES (${jobInsertValuesSql.join(",")})
       RETURNING job_id, booking_token
       `,
-      [
-        String(customer_name).trim(),
-        (customer_phone || "").toString().trim(),
-        String(job_type).trim(),
-        appointment_datetime,
-        Number(base_total || 0),
-        String(address_text).trim(),
-        token,
-        (customer_note || "").toString(),
-        (maps_url || "").toString(),
-        (job_zone || "").toString(),
-        bm === 'urgent' ? (urgentOfferEnabled ? 'รอช่างยืนยัน' : 'ไม่พบช่างรับงาน') : 'รอตรวจสอบ',
-        duration_min_v2,
-        (bm === 'urgent' ? 'urgent' : 'scheduled'),
-        dispatchMode,
-        allowTimeProposal,
-        draftReservationTech ? draftReservationTech.username : null,
-      ]
+      jobInsertParams
     );
 
     // attach promo to job (if any)

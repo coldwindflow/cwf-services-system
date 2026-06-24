@@ -137,6 +137,26 @@
         body,
       });
     },
+
+    async loadCatalogItemReviews(itemId, { limit, offset } = {}) {
+      return requestJson(`/catalog/items/${encodeURIComponent(itemId)}/reviews`, {
+        query: { limit, offset },
+        cache: "no-store",
+      });
+    },
+
+    async loadReviewEligibility(itemId) {
+      return requestJson(`/catalog/items/${encodeURIComponent(itemId)}/reviews/eligibility`, {
+        cache: "no-store",
+      });
+    },
+
+    async submitCatalogItemReview(itemId, payload) {
+      return requestJson(`/catalog/items/${encodeURIComponent(itemId)}/reviews`, {
+        method: "POST",
+        body: payload,
+      });
+    },
   };
 
   root.api = api;

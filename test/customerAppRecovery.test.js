@@ -228,7 +228,7 @@ test("Customer App build id is consistent across shell and service worker", () =
   const sw = read("customer-app/sw.js");
   const app = read("customer-app/assets/customer-app.js");
   const manifest = read("customer-app/manifest.webmanifest");
-  const build = "20260623_store_marketplace_final";
+  const build = "20260624_store_hot_sale_verified_reviews";
 
   assert.match(index, new RegExp(`customer-app\\.css\\?v=${build}`));
   assert.match(index, new RegExp(`bookingUrgent\\.js\\?v=${build}`));
@@ -244,7 +244,7 @@ test("Customer App build id is consistent across shell and service worker", () =
 test("store module is loaded in index.html and precached in the service worker app shell", () => {
   const index = read("customer-app/index.html");
   const sw = read("customer-app/sw.js");
-  const build = "20260623_store_marketplace_final";
+  const build = "20260624_store_hot_sale_verified_reviews";
 
   assert.match(index, new RegExp(`modules/store\\.js\\?v=${build}`));
   assert.match(sw, /`\.\/modules\/store\.js\?v=\$\{BUILD_ID\}`/);
@@ -792,7 +792,7 @@ test("store card and product detail render product name before the rating badge,
   await new Promise((resolve) => setTimeout(resolve, 0));
   const body = container.querySelector("[data-store-body]");
   const nameIndex = body.innerHTML.indexOf("ล้างแอร์ผนัง");
-  const ratingIndex = body.innerHTML.indexOf("store-standard-badge");
+  const ratingIndex = body.innerHTML.indexOf("store-rating-badge");
   const priceIndex = body.innerHTML.indexOf("store-card-price");
   assert.ok(nameIndex > -1 && ratingIndex > -1 && priceIndex > -1);
   assert.ok(nameIndex < ratingIndex);
@@ -803,7 +803,7 @@ test("store card and product detail render product name before the rating badge,
   await new Promise((resolve) => setTimeout(resolve, 0));
   const detailBody = container.querySelector("[data-store-detail-body]");
   const detailNameIndex = detailBody.innerHTML.indexOf("ล้างแอร์ผนัง");
-  const detailRatingIndex = detailBody.innerHTML.indexOf("store-standard-badge");
+  const detailRatingIndex = detailBody.innerHTML.indexOf("store-rating-badge");
   const detailPriceIndex = detailBody.innerHTML.indexOf("store-detail-price");
   assert.ok(detailNameIndex > -1 && detailRatingIndex > -1 && detailPriceIndex > -1);
   assert.ok(detailNameIndex < detailRatingIndex);
@@ -920,7 +920,7 @@ test("store shows the real sale price prominently with the normal price struck t
   const body = container.querySelector("[data-store-body]");
   assert.match(body.innerHTML, /class="price-text[^"]*">500/);
   assert.match(body.innerHTML, /class="price-strike">700/);
-  assert.match(body.innerHTML, /class="store-badge store-badge-promo">โปรดูแลแอร์รับหน้าฝน/);
+  assert.match(body.innerHTML, /class="store-sale-badge"[^>]*>SALE -29%/);
 });
 
 test("store falls back to base_price when there is no active price rule", async () => {
@@ -976,7 +976,7 @@ test("store card shows a multi-image slider with dot indicators when an item has
   assert.equal((body.innerHTML.match(/class="store-card-dot is-active"/g) || []).length, 1);
 });
 
-test("store card shows the CWF featured ribbon only for featured items, and a five-star standard-service badge for every item", async () => {
+test("store card shows the CWF featured ribbon only for featured items, and an honest rating badge for every item", async () => {
   const context = makeContext();
   const root = loadCustomerFrontend(context);
   root.api.loadCatalogItems = async () => [
@@ -992,12 +992,15 @@ test("store card shows the CWF featured ribbon only for featured items, and a fi
   assert.equal((body.innerHTML.match(/store-featured-ribbon/g) || []).length, 1);
   assert.match(body.innerHTML, /CWF แนะนำ/);
   assert.doesNotMatch(body.innerHTML, /store-badge-featured/);
-  assert.equal((body.innerHTML.match(/store-standard-badge/g) || []).length, 2);
-  assert.equal((body.innerHTML.match(/store-standard-label">มาตรฐาน CWF/g) || []).length, 2);
-  assert.equal((body.innerHTML.match(/store-standard-star is-filled/g) || []).length, 10);
+  assert.equal((body.innerHTML.match(/store-rating-badge/g) || []).length, 2);
+  assert.equal((body.innerHTML.match(/store-rating-label">รีวิว/g) || []).length, 2);
+  assert.doesNotMatch(body.innerHTML, /มาตรฐาน CWF/);
+  // neither item has real reviews yet, so both must render honest empty stars and a (0) count
+  assert.equal((body.innerHTML.match(/store-rating-star is-filled/g) || []).length, 0);
+  assert.equal((body.innerHTML.match(/store-rating-count">\(0\)<\/span>/g) || []).length, 2);
 });
 
-test("standard-service badge renders real rating_average/review_count with half stars and a visible count, but falls back to a fake-review-free 5-star badge when there is no real data", async () => {
+test("rating badge renders real rating_average/review_count with half stars and a visible count, but falls back to an honest zero-review badge when there is no real data", async () => {
   const context = makeContext();
   const root = loadCustomerFrontend(context);
   root.api.loadCatalogItems = async () => [
@@ -1010,14 +1013,14 @@ test("standard-service badge renders real rating_average/review_count with half 
   await new Promise((resolve) => setTimeout(resolve, 0));
 
   const body = container.querySelector("[data-store-body]");
-  assert.match(body.innerHTML, /store-standard-star is-half/);
-  assert.match(body.innerHTML, /store-standard-value">4\.5<\/span>/);
-  assert.match(body.innerHTML, /store-standard-count">\(12 รีวิว\)<\/span>/);
-  assert.equal((body.innerHTML.match(/store-standard-count/g) || []).length, 1);
-  assert.equal((body.innerHTML.match(/store-standard-star is-filled/g) || []).length, 4 + 5);
+  assert.match(body.innerHTML, /store-rating-star is-half/);
+  assert.match(body.innerHTML, /store-rating-value">4\.5<\/span>/);
+  assert.match(body.innerHTML, /store-rating-count">\(12\)<\/span>/);
+  assert.match(body.innerHTML, /store-rating-count">\(0\)<\/span>/);
+  assert.equal((body.innerHTML.match(/store-rating-star is-filled/g) || []).length, 4);
 });
 
-test("standard-service badge star fill logic only shows a half star once the fractional part reaches 0.5; below that it rounds down to full/empty stars only", async () => {
+test("rating badge star fill logic only shows a half star once the fractional part reaches 0.5; below that it rounds down to full/empty stars only", async () => {
   const context = makeContext();
   const root = loadCustomerFrontend(context);
   root.api.loadCatalogItems = async () => [
@@ -1029,13 +1032,13 @@ test("standard-service badge star fill logic only shows a half star once the fra
   await new Promise((resolve) => setTimeout(resolve, 0));
 
   const body = container.querySelector("[data-store-body]");
-  assert.match(body.innerHTML, /store-standard-value">4\.2<\/span>/);
-  assert.match(body.innerHTML, /store-standard-count">\(6 รีวิว\)<\/span>/);
-  assert.doesNotMatch(body.innerHTML, /store-standard-star is-half/);
-  assert.equal((body.innerHTML.match(/store-standard-star is-filled/g) || []).length, 4);
+  assert.match(body.innerHTML, /store-rating-value">4\.2<\/span>/);
+  assert.match(body.innerHTML, /store-rating-count">\(6\)<\/span>/);
+  assert.doesNotMatch(body.innerHTML, /store-rating-star is-half/);
+  assert.equal((body.innerHTML.match(/store-rating-star is-filled/g) || []).length, 4);
 });
 
-test("standard-service badge ignores legacy rating_value and fails safe to the no-fake-review CWF badge on invalid/null rating_average or review_count", async () => {
+test("rating badge ignores legacy rating_value and fails safe to the no-fake-review honest badge on invalid/null rating_average or review_count", async () => {
   const context = makeContext();
   const root = loadCustomerFrontend(context);
   root.api.loadCatalogItems = async () => [
@@ -1052,15 +1055,15 @@ test("standard-service badge ignores legacy rating_value and fails safe to the n
   await new Promise((resolve) => setTimeout(resolve, 0));
 
   const body = container.querySelector("[data-store-body]");
-  // every item must fail safe to the plain 5-star "มาตรฐาน CWF" badge with zero visible review counts
-  assert.equal((body.innerHTML.match(/store-standard-badge/g) || []).length, 5);
-  assert.equal((body.innerHTML.match(/store-standard-label">มาตรฐาน CWF/g) || []).length, 5);
-  assert.equal((body.innerHTML.match(/store-standard-star is-filled/g) || []).length, 25);
-  assert.doesNotMatch(body.innerHTML, /store-standard-count/);
-  assert.doesNotMatch(body.innerHTML, /store-standard-star is-half/);
+  // every item must fail safe to the honest zero-star, zero-count badge -- never a fabricated average
+  assert.equal((body.innerHTML.match(/store-rating-badge/g) || []).length, 5);
+  assert.equal((body.innerHTML.match(/store-rating-count">\(0\)<\/span>/g) || []).length, 5);
+  assert.equal((body.innerHTML.match(/store-rating-star is-filled/g) || []).length, 0);
+  assert.doesNotMatch(body.innerHTML, /store-rating-star is-half/);
+  assert.doesNotMatch(body.innerHTML, /store-rating-value/);
 });
 
-test("standard-service badge never displays a numeric average, a zero-review count, or the phrase \"คะแนนลูกค้า\" anywhere in its markup", async () => {
+test("rating badge never displays a fabricated 5.0 average or the phrase \"มาตรฐาน CWF\"/\"คะแนนลูกค้า\" anywhere in its markup", async () => {
   const context = makeContext();
   const root = loadCustomerFrontend(context);
   root.api.loadCatalogItems = async () => [
@@ -1072,14 +1075,15 @@ test("standard-service badge never displays a numeric average, a zero-review cou
   await new Promise((resolve) => setTimeout(resolve, 0));
 
   const body = container.querySelector("[data-store-body]");
-  const badgeMatch = body.innerHTML.match(/<div class="store-standard-badge"[\s\S]*?<\/div>/);
-  assert.ok(badgeMatch, "standard badge markup not found");
+  const badgeMatch = body.innerHTML.match(/<button type="button" class="store-rating-badge"[\s\S]*?<\/button>/);
+  assert.ok(badgeMatch, "rating badge markup not found");
   assert.doesNotMatch(badgeMatch[0], /5\.0/);
-  assert.doesNotMatch(badgeMatch[0], /0 รีวิว/);
+  assert.doesNotMatch(badgeMatch[0], /มาตรฐาน CWF/);
   assert.doesNotMatch(badgeMatch[0], /คะแนนลูกค้า/);
+  assert.match(badgeMatch[0], /รีวิว/);
 });
 
-test("product detail page uses the exact same renderStandardBadge output as the store card for both real and absent rating data", async () => {
+test("product detail page uses the exact same renderRatingBadge output as the store card for both real and absent rating data", async () => {
   const context = makeContext();
   const root = loadCustomerFrontend(context);
   root.api.loadCatalogItem = async () => ({
@@ -1093,10 +1097,10 @@ test("product detail page uses the exact same renderStandardBadge output as the 
   await new Promise((resolve) => setTimeout(resolve, 0));
 
   const body = container.querySelector("[data-store-detail-body]");
-  assert.match(body.innerHTML, /store-standard-star is-half/);
-  assert.match(body.innerHTML, /store-standard-value">3\.5<\/span>/);
-  assert.match(body.innerHTML, /store-standard-count">\(8 รีวิว\)<\/span>/);
-  assert.equal((body.innerHTML.match(/store-standard-star is-filled/g) || []).length, 3);
+  assert.match(body.innerHTML, /store-rating-star is-half/);
+  assert.match(body.innerHTML, /store-rating-value">3\.5<\/span>/);
+  assert.match(body.innerHTML, /store-rating-count">\(8\)<\/span>/);
+  assert.equal((body.innerHTML.match(/store-rating-star is-filled/g) || []).length, 3);
 });
 
 test("store card and product detail gallery flag autoplay only for multi-image items with is_autoplay_enabled true", async () => {

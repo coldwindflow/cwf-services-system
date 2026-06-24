@@ -223,6 +223,7 @@
   function applyCommerceDraft(scope, item) {
     if (!item || item.action === "contact" || !item.draft) return false;
     const line = normalizeServiceLine(item.draft);
+    const catalogItemId = Number.isFinite(Number(item.id)) && Number(item.id) > 0 ? Number(item.id) : null;
     root.state.updateDraft(scope, {
       service_kind: "clean",
       job_type: "ล้าง",
@@ -232,6 +233,7 @@
       wash_variant: line.wash_variant,
       services: [line],
       selectedSlot: null,
+      catalog_item_id: catalogItemId,
     });
     root.state.selectedService = { id: item.id || item.title || "", route: scope };
     if (scope === "scheduled") {

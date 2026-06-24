@@ -3569,7 +3569,7 @@ body.has-contact-sheet { overflow: hidden; }
 /* Image bleeds edge-to-edge; padding applies only to the text/price/CTA region below it. */
 .store-card-badges,
 .store-card-head,
-.store-standard-badge,
+.store-rating-badge,
 .store-card-price,
 .store-card-actions {
   padding-left: 10px;
@@ -3663,19 +3663,79 @@ body.has-contact-sheet { overflow: hidden; }
   position: absolute;
   top: 8px;
   right: 0;
-  z-index: 3;
-  background: linear-gradient(135deg, #1f7bff, #0f4fb8);
-  color: #fff;
+  z-index: 4;
+  background: linear-gradient(135deg, #ffe066, #f5b700 55%, #e0a300);
+  background-size: 200% 100%;
+  color: #4a3300;
   font-size: 10.5px;
   font-weight: 800;
   letter-spacing: 0.2px;
   padding: 4px 10px 4px 12px;
   border-radius: 999px 0 0 999px;
-  border-top: 1px solid rgba(255, 214, 92, 0.9);
-  border-bottom: 1px solid rgba(255, 214, 92, 0.9);
-  box-shadow: 0 3px 8px rgba(15, 79, 184, 0.45), inset 0 0 0 1px rgba(255, 255, 255, 0.15);
+  border-top: 1px solid rgba(255, 255, 255, 0.7);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.7);
+  box-shadow: 0 3px 8px rgba(224, 163, 0, 0.5), inset 0 0 0 1px rgba(255, 255, 255, 0.25);
   line-height: 1.4;
   pointer-events: none;
+  animation: store-gold-shimmer 2.4s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .store-featured-ribbon { animation: none; }
+}
+@keyframes store-gold-shimmer {
+  0% { background-position: 0% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* HOT badge: top-left, eye-catching flame/pulse, never blocks dots/ribbon/sale badge. */
+.store-hot-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 4;
+  background: linear-gradient(135deg, #ff5f3d, #e0211f);
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.4px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  box-shadow: 0 3px 8px rgba(224, 33, 31, 0.5);
+  pointer-events: none;
+  animation: store-hot-pulse 1.4s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .store-hot-badge { animation: none; }
+}
+@keyframes store-hot-pulse {
+  0%, 100% { transform: scale(1); box-shadow: 0 3px 8px rgba(224, 33, 31, 0.5); }
+  50% { transform: scale(1.08); box-shadow: 0 3px 12px rgba(224, 33, 31, 0.75); }
+}
+
+/* SALE badge: derived only from an active, non-expired, genuinely-discounted promo. */
+.store-sale-badge {
+  position: absolute;
+  bottom: 24px;
+  left: 8px;
+  z-index: 4;
+  background: linear-gradient(120deg, #ff2d78, #a21caf);
+  background-size: 220% 100%;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.3px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  box-shadow: 0 3px 8px rgba(162, 28, 175, 0.45);
+  pointer-events: none;
+  animation: store-sale-sweep 2.2s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .store-sale-badge { animation: none; }
+}
+@keyframes store-sale-sweep {
+  0% { background-position: 0% 0; }
+  100% { background-position: 220% 0; }
 }
 
 .store-card-badges {
@@ -3695,7 +3755,7 @@ body.has-contact-sheet { overflow: hidden; }
 .store-badge-bookable { background: #dcfce7; color: #166534; }
 .store-badge-contact { background: #e0f2fe; color: #075985; }
 
-.store-standard-badge {
+.store-rating-badge {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -3703,12 +3763,17 @@ body.has-contact-sheet { overflow: hidden; }
   font-weight: 600;
   color: #92660a;
   margin-top: 2px;
+  background: none;
+  border: none;
+  padding: 2px 0;
+  cursor: pointer;
+  text-align: left;
 }
-.store-standard-stars { display: inline-flex; gap: 1px; line-height: 1; }
-.store-standard-star { position: relative; color: #e5e7eb; font-size: 11px; }
-.store-standard-star.is-filled { color: #f5b700; }
-.store-standard-star.is-half { color: #e5e7eb; }
-.store-standard-star.is-half::before {
+.store-rating-stars { display: inline-flex; gap: 1px; line-height: 1; }
+.store-rating-star { position: relative; color: #e5e7eb; font-size: 11px; }
+.store-rating-star.is-filled { color: #f5b700; }
+.store-rating-star.is-half { color: #e5e7eb; }
+.store-rating-star.is-half::before {
   content: "★";
   position: absolute;
   left: 0;
@@ -3717,9 +3782,9 @@ body.has-contact-sheet { overflow: hidden; }
   overflow: hidden;
   color: #f5b700;
 }
-.store-standard-label { color: #92660a; }
-.store-standard-value { color: #92660a; font-weight: 700; }
-.store-standard-count { color: #92660a; font-weight: 500; }
+.store-rating-label { color: #92660a; }
+.store-rating-value { color: #92660a; font-weight: 700; }
+.store-rating-count { color: #92660a; font-weight: 500; }
 
 .store-card-price {
   display: flex;
@@ -3855,4 +3920,116 @@ body.has-contact-sheet { overflow: hidden; }
     padding: 0;
     margin-top: 18px;
   }
+}
+
+/* ===================== Store Reviews (verified customer reviews) ===================== */
+.store-reviews-section { scroll-margin-top: 16px; }
+.store-reviews-summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 13.5px;
+  margin-bottom: 10px;
+}
+.store-reviews-summary .store-rating-label { color: var(--ink); font-weight: 700; }
+.store-reviews-summary .store-rating-stars { font-size: 14px; }
+.store-reviews-summary .store-rating-star { font-size: 14px; }
+.store-reviews-summary .store-rating-value { color: var(--ink); font-weight: 700; }
+.store-reviews-summary .store-rating-count { color: var(--muted); font-weight: 500; }
+
+.store-reviews-empty { color: var(--muted); font-size: 13.5px; }
+.store-reviews-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.store-review-item {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+}
+.store-review-item-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.store-review-item-name { font-size: 12.5px; font-weight: 700; color: var(--ink); }
+.store-review-item-stars { font-size: 12px; }
+.store-review-item-comment { font-size: 13px; color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; margin-bottom: 4px; }
+.store-review-item-date { font-size: 11px; color: var(--muted); }
+.store-reviews-load-more { width: 100%; margin-bottom: 12px; }
+
+.store-review-star { color: #e5e7eb; }
+.store-review-star.is-filled { color: #f5b700; }
+
+.store-review-write-gate {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.store-review-ineligible { font-size: 13px; color: var(--muted); }
+
+.store-review-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+}
+.store-review-form h4 { font-size: 14px; margin: 0; }
+.store-review-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.store-review-field select,
+.store-review-field textarea {
+  font: inherit;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  resize: vertical;
+  min-height: 64px;
+}
+.store-review-stars-input,
+.store-review-stars-display {
+  display: inline-flex;
+  gap: 4px;
+}
+.store-review-star-btn {
+  background: none;
+  border: none;
+  font-size: 24px;
+  line-height: 1;
+  color: #e5e7eb;
+  cursor: pointer;
+  padding: 2px;
+  min-width: 32px;
+  min-height: 32px;
+}
+.store-review-star-btn.is-filled { color: #f5b700; }
+.store-review-form-actions {
+  display: flex;
+  gap: 8px;
+}
+.store-review-form-actions .primary-btn,
+.store-review-form-actions .secondary-btn { flex: 1; min-height: 42px; }
+.store-review-preview-comment {
+  font-size: 13px;
+  color: var(--ink);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: var(--soft-blue, #eef2f7);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
 }

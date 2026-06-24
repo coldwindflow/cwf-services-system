@@ -30,15 +30,15 @@ test("public availability and public booking share the customer availability hel
   assert.match(booking, /customerAvailability\.hasAvailableStart/);
   assert.match(booking, /customerAvailability\.reservePublicCustomerTechnician/);
   assert.match(booking, /technician_username/);
-  assert.match(booking, /job_status='รอตรวจสอบ'|VALUES \([\s\S]*'รอตรวจสอบ'/);
+  assert.match(booking, /'รอตรวจสอบ'/);
 });
 
 test("public book validates and persists allow_time_proposal as a jobs column", () => {
   const booking = section('app.post("/public/book"', 'app.get("/public/track"');
   assert.match(booking, /allow_time_proposal/);
   assert.match(booking, /allowTimeProposal == null/);
-  assert.match(booking, /booking_mode, allow_time_proposal\)/);
-  assert.match(booking, /\$13,\$15\)/);
+  assert.match(booking, /"booking_mode", "allow_time_proposal"/);
+  assert.match(booking, /allowTimeProposal,/);
   assert.match(booking, /allowTimeProposal/);
   assert.doesNotMatch(booking, /customer_note\s*[:=][\s\S]{0,200}allowTimeProposal/);
 });
