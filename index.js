@@ -35,6 +35,7 @@ const technicianIncomeHelpers = require("./server/technicianIncome");
 const customerLookupHelpers = require("./server/customerLookup");
 const technicianJobIncomeDisplayHelpers = require("./server/technicianJobIncomeDisplay");
 const technicianReworkHelpers = require("./server/technicianRework");
+const technicianReworkIncome = require("./server/services/technicianReworkIncome");
 const adminJobItemsHelpers = require("./server/adminJobItems");
 const customerAvailability = require("./server/services/public/customerAvailability");
 const { createTechnicianJobMoneyHelpers } = require("./server/technicianJobMoneySummary");
@@ -7287,6 +7288,7 @@ const {
   money: _money,
   technicianJobIncomeDisplayHelpers,
   technicianReworkHelpers,
+  technicianReworkIncome,
   getCustomerCollectAmountForTechJob: _getCustomerCollectAmountForTechJob,
   loadTechnicianIncomePreview: _loadTechnicianIncomePreview,
   loadFinalizedTechPayoutLineForJob: _loadFinalizedTechPayoutLineForJob,
@@ -7459,6 +7461,109 @@ async function _assertJobMutableForPayout(client, job_id, ctx){
   err.payout_id = period.payout_id;
   try { console.warn('[payout_freeze] blocked', { job_id, payout_id: period.payout_id, status: period.status, ctx }); } catch {}
   throw err;
+}
+
+// =======================================
+// 🔒 Rework income hold/release — shared workflow
+// Used by /admin/jobs/:job_id/rework_case, /admin/jobs/:job_id/return_for_fix_v2,
+// /jobs/:job_id/finalize (technician revisit close) and /admin/rework_cases/:id/resolve
+// so every entry point that opens or closes a rework case pauses/restores the
+// original technician's income through the exact same path (invariant: single
+// shared workflow, no per-route divergence).
+// =======================================
+
+async function _openReworkCaseWithIncomeHold(client, opts = {}) {
+  const jobId = Number(opts.jobId);
+  if (!jobId) throw createHttpError(400, 'job_id ไม่ถูกต้อง');
+  const reasonType = REWORK_REASON_TYPES.has(opts.reasonType) ? opts.reasonType : 'other';
+  const reasonNote = opts.reasonNote || null;
+  const actor = opts.actor || null;
+
+  const jr = await client.query(
+    `SELECT job_id, booking_code, technician_username, warranty_end_at, job_status, finished_at
+       FROM public.jobs WHERE job_id=$1 FOR UPDATE`,
+    [jobId]
+  );
+  if (!jr.rows.length) throw createHttpError(404, 'ไม่พบงาน');
+  const job = jr.rows[0];
+  const technicianUsername = String(opts.technicianUsername || job.technician_username || '').trim() || null;
+
+  const ins = await client.query(
+    `INSERT INTO public.technician_rework_cases
+     (case_code, job_id, technician_username, reason_type, reason_note, warranty_checked, warranty_end_at, created_by)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+     RETURNING *`,
+    [await generateReworkCaseCode(client), jobId, technicianUsername, reasonType, reasonNote, !!opts.warrantyChecked, job.warranty_end_at || null, actor]
+  );
+  const reworkCase = ins.rows[0];
+
+  // Capture + pause the ORIGINAL technician's income for this job BEFORE we clear
+  // finished_at below — _buildPayoutLinesForJob reads the job's current (pre-rework)
+  // state, which is the only ledger-grade source for "what they actually earned".
+  let holdResult = null;
+  if (technicianUsername) {
+    holdResult = await technicianReworkIncome.holdOriginalIncomeForReworkCase(client, {
+      reworkCaseId: reworkCase.rework_case_id,
+      jobId,
+      technicianUsername,
+      originalFinishedAt: job.finished_at,
+      actor,
+      resolveOriginalEarnAmount: async () => {
+        if (!job.finished_at) return 0;
+        const lines = await _buildPayoutLinesForJob(jobId);
+        return (lines || [])
+          .filter((ln) => String(ln && ln.technician_username || '').trim() === technicianUsername)
+          .reduce((sum, ln) => sum + Number(ln.earn_amount || 0), 0);
+      },
+    });
+  }
+
+  await client.query(
+    `UPDATE public.jobs
+        SET job_status='งานแก้ไข',
+            returned_at=NOW(),
+            return_reason=$1,
+            returned_by=COALESCE($2, returned_by),
+            travel_started_at=NULL,
+            started_at=NULL,
+            checkin_at=NULL,
+            checkin_latitude=NULL,
+            checkin_longitude=NULL,
+            finished_at=NULL,
+            canceled_at=NULL,
+            cancel_reason=NULL,
+            final_signature_path=NULL,
+            final_signature_status=NULL,
+            final_signature_at=NULL
+      WHERE job_id=$3`,
+    [reasonNote || reasonType, actor, jobId]
+  );
+  await client.query(`UPDATE public.job_assignments SET status='in_progress', done_at=NULL WHERE job_id=$1`, [jobId]);
+
+  return { job, reworkCase, holdResult, technicianUsername };
+}
+
+// successful=true releases the held amount into the correct future payout period
+// (rolling forward past any already-paid period); successful=false permanently
+// voids the hold (no money moves — the rework failed, so the original income stays
+// paused/already-removed). Both paths are idempotent and safe to call repeatedly.
+async function _closeReworkCaseWithIncomeRelease(client, opts = {}) {
+  const reworkCaseId = Number(opts.reworkCaseId);
+  const technicianUsername = String(opts.technicianUsername || '').trim();
+  if (!reworkCaseId || !technicianUsername) return null;
+  const successful = !!opts.successful;
+  const actor = opts.actor || null;
+
+  if (!successful) {
+    return technicianReworkIncome.voidHeldIncomeForReworkCase(client, { reworkCaseId, technicianUsername });
+  }
+  const finishedAt = opts.finishedAt || new Date();
+  return technicianReworkIncome.releaseHeldIncomeForReworkCase(client, {
+    reworkCaseId,
+    technicianUsername,
+    finishedAt,
+    actor,
+  });
 }
 
 app.get('/admin/super/tech_income/calc/job/:job_id', requireSuperAdmin, async (req, res) => {
@@ -12483,6 +12588,36 @@ await pool.query(`CREATE INDEX IF NOT EXISTS idx_income_tech_overrides_enabled O
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_trc_status_created ON public.technician_rework_cases(status, created_at DESC)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_trc_resolution ON public.technician_rework_cases(resolution)`);
 
+    // 💸 Rework income hold/release ledger (see migrations/technician_rework_income_hold_release.sql)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS public.technician_rework_income_holds (
+        hold_id BIGSERIAL PRIMARY KEY,
+        rework_case_id BIGINT NOT NULL REFERENCES public.technician_rework_cases(rework_case_id) ON DELETE CASCADE,
+        technician_username TEXT NOT NULL,
+        job_id BIGINT NOT NULL REFERENCES public.jobs(job_id) ON DELETE CASCADE,
+        held_amount NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (held_amount >= 0),
+        source_payout_id TEXT,
+        source_period_status_at_hold TEXT,
+        hold_adjustment_id BIGINT REFERENCES public.technician_payout_adjustments(adj_id) ON DELETE SET NULL,
+        hold_status TEXT NOT NULL DEFAULT 'held' CHECK (hold_status IN ('held','already_paid_no_action','released','voided')),
+        released_amount NUMERIC(12,2) CHECK (released_amount IS NULL OR released_amount >= 0),
+        release_payout_id TEXT,
+        release_adjustment_id BIGINT REFERENCES public.technician_payout_adjustments(adj_id) ON DELETE SET NULL,
+        release_idempotency_key TEXT,
+        released_at TIMESTAMPTZ,
+        created_by TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE (rework_case_id, technician_username),
+        CHECK (released_amount IS NULL OR released_amount <= held_amount)
+      )
+    `);
+    await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_trih_release_idempotency_key ON public.technician_rework_income_holds(release_idempotency_key) WHERE release_idempotency_key IS NOT NULL`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_trih_job_id ON public.technician_rework_income_holds(job_id)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_trih_technician ON public.technician_rework_income_holds(technician_username, created_at DESC)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_trih_status ON public.technician_rework_income_holds(hold_status, created_at DESC)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_trih_rework_case ON public.technician_rework_income_holds(rework_case_id)`);
+
     await pool.query(`
       CREATE TABLE IF NOT EXISTS public.technician_deduction_audit_logs (
         audit_id BIGSERIAL PRIMARY KEY,
@@ -15631,61 +15766,33 @@ app.post('/admin/jobs/:job_id/rework_case', requireAdminSession, async (req, res
     await client.query('BEGIN');
     const realId = await resolveJobIdAny(client, raw);
     if (!realId) throw createHttpError(400, 'job_id ไม่ถูกต้อง');
-    const jr = await client.query(
-      `SELECT job_id, booking_code, technician_username, warranty_end_at, job_status
-         FROM public.jobs WHERE job_id=$1 FOR UPDATE`,
-      [realId]
-    );
-    if (!jr.rows.length) throw createHttpError(404, 'ไม่พบงาน');
-    const job = jr.rows[0];
-    const technician_username = String(req.body?.technician_username || job.technician_username || '').trim() || null;
-    const ins = await client.query(
-      `INSERT INTO public.technician_rework_cases
-       (case_code, job_id, technician_username, reason_type, reason_note, warranty_checked, warranty_end_at, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-       RETURNING *`,
-      [await generateReworkCaseCode(client), realId, technician_username, reason_type, reason_note || null, warranty_checked, job.warranty_end_at || null, getActorUsername(req)]
-    );
-    await client.query(
-      `UPDATE public.jobs
-          SET job_status='งานแก้ไข',
-              returned_at=NOW(),
-              return_reason=$1,
-              returned_by=COALESCE($2, returned_by),
-              travel_started_at=NULL,
-              started_at=NULL,
-              checkin_at=NULL,
-              checkin_latitude=NULL,
-              checkin_longitude=NULL,
-              finished_at=NULL,
-              canceled_at=NULL,
-              cancel_reason=NULL,
-              final_signature_path=NULL,
-              final_signature_status=NULL,
-              final_signature_at=NULL
-        WHERE job_id=$3`,
-      [reason_note || reason_type, getActorUsername(req), realId]
-    );
-    await client.query(`UPDATE public.job_assignments SET status='in_progress', done_at=NULL WHERE job_id=$1`, [realId]);
+    const { job, reworkCase, technicianUsername } = await _openReworkCaseWithIncomeHold(client, {
+      jobId: realId,
+      technicianUsername: req.body?.technician_username,
+      reasonType: reason_type,
+      reasonNote: reason_note || null,
+      warrantyChecked: warranty_checked,
+      actor: getActorUsername(req),
+    });
     await logJobUpdate(realId, {
       actor_username: getActorUsername(req),
       actor_role: getActorRole(req) || 'admin',
       action: 'rework_case_created',
       message: reason_note || reason_type,
-      payload: { rework_case_id: ins.rows[0].rework_case_id, case_code: ins.rows[0].case_code, reason_type },
+      payload: { rework_case_id: reworkCase.rework_case_id, case_code: reworkCase.case_code, reason_type },
     }, client);
-    await logDeductionAudit(client, req, { action: 'REWORK_CASE_CREATE', entity_type: 'rework_case', entity_id: ins.rows[0].rework_case_id, after: ins.rows[0] });
+    await logDeductionAudit(client, req, { action: 'REWORK_CASE_CREATE', entity_type: 'rework_case', entity_id: reworkCase.rework_case_id, after: reworkCase });
     await client.query('COMMIT');
     try {
       await _syncDisplayForJobState(
         { ...job, job_id: realId, return_reason: reason_note || reason_type, returned_at: new Date() },
-        [technician_username].filter(Boolean),
+        [technicianUsername].filter(Boolean),
         { context: 'current' }
       );
     } catch (e) {
       try { console.warn('[tech_income_display] rework create sync failed', { job_id: realId, error: e.message }); } catch {}
     }
-    return res.json({ ok: true, row: ins.rows[0] });
+    return res.json({ ok: true, row: reworkCase });
   } catch (e) {
     try { await client.query('ROLLBACK'); } catch {}
     console.error('POST /admin/jobs/:job_id/rework_case', e);
@@ -15746,13 +15853,28 @@ app.post('/admin/rework_cases/:id/resolve', requireAdminSession, async (req, res
         RETURNING *`,
       [id, resolution, String(req.body?.revisit_result || '').trim() || null, String(req.body?.revisit_note || '').trim() || null, JSON.stringify(evidence), linkedDeductionId, getActorUsername(req)]
     );
+    // Only 'fixed' means the original technician's paused income should come back —
+    // every other resolution (failed / changed_technician / company_absorbed /
+    // deduction_required) means the original work was not validated as payable,
+    // so the hold is permanently voided instead (no money moves).
+    let releaseResult = null;
+    if (before.technician_username) {
+      const jrForClose = await client.query(`SELECT finished_at FROM public.jobs WHERE job_id=$1 LIMIT 1`, [before.job_id]);
+      releaseResult = await _closeReworkCaseWithIncomeRelease(client, {
+        reworkCaseId: id,
+        technicianUsername: before.technician_username,
+        successful: resolution === 'fixed',
+        finishedAt: jrForClose.rows[0]?.finished_at || new Date(),
+        actor: getActorUsername(req),
+      });
+    }
     await logDeductionAudit(client, req, { action: 'REWORK_CASE_RESOLVE', entity_type: 'rework_case', entity_id: id, before, after: up.rows[0] });
     await logJobUpdate(before.job_id, {
       actor_username: getActorUsername(req),
       actor_role: getActorRole(req) || 'admin',
       action: 'rework_case_resolved',
       message: resolution,
-      payload: { rework_case_id: id, resolution, linked_deduction_case_id: linkedDeductionId },
+      payload: { rework_case_id: id, resolution, linked_deduction_case_id: linkedDeductionId, income_release: releaseResult ? { released: !!releaseResult.released, amount: releaseResult.amount || 0, payout_id: releaseResult.payout_id || null } : null },
     }, client);
     await client.query('COMMIT');
     try {
@@ -15761,7 +15883,7 @@ app.post('/admin/rework_cases/:id/resolve', requireAdminSession, async (req, res
     } catch (e) {
       try { console.warn('[tech_income_display] rework resolve sync failed', { job_id: before.job_id, error: e.message }); } catch {}
     }
-    return res.json({ ok: true, row: up.rows[0], linked_deduction_case: linkedDeduction, message: PAYOUT_DEDUCTION_WARNING });
+    return res.json({ ok: true, row: up.rows[0], linked_deduction_case: linkedDeduction, income_release: releaseResult, message: PAYOUT_DEDUCTION_WARNING });
   } catch (e) {
     try { await client.query('ROLLBACK'); } catch {}
     console.error('POST /admin/rework_cases/:id/resolve', e);
@@ -16345,56 +16467,44 @@ app.post('/admin/jobs/:job_id/return_for_fix_v2', requireAdminSoft, async (req, 
   if (!reason) return res.status(400).json({ error: 'ต้องระบุปัญหา/เหตุผล' });
   const client = await pool.connect();
   try {
+    await client.query('BEGIN');
     // 🔒 Phase 5: block retroactive income change for locked/paid periods
     await _assertJobMutableForPayout(client, job_id, 'return_for_fix_v2');
 
     const jr = await client.query(`SELECT job_status, warranty_end_at, booking_code FROM public.jobs WHERE job_id=$1`, [job_id]);
-    if (!jr.rows.length) return res.status(404).json({ error: 'ไม่พบงาน' });
+    if (!jr.rows.length) throw createHttpError(404, 'ไม่พบงาน');
     const wEnd = jr.rows[0].warranty_end_at ? new Date(jr.rows[0].warranty_end_at) : null;
     const inWarranty = !!(wEnd && wEnd.getTime() >= Date.now());
-    if (!inWarranty) return res.status(400).json({ error: 'หมดประกันแล้ว ไม่สามารถตีกลับเป็นงานแก้ไขได้' });
+    if (!inWarranty) throw createHttpError(400, 'หมดประกันแล้ว ไม่สามารถตีกลับเป็นงานแก้ไขได้');
 
-    await client.query(
-      `UPDATE public.jobs
-       SET job_status='งานแก้ไข',
-           returned_at=NOW(),
-           return_reason=$1,
-           returned_by=COALESCE($2, returned_by),
-           travel_started_at=NULL,
-           started_at=NULL,
-           checkin_at=NULL,
-           checkin_latitude=NULL,
-           checkin_longitude=NULL,
-           finished_at=NULL,
-           canceled_at=NULL,
-           cancel_reason=NULL,
-           final_signature_path=NULL,
-           final_signature_status=NULL,
-           final_signature_at=NULL
-       WHERE job_id=$3`,
-      [reason, actor_username, job_id]
-    );
-
-    // งานแก้ไขต้องกลับมาเห็นในแอปช่างอีกครั้ง
-    // ถ้ารอบก่อนช่างถูก mark done ไปแล้ว ให้ reset กลับเป็น in_progress
-    await client.query(
-      `UPDATE public.job_assignments
-       SET status='in_progress',
-           done_at=NULL
-       WHERE job_id=$1`,
-      [job_id]
-    );
-    await logJobUpdate(job_id, { actor_username, actor_role: 'admin', action: 'return_for_fix', message: reason });
+    // Goes through the same shared workflow as /admin/jobs/:job_id/rework_case so
+    // the original technician's earned income is paused via the exact same hold
+    // ledger, instead of just clearing finished_at with no money-tracking record.
+    const { job, reworkCase, technicianUsername } = await _openReworkCaseWithIncomeHold(client, {
+      jobId: job_id,
+      reasonType: 'other',
+      reasonNote: reason,
+      actor: actor_username,
+    });
+    await logJobUpdate(job_id, {
+      actor_username,
+      actor_role: 'admin',
+      action: 'return_for_fix',
+      message: reason,
+      payload: { rework_case_id: reworkCase.rework_case_id, case_code: reworkCase.case_code },
+    }, client);
+    await client.query('COMMIT');
     try {
       const team = await getTeamForJob(job_id);
-      await _syncDisplayForJobState({ job_id, return_reason: reason, returned_at: new Date() }, team, { context: 'current' });
+      await _syncDisplayForJobState({ ...job, job_id, return_reason: reason, returned_at: new Date() }, team.length ? team : [technicianUsername].filter(Boolean), { context: 'current' });
     } catch (e) {
       try { console.warn('[tech_income_display] return_for_fix sync failed', { job_id, error: e.message }); } catch {}
     }
-    return res.json({ success: true });
+    return res.json({ success: true, rework_case_id: reworkCase.rework_case_id });
   } catch (e) {
+    try { await client.query('ROLLBACK'); } catch {}
     console.error('return_for_fix_v2 error', e);
-    return res.status(500).json({ error: e.message || 'ตีกลับงานแก้ไขไม่สำเร็จ' });
+    return res.status(Number(e.status || 500)).json({ error: e.message || 'ตีกลับงานแก้ไขไม่สำเร็จ' });
   } finally {
     try { client.release(); } catch {}
   }
@@ -19680,6 +19790,7 @@ if (status === "เสร็จแล้ว") {
     const isRevisitFlow = String(meta.job_status || "").trim() === "งานแก้ไข" || !!meta.returned_at || !!meta.return_reason;
     const revisitResult = ["successful", "unsuccessful"].includes(revisit_result) ? revisit_result : "";
     const revisitNote = revisit_note || note;
+    let reworkIncomeResult = null;
 
     if (isRevisitFlow && status === "เสร็จแล้ว") {
       if (!revisitResult) {
@@ -19798,6 +19909,40 @@ if (status === "เสร็จแล้ว") {
           close_signature_type || 'technician_signature']
       );
       if (isRevisitFlow && revisitResult) {
+        // Closing a revisit (rework) job through the same shared workflow as the
+        // admin resolve endpoint: 'successful' releases the ORIGINAL technician's
+        // paused income (keyed off the rework_case row's technician_username, not
+        // whoever is currently assigned, in case the job was reassigned for the
+        // revisit); 'unsuccessful' permanently voids the hold — no money moves.
+        const rcq = await client.query(
+          `SELECT * FROM public.technician_rework_cases
+            WHERE job_id=$1 AND status IN ('open','in_progress')
+            ORDER BY created_at DESC
+            LIMIT 1
+            FOR UPDATE`,
+          [realId]
+        );
+        const reworkCase = rcq.rows[0] || null;
+        if (reworkCase) {
+          const resolution = revisitResult === 'successful' ? 'fixed' : 'failed';
+          await client.query(
+            `UPDATE public.technician_rework_cases
+                SET status='resolved', resolution=$2, revisit_result=$3, revisit_note=$4,
+                    resolved_by=$5, resolved_at=NOW(), updated_at=NOW()
+              WHERE rework_case_id=$1`,
+            [reworkCase.rework_case_id, resolution, revisitResult, revisitNote || null, technician_username]
+          );
+          const heldTechnicianUsername = String(reworkCase.technician_username || '').trim();
+          if (heldTechnicianUsername) {
+            reworkIncomeResult = await _closeReworkCaseWithIncomeRelease(client, {
+              reworkCaseId: reworkCase.rework_case_id,
+              technicianUsername: heldTechnicianUsername,
+              successful: resolution === 'fixed',
+              finishedAt: new Date(),
+              actor: technician_username,
+            });
+          }
+        }
         await logJobUpdate(
           realId,
           {
@@ -19809,6 +19954,8 @@ if (status === "เสร็จแล้ว") {
               revisit_result: revisitResult,
               revisit_note: revisitNote || null,
               evidence_phases: ["revisit_before", "revisit_after", "revisit_defect"],
+              rework_case_id: reworkCase ? reworkCase.rework_case_id : null,
+              income_release: reworkIncomeResult ? { released: !!reworkIncomeResult.released, amount: reworkIncomeResult.amount || 0, payout_id: reworkIncomeResult.payout_id || null } : null,
             },
           },
           client
@@ -19896,7 +20043,7 @@ if (status === "เสร็จแล้ว") {
         try { console.warn('[tech_income_display] finalize cancel sync failed', { job_id: realId, error: e.message }); } catch {}
       }
     }
-    res.json({ success: true, job_id: Number(realId), status });
+    res.json({ success: true, job_id: Number(realId), status, income_release: reworkIncomeResult });
   } catch (e) {
     await client.query("ROLLBACK");
     console.error(e);
