@@ -7,7 +7,7 @@ const express = require("express");
 
 const createCatalogItemRoutes = require("../server/routes/catalog/items");
 
-function makePool(initialItems = [], initialRules = [], { schemaReady = true, marketplaceReady = false, autoplayReady = false, jobsCatalogLinkReady = false, jobs = [], jobUnits = [] } = {}) {
+function makePool(initialItems = [], initialRules = [], { schemaReady = true, marketplaceReady = false, autoplayReady = false, jobsCatalogLinkReady = false, jobs = [], jobUnits = [], forceBookingCountError = false } = {}) {
   const state = {
     items: initialItems.map((x) => ({
       image_url: null, image_public_id: null, price_rule_id: null,
@@ -92,6 +92,7 @@ function makePool(initialItems = [], initialRules = [], { schemaReady = true, ma
     // Job-level consistency: a job only counts toward an item when EVERY one
     // of its active units unambiguously matches that same single item.
     if (s.includes("WITH active_units AS") && s.includes("JOIN public.jobs j")) {
+      if (forceBookingCountError) throw new Error("simulated historical resolver failure");
       const [itemIds] = params;
       const excludedStatuses = ["ยกเลิก", "cancelled", "canceled", "ไม่พบช่างรับงาน"];
       const byItem = new Map();
@@ -105,12 +106,14 @@ function makePool(initialItems = [], initialRules = [], { schemaReady = true, ma
         const matchedItemIds = new Set();
         let allUnitsUnambiguous = true;
         for (const unit of units) {
-          const matches = state.items.filter((it) =>
+          const btuText = String(unit.btu == null ? "" : unit.btu).trim().replace(/,/g, "");
+          const btuValue = /^[0-9]+(\.[0-9]+)?$/.test(btuText) ? Number(btuText) : null;
+          const matches = btuValue == null ? [] : state.items.filter((it) =>
             itemIds.map(Number).includes(Number(it.item_id)) &&
             it.job_category === job.job_type &&
             it.ac_type === unit.ac_type &&
-            (it.btu_min == null || it.btu_min <= unit.btu) &&
-            (it.btu_max == null || it.btu_max >= unit.btu)
+            (it.btu_min == null || it.btu_min <= btuValue) &&
+            (it.btu_max == null || it.btu_max >= btuValue)
           );
           if (matches.length !== 1) { allUnitsUnambiguous = false; break; }
           matchedItemIds.add(Number(matches[0].item_id));
@@ -537,6 +540,63 @@ test("public API does not expose hidden or inactive items", async () => {
     const names = body.map((x) => x.item_name);
     assert.equal(names.includes("ซ่อมแอร์ไม่เย็น"), false);
     assert.equal(names.includes("ล้างแอร์สี่ทิศทาง (ปิดใช้งาน)"), false);
+  });
+});
+
+// --- booking_count fail-open (production fix: a booking-count aggregation
+// failure -- e.g. a legacy text-format BTU value the historical resolver
+// can't normalize -- must never take down the Store listing). ---
+
+test("public GET /catalog/items still returns 200 with the full item list when historical booking-count aggregation throws", async () => {
+  const pool = makePool(sampleItems(), [], { jobsCatalogLinkReady: true, forceBookingCountError: true });
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/catalog/items?customer=1`);
+    const body = await res.json();
+    assert.equal(res.status, 200);
+    assert.equal(body.length, 1); // sampleItems() filtered by the ?customer=1 contract (is_active && is_customer_visible)
+    assert.ok(body.every((x) => x.item_id != null && x.item_name));
+  });
+});
+
+test("booking_count falls back to 0 for every item when historical booking-count aggregation throws", async () => {
+  const pool = makePool(sampleItems(), [], { jobsCatalogLinkReady: true, forceBookingCountError: true });
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/catalog/items?customer=1`);
+    const body = await res.json();
+    assert.equal(res.status, 200);
+    assert.ok(body.every((x) => x.booking_count === 0));
+  });
+});
+
+test("other catalog fields (price, rating, etc.) are not lost when booking-count aggregation fails open", async () => {
+  const pool = makePool(sampleItems(), [], { jobsCatalogLinkReady: true, forceBookingCountError: true });
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/catalog/items?customer=1`);
+    const body = await res.json();
+    assert.equal(res.status, 200);
+    const item1 = body.find((x) => x.item_id === 1);
+    assert.ok(item1);
+    assert.equal(item1.base_price, 700);
+    assert.equal(item1.item_category, "ล้างแอร์");
+  });
+});
+
+test("booking-count fail-open does not swallow a genuine failure in the main catalog query itself", async () => {
+  const pool = makePool(sampleItems(), [], { jobsCatalogLinkReady: true });
+  const originalQuery = pool.query;
+  pool.query = async (sql, params) => {
+    if (String(sql).includes("FROM public.catalog_items") && String(sql).includes("WHERE") && !String(sql).includes("information_schema")) {
+      throw new Error("simulated main catalog query failure");
+    }
+    return originalQuery(sql, params);
+  };
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/catalog/items?customer=1`);
+    assert.equal(res.status, 500);
   });
 });
 
