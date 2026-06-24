@@ -576,51 +576,94 @@ module.exports = function createCatalogReviewRoutes(deps = {}) {
   // audited via moderated_by/moderated_at and assigned_by/assigned_at
   // respectively; assigned_item_id never overwrites the original item_id, so
   // the review's original scope/target stays intact and auditable.
+  //
+  // assigned_item_id may only ever be set on service_type/overall-scoped
+  // reviews: an item-scoped review already targets one real catalog item, and
+  // public rating aggregation reads COALESCE(assigned_item_id, item_id), so
+  // letting an admin reassign an item-scoped review would silently move its
+  // rating onto an unrelated product. Locked via SELECT ... FOR UPDATE inside
+  // a transaction so the scope check and the update are atomic.
   router.patch("/admin/catalog/reviews/:reviewId", requireAdminSession, async (req, res) => {
+    const reviewId = Number(req.params.reviewId);
+    if (!Number.isFinite(reviewId) || reviewId <= 0) {
+      return res.status(400).json({ error: "review_id ไม่ถูกต้อง" });
+    }
+
+    const hasStatus = req.body && Object.prototype.hasOwnProperty.call(req.body, "moderation_status");
+    const hasAssignment = req.body && Object.prototype.hasOwnProperty.call(req.body, "assigned_item_id");
+    if (!hasStatus && !hasAssignment) {
+      return res.status(400).json({ error: "ไม่มีข้อมูลให้อัปเดต" });
+    }
+
+    let nextStatus = null;
+    if (hasStatus) {
+      nextStatus = String(req.body.moderation_status || "").trim();
+      const allowedStatuses = new Set(["pending", "approved", "rejected", "hidden"]);
+      if (!allowedStatuses.has(nextStatus)) {
+        return res.status(400).json({ error: "สถานะไม่ถูกต้อง" });
+      }
+    }
+
+    let assignedItemId = null;
+    if (hasAssignment) {
+      const rawAssignedItemId = req.body.assigned_item_id;
+      assignedItemId = rawAssignedItemId == null ? null : Number(rawAssignedItemId);
+      if (assignedItemId != null && (!Number.isFinite(assignedItemId) || assignedItemId <= 0)) {
+        return res.status(400).json({ error: "assigned_item_id ไม่ถูกต้อง" });
+      }
+    }
+
     try {
       const reviewsReady = await isReviewsSchemaReady(pool);
       if (!reviewsReady) return res.status(503).json({ error: "ระบบรีวิวยังไม่พร้อมใช้งาน" });
+      if (hasAssignment) {
+        const trackingReady = await isTrackingReviewSchemaReady(pool);
+        if (!trackingReady) return res.status(503).json({ error: "ระบบมอบหมายรีวิวยังไม่พร้อมใช้งาน" });
+      }
+    } catch (e) {
+      console.error(e);
+      return res.status(500).json({ error: "อัปเดตสถานะรีวิวไม่สำเร็จ" });
+    }
 
-      const reviewId = Number(req.params.reviewId);
-      if (!Number.isFinite(reviewId) || reviewId <= 0) {
-        return res.status(400).json({ error: "review_id ไม่ถูกต้อง" });
+    const actorName = String(req.actor?.username || req.auth?.username || "admin");
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+
+      const reviewR = await client.query(
+        `SELECT review_id, review_scope FROM public.catalog_item_reviews WHERE review_id = $1 FOR UPDATE`,
+        [reviewId]
+      );
+      if (!reviewR.rows.length) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ error: "ไม่พบรีวิว" });
+      }
+      const currentScope = reviewR.rows[0].review_scope || "item";
+
+      if (hasAssignment && currentScope === "item") {
+        await client.query("ROLLBACK");
+        return res.status(409).json({ error: "ไม่สามารถมอบหมายรีวิวที่ผูกกับสินค้า/บริการอยู่แล้วได้" });
       }
 
-      const hasStatus = req.body && Object.prototype.hasOwnProperty.call(req.body, "moderation_status");
-      const hasAssignment = req.body && Object.prototype.hasOwnProperty.call(req.body, "assigned_item_id");
-      if (!hasStatus && !hasAssignment) {
-        return res.status(400).json({ error: "ไม่มีข้อมูลให้อัปเดต" });
+      if (hasAssignment && assignedItemId != null) {
+        const itemR = await client.query(`SELECT item_id FROM public.catalog_items WHERE item_id = $1`, [assignedItemId]);
+        if (!itemR.rows.length) {
+          await client.query("ROLLBACK");
+          return res.status(404).json({ error: "ไม่พบสินค้า/บริการที่ต้องการมอบหมาย" });
+        }
       }
 
-      const actorName = String(req.actor?.username || req.auth?.username || "admin");
       const sets = [];
       const params = [];
       let p = 1;
 
       if (hasStatus) {
-        const nextStatus = String(req.body.moderation_status || "").trim();
-        const allowedStatuses = new Set(["pending", "approved", "rejected", "hidden"]);
-        if (!allowedStatuses.has(nextStatus)) {
-          return res.status(400).json({ error: "สถานะไม่ถูกต้อง" });
-        }
         params.push(nextStatus); sets.push(`moderation_status = $${p++}`);
         sets.push(`moderated_at = NOW()`);
         params.push(actorName); sets.push(`moderated_by = $${p++}`);
       }
 
       if (hasAssignment) {
-        const trackingReady = await isTrackingReviewSchemaReady(pool);
-        if (!trackingReady) return res.status(503).json({ error: "ระบบมอบหมายรีวิวยังไม่พร้อมใช้งาน" });
-
-        const rawAssignedItemId = req.body.assigned_item_id;
-        const assignedItemId = rawAssignedItemId == null ? null : Number(rawAssignedItemId);
-        if (assignedItemId != null) {
-          if (!Number.isFinite(assignedItemId) || assignedItemId <= 0) {
-            return res.status(400).json({ error: "assigned_item_id ไม่ถูกต้อง" });
-          }
-          const itemR = await pool.query(`SELECT item_id FROM public.catalog_items WHERE item_id = $1`, [assignedItemId]);
-          if (!itemR.rows.length) return res.status(404).json({ error: "ไม่พบสินค้า/บริการที่ต้องการมอบหมาย" });
-        }
         params.push(assignedItemId); sets.push(`assigned_item_id = $${p++}`);
         params.push(actorName); sets.push(`assigned_by = $${p++}`);
         sets.push(`assigned_at = NOW()`);
@@ -629,18 +672,22 @@ module.exports = function createCatalogReviewRoutes(deps = {}) {
       sets.push(`updated_at = NOW()`);
       params.push(reviewId);
 
-      const r = await pool.query(
+      const r = await client.query(
         `UPDATE public.catalog_item_reviews
             SET ${sets.join(", ")}
           WHERE review_id = $${p}
           RETURNING review_id, moderation_status, moderated_at, moderated_by, assigned_item_id, assigned_by, assigned_at`,
         params
       );
-      if (!r.rows.length) return res.status(404).json({ error: "ไม่พบรีวิว" });
+
+      await client.query("COMMIT");
       res.json(r.rows[0]);
     } catch (e) {
+      try { await client.query("ROLLBACK"); } catch (_) {}
       console.error(e);
       res.status(500).json({ error: "อัปเดตสถานะรีวิวไม่สำเร็จ" });
+    } finally {
+      client.release();
     }
   });
 

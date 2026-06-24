@@ -71,6 +71,12 @@ function makePool({ schemaReady = true, trackingSchemaReady = false, items = [],
     if (/^\s*COMMIT\s*$/i.test(s.trim())) return { rows: [] };
     if (/^\s*ROLLBACK\s*$/i.test(s.trim())) return { rows: [] };
 
+    if (s.includes("SELECT review_id, review_scope FROM public.catalog_item_reviews WHERE review_id = $1 FOR UPDATE")) {
+      const [reviewId] = params;
+      const row = state.reviews.find((r) => Number(r.review_id) === Number(reviewId));
+      return { rows: row ? [{ review_id: row.review_id, review_scope: row.review_scope || "item" }] : [] };
+    }
+
     if (s.includes("SELECT j.job_id, j.appointment_datetime")) {
       const [customerSub, itemId, statuses] = params;
       const reviewed = new Set(state.reviews.map((r) => Number(r.completed_job_id)));
@@ -948,4 +954,153 @@ test("admin review assignment is rejected before the tracking-review migration h
     });
     assert.equal(res.status, 503);
   });
+});
+
+test("admin can assign an overall-scoped review to a specific catalog item", async () => {
+  const pool = makePool({
+    trackingSchemaReady: true,
+    items: [{ item_id: 1, item_name: "ล้างแอร์ผนัง" }],
+    reviews: [{ review_id: 1, item_id: null, completed_job_id: 12, customer_identity: "C", rating: 3, comment: null, moderation_status: "pending", created_at: "2026-06-03T00:00:00Z", review_source: "tracking", review_scope: "overall", service_type: null }],
+  });
+  const router = createCatalogReviewRoutes({ pool, requireCustomerJwt: requireCustomerJwtFor(null), requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/reviews/1`, {
+      method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ assigned_item_id: 1 }),
+    });
+    const body = await res.json();
+    assert.equal(res.status, 200);
+    assert.equal(body.assigned_item_id, 1);
+    assert.equal(pool.state.reviews[0].review_scope, "overall");
+  });
+});
+
+test("admin reassignment to a different item replaces the prior assignment", async () => {
+  const pool = makePool({
+    trackingSchemaReady: true,
+    items: [{ item_id: 1, item_name: "ล้างแอร์ผนัง" }, { item_id: 2, item_name: "ซ่อมแอร์" }],
+    reviews: [{ review_id: 1, item_id: null, completed_job_id: 11, customer_identity: "B", rating: 4, comment: "โอเค", moderation_status: "pending", created_at: "2026-06-02T00:00:00Z", review_source: "tracking", review_scope: "service_type", service_type: "ซ่อมแอร์", assigned_item_id: 1, assigned_by: "admin0", assigned_at: "2026-06-02T01:00:00Z" }],
+  });
+  const router = createCatalogReviewRoutes({ pool, requireCustomerJwt: requireCustomerJwtFor(null), requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/reviews/1`, {
+      method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ assigned_item_id: 2 }),
+    });
+    const body = await res.json();
+    assert.equal(res.status, 200);
+    assert.equal(body.assigned_item_id, 2);
+    assert.equal(body.assigned_by, "admin1");
+  });
+});
+
+test("admin can clear an existing assignment by sending assigned_item_id: null", async () => {
+  const pool = makePool({
+    trackingSchemaReady: true,
+    items: [{ item_id: 1, item_name: "ล้างแอร์ผนัง" }],
+    reviews: [{ review_id: 1, item_id: null, completed_job_id: 11, customer_identity: "B", rating: 4, comment: "โอเค", moderation_status: "pending", created_at: "2026-06-02T00:00:00Z", review_source: "tracking", review_scope: "service_type", service_type: "ซ่อมแอร์", assigned_item_id: 1, assigned_by: "admin0", assigned_at: "2026-06-02T01:00:00Z" }],
+  });
+  const router = createCatalogReviewRoutes({ pool, requireCustomerJwt: requireCustomerJwtFor(null), requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/reviews/1`, {
+      method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ assigned_item_id: null }),
+    });
+    const body = await res.json();
+    assert.equal(res.status, 200);
+    assert.equal(body.assigned_item_id, null);
+  });
+});
+
+test("admin cannot reassign an item-scoped review onto a different catalog item", async () => {
+  const pool = makePool({
+    trackingSchemaReady: true,
+    items: [{ item_id: 1, item_name: "ล้างแอร์ผนัง" }, { item_id: 2, item_name: "ซ่อมแอร์" }],
+    reviews: [{ review_id: 1, item_id: 1, completed_job_id: 10, customer_identity: "A", rating: 5, comment: "ดี", moderation_status: "pending", created_at: "2026-06-01T00:00:00Z", review_source: "customer_app", review_scope: "item", service_type: null }],
+  });
+  const router = createCatalogReviewRoutes({ pool, requireCustomerJwt: requireCustomerJwtFor(null), requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/reviews/1`, {
+      method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ assigned_item_id: 2 }),
+    });
+    assert.equal(res.status, 409);
+    // original item_id, review_scope, and assignment are untouched
+    assert.equal(pool.state.reviews[0].item_id, 1);
+    assert.equal(pool.state.reviews[0].review_scope, "item");
+    assert.equal(pool.state.reviews[0].assigned_item_id, undefined);
+  });
+});
+
+test("assigning to a review that does not exist returns 404 without touching other rows", async () => {
+  const pool = makePool({
+    trackingSchemaReady: true,
+    items: [{ item_id: 1, item_name: "ล้างแอร์ผนัง" }],
+    reviews: [],
+  });
+  const router = createCatalogReviewRoutes({ pool, requireCustomerJwt: requireCustomerJwtFor(null), requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/reviews/999`, {
+      method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ assigned_item_id: 1 }),
+    });
+    assert.equal(res.status, 404);
+  });
+});
+
+test("admin assignment locks the review row and rolls back the transaction if the update fails", async () => {
+  const pool = makePool({
+    trackingSchemaReady: true,
+    items: [{ item_id: 1, item_name: "ล้างแอร์ผนัง" }],
+    reviews: [{ review_id: 1, item_id: null, completed_job_id: 11, customer_identity: "B", rating: 4, comment: "โอเค", moderation_status: "pending", created_at: "2026-06-02T00:00:00Z", review_source: "tracking", review_scope: "service_type", service_type: "ซ่อมแอร์" }],
+  });
+  const calls = [];
+  const baseConnect = pool.connect.bind(pool);
+  pool.connect = async () => {
+    const client = await baseConnect();
+    const baseQuery = client.query.bind(client);
+    client.query = async (sql, params) => {
+      calls.push(String(sql).trim());
+      if (String(sql).includes("UPDATE public.catalog_item_reviews")) {
+        throw new Error("simulated update failure");
+      }
+      return baseQuery(sql, params);
+    };
+    return client;
+  };
+  const router = createCatalogReviewRoutes({ pool, requireCustomerJwt: requireCustomerJwtFor(null), requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/reviews/1`, {
+      method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ assigned_item_id: 1 }),
+    });
+    assert.equal(res.status, 500);
+  });
+  assert.ok(calls.some((c) => /^BEGIN$/i.test(c)));
+  assert.ok(calls.some((c) => /^ROLLBACK$/i.test(c)));
+  assert.ok(!calls.some((c) => /^COMMIT$/i.test(c)));
+  // the row was never mutated since the UPDATE itself threw before applying changes
+  assert.equal(pool.state.reviews[0].assigned_item_id, undefined);
+});
+
+test("admin assignment SELECTs FOR UPDATE before validating scope, and moderation_status updates still record moderated_by/moderated_at", async () => {
+  const pool = makePool({
+    trackingSchemaReady: true,
+    items: [{ item_id: 1, item_name: "ล้างแอร์ผนัง" }],
+    reviews: [{ review_id: 1, item_id: 1, completed_job_id: 10, customer_identity: "A", rating: 5, comment: "ดี", moderation_status: "pending", created_at: "2026-06-01T00:00:00Z", review_source: "customer_app", review_scope: "item", service_type: null }],
+  });
+  const calls = [];
+  const baseConnect = pool.connect.bind(pool);
+  pool.connect = async () => {
+    const client = await baseConnect();
+    const baseQuery = client.query.bind(client);
+    client.query = async (sql, params) => { calls.push(String(sql).trim()); return baseQuery(sql, params); };
+    return client;
+  };
+  const router = createCatalogReviewRoutes({ pool, requireCustomerJwt: requireCustomerJwtFor(null), requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/reviews/1`, {
+      method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ moderation_status: "approved" }),
+    });
+    const body = await res.json();
+    assert.equal(res.status, 200);
+    assert.equal(body.moderation_status, "approved");
+    assert.equal(body.moderated_by, "admin1");
+    assert.ok(body.moderated_at);
+  });
+  assert.ok(calls.some((c) => /FOR UPDATE/.test(c)));
 });

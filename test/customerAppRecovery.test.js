@@ -1377,3 +1377,104 @@ test("store shows สอบถามราคา when there is no price at all",
   const body = container.querySelector("[data-store-body]");
   assert.match(body.innerHTML, /สอบถามราคา/);
 });
+
+// Tracking page must never render the legacy technician-review form
+// (data-review-form) at the same time as the new catalog-review form
+// (data-catalog-review-form) for one job -- a customer must only ever see
+// one review form. The catalog review's own server-derived eligibility
+// gates whether it shows a form vs a status summary vs nothing; the legacy
+// form is a fallback used only when data.catalog_review itself is absent
+// (older API shape / migration not yet applied).
+function loadTrackingFrontend(context = makeContext()) {
+  return load(context, [
+    "customer-app/modules/utils.js",
+    "customer-app/modules/state.js",
+    "customer-app/modules/api.js",
+    "customer-app/modules/tracking.js",
+  ]);
+}
+
+class TrackingContainer {
+  constructor() { this._html = ""; }
+  set innerHTML(value) { this._html = String(value || ""); }
+  get innerHTML() { return this._html; }
+  querySelector(selector) {
+    if (selector === "#tracking-code") return { value: "", addEventListener() {} };
+    if (selector === "[data-action='track-read']") return { addEventListener() {} };
+    return null;
+  }
+  querySelectorAll() { return []; }
+}
+
+function renderTracking(root, data) {
+  root.state.updateDraft("tracking", { trackingCode: data.booking_token || data.booking_code || "TOK1" });
+  root.state.setTracking({ status: "success", data, error: "" });
+  const container = new TrackingContainer();
+  root.tracking.render(container);
+  return container.innerHTML;
+}
+
+const DONE_JOB_BASE = {
+  booking_token: "TOK1", booking_code: "BK1", job_status: "เสร็จแล้ว", finished_at: "2026-06-20T10:00:00Z",
+};
+
+test("tracking page shows exactly one (catalog) review form when catalog_review is eligible", () => {
+  const root = loadTrackingFrontend();
+  const html = renderTracking(root, {
+    ...DONE_JOB_BASE,
+    review: { already_reviewed: false },
+    catalog_review: { eligible: true, already_reviewed: false },
+  });
+  assert.match(html, /data-catalog-review-form/);
+  assert.doesNotMatch(html, /data-review-form/);
+});
+
+test("tracking page shows exactly one (catalog) review status summary when already reviewed via the catalog flow", () => {
+  const root = loadTrackingFrontend();
+  const html = renderTracking(root, {
+    ...DONE_JOB_BASE,
+    review: { already_reviewed: false },
+    catalog_review: { already_reviewed: true, review: { rating: 5, moderation_status: "approved", comment: "ดีมาก" } },
+  });
+  assert.match(html, /รีวิวบริการนี้/);
+  assert.doesNotMatch(html, /data-review-form/);
+  assert.doesNotMatch(html, /data-catalog-review-form/);
+});
+
+test("tracking page falls back to the legacy review form when catalog_review is unavailable (older API shape / unmigrated schema)", () => {
+  const root = loadTrackingFrontend();
+  const html = renderTracking(root, {
+    ...DONE_JOB_BASE,
+    review: { already_reviewed: false },
+    // no catalog_review key at all
+  });
+  assert.match(html, /data-review-form/);
+  assert.doesNotMatch(html, /data-catalog-review-form/);
+});
+
+test("tracking page shows no review form at all before the job is done", () => {
+  const root = loadTrackingFrontend();
+  const html = renderTracking(root, {
+    booking_token: "TOK1", booking_code: "BK1", job_status: "กำลังดำเนินการ", finished_at: "",
+    review: { already_reviewed: false },
+    catalog_review: { eligible: true, already_reviewed: false },
+  });
+  assert.doesNotMatch(html, /data-review-form/);
+  assert.doesNotMatch(html, /data-catalog-review-form/);
+});
+
+test("tracking page never renders both data-review-form and data-catalog-review-form together, across every catalog_review state", () => {
+  const root = loadTrackingFrontend();
+  const states = [
+    { catalog_review: { eligible: true, already_reviewed: false } },
+    { catalog_review: { eligible: false, already_reviewed: true, review: { rating: 4, moderation_status: "pending" } } },
+    { catalog_review: { eligible: false, already_reviewed: false } },
+    {},
+  ];
+  for (const extra of states) {
+    const html = renderTracking(root, { ...DONE_JOB_BASE, review: { already_reviewed: false }, ...extra });
+    const hasLegacy = /data-review-form/.test(html);
+    const hasCatalog = /data-catalog-review-form/.test(html);
+    assert.ok(!(hasLegacy && hasCatalog), `both forms rendered for state ${JSON.stringify(extra)}`);
+  }
+});

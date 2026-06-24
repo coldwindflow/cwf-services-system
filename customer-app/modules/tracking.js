@@ -976,9 +976,15 @@
   }
 
   function renderAftercare(data) {
+    // Only one review form may ever be on screen at a time. The catalog
+    // review (server-derived item/service_type/overall target) is the
+    // primary form once available; the legacy technician-review form is
+    // shown only as a fallback when data.catalog_review is absent entirely
+    // (older API shape / migration not yet applied on this deployment).
+    const catalogReviewAvailable = data.catalog_review != null;
     const content = [
       renderReceipt(data),
-      renderReview(data),
+      catalogReviewAvailable ? "" : renderReview(data),
       renderCatalogReview(data),
       renderWarranty(data),
     ].filter(Boolean).join("");

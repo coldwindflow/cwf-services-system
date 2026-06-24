@@ -89,16 +89,21 @@ function makePool(initialItems = [], initialRules = [], { schemaReady = true, ma
     }
 
     // bulkResolveHistoricalItemMatches: jobs with no catalog_item_id, matched via job_units.
-    if (s.includes("WITH unit_matches AS") && s.includes("JOIN public.jobs j")) {
+    // Job-level consistency: a job only counts toward an item when EVERY one
+    // of its active units unambiguously matches that same single item.
+    if (s.includes("WITH active_units AS") && s.includes("JOIN public.jobs j")) {
       const [itemIds] = params;
       const excludedStatuses = ["ยกเลิก", "cancelled", "canceled", "ไม่พบช่างรับงาน"];
-      const rows = [];
+      const byItem = new Map();
       for (const job of state.jobs) {
         if (job.catalog_item_id != null) continue;
         if (excludedStatuses.includes(job.job_status)) continue;
         if (job.canceled_at) continue;
         const units = state.jobUnits.filter((u) => Number(u.job_id) === Number(job.job_id) &&
           !["cancelled", "removed", "deleted", "void", "inactive"].includes(String(u.status || "pending").toLowerCase()));
+        if (!units.length) continue;
+        const matchedItemIds = new Set();
+        let allUnitsUnambiguous = true;
         for (const unit of units) {
           const matches = state.items.filter((it) =>
             itemIds.map(Number).includes(Number(it.item_id)) &&
@@ -107,14 +112,14 @@ function makePool(initialItems = [], initialRules = [], { schemaReady = true, ma
             (it.btu_min == null || it.btu_min <= unit.btu) &&
             (it.btu_max == null || it.btu_max >= unit.btu)
           );
-          if (matches.length === 1) rows.push({ item_id: matches[0].item_id, job_id: job.job_id });
+          if (matches.length !== 1) { allUnitsUnambiguous = false; break; }
+          matchedItemIds.add(Number(matches[0].item_id));
         }
-      }
-      const byItem = new Map();
-      for (const row of rows) {
-        const seen = byItem.get(row.item_id) || new Set();
-        seen.add(row.job_id);
-        byItem.set(row.item_id, seen);
+        if (!allUnitsUnambiguous || matchedItemIds.size !== 1) continue;
+        const onlyItemId = matchedItemIds.values().next().value;
+        const seen = byItem.get(onlyItemId) || new Set();
+        seen.add(job.job_id);
+        byItem.set(onlyItemId, seen);
       }
       return { rows: Array.from(byItem.entries()).map(([item_id, jobIds]) => ({ item_id, cnt: jobIds.size })) };
     }
@@ -2689,7 +2694,7 @@ test("booking_count is aggregated in at most two grouped queries for a list requ
   await withServer(router, async (base) => {
     await fetch(`${base}/catalog/items`);
     const bookingCountQueries = pool.state.queries.filter((q) =>
-      q.sql.includes("GROUP BY catalog_item_id") || (q.sql.includes("WITH unit_matches AS") && q.sql.includes("JOIN public.jobs j"))
+      q.sql.includes("GROUP BY catalog_item_id") || (q.sql.includes("WITH active_units AS") && q.sql.includes("JOIN public.jobs j"))
     );
     assert.equal(bookingCountQueries.length, 2);
   });
