@@ -7494,6 +7494,32 @@ async function _openReworkCaseWithIncomeHold(client, opts = {}) {
     throw createHttpError(409, 'งานนี้มี rework case ที่เปิดอยู่แล้ว', { reworkCase: activeCase });
   }
 
+  // Original-earner set: every technician who could have earned income on
+  // this job (primary + team + assignments), not just whoever ends up
+  // recorded as the single rework_case.technician_username — team jobs must
+  // hold/release income per person, never lump it onto one username.
+  const team = await getTeamForJob(jobId);
+  if (technicianUsername && !team.includes(technicianUsername)) team.push(technicianUsername);
+  const preferredTech = technicianUsername || team[0] || null;
+
+  // Capture originalIncomeRows BEFORE inserting the new rework_case row.
+  // _buildPayoutLinesForJob queries through the shared pool (a different
+  // connection than this transaction's `client`), so correctness must not
+  // depend on whether that connection can see this transaction's uncommitted
+  // INSERT — computing it before the row exists removes that ambiguity
+  // entirely, on every connection, committed or not.
+  const lines = job.finished_at ? await _buildPayoutLinesForJob(jobId) : [];
+  const originalIncomeRows = (lines || [])
+    .filter((ln) => ln && String(ln.technician_username || '').trim())
+    .map((ln) => ({
+      technician_username: String(ln.technician_username).trim(),
+      amount: Number(ln.earn_amount || 0),
+      job_id: jobId,
+    }));
+  const earnAmount = originalIncomeRows
+    .filter((row) => row.technician_username === preferredTech)
+    .reduce((sum, row) => sum + Number(row.amount || 0), 0);
+
   const ins = await client.query(
     `INSERT INTO public.technician_rework_cases
      (case_code, job_id, technician_username, reason_type, reason_note, warranty_checked, warranty_end_at, created_by)
@@ -7503,32 +7529,13 @@ async function _openReworkCaseWithIncomeHold(client, opts = {}) {
   );
   const reworkCase = ins.rows[0];
 
-  // Original-earner set: every technician who could have earned income on
-  // this job (primary + team + assignments), not just whoever ends up
-  // recorded as the single rework_case.technician_username — team jobs must
-  // hold/release income per person, never lump it onto one username.
-  const team = await getTeamForJob(jobId);
-  if (technicianUsername && !team.includes(technicianUsername)) team.push(technicianUsername);
-
   // technicianReworkIncome.holdOriginalIncomeForReworkCase derives every
-  // earner on the job directly from technician_payout_lines for the source
-  // period, so a single call already holds the whole team — technicianUsername
-  // here is only a fallback used if that technician has no payout_lines row
-  // yet (e.g. period not generated), in which case originalEarnAmount is used.
-  const preferredTech = technicianUsername || team[0] || null;
+  // earner on the job (previous released hold ledger first, then these
+  // originalIncomeRows, then technician_payout_lines), so a single call
+  // already holds the whole team — technicianUsername here is only a
+  // fallback used if that technician has no authoritative row at all.
   const holdResults = [];
   if (preferredTech) {
-    const lines = job.finished_at ? await _buildPayoutLinesForJob(jobId) : [];
-    const originalIncomeRows = (lines || [])
-      .filter((ln) => ln && String(ln.technician_username || '').trim())
-      .map((ln) => ({
-        technician_username: String(ln.technician_username).trim(),
-        amount: Number(ln.earn_amount || 0),
-        job_id: jobId,
-      }));
-    const earnAmount = originalIncomeRows
-      .filter((row) => row.technician_username === preferredTech)
-      .reduce((sum, row) => sum + Number(row.amount || 0), 0);
     const holdResult = await technicianReworkIncome.holdOriginalIncomeForReworkCase(client, {
       reworkCaseId: reworkCase.rework_case_id,
       jobId,

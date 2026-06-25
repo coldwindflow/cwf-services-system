@@ -38,7 +38,9 @@ function uniqueTechnicianRows(rows) {
     const amount = money(row?.amount ?? row?.earn_amount ?? row?.income_amount ?? 0);
     totals.set(tech, money((totals.get(tech) || 0) + amount));
   }
-  return [...totals.entries()].map(([technician_username, amount]) => ({ technician_username, amount }));
+  return [...totals.entries()]
+    .map(([technician_username, amount]) => ({ technician_username, amount }))
+    .filter((row) => row.amount > 0);
 }
 
 async function ensurePeriod(client, target, actor) {
@@ -157,6 +159,31 @@ async function getHoldsForReworkCase(client, reworkCaseId, opts = {}) {
   return q.rows || [];
 }
 
+async function loadPreviousReleasedHoldRows(client, jobId, excludeReworkCaseId) {
+  const q = await client.query(
+    `SELECT *
+       FROM public.technician_rework_income_holds
+      WHERE job_id=$1
+        AND hold_status='released'
+        AND rework_case_id<>$2
+      ORDER BY rework_case_id DESC, hold_id DESC`,
+    [jobId, Number(excludeReworkCaseId) || 0]
+  );
+  const rows = q.rows || [];
+  if (!rows.length) return [];
+  const latestCaseId = rows[0].rework_case_id;
+  return rows.filter((row) => Number(row.rework_case_id) === Number(latestCaseId));
+}
+
+// Source priority for "what did this technician originally earn on this job":
+//   1) the released-hold ledger from this job's most recent PRIOR rework case
+//      (a second rework round on the same job must reuse the amount that was
+//      already proven and paid out last time, never re-derive it from scratch)
+//   2) the caller-supplied originalIncomeRows (the full _buildPayoutLinesForJob
+//      result, captured by the caller BEFORE any new rework_case row exists)
+//   3) the persisted technician_payout_lines table for the source period
+// job_technician_income_preview is never used here — it is a UI-only estimate,
+// never an authoritative money source.
 async function loadOriginalIncomeCandidates(client, opts) {
   const jobId = Number(opts.jobId);
   const originalFinishedAt = opts.originalFinishedAt;
@@ -165,7 +192,15 @@ async function loadOriginalIncomeCandidates(client, opts) {
 
   let rows = [];
 
-  if (Array.isArray(opts.originalIncomeRows) && opts.originalIncomeRows.length) {
+  const previousReleased = await loadPreviousReleasedHoldRows(client, jobId, opts.reworkCaseId);
+  if (previousReleased.length) {
+    rows = uniqueTechnicianRows(previousReleased.map((row) => ({
+      technician_username: row.technician_username,
+      amount: row.released_amount != null ? row.released_amount : row.held_amount,
+    })));
+  }
+
+  if (!rows.length && Array.isArray(opts.originalIncomeRows) && opts.originalIncomeRows.length) {
     rows = uniqueTechnicianRows(
       opts.originalIncomeRows.filter((row) => Number(row?.job_id ?? jobId) === jobId)
     );

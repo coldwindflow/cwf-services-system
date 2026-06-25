@@ -69,6 +69,15 @@ class FakeClient {
       return { rows };
     }
 
+    if (s.includes('FROM public.technician_rework_income_holds') && s.includes("hold_status='released'") && s.includes('rework_case_id<>$2')) {
+      const [jobId, excludeCaseId] = params;
+      const rows = this.holds
+        .filter((r) => Number(r.job_id) === Number(jobId) && r.hold_status === 'released' && Number(r.rework_case_id) !== Number(excludeCaseId))
+        .sort((a, b) => (b.rework_case_id - a.rework_case_id) || (b.hold_id - a.hold_id))
+        .map((r) => this.cloneRow(r));
+      return { rows };
+    }
+
     if (s.includes('FROM public.technician_payout_lines') && s.includes('GROUP BY technician_username')) {
       const [jobId, payoutId] = params;
       const totals = new Map();
@@ -343,4 +352,106 @@ test('duplicate rework open does not create a second negative hold', async () =>
 
   const negativeAdjustments = db.adjustments.filter((r) => r.adj_amount < 0);
   assert.equal(negativeAdjustments.length, 1);
+});
+
+test('originalIncomeRows with every technician at amount 0 results in 409 and no hold row', async () => {
+  const db = new FakeClient();
+  await assert.rejects(
+    () => holdOriginalIncomeForReworkCase(db, {
+      reworkCaseId: 1,
+      jobId: 10,
+      technicianUsername: 'TECH_A',
+      originalFinishedAt: '2026-06-10T10:00:00+07:00',
+      originalIncomeRows: [
+        { technician_username: 'TECH_A', amount: 0, job_id: 10 },
+        { technician_username: 'TECH_B', amount: 0, job_id: 10 },
+      ],
+      actor: 'test',
+    }),
+    (error) => error.status === 409 && error.message === 'NO_AUTHORITATIVE_ORIGINAL_INCOME'
+  );
+  const rows = await getHoldsForReworkCase(db, 1);
+  assert.equal(rows.length, 0);
+});
+
+test('first rework round on a job holds and releases 325 end to end', async () => {
+  const db = new FakeClient();
+  const held = await hold(db, { caseId: 1, amount: 325 });
+  assert.equal(held.rows.length, 1);
+  assert.equal(held.rows[0].held_amount, 325);
+
+  db.jobs.set(10, { finished_at: '2026-06-20T10:00:00+07:00' });
+  const released = await release(db, { caseId: 1 });
+  assert.equal(released.released, true);
+  assert.equal(released.amount, 325);
+});
+
+test('a second rework round on the same job reuses the prior released hold ledger, not the build rows', async () => {
+  const db = new FakeClient();
+
+  // Round 1: held and released for 325.
+  await hold(db, { caseId: 1, amount: 325 });
+  db.jobs.set(10, { finished_at: '2026-06-20T10:00:00+07:00' });
+  const round1Release = await release(db, { caseId: 1 });
+  assert.equal(round1Release.released, true);
+  assert.equal(round1Release.amount, 325);
+
+  // Round 2 on the same job: even though a (wrong) build amount and no
+  // payout_lines row are supplied, the previously-released ledger entry for
+  // this job must win — 325 from round 1, never 999 from originalEarnAmount
+  // and never job_technician_income_preview.
+  const round2Held = await holdOriginalIncomeForReworkCase(db, {
+    reworkCaseId: 2,
+    jobId: 10,
+    technicianUsername: 'A2MKUNG',
+    originalFinishedAt: '2026-07-01T10:00:00+07:00',
+    originalEarnAmount: 999,
+    actor: 'test',
+  });
+  assert.equal(round2Held.rows.length, 1);
+  assert.equal(round2Held.rows[0].held_amount, 325);
+});
+
+test('closing the second rework round releases 325 exactly once', async () => {
+  const db = new FakeClient();
+  await hold(db, { caseId: 1, amount: 325 });
+  db.jobs.set(10, { finished_at: '2026-06-20T10:00:00+07:00' });
+  await release(db, { caseId: 1 });
+
+  await holdOriginalIncomeForReworkCase(db, {
+    reworkCaseId: 2,
+    jobId: 10,
+    technicianUsername: 'A2MKUNG',
+    originalFinishedAt: '2026-07-01T10:00:00+07:00',
+    actor: 'test',
+  });
+  db.jobs.set(10, { finished_at: '2026-07-05T10:00:00+07:00' });
+  const round2Release = await release(db, { caseId: 2 });
+  assert.equal(round2Release.released, true);
+  assert.equal(round2Release.amount, 325);
+
+  const positiveAdjustments = db.adjustments.filter((r) => r.adj_amount > 0);
+  assert.equal(positiveAdjustments.length, 2); // one per round, never more
+});
+
+test('retrying the second rework round release does not pay twice', async () => {
+  const db = new FakeClient();
+  await hold(db, { caseId: 1, amount: 325 });
+  db.jobs.set(10, { finished_at: '2026-06-20T10:00:00+07:00' });
+  await release(db, { caseId: 1 });
+
+  await holdOriginalIncomeForReworkCase(db, {
+    reworkCaseId: 2,
+    jobId: 10,
+    technicianUsername: 'A2MKUNG',
+    originalFinishedAt: '2026-07-01T10:00:00+07:00',
+    actor: 'test',
+  });
+  db.jobs.set(10, { finished_at: '2026-07-05T10:00:00+07:00' });
+
+  assert.equal((await release(db, { caseId: 2 })).released, true);
+  assert.equal((await release(db, { caseId: 2 })).released, false);
+
+  const positiveForRound2 = db.adjustments.filter((r) => r.adj_amount > 0 && r.technician_username === 'A2MKUNG');
+  assert.equal(positiveForRound2.length, 2); // round1 release + round2 release, not 3
 });
