@@ -84,8 +84,12 @@ SELECT a.job_id, a.technician_username,
        SUM(a.adj_amount) FILTER (WHERE a.adj_amount > 0) AS positive_adjustment_total,
        COUNT(*) FILTER (WHERE a.adj_amount > 0 AND a.reason LIKE '[REWORK_RELEASE]%') AS release_adjustment_count
   FROM public.technician_payout_adjustments a
-  JOIN public.jobs j ON j.job_id::text = a.job_id::text
- WHERE j.booking_code = :'booking_code'
+ WHERE (
+     a.job_id::text = (SELECT job_id::text FROM public.jobs WHERE booking_code = :'booking_code' LIMIT 1)
+     OR a.job_id::text LIKE 'rework_hold:%:' || (SELECT job_id::text FROM public.jobs WHERE booking_code = :'booking_code' LIMIT 1)
+     OR a.job_id::text LIKE 'rework_release:%:' || (SELECT job_id::text FROM public.jobs WHERE booking_code = :'booking_code' LIMIT 1)
+     OR a.reason LIKE '%job_id=' || (SELECT job_id::text FROM public.jobs WHERE booking_code = :'booking_code' LIMIT 1) || '%'
+   )
  GROUP BY a.job_id, a.technician_username
  ORDER BY a.technician_username;
 
@@ -104,8 +108,12 @@ SELECT pay.payout_id, pay.technician_username, pay.paid_amount, pay.paid_status,
      UNION
      SELECT DISTINCT a.payout_id
        FROM public.technician_payout_adjustments a
-       JOIN public.jobs j ON j.job_id::text = a.job_id::text
-      WHERE j.booking_code = :'booking_code'
+      WHERE (
+          a.job_id::text = (SELECT job_id::text FROM public.jobs WHERE booking_code = :'booking_code' LIMIT 1)
+          OR a.job_id::text LIKE 'rework_hold:%:' || (SELECT job_id::text FROM public.jobs WHERE booking_code = :'booking_code' LIMIT 1)
+          OR a.job_id::text LIKE 'rework_release:%:' || (SELECT job_id::text FROM public.jobs WHERE booking_code = :'booking_code' LIMIT 1)
+          OR a.reason LIKE '%job_id=' || (SELECT job_id::text FROM public.jobs WHERE booking_code = :'booking_code' LIMIT 1) || '%'
+        )
    )
  ORDER BY p.period_start, pay.technician_username;
 

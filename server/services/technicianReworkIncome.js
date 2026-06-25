@@ -76,7 +76,7 @@ async function resolveOpenTargetPeriodFromTarget(client, firstTarget, actor) {
   let target = firstTarget;
   for (let i = 0; i < 24; i += 1) {
     const period = await ensurePeriod(client, target, actor);
-    if (period && String(period.status || 'draft') !== 'paid') {
+    if (period && String(period.status || 'draft') === 'draft') {
       return { target, period, rolled_forward_count: i };
     }
     target = nextPayoutTarget(target);
@@ -164,29 +164,22 @@ async function loadOriginalIncomeCandidates(client, opts) {
   const sourceTarget = payoutTargetForDate(originalFinishedAt);
 
   let rows = [];
-  try {
-    const q = await client.query(
-      `SELECT technician_username, COALESCE(SUM(earn_amount),0)::numeric AS amount
-         FROM public.technician_payout_lines
-        WHERE job_id::text=$1::text
-          AND payout_id=$2
-        GROUP BY technician_username`,
-      [String(jobId), sourceTarget.payout_id]
+
+  if (Array.isArray(opts.originalIncomeRows) && opts.originalIncomeRows.length) {
+    rows = uniqueTechnicianRows(
+      opts.originalIncomeRows.filter((row) => Number(row?.job_id ?? jobId) === jobId)
     );
-    rows = uniqueTechnicianRows(q.rows);
-  } catch (_) {
-    rows = [];
   }
 
   if (!rows.length) {
     try {
       const q = await client.query(
-        `SELECT technician_username, income_amount AS amount
-           FROM public.job_technician_income_preview
-          WHERE job_id=$1
-            AND COALESCE(is_stale,FALSE)=FALSE
-            AND COALESCE(income_amount,0)>0`,
-        [jobId]
+        `SELECT technician_username, COALESCE(SUM(earn_amount),0)::numeric AS amount
+           FROM public.technician_payout_lines
+          WHERE job_id::text=$1::text
+            AND payout_id=$2
+          GROUP BY technician_username`,
+        [String(jobId), sourceTarget.payout_id]
       );
       rows = uniqueTechnicianRows(q.rows);
     } catch (_) {
@@ -194,11 +187,11 @@ async function loadOriginalIncomeCandidates(client, opts) {
     }
   }
 
-  if (preferredTech && !rows.some((row) => row.technician_username === preferredTech)) {
-    const amount = money(typeof opts.resolveOriginalEarnAmount === 'function'
-      ? await opts.resolveOriginalEarnAmount(client)
-      : opts.originalEarnAmount);
-    rows.push({ technician_username: preferredTech, amount });
+  if (preferredTech
+    && !rows.some((row) => row.technician_username === preferredTech)
+    && Number.isFinite(Number(opts.originalEarnAmount))
+    && money(opts.originalEarnAmount) > 0) {
+    rows.push({ technician_username: preferredTech, amount: money(opts.originalEarnAmount) });
   }
 
   return { sourceTarget, rows: uniqueTechnicianRows(rows) };
@@ -249,27 +242,17 @@ async function createOneHold(client, opts) {
   let holdAdjustment = null;
   let sourceStatus = opts.sourcePeriodStatus || 'draft';
 
-  if (opts.sourcePeriodStatus === 'locked') {
-    holdAdjustment = await insertAdjustment(client, {
-      payoutId: opts.sourceTarget.payout_id,
-      technicianUsername: opts.technicianUsername,
-      jobKey: adjustmentJobKey('hold', opts.reworkCaseId, opts.jobId),
-      amount: -amount,
-      reason: `${HOLD_REASON_TAG} พักรายได้เดิม งานแก้ไข rework_case_id=${opts.reworkCaseId} job_id=${opts.jobId}`,
-      actor: opts.actor,
-    });
-    await recalcPaymentStatus(client, holdAdjustment.payout_id, opts.technicianUsername);
-  } else if (opts.sourcePeriodStatus === 'paid') {
+  if (opts.sourcePeriodStatus === 'locked' || opts.sourcePeriodStatus === 'paid') {
     const carry = await resolveOpenTargetPeriodFromTarget(client, nextPayoutTarget(opts.sourceTarget), opts.actor);
     holdAdjustment = await insertAdjustment(client, {
       payoutId: carry.period.payout_id,
       technicianUsername: opts.technicianUsername,
       jobKey: adjustmentJobKey('hold', opts.reworkCaseId, opts.jobId),
       amount: -amount,
-      reason: `${HOLD_REASON_TAG} หักพักรายได้ย้อนหลังจากงวดที่จ่ายแล้ว source_payout=${opts.sourceTarget.payout_id} rework_case_id=${opts.reworkCaseId} job_id=${opts.jobId}`,
+      reason: `${HOLD_REASON_TAG} หักพักรายได้ย้อนหลังจากงวดที่${opts.sourcePeriodStatus === 'locked' ? 'ปิดงวดแล้ว' : 'จ่ายแล้ว'} source_payout=${opts.sourceTarget.payout_id} rework_case_id=${opts.reworkCaseId} job_id=${opts.jobId}`,
       actor: opts.actor,
     });
-    sourceStatus = `paid_carried_forward:${carry.period.payout_id}`;
+    sourceStatus = `${opts.sourcePeriodStatus}_carried_forward:${carry.period.payout_id}`;
     await recalcPaymentStatus(client, holdAdjustment.payout_id, opts.technicianUsername);
   }
 
@@ -333,6 +316,13 @@ async function holdOriginalIncomeForReworkCase(client, opts = {}) {
     originalFinishedAt,
     technicianUsername,
   });
+
+  if (!rows.length) {
+    const err = new Error('NO_AUTHORITATIVE_ORIGINAL_INCOME');
+    err.status = 409;
+    throw err;
+  }
+
   const sourcePeriodStatus = await findExistingPeriodStatus(client, sourceTarget);
 
   const results = [];
@@ -483,6 +473,17 @@ async function getHoldForReworkCase(client, reworkCaseId, technicianUsername) {
   return getExistingHold(client, Number(reworkCaseId), String(technicianUsername || '').trim(), false);
 }
 
+async function findActiveReworkCase(client, jobId) {
+  const q = await client.query(
+    `SELECT * FROM public.technician_rework_cases
+      WHERE job_id=$1 AND status IN ('open','in_progress')
+      ORDER BY created_at DESC, rework_case_id DESC
+      LIMIT 1`,
+    [Number(jobId)]
+  );
+  return q.rows[0] || null;
+}
+
 module.exports = {
   HOLD_REASON_TAG,
   RELEASE_REASON_TAG,
@@ -491,6 +492,7 @@ module.exports = {
   voidHeldIncomeForReworkCase,
   getHoldForReworkCase,
   getHoldsForReworkCase,
+  findActiveReworkCase,
   releaseIdempotencyKey,
   adjustmentJobKey,
   money,

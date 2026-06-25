@@ -11,8 +11,16 @@ function parseArgs(argv) {
   const out = { apply: false };
   for (let i = 2; i < argv.length; i += 1) {
     const arg = argv[i];
-    if (arg === '--apply') out.apply = true;
-    else if (arg.startsWith('--')) {
+    if (arg === '--apply') {
+      out.apply = true;
+      continue;
+    }
+    if (!arg.startsWith('--')) continue;
+    const eqIndex = arg.indexOf('=');
+    if (eqIndex !== -1) {
+      const key = arg.slice(2, eqIndex).replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+      out[key] = arg.slice(eqIndex + 1);
+    } else {
       const key = arg.slice(2).replace(/-([a-z])/g, (_, c) => c.toUpperCase());
       out[key] = argv[i + 1];
       i += 1;
@@ -182,6 +190,9 @@ function validateApply(report, args) {
   );
   if (duplicateRelease) fail('RELEASE_ADJUSTMENT_ALREADY_EXISTS');
   if (report.proposedAmount == null) fail('SOURCE_AMOUNT_AMBIGUOUS: review dry-run and provide a single ledger source');
+  if (String(report.sourcePeriodStatus || '') === 'preview_only') {
+    fail('SOURCE_IS_PREVIEW_ONLY: a non-authoritative preview cannot be applied, a real payout line is required');
+  }
   if (money(report.proposedAmount) !== expectedAmount) {
     fail(`EXPECTED_AMOUNT_MISMATCH expected=${expectedAmount} ledger=${money(report.proposedAmount)}`);
   }

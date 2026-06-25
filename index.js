@@ -7489,6 +7489,11 @@ async function _openReworkCaseWithIncomeHold(client, opts = {}) {
   const job = jr.rows[0];
   const technicianUsername = String(opts.technicianUsername || job.technician_username || '').trim() || null;
 
+  const activeCase = await technicianReworkIncome.findActiveReworkCase(client, jobId);
+  if (activeCase) {
+    throw createHttpError(409, 'งานนี้มี rework case ที่เปิดอยู่แล้ว', { reworkCase: activeCase });
+  }
+
   const ins = await client.query(
     `INSERT INTO public.technician_rework_cases
      (case_code, job_id, technician_username, reason_type, reason_note, warranty_checked, warranty_end_at, created_by)
@@ -7514,9 +7519,16 @@ async function _openReworkCaseWithIncomeHold(client, opts = {}) {
   const holdResults = [];
   if (preferredTech) {
     const lines = job.finished_at ? await _buildPayoutLinesForJob(jobId) : [];
-    const earnAmount = (lines || [])
-      .filter((ln) => String(ln && ln.technician_username || '').trim() === preferredTech)
-      .reduce((sum, ln) => sum + Number(ln.earn_amount || 0), 0);
+    const originalIncomeRows = (lines || [])
+      .filter((ln) => ln && String(ln.technician_username || '').trim())
+      .map((ln) => ({
+        technician_username: String(ln.technician_username).trim(),
+        amount: Number(ln.earn_amount || 0),
+        job_id: jobId,
+      }));
+    const earnAmount = originalIncomeRows
+      .filter((row) => row.technician_username === preferredTech)
+      .reduce((sum, row) => sum + Number(row.amount || 0), 0);
     const holdResult = await technicianReworkIncome.holdOriginalIncomeForReworkCase(client, {
       reworkCaseId: reworkCase.rework_case_id,
       jobId,
@@ -7524,6 +7536,7 @@ async function _openReworkCaseWithIncomeHold(client, opts = {}) {
       originalFinishedAt: job.finished_at,
       actor,
       originalEarnAmount: earnAmount,
+      originalIncomeRows,
     });
     holdResults.push(...((holdResult && holdResult.rows) || []));
   }

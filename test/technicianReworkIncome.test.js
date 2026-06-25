@@ -6,6 +6,7 @@ const {
   releaseHeldIncomeForReworkCase,
   voidHeldIncomeForReworkCase,
   getHoldsForReworkCase,
+  findActiveReworkCase,
 } = require('../server/services/technicianReworkIncome');
 
 class FakeClient {
@@ -16,8 +17,10 @@ class FakeClient {
     this.payoutLines = [];
     this.previews = [];
     this.jobs = new Map();
+    this.reworkCases = [];
     this.nextHoldId = 1;
     this.nextAdjId = 1;
+    this.nextCaseId = 1;
   }
 
   cloneRow(row) {
@@ -139,7 +142,21 @@ class FakeClient {
       return { rows };
     }
 
+    if (s.includes('FROM public.technician_rework_cases') && s.includes("status IN ('open','in_progress')")) {
+      const jobId = Number(params[0]);
+      const rows = this.reworkCases
+        .filter((r) => Number(r.job_id) === jobId && (r.status === 'open' || r.status === 'in_progress'))
+        .sort((a, b) => b.rework_case_id - a.rework_case_id);
+      return { rows: rows.length ? [this.cloneRow(rows[0])] : [] };
+    }
+
     throw new Error(`Unhandled SQL in FakeClient: ${s}`);
+  }
+
+  openCase(jobId, status = 'open') {
+    const row = { rework_case_id: this.nextCaseId++, job_id: jobId, status, created_at: new Date().toISOString() };
+    this.reworkCases.push(row);
+    return row;
   }
 }
 
@@ -248,4 +265,82 @@ test('duplicate hold call preserves the first immutable amount', async () => {
   const rows = await getHoldsForReworkCase(db, 1);
   assert.equal(rows.length, 1);
   assert.equal(rows[0].held_amount, 325);
+});
+
+test('locked source period rolls the hold forward into the next draft period', async () => {
+  const db = new FakeClient();
+  db.periods.set('payout_2026-06_25', { payout_id: 'payout_2026-06_25', status: 'locked', period_type: '25' });
+  await hold(db);
+  assert.equal(db.adjustments.length, 1);
+  assert.equal(db.adjustments[0].adj_amount, -325);
+  assert.equal(db.adjustments[0].payout_id, 'payout_2026-07_10');
+  const rows = await getHoldsForReworkCase(db, 1);
+  assert.match(rows[0].source_period_status_at_hold, /^locked_carried_forward:/);
+});
+
+test('release never lands in a locked or paid period, it rolls forward to the next draft', async () => {
+  const db = new FakeClient();
+  await hold(db);
+  db.jobs.set(10, { finished_at: '2026-06-20T10:00:00+07:00' });
+  db.periods.set('payout_2026-07_10', { payout_id: 'payout_2026-07_10', status: 'locked', period_type: '10' });
+  const result = await release(db);
+  assert.equal(result.released, true);
+  assert.equal(result.payout_id, 'payout_2026-07_25');
+});
+
+test('team job with no persisted payout_lines but with build rows holds every team member', async () => {
+  const db = new FakeClient();
+  const originalIncomeRows = [
+    { technician_username: 'TECH_A', amount: 200, job_id: 10 },
+    { technician_username: 'TECH_B', amount: 125, job_id: 10 },
+  ];
+  const held = await holdOriginalIncomeForReworkCase(db, {
+    reworkCaseId: 1,
+    jobId: 10,
+    technicianUsername: 'TECH_A',
+    originalFinishedAt: '2026-06-10T10:00:00+07:00',
+    originalEarnAmount: 200,
+    originalIncomeRows,
+    actor: 'test',
+  });
+  assert.equal(held.rows.length, 2);
+  const amounts = held.rows.map((r) => Number(r.held_amount)).sort();
+  assert.deepEqual(amounts, [125, 200]);
+});
+
+test('no authoritative original income rows results in a 409, no zero hold is created', async () => {
+  const db = new FakeClient();
+  await assert.rejects(
+    () => holdOriginalIncomeForReworkCase(db, {
+      reworkCaseId: 1,
+      jobId: 10,
+      technicianUsername: 'TECH_A',
+      originalFinishedAt: '2026-06-10T10:00:00+07:00',
+      actor: 'test',
+    }),
+    (error) => error.status === 409 && error.message === 'NO_AUTHORITATIVE_ORIGINAL_INCOME'
+  );
+  const rows = await getHoldsForReworkCase(db, 1);
+  assert.equal(rows.length, 0);
+});
+
+test('duplicate rework open does not create a second negative hold', async () => {
+  const db = new FakeClient();
+  db.periods.set('payout_2026-06_25', { payout_id: 'payout_2026-06_25', status: 'paid', period_type: '25' });
+
+  // First "open rework" attempt: no active case yet, so it proceeds and holds.
+  assert.equal(await findActiveReworkCase(db, 10), null);
+  db.openCase(10, 'open');
+  await hold(db, { caseId: 1, amount: 325 });
+
+  // Second "open rework" attempt on the same job: the guard must see the
+  // still-open case and refuse to create a second case/hold, mirroring the
+  // index.js route which throws a 409 at this exact point instead of
+  // proceeding to INSERT INTO technician_rework_cases.
+  const active = await findActiveReworkCase(db, 10);
+  assert.ok(active, 'second open attempt must observe the existing active case');
+  assert.equal(active.job_id, 10);
+
+  const negativeAdjustments = db.adjustments.filter((r) => r.adj_amount < 0);
+  assert.equal(negativeAdjustments.length, 1);
 });
