@@ -71,10 +71,10 @@ function makePool({ schemaReady = true, trackingSchemaReady = false, items = [],
     if (/^\s*COMMIT\s*$/i.test(s.trim())) return { rows: [] };
     if (/^\s*ROLLBACK\s*$/i.test(s.trim())) return { rows: [] };
 
-    if (s.includes("SELECT review_id, review_scope FROM public.catalog_item_reviews WHERE review_id = $1 FOR UPDATE")) {
+    if (s.includes("SELECT review_id, review_scope, assigned_item_id FROM public.catalog_item_reviews WHERE review_id = $1 FOR UPDATE")) {
       const [reviewId] = params;
       const row = state.reviews.find((r) => Number(r.review_id) === Number(reviewId));
-      return { rows: row ? [{ review_id: row.review_id, review_scope: row.review_scope || "item" }] : [] };
+      return { rows: row ? [{ review_id: row.review_id, review_scope: row.review_scope || "item", assigned_item_id: row.assigned_item_id ?? null }] : [] };
     }
 
     if (s.includes("SELECT j.job_id, j.appointment_datetime")) {
@@ -160,7 +160,7 @@ function makePool({ schemaReady = true, trackingSchemaReady = false, items = [],
 
     if (s.includes("SELECT AVG(rating)::numeric AS rating_average")) {
       const [itemId] = params;
-      const approved = state.reviews.filter((r) => Number(r.item_id) === Number(itemId) && r.moderation_status === "approved");
+      const approved = state.reviews.filter((r) => Number(r.assigned_item_id ?? r.item_id) === Number(itemId) && r.moderation_status === "approved");
       const avg = approved.length ? approved.reduce((sum, r) => sum + Number(r.rating), 0) / approved.length : null;
       return { rows: [{ rating_average: avg, review_count: approved.length }] };
     }
@@ -168,7 +168,7 @@ function makePool({ schemaReady = true, trackingSchemaReady = false, items = [],
     if (s.includes("SELECT review_id, rating, comment, created_at, customer_identity")) {
       const [itemId, limit, offset] = params;
       const approved = state.reviews
-        .filter((r) => Number(r.item_id) === Number(itemId) && r.moderation_status === "approved")
+        .filter((r) => Number(r.assigned_item_id ?? r.item_id) === Number(itemId) && r.moderation_status === "approved")
         .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
         .slice(offset, offset + limit);
       return { rows: approved };
@@ -1103,4 +1103,124 @@ test("admin assignment SELECTs FOR UPDATE before validating scope, and moderatio
     assert.ok(body.moderated_at);
   });
   assert.ok(calls.some((c) => /FOR UPDATE/.test(c)));
+});
+
+test("approving a service_type-scoped review with no assigned_item_id (and none sent) is rejected with 409, never silently approved orphan", async () => {
+  const pool = makePool({
+    trackingSchemaReady: true,
+    items: [{ item_id: 1, item_name: "ซ่อมแอร์ผนัง" }],
+    reviews: [{ review_id: 1, item_id: null, completed_job_id: 11, customer_identity: "B", rating: 4, comment: "โอเค", moderation_status: "pending", created_at: "2026-06-02T00:00:00Z", review_source: "tracking", review_scope: "service_type", service_type: "ซ่อมแอร์" }],
+  });
+  const router = createCatalogReviewRoutes({ pool, requireCustomerJwt: requireCustomerJwtFor(null), requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/reviews/1`, {
+      method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ moderation_status: "approved" }),
+    });
+    assert.equal(res.status, 409);
+    assert.equal(pool.state.reviews[0].moderation_status, "pending");
+    assert.equal(pool.state.reviews[0].assigned_item_id, undefined);
+  });
+});
+
+test("an overall-scoped review can be assigned and approved atomically in a single request", async () => {
+  const pool = makePool({
+    trackingSchemaReady: true,
+    items: [{ item_id: 1, item_name: "ล้างแอร์ผนัง ล้างปกติ" }],
+    reviews: [{ review_id: 1, item_id: null, completed_job_id: 12, customer_identity: "C", rating: 3, comment: null, moderation_status: "pending", created_at: "2026-06-03T00:00:00Z", review_source: "tracking", review_scope: "overall", service_type: null }],
+  });
+  const router = createCatalogReviewRoutes({ pool, requireCustomerJwt: requireCustomerJwtFor(null), requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/reviews/1`, {
+      method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ assigned_item_id: 1, moderation_status: "approved" }),
+    });
+    const body = await res.json();
+    assert.equal(res.status, 200);
+    assert.equal(body.assigned_item_id, 1);
+    assert.equal(body.moderation_status, "approved");
+    assert.equal(pool.state.reviews[0].assigned_item_id, 1);
+    assert.equal(pool.state.reviews[0].moderation_status, "approved");
+  });
+});
+
+test("an already-approved itemless review can later be bound via assignment-only, without resending moderation_status", async () => {
+  const pool = makePool({
+    trackingSchemaReady: true,
+    items: [{ item_id: 1, item_name: "ล้างแอร์ผนัง ล้างปกติ" }],
+    reviews: [{ review_id: 1, item_id: null, completed_job_id: 11, customer_identity: "B", rating: 4, comment: "โอเค", moderation_status: "approved", created_at: "2026-06-02T00:00:00Z", review_source: "tracking", review_scope: "service_type", service_type: "ล้างแอร์" }],
+  });
+  const router = createCatalogReviewRoutes({ pool, requireCustomerJwt: requireCustomerJwtFor(null), requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/reviews/1`, {
+      method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ assigned_item_id: 1 }),
+    });
+    const body = await res.json();
+    assert.equal(res.status, 200);
+    assert.equal(body.assigned_item_id, 1);
+    // status was never resent and stays approved -- this is assignment-only, not a re-approval
+    assert.equal(pool.state.reviews[0].moderation_status, "approved");
+  });
+});
+
+test("public item reviews and rating aggregate include a review only after it has been assigned to that item", async () => {
+  const pool = makePool({
+    trackingSchemaReady: true,
+    items: [{ item_id: 1, item_name: "ล้างแอร์ผนัง ล้างปกติ" }],
+    reviews: [
+      { review_id: 1, item_id: 1, completed_job_id: 10, customer_identity: "A", rating: 5, comment: "ดี", moderation_status: "approved", created_at: "2026-06-01T00:00:00Z", review_source: "customer_app", review_scope: "item" },
+      { review_id: 2, item_id: null, completed_job_id: 11, customer_identity: "B", rating: 3, comment: "โอเค", moderation_status: "approved", created_at: "2026-06-02T00:00:00Z", review_source: "tracking", review_scope: "overall", assigned_item_id: null },
+    ],
+  });
+  const router = createCatalogReviewRoutes({ pool, requireCustomerJwt: requireCustomerJwtFor(null), requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const before = await (await fetch(`${base}/catalog/items/1/reviews`)).json();
+    assert.equal(before.review_count, 1);
+    assert.equal(before.reviews.length, 1);
+
+    await fetch(`${base}/admin/catalog/reviews/2`, {
+      method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ assigned_item_id: 1 }),
+    });
+
+    const after = await (await fetch(`${base}/catalog/items/1/reviews`)).json();
+    assert.equal(after.review_count, 2);
+    assert.equal(after.reviews.length, 2);
+  });
+});
+
+test("an approved review left unassigned never appears under any other item's reviews", async () => {
+  const pool = makePool({
+    trackingSchemaReady: true,
+    items: [{ item_id: 1, item_name: "ล้างแอร์ผนัง" }, { item_id: 2, item_name: "ซ่อมแอร์" }],
+    reviews: [
+      { review_id: 1, item_id: null, completed_job_id: 11, customer_identity: "B", rating: 4, comment: "โอเค", moderation_status: "approved", created_at: "2026-06-02T00:00:00Z", review_source: "tracking", review_scope: "overall", assigned_item_id: null },
+    ],
+  });
+  const router = createCatalogReviewRoutes({ pool, requireCustomerJwt: requireCustomerJwtFor(null), requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const item1 = await (await fetch(`${base}/catalog/items/1/reviews`)).json();
+    const item2 = await (await fetch(`${base}/catalog/items/2/reviews`)).json();
+    assert.equal(item1.review_count, 0);
+    assert.equal(item2.review_count, 0);
+  });
+});
+
+test("admin filter for 'unassigned' uses the effective item (assigned_item_id || item_id), not raw item_id alone", async () => {
+  const pool = makePool({
+    trackingSchemaReady: true,
+    items: [{ item_id: 1, item_name: "ล้างแอร์ผนัง" }],
+    reviews: [
+      { review_id: 1, item_id: 1, completed_job_id: 10, customer_identity: "A", rating: 5, comment: "ดี", moderation_status: "approved", created_at: "2026-06-01T00:00:00Z", review_source: "customer_app", review_scope: "item" },
+      { review_id: 2, item_id: null, completed_job_id: 11, customer_identity: "B", rating: 4, comment: "โอเค", moderation_status: "pending", created_at: "2026-06-02T00:00:00Z", review_source: "tracking", review_scope: "overall", assigned_item_id: null },
+      { review_id: 3, item_id: null, completed_job_id: 12, customer_identity: "C", rating: 3, comment: null, moderation_status: "approved", created_at: "2026-06-03T00:00:00Z", review_source: "tracking", review_scope: "overall", assigned_item_id: 1 },
+    ],
+  });
+  const router = createCatalogReviewRoutes({ pool, requireCustomerJwt: requireCustomerJwtFor(null), requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const all = await (await fetch(`${base}/admin/catalog/reviews`)).json();
+    const effectiveItemOf = (r) => r.assigned_item_id || r.item_id;
+    const unassigned = all.filter((r) => !effectiveItemOf(r));
+    const hasEffectiveItem = all.filter((r) => effectiveItemOf(r));
+    assert.equal(unassigned.length, 1);
+    assert.equal(unassigned[0].review_id, 2);
+    assert.equal(hasEffectiveItem.length, 2);
+  });
 });

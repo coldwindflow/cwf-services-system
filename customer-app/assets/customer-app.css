@@ -4198,6 +4198,7 @@ body.has-contact-sheet { overflow: hidden; }
 .store-reviews-summary .store-rating-star { font-size: 14px; }
 .store-reviews-summary .store-rating-value { color: var(--ink); font-weight: 700; }
 .store-reviews-summary .store-rating-count { color: var(--muted); font-weight: 500; }
+.store-reviews-summary .store-rating-count-empty { font-weight: 400; font-size: 13px; }
 
 .store-reviews-empty { color: var(--muted); font-size: 13.5px; }
 .store-reviews-list {

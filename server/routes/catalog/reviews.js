@@ -631,7 +631,7 @@ module.exports = function createCatalogReviewRoutes(deps = {}) {
       await client.query("BEGIN");
 
       const reviewR = await client.query(
-        `SELECT review_id, review_scope FROM public.catalog_item_reviews WHERE review_id = $1 FOR UPDATE`,
+        `SELECT review_id, review_scope, assigned_item_id FROM public.catalog_item_reviews WHERE review_id = $1 FOR UPDATE`,
         [reviewId]
       );
       if (!reviewR.rows.length) {
@@ -639,6 +639,7 @@ module.exports = function createCatalogReviewRoutes(deps = {}) {
         return res.status(404).json({ error: "ไม่พบรีวิว" });
       }
       const currentScope = reviewR.rows[0].review_scope || "item";
+      const currentAssignedItemId = reviewR.rows[0].assigned_item_id == null ? null : Number(reviewR.rows[0].assigned_item_id);
 
       if (hasAssignment && currentScope === "item") {
         await client.query("ROLLBACK");
@@ -650,6 +651,19 @@ module.exports = function createCatalogReviewRoutes(deps = {}) {
         if (!itemR.rows.length) {
           await client.query("ROLLBACK");
           return res.status(404).json({ error: "ไม่พบสินค้า/บริการที่ต้องการมอบหมาย" });
+        }
+      }
+
+      // A service_type/overall-scoped review (no real item_id) can only ever
+      // become 'approved' once it has a real target -- either already
+      // assigned, or assigned atomically in this same request. Never
+      // auto-assign: if neither is present, reject with a clear 409 rather
+      // than silently producing an approved-but-unbound (orphan) review.
+      if (hasStatus && nextStatus === "approved" && currentScope !== "item") {
+        const effectiveAssignedItemId = hasAssignment ? assignedItemId : currentAssignedItemId;
+        if (effectiveAssignedItemId == null) {
+          await client.query("ROLLBACK");
+          return res.status(409).json({ error: "ต้องผูกสินค้า (assigned_item_id) ก่อนอนุมัติรีวิวที่ยังไม่ทราบสินค้า" });
         }
       }
 

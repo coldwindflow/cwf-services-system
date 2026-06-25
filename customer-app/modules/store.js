@@ -1067,8 +1067,7 @@
       <div class="store-reviews-summary">
         <span class="store-rating-label">รีวิว</span>
         <span class="store-rating-stars">${renderReviewStars(hasReviews ? Math.round(avg) : 0, false)}</span>
-        ${hasReviews ? `<span class="store-rating-value">${formatRatingAverage(avg)}</span>` : ""}
-        <span class="store-rating-count">(${count})</span>
+        ${hasReviews ? `<span class="store-rating-value">${formatRatingAverage(avg)}</span><span class="store-rating-count">(${count})</span>` : `<span class="store-rating-count store-rating-count-empty">ยังไม่มีรีวิว</span>`}
       </div>
       <div class="store-reviews-list-mount">${renderReviewsList()}</div>
       <div class="store-review-write-mount">${renderWriteReviewPanel(item)}</div>

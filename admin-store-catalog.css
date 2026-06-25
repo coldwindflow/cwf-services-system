@@ -73,6 +73,12 @@
 .asc-review-stars{ font-size:14px; color:#f5b700; margin-top:4px; }
 .asc-review-comment{ font-size:13px; color:#1f2937; margin-top:4px; white-space:pre-wrap; overflow-wrap:anywhere; }
 .asc-review-actions{ display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; width:100%; }
+.asc-review-visibility{ font-size:12px; font-weight:600; margin-top:4px; }
+.asc-review-visible{ color:#15803d; }
+.asc-review-not-visible{ color:#b45309; }
+.asc-review-assign{ display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; width:100%; align-items:center; }
+.asc-review-assign-search{ flex:1 1 180px; min-width:0; }
+.asc-review-assign-select{ flex:1 1 220px; min-width:0; }
 
 .asc-gallery-grid{
   display:grid;

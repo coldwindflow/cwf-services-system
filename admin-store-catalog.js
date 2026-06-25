@@ -1063,9 +1063,39 @@ function reviewStarsHtml(rating) {
   return Array.from({ length: 5 }, (_, i) => (i < n ? "★" : "☆")).join("");
 }
 
+function reviewSourceLabel(source) {
+  return source === "tracking" ? "Tracking" : "Customer App";
+}
+
+function reviewScopeLabel(scope) {
+  if (scope === "item") return "สินค้า";
+  if (scope === "service_type") return "ประเภทบริการ";
+  return "ภาพรวม";
+}
+
+// The review's real target for display/rating purposes is always the
+// admin-assigned item if one exists, falling back to its original item_id
+// (mirrors COALESCE(assigned_item_id, item_id) used server-side in
+// attachCatalogRatings and the public reviews endpoint).
+function reviewEffectiveItemId(review) {
+  return review.assigned_item_id || review.item_id || null;
+}
+function reviewEffectiveItemName(review) {
+  return review.assigned_item_name || review.item_name || null;
+}
+// Approved is not the same as "done": a service_type/overall review that's
+// approved but still has no effective item never shows in the Store, so the
+// card must never look like a completed task in that state.
+function reviewIsStoreVisible(review) {
+  return review.moderation_status === "approved" && Boolean(reviewEffectiveItemId(review));
+}
+
 function reviewActionButtons(review) {
   const buttons = [];
-  if (review.moderation_status !== "approved") buttons.push(`<button class="secondary btn-small" type="button" data-ract="approved" data-review-id="${review.review_id}">อนุมัติ</button>`);
+  const needsAssignmentBeforeApproval = review.review_scope !== "item" && !reviewEffectiveItemId(review);
+  if (!needsAssignmentBeforeApproval && review.moderation_status !== "approved") {
+    buttons.push(`<button class="secondary btn-small" type="button" data-ract="approved" data-review-id="${review.review_id}">อนุมัติ</button>`);
+  }
   if (review.moderation_status !== "rejected") buttons.push(`<button class="secondary btn-small" type="button" data-ract="rejected" data-review-id="${review.review_id}">ปฏิเสธ</button>`);
   if (review.moderation_status !== "hidden") buttons.push(`<button class="secondary btn-small" type="button" data-ract="hidden" data-review-id="${review.review_id}">ซ่อน</button>`);
   if (review.moderation_status === "hidden" || review.moderation_status === "rejected") {
@@ -1074,15 +1104,52 @@ function reviewActionButtons(review) {
   return buttons.join("");
 }
 
+function catalogItemPickerLabel(item) {
+  const parts = [item.item_name];
+  if (item.booking_ac_type) parts.push(item.booking_ac_type);
+  if (item.booking_btu) parts.push(`${Number(item.booking_btu).toLocaleString("th-TH")} BTU`);
+  if (item.booking_wash_variant) parts.push(item.booking_wash_variant);
+  return parts.filter(Boolean).join(" • ");
+}
+
+function reviewAssignOptionsHtml(review, items) {
+  const assignedId = review.assigned_item_id ? Number(review.assigned_item_id) : null;
+  return `<option value="">-- เลือกสินค้า --</option>${items
+    .map((it) => `<option value="${it.item_id}" ${assignedId === Number(it.item_id) ? "selected" : ""}>${escapeHtml(catalogItemPickerLabel(it))}</option>`)
+    .join("")}`;
+}
+
+// Only service_type/overall-scoped reviews (review_scope !== "item") are
+// ever eligible for assignment -- an item-scoped review already has a real,
+// known target and the backend itself rejects reassigning it (409).
+function reviewAssignPickerHtml(review) {
+  if (review.review_scope === "item") return "";
+  const isAlreadyApproved = review.moderation_status === "approved";
+  const mainLabel = isAlreadyApproved ? "ผูกกับสินค้า" : "ผูกสินค้าและอนุมัติ";
+  const mainAct = isAlreadyApproved ? "assign-only" : "assign-approve";
+  return `
+    <div class="asc-review-assign" data-review-id="${review.review_id}">
+      <input type="text" class="asc-review-assign-search" placeholder="ค้นหาสินค้า (ชื่อ/ประเภทแอร์/BTU/วิธีล้าง)" data-review-id="${review.review_id}">
+      <select class="asc-review-assign-select" data-review-id="${review.review_id}">${reviewAssignOptionsHtml(review, catalogItems)}</select>
+      <button class="primary btn-small" type="button" data-aact="${mainAct}" data-review-id="${review.review_id}">${mainLabel}</button>
+    </div>`;
+}
+
 function reviewCardHtml(review) {
+  const storeVisible = reviewIsStoreVisible(review);
+  const effectiveName = reviewEffectiveItemName(review);
   return `
   <div class="asc-item-card asc-review-card" data-review-id="${review.review_id}">
     <div class="asc-item-main">
-      <div class="asc-item-title">${escapeHtml(review.item_name || "-")} <span class="asc-badge asc-badge-${review.moderation_status}">${reviewStatusLabel(review.moderation_status)}</span></div>
+      <div class="asc-item-title">${escapeHtml(effectiveName || "(ยังไม่ทราบสินค้า)")} <span class="asc-badge asc-badge-${review.moderation_status}">${reviewStatusLabel(review.moderation_status)}</span></div>
       <div class="asc-item-meta">${escapeHtml(review.customer_identity || "ลูกค้า")} • งาน #${escapeHtml(String(review.completed_job_id || "-"))} • ${fmtDateTime(review.created_at)}</div>
+      <div class="asc-item-meta">แหล่งที่มา: ${reviewSourceLabel(review.review_source)} • Scope: ${reviewScopeLabel(review.review_scope)}${review.service_type ? ` • ประเภทบริการ: ${escapeHtml(review.service_type)}` : ""}</div>
+      <div class="asc-item-meta">สินค้าต้นทาง: ${escapeHtml(review.item_name || "-")} • สินค้าที่มอบหมาย: ${escapeHtml(review.assigned_item_name || "-")}</div>
+      <div class="asc-review-visibility ${storeVisible ? "asc-review-visible" : "asc-review-not-visible"}">${storeVisible ? "✅ แสดงใน Store ได้" : "⚠️ ยังไม่ผูกสินค้า"}</div>
       <div class="asc-review-stars">${reviewStarsHtml(review.rating)}</div>
       ${review.comment ? `<div class="asc-review-comment">${escapeHtml(review.comment)}</div>` : `<div class="muted2 mini">ไม่มีความเห็นเพิ่มเติม</div>`}
       ${review.moderated_by ? `<div class="muted2 mini">ตรวจสอบล่าสุดโดย ${escapeHtml(review.moderated_by)} เมื่อ ${fmtDateTime(review.moderated_at)}</div>` : ""}
+      ${reviewAssignPickerHtml(review)}
     </div>
     <div class="asc-item-actions asc-review-actions">${reviewActionButtons(review)}</div>
   </div>`;
@@ -1092,7 +1159,11 @@ function renderReviewItemFilterOptions() {
   const select = el("review_filter_item");
   const current = select.value;
   const seen = new Map();
-  reviewItems.forEach((r) => { if (!seen.has(r.item_id)) seen.set(r.item_id, r.item_name); });
+  reviewItems.forEach((r) => {
+    const id = reviewEffectiveItemId(r);
+    const name = reviewEffectiveItemName(r);
+    if (id && !seen.has(id)) seen.set(id, name);
+  });
   select.innerHTML = `<option value="">ทุกรายการ</option>${Array.from(seen.entries()).map(([id, name]) => `<option value="${id}">${escapeHtml(name)}</option>`).join("")}`;
   select.value = current;
 }
@@ -1100,10 +1171,19 @@ function renderReviewItemFilterOptions() {
 function renderReviewList() {
   const box = el("review_list");
   const statusFilter = el("review_filter_status").value;
+  const sourceFilter = el("review_filter_source").value;
   const itemFilter = el("review_filter_item").value;
   const filtered = reviewItems.filter((r) => {
-    if (statusFilter && r.moderation_status !== statusFilter) return false;
-    if (itemFilter && String(r.item_id) !== String(itemFilter)) return false;
+    const effectiveId = reviewEffectiveItemId(r);
+    if (statusFilter === "unassigned") {
+      if (effectiveId) return false;
+    } else if (statusFilter === "approved_unassigned") {
+      if (!(r.moderation_status === "approved" && !effectiveId)) return false;
+    } else if (statusFilter && r.moderation_status !== statusFilter) {
+      return false;
+    }
+    if (sourceFilter && r.review_source !== sourceFilter) return false;
+    if (itemFilter && String(effectiveId) !== String(itemFilter)) return false;
     return true;
   });
   if (!filtered.length) {
@@ -1148,11 +1228,66 @@ async function setReviewModerationStatus(reviewId, nextStatus) {
   }
 }
 
+// Single, atomic request for both "assign + approve" (the primary action for
+// a fresh service_type/overall review) and "assign only" (for a review
+// that's already approved but still orphaned) -- never two separate calls,
+// so the review is never left briefly approved-without-a-target.
+async function setReviewAssignment(reviewId, mode) {
+  if (reviewActionPending) return;
+  const review = reviewItems.find((r) => Number(r.review_id) === Number(reviewId));
+  if (!review) return;
+  const select = document.querySelector(`.asc-review-assign-select[data-review-id="${reviewId}"]`);
+  const assignedItemId = select ? Number(select.value) : NaN;
+  if (!Number.isFinite(assignedItemId) || assignedItemId <= 0) {
+    showToast("กรุณาเลือกสินค้าก่อน", "error");
+    return;
+  }
+  const body = { assigned_item_id: assignedItemId };
+  if (mode === "assign-approve") body.moderation_status = "approved";
+  reviewActionPending = reviewId;
+  try {
+    const updated = await apiFetch(`/admin/catalog/reviews/${reviewId}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    });
+    Object.assign(review, updated);
+    const assignedItem = catalogItems.find((it) => Number(it.item_id) === Number(review.assigned_item_id));
+    review.assigned_item_name = assignedItem ? assignedItem.item_name : review.assigned_item_name;
+    renderReviewList();
+    showToast(mode === "assign-approve" ? "ผูกสินค้าและอนุมัติแล้ว" : "ผูกสินค้าแล้ว", "success");
+  } catch (e) {
+    showToast(e.message || "ผูกสินค้าไม่สำเร็จ", "error");
+  } finally {
+    reviewActionPending = null;
+  }
+}
+
+function filterReviewAssignSelect(reviewId, query) {
+  const select = document.querySelector(`.asc-review-assign-select[data-review-id="${reviewId}"]`);
+  if (!select) return;
+  const review = reviewItems.find((r) => Number(r.review_id) === Number(reviewId));
+  if (!review) return;
+  const q = String(query || "").trim().toLowerCase();
+  const matches = q ? catalogItems.filter((it) => catalogItemPickerLabel(it).toLowerCase().includes(q)) : catalogItems;
+  select.innerHTML = reviewAssignOptionsHtml(review, matches);
+}
+
 function bindReviewListActions() {
   el("review_list").addEventListener("click", (event) => {
-    const button = event.target.closest("[data-ract]");
-    if (!button) return;
-    setReviewModerationStatus(Number(button.getAttribute("data-review-id")), button.getAttribute("data-ract"));
+    const ractButton = event.target.closest("[data-ract]");
+    if (ractButton) {
+      setReviewModerationStatus(Number(ractButton.getAttribute("data-review-id")), ractButton.getAttribute("data-ract"));
+      return;
+    }
+    const aactButton = event.target.closest("[data-aact]");
+    if (aactButton) {
+      setReviewAssignment(Number(aactButton.getAttribute("data-review-id")), aactButton.getAttribute("data-aact"));
+    }
+  });
+  el("review_list").addEventListener("input", (event) => {
+    const input = event.target.closest(".asc-review-assign-search");
+    if (!input) return;
+    filterReviewAssignSelect(Number(input.getAttribute("data-review-id")), input.value);
   });
 }
 
@@ -1168,6 +1303,7 @@ document.addEventListener("DOMContentLoaded", () => {
   bindReviewListActions();
   el("btnReloadReviews").addEventListener("click", loadReviews);
   el("review_filter_status").addEventListener("change", renderReviewList);
+  el("review_filter_source").addEventListener("change", renderReviewList);
   el("review_filter_item").addEventListener("change", renderReviewList);
   loadReviews();
 });

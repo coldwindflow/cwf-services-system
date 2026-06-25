@@ -107,11 +107,11 @@
     },
 
     async loadCatalogItems() {
-      return requestJson("/catalog/items", { query: { customer: 1 } });
+      return requestJson("/catalog/items", { query: { customer: 1 }, cache: "no-store" });
     },
 
     async loadCatalogItem(itemId) {
-      return requestJson(`/catalog/items/${encodeURIComponent(itemId)}`, { query: { customer: 1 } });
+      return requestJson(`/catalog/items/${encodeURIComponent(itemId)}`, { query: { customer: 1 }, cache: "no-store" });
     },
 
     async submitScheduledBooking(payload) {
