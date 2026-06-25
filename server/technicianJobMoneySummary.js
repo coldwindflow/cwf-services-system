@@ -13,6 +13,7 @@ function createTechnicianJobMoneyHelpers(deps = {}) {
     money,
     technicianJobIncomeDisplayHelpers,
     technicianReworkHelpers,
+    technicianReworkIncome,
     getCustomerCollectAmountForTechJob,
     loadTechnicianIncomePreview,
     loadFinalizedTechPayoutLineForJob,
@@ -136,6 +137,25 @@ function createTechnicianJobMoneyHelpers(deps = {}) {
     return 0;
   }
 
+  // Real ledger amount for a rework case, read from public.technician_rework_income_holds
+  // (the immutable hold/release ledger) rather than any cached UI preview/display row.
+  // Falls back to the legacy preview-derived guess only for rework cases that predate
+  // the ledger (no hold row found).
+  async function _resolveReworkLedgerAmount(reworkCaseId, tech, existingDisplay, previewRow) {
+    const caseId = Number(reworkCaseId);
+    if (Number.isInteger(caseId) && caseId > 0 && technicianReworkIncome
+        && typeof technicianReworkIncome.getHoldForReworkCase === 'function') {
+      try {
+        const hold = await technicianReworkIncome.getHoldForReworkCase(pool, caseId, tech);
+        if (hold) {
+          if (hold.hold_status === 'released' && hold.released_amount != null) return toMoney(hold.released_amount);
+          if (hold.held_amount != null) return toMoney(hold.held_amount);
+        }
+      } catch (_) { /* fall through to legacy resolution below */ }
+    }
+    return _resolveHeldReworkAmount(existingDisplay, previewRow);
+  }
+
   async function _upsertDisplayRowForPreview(job_id, username, preview, source = 'preview', opts = {}) {
     const tech = String(username || '').trim();
     const jid = Number(job_id);
@@ -187,7 +207,7 @@ function createTechnicianJobMoneyHelpers(deps = {}) {
           const preview = typeof loadTechnicianIncomePreview === 'function'
             ? await loadTechnicianIncomePreview(jid, tech).catch(() => null)
             : null;
-          const heldAmount = _resolveHeldReworkAmount(existing, preview);
+          const heldAmount = await _resolveReworkLedgerAmount(reworkCase?.rework_case_id, tech, existing, preview);
           const reworkDisplay = technicianReworkHelpers.buildReworkDisplay(job, reworkCase, heldAmount);
           await technicianJobIncomeDisplayHelpers.upsertTechnicianJobIncomeDisplay(
             pool,
@@ -250,7 +270,7 @@ function createTechnicianJobMoneyHelpers(deps = {}) {
         const preview = typeof loadTechnicianIncomePreview === 'function'
           ? await loadTechnicianIncomePreview(job_id, tech).catch(() => null)
           : null;
-        const heldAmount = _resolveHeldReworkAmount(existing, preview);
+        const heldAmount = await _resolveReworkLedgerAmount(reworkCase?.rework_case_id, tech, existing, preview);
         const reworkDisplay = technicianReworkHelpers.buildReworkDisplay(job, reworkCase, heldAmount);
         const row = technicianJobIncomeDisplayHelpers.buildReworkDisplay(job, tech, reworkDisplay, context || 'history');
         try { await technicianJobIncomeDisplayHelpers.upsertTechnicianJobIncomeDisplay(pool, row); } catch (_) {}
@@ -452,7 +472,7 @@ function createTechnicianJobMoneyHelpers(deps = {}) {
         if (technicianReworkHelpers.detectReworkJob(job, reworkCase)) {
           const existing = _pickDisplayRowForContext(displayMap, jid, context || 'history');
           const preview = previewMap.get(key) || null;
-          const heldAmount = _resolveHeldReworkAmount(existing, preview);
+          const heldAmount = await _resolveReworkLedgerAmount(reworkCase?.rework_case_id, tech, existing, preview);
           const reworkDisplay = technicianReworkHelpers.buildReworkDisplay(job, reworkCase, heldAmount);
           const row = technicianJobIncomeDisplayHelpers.buildReworkDisplay(job, tech, reworkDisplay, context || 'history');
           try { await technicianJobIncomeDisplayHelpers.upsertTechnicianJobIncomeDisplay(pool, row); } catch (_) {}
