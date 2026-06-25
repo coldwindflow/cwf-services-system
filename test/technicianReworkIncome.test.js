@@ -21,6 +21,7 @@ class FakeClient {
     this.nextHoldId = 1;
     this.nextAdjId = 1;
     this.nextCaseId = 1;
+    this.failNextAdjustmentInserts = 0;
   }
 
   cloneRow(row) {
@@ -93,6 +94,10 @@ class FakeClient {
     }
 
     if (s.startsWith('INSERT INTO public.technician_payout_adjustments')) {
+      if (this.failNextAdjustmentInserts > 0) {
+        this.failNextAdjustmentInserts -= 1;
+        throw new Error('SIMULATED_ADJUSTMENT_INSERT_FAILURE');
+      }
       const [payout_id, technician_username, job_id, adj_amount, reason, created_by] = params;
       const row = {
         adj_id: this.nextAdjId++, payout_id, technician_username, job_id,
@@ -104,7 +109,13 @@ class FakeClient {
 
     if (s.startsWith('INSERT INTO public.technician_rework_income_holds')) {
       let row;
-      if (params.length === 6) {
+      if (params.length === 9) {
+        const [rework_case_id, technician_username, job_id, source_payout_id, source_period_status_at_hold, source_kind, previous_rework_case_id, previous_release_adjustment_id, created_by] = params;
+        row = { rework_case_id, technician_username, job_id, held_amount: 0, source_payout_id, source_period_status_at_hold, hold_status: 'already_paid_no_action', source_kind, previous_rework_case_id, previous_release_adjustment_id, created_by };
+      } else if (params.length === 11) {
+        const [rework_case_id, technician_username, job_id, held_amount, source_payout_id, source_period_status_at_hold, hold_adjustment_id, source_kind, previous_rework_case_id, previous_release_adjustment_id, created_by] = params;
+        row = { rework_case_id, technician_username, job_id, held_amount: Number(held_amount), source_payout_id, source_period_status_at_hold, hold_adjustment_id, hold_status: 'held', source_kind, previous_rework_case_id, previous_release_adjustment_id, created_by };
+      } else if (params.length === 6) {
         const [rework_case_id, technician_username, job_id, source_payout_id, source_period_status_at_hold, created_by] = params;
         row = { rework_case_id, technician_username, job_id, held_amount: 0, source_payout_id, source_period_status_at_hold, hold_status: 'already_paid_no_action', created_by };
       } else if (params.length === 4) {
@@ -186,6 +197,16 @@ async function release(client, opts = {}) {
     technicianUsername: opts.tech || 'A2MKUNG',
     actor: 'test',
   });
+}
+
+// Net = every adjustment (hold negatives + release positives) ever posted for
+// this technician, across every period. After a chain of N rework rounds on
+// the same job ends in a successful close, this must equal the technician's
+// original one-time income for the job — never a multiple of it.
+function netForTechnician(db, tech) {
+  return db.adjustments
+    .filter((r) => r.technician_username === tech)
+    .reduce((sum, r) => sum + Number(r.adj_amount || 0), 0);
 }
 
 test('paid source is carried forward, then returned after successful rework', async () => {
@@ -454,4 +475,316 @@ test('retrying the second rework round release does not pay twice', async () => 
 
   const positiveForRound2 = db.adjustments.filter((r) => r.adj_amount > 0 && r.technician_username === 'A2MKUNG');
   assert.equal(positiveForRound2.length, 2); // round1 release + round2 release, not 3
+});
+
+test('round 1 net is exactly 325 (hold then release end to end)', async () => {
+  const db = new FakeClient();
+  await hold(db, { caseId: 1, amount: 325 });
+  db.jobs.set(10, { finished_at: '2026-06-20T10:00:00+07:00' });
+  await release(db, { caseId: 1 });
+  assert.equal(netForTechnician(db, 'A2MKUNG'), 325);
+});
+
+test('previous release still in a draft period: opening round 2 posts -325 into that same payout, net is 0 before close, +325 after, final net 325 (never 650)', async () => {
+  const db = new FakeClient();
+
+  await hold(db, { caseId: 1, amount: 325 });
+  db.jobs.set(10, { finished_at: '2026-06-20T10:00:00+07:00' });
+  const round1 = await release(db, { caseId: 1 });
+  assert.equal(round1.amount, 325);
+  assert.equal(db.periods.get(round1.payout_id).status, 'draft');
+  assert.equal(netForTechnician(db, 'A2MKUNG'), 325);
+
+  const round2 = await holdOriginalIncomeForReworkCase(db, {
+    reworkCaseId: 2,
+    jobId: 10,
+    technicianUsername: 'A2MKUNG',
+    originalFinishedAt: '2026-07-01T10:00:00+07:00',
+    actor: 'test',
+  });
+  assert.equal(round2.rows[0].held_amount, 325);
+  const negativeAdj = db.adjustments.find((r) => r.adj_amount === -325);
+  assert.ok(negativeAdj, 'opening round 2 must post a real -325 adjustment');
+  assert.equal(negativeAdj.payout_id, round1.payout_id, 'must offset in the exact payout the prior release landed in, since it is still draft');
+  assert.equal(netForTechnician(db, 'A2MKUNG'), 0, 'net must be 0 between the round-2 hold and its close');
+
+  db.jobs.set(10, { finished_at: '2026-07-05T10:00:00+07:00' });
+  const round2Release = await release(db, { caseId: 2 });
+  assert.equal(round2Release.amount, 325);
+  assert.equal(netForTechnician(db, 'A2MKUNG'), 325, 'final net must be 325, never 650');
+});
+
+test('previous release period was since locked: round 2 offset carries forward to the next draft period, never touching the locked period', async () => {
+  const db = new FakeClient();
+  await hold(db, { caseId: 1, amount: 325 });
+  db.jobs.set(10, { finished_at: '2026-06-20T10:00:00+07:00' });
+  const round1 = await release(db, { caseId: 1 });
+  const lockedPayoutId = round1.payout_id;
+
+  // The payroll period the round-1 release landed in has since been closed.
+  db.periods.get(lockedPayoutId).status = 'locked';
+
+  const round2 = await holdOriginalIncomeForReworkCase(db, {
+    reworkCaseId: 2,
+    jobId: 10,
+    technicianUsername: 'A2MKUNG',
+    originalFinishedAt: '2026-07-01T10:00:00+07:00',
+    actor: 'test',
+  });
+  assert.equal(round2.rows[0].held_amount, 325);
+  assert.match(round2.rows[0].source_period_status_at_hold, /^locked_carried_forward:/);
+
+  const negativeAdj = db.adjustments.find((r) => r.adj_amount === -325);
+  assert.ok(negativeAdj);
+  assert.notEqual(negativeAdj.payout_id, lockedPayoutId, 'must never write into the locked period');
+  assert.equal(db.periods.get(lockedPayoutId).status, 'locked', 'the locked period itself must be untouched');
+
+  db.jobs.set(10, { finished_at: '2026-07-20T10:00:00+07:00' });
+  const round2Release = await release(db, { caseId: 2 });
+  assert.equal(round2Release.amount, 325);
+  assert.equal(netForTechnician(db, 'A2MKUNG'), 325);
+});
+
+test('previous release period was since paid: round 2 offset carries forward to the next draft period, never touching the paid period', async () => {
+  const db = new FakeClient();
+  await hold(db, { caseId: 1, amount: 325 });
+  db.jobs.set(10, { finished_at: '2026-06-20T10:00:00+07:00' });
+  const round1 = await release(db, { caseId: 1 });
+  const paidPayoutId = round1.payout_id;
+
+  db.periods.get(paidPayoutId).status = 'paid';
+
+  const round2 = await holdOriginalIncomeForReworkCase(db, {
+    reworkCaseId: 2,
+    jobId: 10,
+    technicianUsername: 'A2MKUNG',
+    originalFinishedAt: '2026-07-01T10:00:00+07:00',
+    actor: 'test',
+  });
+  assert.equal(round2.rows[0].held_amount, 325);
+  assert.match(round2.rows[0].source_period_status_at_hold, /^paid_carried_forward:/);
+
+  const negativeAdj = db.adjustments.find((r) => r.adj_amount === -325);
+  assert.ok(negativeAdj);
+  assert.notEqual(negativeAdj.payout_id, paidPayoutId, 'must never write into the paid period');
+  assert.equal(db.periods.get(paidPayoutId).status, 'paid', 'the paid period itself must be untouched');
+
+  db.jobs.set(10, { finished_at: '2026-07-20T10:00:00+07:00' });
+  const round2Release = await release(db, { caseId: 2 });
+  assert.equal(round2Release.amount, 325);
+  assert.equal(netForTechnician(db, 'A2MKUNG'), 325);
+});
+
+test('round 2 closes into the same draft payout that holds its own negative offset: both rows present, net for the whole job still correct', async () => {
+  const db = new FakeClient();
+  await hold(db, { caseId: 1, amount: 325 });
+  db.jobs.set(10, { finished_at: '2026-06-20T10:00:00+07:00' });
+  const round1 = await release(db, { caseId: 1 });
+
+  await holdOriginalIncomeForReworkCase(db, {
+    reworkCaseId: 2,
+    jobId: 10,
+    technicianUsername: 'A2MKUNG',
+    originalFinishedAt: '2026-07-01T10:00:00+07:00',
+    actor: 'test',
+  });
+  // Same finished_at as round 1's release date, so round 2's own release
+  // lands in that exact same payout as its own negative offset.
+  db.jobs.set(10, { finished_at: '2026-06-20T10:00:00+07:00' });
+  const round2Release = await release(db, { caseId: 2 });
+
+  assert.equal(round2Release.payout_id, round1.payout_id);
+  const rowsInPayout = db.adjustments.filter((r) => r.payout_id === round1.payout_id && r.technician_username === 'A2MKUNG');
+  assert.equal(rowsInPayout.length, 3); // round1 +325, round2 -325, round2 +325
+  assert.equal(netForTechnician(db, 'A2MKUNG'), 325);
+});
+
+test('round 3 on the same job: the chain of hold/release/hold/release still nets to 325 exactly once', async () => {
+  const db = new FakeClient();
+  await hold(db, { caseId: 1, amount: 325 });
+  db.jobs.set(10, { finished_at: '2026-06-20T10:00:00+07:00' });
+  await release(db, { caseId: 1 });
+
+  await holdOriginalIncomeForReworkCase(db, {
+    reworkCaseId: 2, jobId: 10, technicianUsername: 'A2MKUNG',
+    originalFinishedAt: '2026-07-01T10:00:00+07:00', actor: 'test',
+  });
+  db.jobs.set(10, { finished_at: '2026-07-05T10:00:00+07:00' });
+  await release(db, { caseId: 2 });
+  assert.equal(netForTechnician(db, 'A2MKUNG'), 325);
+
+  const round3 = await holdOriginalIncomeForReworkCase(db, {
+    reworkCaseId: 3, jobId: 10, technicianUsername: 'A2MKUNG',
+    originalFinishedAt: '2026-07-10T10:00:00+07:00', actor: 'test',
+  });
+  assert.equal(round3.rows[0].held_amount, 325);
+  assert.equal(netForTechnician(db, 'A2MKUNG'), 0);
+
+  db.jobs.set(10, { finished_at: '2026-07-20T10:00:00+07:00' });
+  const round3Release = await release(db, { caseId: 3 });
+  assert.equal(round3Release.amount, 325);
+  assert.equal(netForTechnician(db, 'A2MKUNG'), 325, 'three full rework rounds must still net to 325, not 975');
+});
+
+test('team job (200 + 125): round 2 holds -200/-125 for the right technicians, closes +200/+125, total net stays 325', async () => {
+  const db = new FakeClient();
+  const originalIncomeRows = [
+    { technician_username: 'TECH_A', amount: 200, job_id: 10 },
+    { technician_username: 'TECH_B', amount: 125, job_id: 10 },
+  ];
+  await holdOriginalIncomeForReworkCase(db, {
+    reworkCaseId: 1, jobId: 10, technicianUsername: 'TECH_A',
+    originalFinishedAt: '2026-06-10T10:00:00+07:00', originalIncomeRows, actor: 'test',
+  });
+  db.jobs.set(10, { finished_at: '2026-06-20T10:00:00+07:00' });
+  await releaseHeldIncomeForReworkCase(db, { reworkCaseId: 1, technicianUsername: 'TECH_A', actor: 'test' });
+  assert.equal(netForTechnician(db, 'TECH_A'), 200);
+  assert.equal(netForTechnician(db, 'TECH_B'), 125);
+
+  const round2 = await holdOriginalIncomeForReworkCase(db, {
+    reworkCaseId: 2, jobId: 10, technicianUsername: 'TECH_A',
+    originalFinishedAt: '2026-07-01T10:00:00+07:00', actor: 'test',
+  });
+  const byTech = Object.fromEntries(round2.rows.map((r) => [r.technician_username, Number(r.held_amount)]));
+  assert.equal(byTech.TECH_A, 200);
+  assert.equal(byTech.TECH_B, 125);
+  const negA = db.adjustments.find((r) => r.technician_username === 'TECH_A' && r.adj_amount === -200);
+  const negB = db.adjustments.find((r) => r.technician_username === 'TECH_B' && r.adj_amount === -125);
+  assert.ok(negA);
+  assert.ok(negB);
+  assert.equal(netForTechnician(db, 'TECH_A'), 0);
+  assert.equal(netForTechnician(db, 'TECH_B'), 0);
+
+  db.jobs.set(10, { finished_at: '2026-07-05T10:00:00+07:00' });
+  const round2Release = await releaseHeldIncomeForReworkCase(db, { reworkCaseId: 2, technicianUsername: 'TECH_A', actor: 'test' });
+  assert.equal(round2Release.rows.length, 2);
+  assert.equal(netForTechnician(db, 'TECH_A'), 200);
+  assert.equal(netForTechnician(db, 'TECH_B'), 125);
+  assert.equal(netForTechnician(db, 'TECH_A') + netForTechnician(db, 'TECH_B'), 325);
+});
+
+test('retrying round-2 open 10 times posts exactly one negative adjustment per technician', async () => {
+  const db = new FakeClient();
+  await hold(db, { caseId: 1, amount: 325 });
+  db.jobs.set(10, { finished_at: '2026-06-20T10:00:00+07:00' });
+  await release(db, { caseId: 1 });
+
+  for (let i = 0; i < 10; i += 1) {
+    await holdOriginalIncomeForReworkCase(db, {
+      reworkCaseId: 2, jobId: 10, technicianUsername: 'A2MKUNG',
+      originalFinishedAt: '2026-07-01T10:00:00+07:00', actor: 'test',
+    });
+  }
+  const negatives = db.adjustments.filter((r) => r.adj_amount < 0 && r.technician_username === 'A2MKUNG');
+  assert.equal(negatives.length, 1);
+});
+
+test('retrying round-2 close 10 times posts exactly one positive adjustment per technician', async () => {
+  const db = new FakeClient();
+  await hold(db, { caseId: 1, amount: 325 });
+  db.jobs.set(10, { finished_at: '2026-06-20T10:00:00+07:00' });
+  await release(db, { caseId: 1 });
+  await holdOriginalIncomeForReworkCase(db, {
+    reworkCaseId: 2, jobId: 10, technicianUsername: 'A2MKUNG',
+    originalFinishedAt: '2026-07-01T10:00:00+07:00', actor: 'test',
+  });
+  db.jobs.set(10, { finished_at: '2026-07-05T10:00:00+07:00' });
+
+  for (let i = 0; i < 10; i += 1) {
+    await release(db, { caseId: 2 });
+  }
+  const positives = db.adjustments.filter((r) => r.adj_amount > 0 && r.technician_username === 'A2MKUNG');
+  assert.equal(positives.length, 2); // round1 release + round2 release, never more
+});
+
+test('a previously released hold missing release_payout_id (corrupt ledger) refuses to guess: 409 and no money movement', async () => {
+  const db = new FakeClient();
+  // Simulate legacy/corrupt data: a released hold with no recorded payout.
+  db.holds.push({
+    hold_id: db.nextHoldId++, rework_case_id: 1, technician_username: 'A2MKUNG', job_id: 10,
+    held_amount: 325, hold_status: 'released', released_amount: 325, release_payout_id: null,
+    release_adjustment_id: null,
+  });
+
+  await assert.rejects(
+    () => holdOriginalIncomeForReworkCase(db, {
+      reworkCaseId: 2, jobId: 10, technicianUsername: 'A2MKUNG',
+      originalFinishedAt: '2026-07-01T10:00:00+07:00', actor: 'test',
+    }),
+    (error) => error.status === 409 && error.message === 'PREVIOUS_RELEASE_PAYOUT_MISSING'
+  );
+  assert.equal((await getHoldsForReworkCase(db, 2)).length, 0);
+  assert.equal(db.adjustments.length, 0);
+});
+
+test('a previously released hold pointing at a payout period that no longer exists refuses to guess: 409 and rollback', async () => {
+  const db = new FakeClient();
+  db.holds.push({
+    hold_id: db.nextHoldId++, rework_case_id: 1, technician_username: 'A2MKUNG', job_id: 10,
+    held_amount: 325, hold_status: 'released', released_amount: 325,
+    release_payout_id: 'payout_does_not_exist', release_adjustment_id: 9999,
+  });
+
+  await assert.rejects(
+    () => holdOriginalIncomeForReworkCase(db, {
+      reworkCaseId: 2, jobId: 10, technicianUsername: 'A2MKUNG',
+      originalFinishedAt: '2026-07-01T10:00:00+07:00', actor: 'test',
+    }),
+    (error) => error.status === 409 && error.message === 'PREVIOUS_RELEASE_PERIOD_NOT_FOUND'
+  );
+  assert.equal((await getHoldsForReworkCase(db, 2)).length, 0);
+  assert.equal(db.adjustments.length, 0);
+});
+
+test('a previously released hold whose released_amount exceeds held_amount (corrupt ledger) is rejected, never trusted', async () => {
+  const db = new FakeClient();
+  db.holds.push({
+    hold_id: db.nextHoldId++, rework_case_id: 1, technician_username: 'A2MKUNG', job_id: 10,
+    held_amount: 100, hold_status: 'released', released_amount: 9999,
+    release_payout_id: 'payout_2026-07_10', release_adjustment_id: 1,
+  });
+
+  await assert.rejects(
+    () => holdOriginalIncomeForReworkCase(db, {
+      reworkCaseId: 2, jobId: 10, technicianUsername: 'A2MKUNG',
+      originalFinishedAt: '2026-07-01T10:00:00+07:00', actor: 'test',
+    }),
+    (error) => error.status === 409 && error.message === 'PREVIOUS_HOLD_RELEASED_EXCEEDS_HELD'
+  );
+  assert.equal((await getHoldsForReworkCase(db, 2)).length, 0);
+});
+
+test('if the round-2 offset adjustment insert fails, no hold row is left behind for that technician', async () => {
+  const db = new FakeClient();
+  await hold(db, { caseId: 1, amount: 325 });
+  db.jobs.set(10, { finished_at: '2026-06-20T10:00:00+07:00' });
+  await release(db, { caseId: 1 });
+
+  db.failNextAdjustmentInserts = 1;
+  await assert.rejects(
+    () => holdOriginalIncomeForReworkCase(db, {
+      reworkCaseId: 2, jobId: 10, technicianUsername: 'A2MKUNG',
+      originalFinishedAt: '2026-07-01T10:00:00+07:00', actor: 'test',
+    }),
+    (error) => error.message === 'SIMULATED_ADJUSTMENT_INSERT_FAILURE'
+  );
+  assert.equal((await getHoldsForReworkCase(db, 2)).length, 0, 'no hold row may exist when its offset adjustment never committed');
+});
+
+test('a previous released hold with a zero released_amount is ignored as a source, falling through to other authoritative sources', async () => {
+  const db = new FakeClient();
+  db.holds.push({
+    hold_id: db.nextHoldId++, rework_case_id: 1, technician_username: 'A2MKUNG', job_id: 10,
+    held_amount: 0, hold_status: 'released', released_amount: 0,
+    release_payout_id: 'payout_2026-07_10', release_adjustment_id: 1,
+  });
+
+  await assert.rejects(
+    () => holdOriginalIncomeForReworkCase(db, {
+      reworkCaseId: 2, jobId: 10, technicianUsername: 'A2MKUNG',
+      originalFinishedAt: '2026-07-01T10:00:00+07:00', actor: 'test',
+    }),
+    (error) => error.status === 409 && error.message === 'NO_AUTHORITATIVE_ORIGINAL_INCOME'
+  );
+  assert.equal((await getHoldsForReworkCase(db, 2)).length, 0);
 });

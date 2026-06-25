@@ -12698,6 +12698,13 @@ await pool.query(`CREATE INDEX IF NOT EXISTS idx_income_tech_overrides_enabled O
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_trih_technician ON public.technician_rework_income_holds(technician_username, created_at DESC)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_trih_status ON public.technician_rework_income_holds(hold_status, created_at DESC)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_trih_rework_case ON public.technician_rework_income_holds(rework_case_id)`);
+    // Second/third/Nth rework round support (see migrations/technician_rework_income_hold_release.sql)
+    await pool.query(`ALTER TABLE public.technician_rework_income_holds ADD COLUMN IF NOT EXISTS source_kind TEXT`);
+    await pool.query(`ALTER TABLE public.technician_rework_income_holds DROP CONSTRAINT IF EXISTS technician_rework_income_holds_source_kind_check`);
+    await pool.query(`ALTER TABLE public.technician_rework_income_holds ADD CONSTRAINT technician_rework_income_holds_source_kind_check CHECK (source_kind IS NULL OR source_kind IN ('original_income', 'previous_rework_release'))`);
+    await pool.query(`ALTER TABLE public.technician_rework_income_holds ADD COLUMN IF NOT EXISTS previous_rework_case_id BIGINT REFERENCES public.technician_rework_cases(rework_case_id) ON DELETE SET NULL`);
+    await pool.query(`ALTER TABLE public.technician_rework_income_holds ADD COLUMN IF NOT EXISTS previous_release_adjustment_id BIGINT REFERENCES public.technician_payout_adjustments(adj_id) ON DELETE SET NULL`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_trih_previous_rework_case ON public.technician_rework_income_holds(previous_rework_case_id) WHERE previous_rework_case_id IS NOT NULL`);
 
     await pool.query(`
       CREATE TABLE IF NOT EXISTS public.technician_deduction_audit_logs (

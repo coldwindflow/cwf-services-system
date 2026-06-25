@@ -121,3 +121,28 @@ CREATE INDEX IF NOT EXISTS idx_trih_job_id ON public.technician_rework_income_ho
 CREATE INDEX IF NOT EXISTS idx_trih_technician ON public.technician_rework_income_holds(technician_username, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_trih_status ON public.technician_rework_income_holds(hold_status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_trih_rework_case ON public.technician_rework_income_holds(rework_case_id);
+
+-- Second/third/Nth rework round support: when a hold's amount is sourced from
+-- a PRIOR rework round's already-released ledger entry (rather than the job's
+-- original, not-yet-paid income), record exactly which case/adjustment it is
+-- offsetting, for audit and for the duplicate-release smoke tests. Purely
+-- additive, NULL on every pre-existing row, never backfilled.
+ALTER TABLE public.technician_rework_income_holds
+  ADD COLUMN IF NOT EXISTS source_kind TEXT;
+ALTER TABLE public.technician_rework_income_holds
+  DROP CONSTRAINT IF EXISTS technician_rework_income_holds_source_kind_check;
+ALTER TABLE public.technician_rework_income_holds
+  ADD CONSTRAINT technician_rework_income_holds_source_kind_check CHECK (
+    source_kind IS NULL OR source_kind IN ('original_income', 'previous_rework_release')
+  );
+
+ALTER TABLE public.technician_rework_income_holds
+  ADD COLUMN IF NOT EXISTS previous_rework_case_id BIGINT
+    REFERENCES public.technician_rework_cases(rework_case_id) ON DELETE SET NULL;
+ALTER TABLE public.technician_rework_income_holds
+  ADD COLUMN IF NOT EXISTS previous_release_adjustment_id BIGINT
+    REFERENCES public.technician_payout_adjustments(adj_id) ON DELETE SET NULL;
+
+CREATE INDEX IF NOT EXISTS idx_trih_previous_rework_case
+  ON public.technician_rework_income_holds(previous_rework_case_id)
+  WHERE previous_rework_case_id IS NOT NULL;

@@ -74,6 +74,22 @@ async function findExistingPeriodStatus(client, target) {
   return q.rows[0] ? String(q.rows[0].status || '').trim() : null;
 }
 
+// Loads the real period row a previous rework release actually landed in, by
+// its real payout_id — never recomputed from a date. A second rework round
+// must offset the prior round's release at the place it actually happened,
+// not at wherever payoutTargetForDate(originalFinishedAt) happens to point.
+async function loadPeriodByPayoutId(client, payoutId) {
+  if (!payoutId) return null;
+  const q = await client.query(
+    `SELECT payout_id, period_type, period_start, period_end, status
+       FROM public.technician_payout_periods
+      WHERE payout_id=$1
+      LIMIT 1`,
+    [payoutId]
+  );
+  return q.rows[0] || null;
+}
+
 async function resolveOpenTargetPeriodFromTarget(client, firstTarget, actor) {
   let target = firstTarget;
   for (let i = 0; i < 24; i += 1) {
@@ -194,16 +210,41 @@ async function loadOriginalIncomeCandidates(client, opts) {
 
   const previousReleased = await loadPreviousReleasedHoldRows(client, jobId, opts.reworkCaseId);
   if (previousReleased.length) {
-    rows = uniqueTechnicianRows(previousReleased.map((row) => ({
-      technician_username: row.technician_username,
-      amount: row.released_amount != null ? row.released_amount : row.held_amount,
-    })));
+    const byTech = new Map();
+    for (const hold of previousReleased) {
+      const tech = String(hold.technician_username || '').trim();
+      if (!tech) continue;
+      const heldAmount = money(hold.held_amount);
+      const releasedAmount = hold.released_amount != null ? money(hold.released_amount) : heldAmount;
+      // Invariant: a release can never exceed what was held. A violation here
+      // means the ledger is corrupt for this job — refuse to guess, 409 out.
+      if (releasedAmount > heldAmount + 0.0001) {
+        const err = new Error('PREVIOUS_HOLD_RELEASED_EXCEEDS_HELD');
+        err.status = 409;
+        throw err;
+      }
+      if (releasedAmount <= 0) continue;
+      if (!hold.release_payout_id) {
+        const err = new Error('PREVIOUS_RELEASE_PAYOUT_MISSING');
+        err.status = 409;
+        throw err;
+      }
+      byTech.set(tech, {
+        technician_username: tech,
+        amount: releasedAmount,
+        source_kind: 'previous_rework_release',
+        source_payout_id: hold.release_payout_id,
+        previous_rework_case_id: hold.rework_case_id,
+        previous_release_adjustment_id: hold.release_adjustment_id,
+      });
+    }
+    rows = [...byTech.values()];
   }
 
   if (!rows.length && Array.isArray(opts.originalIncomeRows) && opts.originalIncomeRows.length) {
     rows = uniqueTechnicianRows(
       opts.originalIncomeRows.filter((row) => Number(row?.job_id ?? jobId) === jobId)
-    );
+    ).map((row) => ({ ...row, source_kind: 'original_income' }));
   }
 
   if (!rows.length) {
@@ -216,7 +257,7 @@ async function loadOriginalIncomeCandidates(client, opts) {
           GROUP BY technician_username`,
         [String(jobId), sourceTarget.payout_id]
       );
-      rows = uniqueTechnicianRows(q.rows);
+      rows = uniqueTechnicianRows(q.rows).map((row) => ({ ...row, source_kind: 'original_income' }));
     } catch (_) {
       rows = [];
     }
@@ -226,10 +267,10 @@ async function loadOriginalIncomeCandidates(client, opts) {
     && !rows.some((row) => row.technician_username === preferredTech)
     && Number.isFinite(Number(opts.originalEarnAmount))
     && money(opts.originalEarnAmount) > 0) {
-    rows.push({ technician_username: preferredTech, amount: money(opts.originalEarnAmount) });
+    rows.push({ technician_username: preferredTech, amount: money(opts.originalEarnAmount), source_kind: 'original_income' });
   }
 
-  return { sourceTarget, rows: uniqueTechnicianRows(rows) };
+  return { sourceTarget, rows: rows.filter((row) => money(row.amount) > 0) };
 }
 
 async function insertAdjustment(client, params) {
@@ -250,11 +291,98 @@ async function insertAdjustment(client, params) {
   return q.rows[0];
 }
 
+// A hold sourced from a PRIOR rework round's already-released amount is
+// fundamentally different from a hold sourced from the job's original
+// (not-yet-paid-out) income: the prior release is a real, permanent
+// adjustment row that already exists in the ledger regardless of period
+// status, so it must ALWAYS be offset by an explicit negative adjustment —
+// there is no "draft period, nothing to do" shortcut here, unlike the
+// original-income path where a still-draft period simply never generates
+// the now-excluded gross line in the first place.
+async function createPreviousReleaseOffsetHold(client, opts, amount) {
+  if (amount <= 0) {
+    const q = await client.query(
+      `INSERT INTO public.technician_rework_income_holds
+        (rework_case_id, technician_username, job_id, held_amount, source_payout_id,
+         source_period_status_at_hold, hold_status, source_kind, previous_rework_case_id,
+         previous_release_adjustment_id, created_by)
+       VALUES($1,$2,$3,0,$4,$5,'already_paid_no_action',$6,$7,$8,$9)
+       RETURNING *`,
+      [
+        opts.reworkCaseId,
+        opts.technicianUsername,
+        opts.jobId,
+        opts.sourcePayoutId,
+        opts.sourcePeriod.status,
+        'previous_rework_release',
+        opts.previousReworkCaseId || null,
+        opts.previousReleaseAdjustmentId || null,
+        opts.actor,
+      ]
+    );
+    return { already_held: false, held: false, row: q.rows[0] };
+  }
+
+  const status = String(opts.sourcePeriod.status || '').trim();
+  let targetPayoutId = opts.sourcePayoutId;
+  let sourceStatusLabel = status;
+
+  if (status === 'locked' || status === 'paid') {
+    const nextTarget = nextPayoutTarget({ payout_id: opts.sourcePayoutId, period_type: opts.sourcePeriod.period_type });
+    const carried = await resolveOpenTargetPeriodFromTarget(client, nextTarget, opts.actor);
+    targetPayoutId = carried.period.payout_id;
+    sourceStatusLabel = `${status}_carried_forward:${targetPayoutId}`;
+  } else if (status !== 'draft') {
+    const err = new Error('PREVIOUS_RELEASE_PERIOD_STATUS_UNKNOWN');
+    err.status = 409;
+    throw err;
+  }
+
+  const holdAdjustment = await insertAdjustment(client, {
+    payoutId: targetPayoutId,
+    technicianUsername: opts.technicianUsername,
+    jobKey: adjustmentJobKey('hold', opts.reworkCaseId, opts.jobId),
+    amount: -amount,
+    reason: `${HOLD_REASON_TAG} หักล้างรายได้ที่คืนไปแล้วจาก rework รอบก่อน previous_rework_case_id=${opts.previousReworkCaseId} previous_release_adjustment_id=${opts.previousReleaseAdjustmentId} rework_case_id=${opts.reworkCaseId} job_id=${opts.jobId}`,
+    actor: opts.actor,
+  });
+  await recalcPaymentStatus(client, targetPayoutId, opts.technicianUsername);
+
+  const q = await client.query(
+    `INSERT INTO public.technician_rework_income_holds
+      (rework_case_id, technician_username, job_id, held_amount, source_payout_id,
+       source_period_status_at_hold, hold_adjustment_id, hold_status, source_kind,
+       previous_rework_case_id, previous_release_adjustment_id, created_by)
+     VALUES($1,$2,$3,$4,$5,$6,$7,'held',$8,$9,$10,$11)
+     RETURNING *`,
+    [
+      opts.reworkCaseId,
+      opts.technicianUsername,
+      opts.jobId,
+      amount,
+      opts.sourcePayoutId,
+      sourceStatusLabel,
+      holdAdjustment.adj_id,
+      'previous_rework_release',
+      opts.previousReworkCaseId || null,
+      opts.previousReleaseAdjustmentId || null,
+      opts.actor,
+    ]
+  );
+
+  return { already_held: false, held: true, hold_adjustment: holdAdjustment, row: q.rows[0] };
+}
+
 async function createOneHold(client, opts) {
   const existing = await getExistingHold(client, opts.reworkCaseId, opts.technicianUsername, true);
   if (existing) return { already_held: true, held: existing.hold_status === 'held', row: existing };
 
   const amount = money(opts.amount);
+
+  if (opts.sourceKind === 'previous_rework_release') {
+    return createPreviousReleaseOffsetHold(client, opts, amount);
+  }
+
   if (amount <= 0) {
     const q = await client.query(
       `INSERT INTO public.technician_rework_income_holds
@@ -362,15 +490,36 @@ async function holdOriginalIncomeForReworkCase(client, opts = {}) {
 
   const results = [];
   for (const candidate of rows) {
-    results.push(await createOneHold(client, {
-      reworkCaseId,
-      jobId,
-      technicianUsername: candidate.technician_username,
-      amount: candidate.amount,
-      sourceTarget,
-      sourcePeriodStatus,
-      actor,
-    }));
+    if (candidate.source_kind === 'previous_rework_release') {
+      const sourcePeriod = await loadPeriodByPayoutId(client, candidate.source_payout_id);
+      if (!sourcePeriod) {
+        const err = new Error('PREVIOUS_RELEASE_PERIOD_NOT_FOUND');
+        err.status = 409;
+        throw err;
+      }
+      results.push(await createOneHold(client, {
+        reworkCaseId,
+        jobId,
+        technicianUsername: candidate.technician_username,
+        amount: candidate.amount,
+        sourceKind: 'previous_rework_release',
+        sourcePayoutId: candidate.source_payout_id,
+        sourcePeriod,
+        previousReworkCaseId: candidate.previous_rework_case_id,
+        previousReleaseAdjustmentId: candidate.previous_release_adjustment_id,
+        actor,
+      }));
+    } else {
+      results.push(await createOneHold(client, {
+        reworkCaseId,
+        jobId,
+        technicianUsername: candidate.technician_username,
+        amount: candidate.amount,
+        sourceTarget,
+        sourcePeriodStatus,
+        actor,
+      }));
+    }
   }
 
   const persisted = await getHoldsForReworkCase(client, reworkCaseId, { forUpdate: false });
