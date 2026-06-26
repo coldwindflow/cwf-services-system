@@ -1205,24 +1205,16 @@ function renderReviewItemFilterOptions() {
   select.value = current;
 }
 
+// item_id filtering stays client-side over the already status/source-filtered
+// fetch (see loadReviews) -- status and source are sent to the server so an
+// "unassigned"/"approved_unassigned" filter matches against the *entire*
+// table in SQL, not just the most recent 200 rows fetched before filtering.
 function renderReviewList() {
   const box = el("review_list");
-  const statusFilter = el("review_filter_status").value;
-  const sourceFilter = el("review_filter_source").value;
   const itemFilter = el("review_filter_item").value;
-  const filtered = reviewItems.filter((r) => {
-    const effectiveId = reviewEffectiveItemId(r);
-    if (statusFilter === "unassigned") {
-      if (effectiveId) return false;
-    } else if (statusFilter === "approved_unassigned") {
-      if (!(r.moderation_status === "approved" && !effectiveId)) return false;
-    } else if (statusFilter && r.moderation_status !== statusFilter) {
-      return false;
-    }
-    if (sourceFilter && r.review_source !== sourceFilter) return false;
-    if (itemFilter && String(effectiveId) !== String(itemFilter)) return false;
-    return true;
-  });
+  const filtered = itemFilter
+    ? reviewItems.filter((r) => String(reviewEffectiveItemId(r)) === String(itemFilter))
+    : reviewItems;
   if (!filtered.length) {
     box.innerHTML = `<div class="asc-empty">ไม่พบรีวิวที่ตรงกับตัวกรอง</div>`;
     return;
@@ -1233,8 +1225,14 @@ function renderReviewList() {
 async function loadReviews() {
   const box = el("review_list");
   box.innerHTML = `<div class="asc-loading">กำลังโหลดรีวิว...</div>`;
+  const statusFilter = el("review_filter_status").value;
+  const sourceFilter = el("review_filter_source").value;
+  const params = new URLSearchParams();
+  if (statusFilter) params.set("status", statusFilter);
+  if (sourceFilter) params.set("source", sourceFilter);
+  const qs = params.toString();
   try {
-    reviewItems = await apiFetch("/admin/catalog/reviews");
+    reviewItems = await apiFetch(`/admin/catalog/reviews${qs ? `?${qs}` : ""}`);
     renderReviewItemFilterOptions();
     renderReviewList();
   } catch (e) {
@@ -1339,8 +1337,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
   bindReviewListActions();
   el("btnReloadReviews").addEventListener("click", loadReviews);
-  el("review_filter_status").addEventListener("change", renderReviewList);
-  el("review_filter_source").addEventListener("change", renderReviewList);
+  el("review_filter_status").addEventListener("change", loadReviews);
+  el("review_filter_source").addEventListener("change", loadReviews);
   el("review_filter_item").addEventListener("change", renderReviewList);
   loadReviews();
 });

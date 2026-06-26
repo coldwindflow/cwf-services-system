@@ -528,7 +528,19 @@ module.exports = function createCatalogReviewRoutes(deps = {}) {
       const where = [];
       const params = [];
       let p = 1;
-      if (status) { params.push(status); where.push(`r.moderation_status = $${p++}`); }
+      // "unassigned"/"approved_unassigned" are pseudo-statuses (no effective
+      // item at all) rather than real moderation_status values, so they must
+      // be translated to an effective-item NULL check instead of an equality
+      // match -- this runs in SQL against the full table, not just the most
+      // recent 200 rows, so an older approved orphan review is never missed.
+      if (status === "unassigned") {
+        where.push(`${effectiveItemExpr} IS NULL`);
+      } else if (status === "approved_unassigned") {
+        where.push(`r.moderation_status = 'approved'`);
+        where.push(`${effectiveItemExpr} IS NULL`);
+      } else if (status) {
+        params.push(status); where.push(`r.moderation_status = $${p++}`);
+      }
       if (source) { params.push(source); where.push(`r.review_source = $${p++}`); }
       if (Number.isFinite(itemId) && itemId > 0) { params.push(itemId); where.push(`${effectiveItemExpr} = $${p++}`); }
 

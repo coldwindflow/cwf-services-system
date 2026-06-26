@@ -180,7 +180,14 @@ function makePool({ schemaReady = true, trackingSchemaReady = false, items = [],
         item_name: (state.items.find((it) => Number(it.item_id) === Number(r.item_id)) || {}).item_name || "?",
         assigned_item_name: r.assigned_item_id == null ? null : ((state.items.find((it) => Number(it.item_id) === Number(r.assigned_item_id)) || {}).item_name || "?"),
       }));
+      const effectiveIdOf = (r) => (r.assigned_item_id != null ? Number(r.assigned_item_id) : (r.item_id != null ? Number(r.item_id) : null));
       let idx = 0;
+      if (s.includes("IS NULL")) {
+        rows = rows.filter((r) => effectiveIdOf(r) == null);
+      }
+      if (s.includes("r.moderation_status = 'approved'")) {
+        rows = rows.filter((r) => r.moderation_status === "approved");
+      }
       if (s.includes("r.moderation_status = $")) {
         idx += 1;
         rows = rows.filter((r) => r.moderation_status === params[idx - 1]);
@@ -189,10 +196,15 @@ function makePool({ schemaReady = true, trackingSchemaReady = false, items = [],
         idx += 1;
         rows = rows.filter((r) => r.review_source === params[idx - 1]);
       }
-      if (s.includes("r.item_id = $")) {
+      if (s.includes("r.item_id = $") || s.includes("r.item_id) = $")) {
         idx += 1;
-        rows = rows.filter((r) => Number(r.item_id) === Number(params[idx - 1]));
+        rows = rows.filter((r) => effectiveIdOf(r) === Number(params[idx - 1]));
       }
+      // Mirror the real query's "ORDER BY r.created_at DESC LIMIT 200": the
+      // WHERE filter (above) must run before this truncation, exactly like
+      // real SQL, so a status filter can still reach an old row that a plain
+      // unfiltered fetch would never see.
+      rows = rows.slice().sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 200);
       return { rows };
     }
 
@@ -1222,5 +1234,47 @@ test("admin filter for 'unassigned' uses the effective item (assigned_item_id ||
     assert.equal(unassigned.length, 1);
     assert.equal(unassigned[0].review_id, 2);
     assert.equal(hasEffectiveItem.length, 2);
+  });
+});
+
+test("admin status=approved_unassigned/unassigned filters run server-side before the recency cap, so an old orphan review is never hidden by a newer batch of 200+ reviews", async () => {
+  const recentReviews = Array.from({ length: 205 }, (_, i) => ({
+    review_id: 100 + i,
+    item_id: 1,
+    completed_job_id: 1000 + i,
+    customer_identity: `recent-${i}`,
+    rating: 5,
+    comment: "ดี",
+    moderation_status: "pending",
+    created_at: `2026-06-${String(10 + (i % 15)).padStart(2, "0")}T00:00:00Z`,
+    review_source: "customer_app",
+    review_scope: "item",
+  }));
+  const oldOrphanApproved = {
+    review_id: 1, item_id: null, completed_job_id: 1, customer_identity: "OldCustomer", rating: 5, comment: "เก่า",
+    moderation_status: "approved", created_at: "2020-01-01T00:00:00Z", review_source: "tracking", review_scope: "overall", assigned_item_id: null,
+  };
+  const oldOrphanPending = {
+    review_id: 2, item_id: null, completed_job_id: 2, customer_identity: "OldCustomer2", rating: 4, comment: "เก่ามาก",
+    moderation_status: "pending", created_at: "2019-01-01T00:00:00Z", review_source: "tracking", review_scope: "overall", assigned_item_id: null,
+  };
+  const pool = makePool({
+    trackingSchemaReady: true,
+    items: [{ item_id: 1, item_name: "ล้างแอร์ผนัง" }],
+    reviews: [oldOrphanApproved, oldOrphanPending, ...recentReviews],
+  });
+  const router = createCatalogReviewRoutes({ pool, requireCustomerJwt: requireCustomerJwtFor(null), requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const unfiltered = await (await fetch(`${base}/admin/catalog/reviews`)).json();
+    assert.equal(unfiltered.length, 200, "the plain unfiltered admin fetch is capped at 200 most-recent rows");
+    assert.ok(!unfiltered.some((r) => r.review_id === 1), "the old approved-orphan review must be outside the unfiltered 200-row recency window");
+
+    const approvedUnassigned = await (await fetch(`${base}/admin/catalog/reviews?status=approved_unassigned`)).json();
+    assert.equal(approvedUnassigned.length, 1, "the status filter must run in SQL before the LIMIT, so it still finds the old row the unfiltered fetch can't see");
+    assert.equal(approvedUnassigned[0].review_id, 1);
+
+    const unassigned = await (await fetch(`${base}/admin/catalog/reviews?status=unassigned`)).json();
+    assert.equal(unassigned.length, 2);
+    assert.deepEqual(unassigned.map((r) => r.review_id).sort(), [1, 2]);
   });
 });

@@ -2,6 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
+const vm = require("node:vm");
 
 const commonJsSource = fs.readFileSync(path.join(__dirname, "..", "admin-v2-common.js"), "utf8");
 const catalogHtmlSource = fs.readFileSync(path.join(__dirname, "..", "admin-store-catalog.html"), "utf8");
@@ -536,11 +537,44 @@ test("admin page has a review moderation card with status/item filters and a rel
   assert.match(catalogHtmlSource, /id="review_list"/);
 });
 
-test("loadReviews fetches the admin moderation endpoint and renderReviewList applies status/item filters", () => {
-  assert.match(catalogJsSource, /async function loadReviews\(\)[\s\S]*?apiFetch\("\/admin\/catalog\/reviews"\)/);
-  assert.match(catalogJsSource, /function renderReviewList\(\)/);
-  assert.match(catalogJsSource, /el\("review_filter_status"\)\.value/);
-  assert.match(catalogJsSource, /el\("review_filter_item"\)\.value/);
+test("loadReviews sends status/source as server-side query params (so unassigned/approved_unassigned filter the full table, not just the latest fetched page)", async () => {
+  const calls = [];
+  const els = {
+    review_filter_status: { value: "" },
+    review_filter_source: { value: "" },
+    review_filter_item: { value: "" },
+    review_list: { innerHTML: "" },
+  };
+  const context = {
+    el(id) { return els[id]; },
+    escapeHtml(s) { return String(s); },
+    apiFetch: async (url) => { calls.push(url); return []; },
+    URLSearchParams,
+    console,
+  };
+  vm.createContext(context);
+  const effectiveIdFn = catalogJsSource.match(/function reviewEffectiveItemId\(review\)[\s\S]*?\n}\n/)[0];
+  const effectiveNameFn = catalogJsSource.match(/function reviewEffectiveItemName\(review\)[\s\S]*?\n}\n/)[0];
+  const fnSource = catalogJsSource.match(/function renderReviewItemFilterOptions\(\)[\s\S]*?\n}\n\nasync function loadReviews\(\)[\s\S]*?\n}\n/)[0];
+  vm.runInContext(`let reviewItems = [];\n${effectiveIdFn}\n${effectiveNameFn}\n${fnSource}`, context);
+
+  await vm.runInContext("loadReviews()", context);
+  assert.equal(calls[0], "/admin/catalog/reviews", "no filters selected must not send an empty querystring");
+
+  els.review_filter_status.value = "unassigned";
+  await vm.runInContext("loadReviews()", context);
+  assert.equal(calls[1], "/admin/catalog/reviews?status=unassigned");
+
+  els.review_filter_status.value = "approved_unassigned";
+  els.review_filter_source.value = "tracking";
+  await vm.runInContext("loadReviews()", context);
+  assert.equal(calls[2], "/admin/catalog/reviews?status=approved_unassigned&source=tracking");
+});
+
+test("status/source filter selects re-fetch from the server (loadReviews), item filter only re-renders client-side", () => {
+  assert.match(catalogJsSource, /el\("review_filter_status"\)\.addEventListener\("change",\s*loadReviews\)/);
+  assert.match(catalogJsSource, /el\("review_filter_source"\)\.addEventListener\("change",\s*loadReviews\)/);
+  assert.match(catalogJsSource, /el\("review_filter_item"\)\.addEventListener\("change",\s*renderReviewList\)/);
 });
 
 test("setReviewModerationStatus confirms before acting, PATCHes the review, and updates state without a full reload", () => {
