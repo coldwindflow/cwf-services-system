@@ -3,7 +3,27 @@
 
   const root = window.CWFCustomerAppV2 = window.CWFCustomerAppV2 || {};
 
-  let filterState = { search: "", category: "" };
+  let filterState = { search: "", category: "", acType: "", washVariant: "", btu: "", queueToday: false, sort: "recommended" };
+
+  const FILTER_AC_TYPES = [
+    { value: "wall", label: "แอร์ผนัง" },
+    { value: "fourway", label: "แอร์สี่ทิศทาง" },
+    { value: "hanging", label: "แอร์แขวน" },
+    { value: "ceiling", label: "แอร์เปลือยใต้ฝ้า" },
+  ];
+  const FILTER_WASH_VARIANTS = [
+    { value: "normal", label: "ล้างปกติ" },
+    { value: "premium", label: "ล้างพรีเมียม" },
+    { value: "coil", label: "แขวนคอยล์" },
+    { value: "overhaul", label: "ตัดล้างใหญ่" },
+  ];
+  const FILTER_BTU_OPTIONS = [9000, 12000, 18000, 24000, 30000];
+  const SORT_OPTIONS = [
+    { value: "recommended", label: "แนะนำโดย CWF" },
+    { value: "booking_count", label: "จองมากที่สุด" },
+    { value: "price_low", label: "ราคา: ต่ำไปสูง" },
+    { value: "price_high", label: "ราคา: สูงไปต่ำ" },
+  ];
 
   function categoriesFromItems(items) {
     const set = new Set();
@@ -209,14 +229,11 @@
     });
   }
 
-  // The item the customer is currently viewing price/short-info for: either the
-  // originally loaded detail item, or whichever sibling they tapped in the BTU
-  // selector. Never a network re-fetch -- purely a client-side selection among
-  // already-known real catalog rows.
-  function currentVariantDisplayItem(item, siblings) {
-    if (!selectedVariantItemId || String(selectedVariantItemId) === String(item.item_id)) return item;
-    return (siblings || []).find((s) => String(s.item_id) === String(selectedVariantItemId)) || item;
-  }
+  // Selecting a BTU/spec sibling navigates to that item's own detail route
+  // (see the [data-store-variant-option] handler below). This makes the
+  // current `item` the single source of truth for the *entire* detail page --
+  // gallery, badges, name, rating, descriptions, related products, reviews --
+  // never a partial "display item" computed separately from what was loaded.
 
   // Picks the one item to represent a wash-method group in the related
   // slider: prefer the candidate whose real BTU is closest to the item
@@ -279,14 +296,60 @@
     return [{ ...item, is_current: true }, ...others];
   }
 
+  function track(eventName, fields) {
+    if (root.analytics && typeof root.analytics.track === "function") {
+      root.analytics.track(eventName, fields);
+    }
+  }
+
+  function trackFilter(filterName, filterValue) {
+    track("cwf_store_filter", { filter_name: filterName, filter_value: filterValue });
+  }
+
+  function trackItemEvent(eventName, item, extra) {
+    if (!item) return;
+    track(eventName, Object.assign({
+      item_id: item.item_id,
+      category: canonicalJobCategory(item) || undefined,
+      ac_type: canonicalAcType(item) || undefined,
+      btu: itemBtuValue(item) || undefined,
+      price: effectiveSalePrice(item) ?? undefined,
+    }, extra || {}));
+  }
+
   function applyFilters(items) {
     const search = filterState.search.trim().toLowerCase();
     const category = filterState.category;
-    return (items || []).filter((item) => {
+    const filtered = (items || []).filter((item) => {
       if (category && String(item.item_category || "") !== category) return false;
       if (search && !String(item.item_name || "").toLowerCase().includes(search)) return false;
+      if (filterState.acType && canonicalAcType(item) !== filterState.acType) return false;
+      if (filterState.washVariant && canonicalWashVariant(item) !== filterState.washVariant) return false;
+      if (filterState.btu && itemBtuValue(item) !== Number(filterState.btu)) return false;
+      if (filterState.queueToday && item.has_queue_today !== true) return false;
       return true;
     });
+    return sortItems(filtered);
+  }
+
+  function sortItems(items) {
+    const list = items.slice();
+    if (filterState.sort === "booking_count") {
+      list.sort((a, b) => Number(b.booking_count || 0) - Number(a.booking_count || 0));
+    } else if (filterState.sort === "price_low" || filterState.sort === "price_high") {
+      const dir = filterState.sort === "price_low" ? 1 : -1;
+      list.sort((a, b) => {
+        const aPrice = effectiveSalePrice(a);
+        const bPrice = effectiveSalePrice(b);
+        if (aPrice === null && bPrice === null) return 0;
+        if (aPrice === null) return 1;
+        if (bPrice === null) return -1;
+        return (aPrice - bPrice) * dir;
+      });
+    }
+    // "recommended" keeps the server-provided order (already prioritized by
+    // is_featured/priority) -- no client resort needed.
+    return list;
   }
 
   function itemGalleryImages(item) {
@@ -325,6 +388,31 @@
     const pct = salePercentOff(item);
     const text = pct ? `SALE -${pct}%` : "SALE";
     return `<span class="store-sale-badge" aria-label="ลดราคา">${root.utils.escapeHtml(text)}</span>`;
+  }
+
+  function promoEndDateLabel(item) {
+    if (!item.effective_to) return "";
+    const dt = new Date(item.effective_to);
+    if (Number.isNaN(dt.getTime())) return "";
+    return dt.toLocaleDateString("th-TH", { dateStyle: "medium" });
+  }
+
+  // Only ever rendered when hasPromo(item) is true (a real, currently-active
+  // promotion rule) -- campaign_name/savings/end date all come straight from
+  // the priced promotion rule, never a guessed/static label.
+  function renderPromoInfo(item) {
+    if (!hasPromo(item)) return "";
+    const name = String(item.campaign_name || item.price_label || "").trim();
+    const normal = Number(item.normal_price);
+    const sale = Number(item.active_price);
+    const savings = Number.isFinite(normal) && Number.isFinite(sale) && sale < normal ? normal - sale : null;
+    const endLabel = promoEndDateLabel(item);
+    const parts = [];
+    if (name) parts.push(`<span class="store-promo-name">${root.utils.escapeHtml(name)}</span>`);
+    if (savings) parts.push(`<span class="store-promo-savings">ประหยัด ${root.utils.escapeHtml(root.utils.formatBaht(savings))}</span>`);
+    if (endLabel) parts.push(`<span class="store-promo-end">หมดเขต ${root.utils.escapeHtml(endLabel)}</span>`);
+    if (!parts.length) return "";
+    return `<div class="store-promo-info">${parts.join("")}</div>`;
   }
 
   // Real review aggregates only. item.rating_average/review_count come straight
@@ -446,6 +534,7 @@
           ${promo ? `<span class="price-strike">${root.utils.escapeHtml(root.utils.formatBaht(item.normal_price))}</span>` : ""}
           ${unit && !priceIsAsk(item) ? `<span class="muted">/ ${root.utils.escapeHtml(unit)}</span>` : ""}
         </div>
+        ${renderPromoInfo(item)}
         <div class="store-card-actions">
           ${bookable
             ? `<button class="primary-btn" type="button" data-store-book="${root.utils.escapeHtml(id)}">จองคิว</button>`
@@ -483,6 +572,25 @@
         <select class="store-category-select" data-store-category aria-label="หมวดหมู่">
           <option value="">ทั้งหมด</option>
           ${categories.map((cat) => `<option value="${root.utils.escapeHtml(cat)}"${filterState.category === cat ? " selected" : ""}>${root.utils.escapeHtml(cat)}</option>`).join("")}
+        </select>
+        <select class="store-actype-select" data-store-actype aria-label="ชนิดแอร์">
+          <option value="">ชนิดแอร์ทั้งหมด</option>
+          ${FILTER_AC_TYPES.map((opt) => `<option value="${opt.value}"${filterState.acType === opt.value ? " selected" : ""}>${root.utils.escapeHtml(opt.label)}</option>`).join("")}
+        </select>
+        <select class="store-wash-select" data-store-wash aria-label="วิธีล้าง">
+          <option value="">วิธีล้างทั้งหมด</option>
+          ${FILTER_WASH_VARIANTS.map((opt) => `<option value="${opt.value}"${filterState.washVariant === opt.value ? " selected" : ""}>${root.utils.escapeHtml(opt.label)}</option>`).join("")}
+        </select>
+        <select class="store-btu-select" data-store-btu aria-label="ขนาด BTU">
+          <option value="">BTU ทั้งหมด</option>
+          ${FILTER_BTU_OPTIONS.map((btu) => `<option value="${btu}"${String(filterState.btu) === String(btu) ? " selected" : ""}>${btu.toLocaleString("th-TH")} BTU</option>`).join("")}
+        </select>
+        <label class="store-queue-today-chip">
+          <input type="checkbox" data-store-queue-today${filterState.queueToday ? " checked" : ""}>
+          <span>มีคิววันนี้</span>
+        </label>
+        <select class="store-sort-select" data-store-sort aria-label="เรียงตาม">
+          ${SORT_OPTIONS.map((opt) => `<option value="${opt.value}"${filterState.sort === opt.value ? " selected" : ""}>${root.utils.escapeHtml(opt.label)}</option>`).join("")}
         </select>
       </div>
       <div data-store-grid-mount>${renderGrid(items)}</div>
@@ -623,16 +731,21 @@
         const item = (root.state.catalog.items || []).find((it) => String(it.item_id) === String(id));
         const draftItem = root.services.catalogItemToCommerceDraft(item);
         if (!draftItem || !root.services.applyCommerceDraft("scheduled", draftItem)) {
+          trackItemEvent("cwf_store_contact_admin", item, { source: "store_list" });
           root.ui.openContactSheet(container, { title: item?.item_name || "รายการนี้" });
           return;
         }
+        trackItemEvent("cwf_store_begin_booking", item, { source: "store_list" });
         root.utils.routeTo("scheduled");
       });
     });
     container.querySelectorAll("[data-store-contact]").forEach((button) => {
       button.addEventListener("click", (event) => {
         event.stopPropagation && event.stopPropagation();
+        const id = button.getAttribute("data-store-contact");
+        const item = (root.state.catalog.items || []).find((it) => String(it.item_id) === String(id));
         const name = button.getAttribute("data-store-contact-name") || "รายการนี้";
+        trackItemEvent("cwf_store_contact_admin", item, { source: "store_list" });
         root.ui.openContactSheet(container, { title: name });
       });
     });
@@ -665,6 +778,47 @@
     if (category) {
       category.addEventListener("change", () => {
         filterState.category = category.value || "";
+        trackFilter("category", filterState.category);
+        patchGrid(container);
+      });
+    }
+    const acType = container.querySelector("[data-store-actype]");
+    if (acType) {
+      acType.addEventListener("change", () => {
+        filterState.acType = acType.value || "";
+        trackFilter("ac_type", filterState.acType);
+        patchGrid(container);
+      });
+    }
+    const wash = container.querySelector("[data-store-wash]");
+    if (wash) {
+      wash.addEventListener("change", () => {
+        filterState.washVariant = wash.value || "";
+        trackFilter("wash_variant", filterState.washVariant);
+        patchGrid(container);
+      });
+    }
+    const btu = container.querySelector("[data-store-btu]");
+    if (btu) {
+      btu.addEventListener("change", () => {
+        filterState.btu = btu.value || "";
+        trackFilter("btu", filterState.btu);
+        patchGrid(container);
+      });
+    }
+    const queueToday = container.querySelector("[data-store-queue-today]");
+    if (queueToday) {
+      queueToday.addEventListener("change", () => {
+        filterState.queueToday = !!queueToday.checked;
+        trackFilter("queue_today", filterState.queueToday);
+        patchGrid(container);
+      });
+    }
+    const sort = container.querySelector("[data-store-sort]");
+    if (sort) {
+      sort.addEventListener("change", () => {
+        filterState.sort = sort.value || "recommended";
+        trackFilter("sort", filterState.sort);
         patchGrid(container);
       });
     }
@@ -745,10 +899,6 @@
     `;
   }
 
-  // Currently selected BTU/spec sibling on the product detail page (per
-  // requirement #5). Reset whenever a new detail item is loaded.
-  let selectedVariantItemId = null;
-
   // Icon shown to the left of each accordion header -- a fixed, deterministic
   // mapping by section title (presentation only, not derived from any
   // per-item data) so every card is instantly recognizable as a tappable row.
@@ -784,7 +934,7 @@
 
   function renderVariantSelector(item, siblings) {
     if (!siblings || siblings.length < 2) return "";
-    const selectedId = selectedVariantItemId || item.item_id;
+    const selectedId = item.item_id;
     return `
       <div class="store-detail-variant-selector" data-store-variant-selector>
         <span class="store-detail-variant-label">เลือกขนาด BTU</span>
@@ -1065,9 +1215,9 @@
     return `
       <h3>รีวิวจากลูกค้า</h3>
       <div class="store-reviews-summary">
-        <span class="store-rating-label">รีวิว</span>
-        <span class="store-rating-stars">${renderReviewStars(hasReviews ? Math.round(avg) : 0, false)}</span>
-        ${hasReviews ? `<span class="store-rating-value">${formatRatingAverage(avg)}</span><span class="store-rating-count">(${count})</span>` : `<span class="store-rating-count store-rating-count-empty">ยังไม่มีรีวิว</span>`}
+        ${hasReviews
+          ? `<span class="store-rating-label">รีวิว</span><span class="store-rating-stars">${renderReviewStars(Math.round(avg), false)}</span><span class="store-rating-value">${formatRatingAverage(avg)}</span><span class="store-rating-count">(${count})</span>`
+          : `<span class="store-rating-count store-rating-count-empty">ยังไม่มีรีวิวจากลูกค้าสำหรับบริการนี้</span>`}
       </div>
       <div class="store-reviews-list-mount">${renderReviewsList()}</div>
       <div class="store-review-write-mount">${renderWriteReviewPanel(item)}</div>
@@ -1160,10 +1310,9 @@
     const highlights = Array.isArray(item.highlights) ? item.highlights : [];
     const allItems = (root.state.catalog && root.state.catalog.items) || [];
     const siblings = variantSiblings(item, allItems);
-    const displayItem = currentVariantDisplayItem(item, siblings);
-    const unit = displayItem.unit_label || "";
-    const promo = hasPromo(displayItem);
-    const bookable = isBookable(displayItem);
+    const unit = item.unit_label || "";
+    const promo = hasPromo(item);
+    const bookable = isBookable(item);
     const showCompare = canonicalAcType(item) === "wall" && canonicalJobCategory(item) === "wash";
     const ctaButton = bookable
       ? `<button class="primary-btn" type="button" data-store-detail-book="1">จองคิว</button>`
@@ -1180,12 +1329,13 @@
       ${renderRatingBadge(item)}
       ${renderBookingCountLabel(item)}
       <div class="store-detail-price" data-store-detail-price>
-        <span class="price-text${priceIsAsk(displayItem) ? " is-estimate" : ""}">${root.utils.escapeHtml(priceLabel(displayItem))}</span>
-        ${promo ? `<span class="price-strike">${root.utils.escapeHtml(root.utils.formatBaht(displayItem.normal_price))}</span>` : ""}
-        ${unit && !priceIsAsk(displayItem) ? `<span class="muted">/ ${root.utils.escapeHtml(unit)}</span>` : ""}
+        <span class="price-text${priceIsAsk(item) ? " is-estimate" : ""}">${root.utils.escapeHtml(priceLabel(item))}</span>
+        ${promo ? `<span class="price-strike">${root.utils.escapeHtml(root.utils.formatBaht(item.normal_price))}</span>` : ""}
+        ${unit && !priceIsAsk(item) ? `<span class="muted">/ ${root.utils.escapeHtml(unit)}</span>` : ""}
       </div>
+      ${renderPromoInfo(item)}
       ${renderVariantSelector(item, siblings)}
-      ${displayItem.short_description ? `<div class="store-detail-section store-detail-summary"><p>${root.utils.escapeHtml(displayItem.short_description)}</p></div>` : ""}
+      ${item.short_description ? `<div class="store-detail-section store-detail-summary"><p>${root.utils.escapeHtml(item.short_description)}</p></div>` : ""}
       <div class="store-detail-inline-cta">${ctaButton}</div>
       <div class="store-detail-accordion-group">
         ${renderAccordionSection("จุดเด่นของบริการ", highlights.length ? `
@@ -1269,19 +1419,20 @@
       bookButton.addEventListener("click", () => {
         const item = root.state.storeDetail?.data;
         if (!item) return;
-        const allItems = (root.state.catalog && root.state.catalog.items) || [];
-        const target = currentVariantDisplayItem(item, variantSiblings(item, allItems));
-        const draftItem = root.services.catalogItemToCommerceDraft(target);
+        const draftItem = root.services.catalogItemToCommerceDraft(item);
         if (!draftItem || !root.services.applyCommerceDraft("scheduled", draftItem)) {
-          root.ui.openContactSheet(container, { title: target?.item_name || item?.item_name || "รายการนี้" });
+          trackItemEvent("cwf_store_contact_admin", item, { source: "store_detail" });
+          root.ui.openContactSheet(container, { title: item?.item_name || "รายการนี้" });
           return;
         }
+        trackItemEvent("cwf_store_begin_booking", item, { source: "store_detail" });
         root.utils.routeTo("scheduled");
       });
     });
     container.querySelectorAll("[data-store-detail-contact]").forEach((contactButton) => {
       contactButton.addEventListener("click", () => {
         const item = root.state.storeDetail?.data;
+        trackItemEvent("cwf_store_contact_admin", item, { source: "store_detail" });
         root.ui.openContactSheet(container, { title: item?.item_name || "รายการนี้" });
       });
     });
@@ -1293,12 +1444,32 @@
     });
     container.querySelectorAll("[data-store-variant-option]").forEach((button) => {
       button.addEventListener("click", () => {
-        selectedVariantItemId = button.getAttribute("data-store-variant-option");
-        patchDetailBody(container);
+        const id = button.getAttribute("data-store-variant-option");
+        if (String(id) === String(detailItemId())) return;
+        track("cwf_store_variant_select", { item_id: id, source: "store_detail" });
+        // Routes to the sibling's own detail URL rather than swapping a local
+        // "display item" -- this makes the route param the single source of
+        // truth for the whole page (gallery/badges/descriptions/reviews all
+        // reload for the newly selected variant via loadDetail()), so there is
+        // never a mismatch between the price shown and the rest of the page.
+        root.utils.routeTo(`storeItem-${id}`);
       });
     });
     container.querySelectorAll("[data-store-related-item]").forEach((card) => {
-      card.addEventListener("click", () => goToDetail(card.getAttribute("data-store-related-item")));
+      card.addEventListener("click", () => {
+        const id = card.getAttribute("data-store-related-item");
+        track("cwf_store_related_click", { item_id: id, source: "store_detail" });
+        goToDetail(id);
+      });
+    });
+    container.querySelectorAll(".store-detail-accordion").forEach((details) => {
+      details.addEventListener("toggle", () => {
+        if (!details.open) return;
+        const title = details.querySelector(".store-detail-accordion-title");
+        trackItemEvent("cwf_store_detail_expand", root.state.storeDetail?.data, {
+          source: title ? title.textContent : "",
+        });
+      });
     });
     const item = root.state.storeDetail?.data;
     if (item) bindReviewsSection(container, item);
@@ -1330,7 +1501,6 @@
 
   async function loadDetail(container, itemId) {
     resetReviewsState(itemId);
-    selectedVariantItemId = null;
     if (!itemId) {
       root.state.setStoreDetail({ status: "error", itemId: "", data: null, error: "ไม่พบรายการนี้" });
       patchDetailBody(container);
@@ -1341,6 +1511,7 @@
     try {
       const data = await root.api.loadCatalogItem(itemId);
       root.state.setStoreDetail({ status: "success", itemId, data, error: "" });
+      trackItemEvent("cwf_store_product_view", data, { source: "store_detail" });
       patchDetailBody(container);
       loadReviewsList(container, data);
       loadEligibility(container, data);
@@ -1357,7 +1528,8 @@
 
   const store = {
     render(container) {
-      filterState = { search: "", category: "" };
+      filterState = { search: "", category: "", acType: "", washVariant: "", btu: "", queueToday: false, sort: "recommended" };
+      track("cwf_store_view", {});
       container.innerHTML = `
         <section class="screen store-screen">
           <div class="store-compact-header">
@@ -1391,6 +1563,8 @@
   store.renderDetail.onLeave = () => {
     clearDetailAutoplay();
   };
+
+  store._test = { loadDetail, loadReviewsList, detailItemId, renderDetailBody, renderReviewsSectionBody };
 
   root.store = store;
 })();

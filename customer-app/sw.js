@@ -10,6 +10,7 @@ const APP_SHELL = [
   "./assets/icons/cwf-customer-192.png",
   `./modules/state.js?v=${BUILD_ID}`,
   `./modules/utils.js?v=${BUILD_ID}`,
+  `./modules/analytics.js?v=${BUILD_ID}`,
   `./modules/api.js?v=${BUILD_ID}`,
   `./modules/services.js?v=${BUILD_ID}`,
   `./modules/ui.js?v=${BUILD_ID}`,

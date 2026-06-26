@@ -3518,14 +3518,20 @@ body.has-contact-sheet { overflow: hidden; }
   white-space: nowrap;
 }
 .store-filters {
-  display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 14px;
 }
+.store-search-input {
+  flex: 1 1 100%;
+}
 .store-search-input,
-.store-category-select {
-  width: 100%;
+.store-category-select,
+.store-actype-select,
+.store-wash-select,
+.store-btu-select,
+.store-sort-select {
   min-width: 0;
   height: 44px;
   padding: 0 12px;
@@ -3535,8 +3541,47 @@ body.has-contact-sheet { overflow: hidden; }
   font-size: 14px;
   color: var(--ink);
 }
-@media (max-width: 360px) {
-  .store-filters { grid-template-columns: 1fr; }
+.store-category-select,
+.store-actype-select,
+.store-wash-select,
+.store-btu-select,
+.store-sort-select {
+  flex: 1 1 calc(50% - 4px);
+}
+.store-queue-today-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 44px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: #fff;
+  font-size: 13px;
+  color: var(--ink);
+  flex: 1 1 calc(50% - 4px);
+}
+.store-queue-today-chip input {
+  width: 16px;
+  height: 16px;
+}
+.store-promo-info {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 4px 0;
+  font-size: 12px;
+}
+.store-promo-name {
+  color: var(--danger);
+  font-weight: 600;
+}
+.store-promo-savings {
+  color: var(--success);
+  font-weight: 600;
+}
+.store-promo-end {
+  color: var(--muted);
 }
 
 /* Mobile-first 2-column marketplace grid (Lazada/Shopee-style).

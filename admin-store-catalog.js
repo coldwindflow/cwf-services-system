@@ -1083,11 +1083,28 @@ function reviewEffectiveItemId(review) {
 function reviewEffectiveItemName(review) {
   return review.assigned_item_name || review.item_name || null;
 }
-// Approved is not the same as "done": a service_type/overall review that's
-// approved but still has no effective item never shows in the Store, so the
-// card must never look like a completed task in that state.
-function reviewIsStoreVisible(review) {
-  return review.moderation_status === "approved" && Boolean(reviewEffectiveItemId(review));
+// Distinguishes the 5 states an admin actually needs to tell apart -- a
+// linked-but-pending or linked-but-hidden review must never read as
+// "ยังไม่ผูกสินค้า" (that label is reserved for genuinely orphan reviews with
+// no effective item at all).
+function reviewVisibilityState(review) {
+  const hasItem = Boolean(reviewEffectiveItemId(review));
+  if (!hasItem) return "unassigned";
+  if (review.moderation_status === "approved") return "visible";
+  if (review.moderation_status === "rejected") return "rejected";
+  if (review.moderation_status === "hidden") return "hidden";
+  return "assigned_pending";
+}
+
+function reviewVisibilityLabel(review) {
+  const labels = {
+    unassigned: "⚠️ ยังไม่ผูกสินค้า",
+    assigned_pending: "⏳ ผูกสินค้าแล้ว รออนุมัติ",
+    visible: "✅ แสดงใน Store ได้",
+    rejected: "🚫 ถูกปฏิเสธ ไม่แสดงใน Store",
+    hidden: "🙈 ถูกซ่อน ไม่แสดงใน Store",
+  };
+  return labels[reviewVisibilityState(review)];
 }
 
 function reviewActionButtons(review) {
@@ -1112,10 +1129,30 @@ function catalogItemPickerLabel(item) {
   return parts.filter(Boolean).join(" • ");
 }
 
+// Active + customer-visible items are what a customer can actually book
+// against, so they're listed first and unambiguously labeled; anything else
+// (inactive or hidden) still appears -- an admin may legitimately need to
+// assign a review to a retired item -- but sorted last and flagged so it's
+// never mistaken for a normal pick.
+function reviewAssignPickerSortedItems(items) {
+  const visible = [];
+  const notVisible = [];
+  for (const it of items) {
+    if (it.is_active && it.is_customer_visible) visible.push(it);
+    else notVisible.push(it);
+  }
+  return [...visible, ...notVisible];
+}
+
 function reviewAssignOptionsHtml(review, items) {
   const assignedId = review.assigned_item_id ? Number(review.assigned_item_id) : null;
-  return `<option value="">-- เลือกสินค้า --</option>${items
-    .map((it) => `<option value="${it.item_id}" ${assignedId === Number(it.item_id) ? "selected" : ""}>${escapeHtml(catalogItemPickerLabel(it))}</option>`)
+  const sorted = reviewAssignPickerSortedItems(items);
+  return `<option value="">-- เลือกสินค้า --</option>${sorted
+    .map((it) => {
+      const isVisible = it.is_active && it.is_customer_visible;
+      const label = catalogItemPickerLabel(it) + (isVisible ? "" : " (ไม่แสดงใน Store)");
+      return `<option value="${it.item_id}" ${assignedId === Number(it.item_id) ? "selected" : ""}>${escapeHtml(label)}</option>`;
+    })
     .join("")}`;
 }
 
@@ -1136,7 +1173,7 @@ function reviewAssignPickerHtml(review) {
 }
 
 function reviewCardHtml(review) {
-  const storeVisible = reviewIsStoreVisible(review);
+  const visibilityState = reviewVisibilityState(review);
   const effectiveName = reviewEffectiveItemName(review);
   return `
   <div class="asc-item-card asc-review-card" data-review-id="${review.review_id}">
@@ -1145,7 +1182,7 @@ function reviewCardHtml(review) {
       <div class="asc-item-meta">${escapeHtml(review.customer_identity || "ลูกค้า")} • งาน #${escapeHtml(String(review.completed_job_id || "-"))} • ${fmtDateTime(review.created_at)}</div>
       <div class="asc-item-meta">แหล่งที่มา: ${reviewSourceLabel(review.review_source)} • Scope: ${reviewScopeLabel(review.review_scope)}${review.service_type ? ` • ประเภทบริการ: ${escapeHtml(review.service_type)}` : ""}</div>
       <div class="asc-item-meta">สินค้าต้นทาง: ${escapeHtml(review.item_name || "-")} • สินค้าที่มอบหมาย: ${escapeHtml(review.assigned_item_name || "-")}</div>
-      <div class="asc-review-visibility ${storeVisible ? "asc-review-visible" : "asc-review-not-visible"}">${storeVisible ? "✅ แสดงใน Store ได้" : "⚠️ ยังไม่ผูกสินค้า"}</div>
+      <div class="asc-review-visibility asc-review-${visibilityState}">${reviewVisibilityLabel(review)}</div>
       <div class="asc-review-stars">${reviewStarsHtml(review.rating)}</div>
       ${review.comment ? `<div class="asc-review-comment">${escapeHtml(review.comment)}</div>` : `<div class="muted2 mini">ไม่มีความเห็นเพิ่มเติม</div>`}
       ${review.moderated_by ? `<div class="muted2 mini">ตรวจสอบล่าสุดโดย ${escapeHtml(review.moderated_by)} เมื่อ ${fmtDateTime(review.moderated_at)}</div>` : ""}

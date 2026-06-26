@@ -255,6 +255,21 @@
   // booking fields are missing or unsupported, this must return null so the
   // caller routes the customer to "contact admin" instead of silently
   // opening a booking screen prefilled with a guessed ac_type/btu/wash.
+  // Deterministic fixed-keyword fallback for items missing a real
+  // booking_wash_variant -- mirrors store.js's canonicalWashVariant()
+  // resolver. Only matches on unambiguous keywords in the item name; never
+  // overrides an existing real booking_wash_variant value, and never guesses
+  // when no fixed keyword is present (the caller still returns null then).
+  function inferWashVariantFromName(itemName) {
+    const norm = String(itemName || "").trim().toLowerCase();
+    if (!norm) return null;
+    if (/ตัดล้าง|overhaul|ใหญ่/.test(norm)) return "ล้างแบบตัดล้าง";
+    if (/แขวนคอยล์|coil/.test(norm)) return "ล้างแขวนคอยล์";
+    if (/พรีเมียม|premium/.test(norm)) return "ล้างพรีเมียม";
+    if (/ปกติ|ธรรมดา|normal/.test(norm)) return "ล้างธรรมดา";
+    return null;
+  }
+
   function catalogItemToCommerceDraft(catalogItem) {
     if (!catalogItem || catalogItem.booking_mode !== "bookable") return null;
 
@@ -265,9 +280,15 @@
     const matchedBtu = bookableBtuOptions.find((item) => item.btu === btuValue);
     if (!matchedBtu) return null;
 
+    let washVariantValue = catalogItem.booking_wash_variant || "";
     if (matchedAcType.value === WALL_AC) {
-      const matchedWash = washVariants.find((item) => item.value === catalogItem.booking_wash_variant);
-      if (!matchedWash) return null;
+      let matchedWash = washVariants.find((item) => item.value === washVariantValue);
+      if (!matchedWash) {
+        const inferred = inferWashVariantFromName(catalogItem.item_name);
+        matchedWash = washVariants.find((item) => item.value === inferred);
+        if (!matchedWash) return null;
+        washVariantValue = matchedWash.value;
+      }
     }
 
     return {
@@ -277,7 +298,7 @@
       draft: createServiceLine({
         ac_type: matchedAcType.value,
         btu: matchedBtu.btu,
-        wash_variant: matchedAcType.value === WALL_AC ? catalogItem.booking_wash_variant : "",
+        wash_variant: matchedAcType.value === WALL_AC ? washVariantValue : "",
         machine_count: 1,
       }),
     };

@@ -517,14 +517,21 @@ module.exports = function createCatalogReviewRoutes(deps = {}) {
       const status = String(req.query.status || "").trim();
       const source = String(req.query.source || "").trim();
       const itemId = Number(req.query.item_id);
+      const trackingReady = await isTrackingReviewSchemaReady(pool);
+      // Filter by the *effective* item (assigned_item_id when present,
+      // otherwise item_id) so a query for item X also surfaces
+      // service_type/overall-scoped reviews an admin has already assigned to
+      // X -- matching the same COALESCE used for public rating aggregation
+      // and the GET /reviews list above, rather than only matching reviews
+      // whose original item_id happens to equal X.
+      const effectiveItemExpr = trackingReady ? "COALESCE(r.assigned_item_id, r.item_id)" : "r.item_id";
       const where = [];
       const params = [];
       let p = 1;
       if (status) { params.push(status); where.push(`r.moderation_status = $${p++}`); }
       if (source) { params.push(source); where.push(`r.review_source = $${p++}`); }
-      if (Number.isFinite(itemId) && itemId > 0) { params.push(itemId); where.push(`r.item_id = $${p++}`); }
+      if (Number.isFinite(itemId) && itemId > 0) { params.push(itemId); where.push(`${effectiveItemExpr} = $${p++}`); }
 
-      const trackingReady = await isTrackingReviewSchemaReady(pool);
       // item_id is nullable for service_type/overall-scoped reviews (tracking
       // migration), so this must stay a LEFT JOIN -- an INNER JOIN would
       // silently drop every itemless review from the admin queue.

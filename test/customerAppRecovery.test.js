@@ -15,6 +15,7 @@ function makeContext() {
   const listeners = {};
   const window = {
     CWFCustomerAppV2: {},
+    dataLayer: [],
     location: { protocol: "https:", origin: "https://app.example.test", pathname: "/customer-app/index.html", search: "", hash: "" },
     sessionStorage: {
       getItem(key) { return storage.has(key) ? storage.get(key) : null; },
@@ -210,6 +211,7 @@ class FakeInput {
 function loadCustomerFrontend(context = makeContext()) {
   return load(context, [
     "customer-app/modules/utils.js",
+    "customer-app/modules/analytics.js",
     "customer-app/modules/state.js",
     "customer-app/modules/api.js",
     "customer-app/modules/services.js",
@@ -1623,7 +1625,7 @@ test("related products slider shows fewer than 4 cards when fewer real same-fami
   assert.equal((html.match(/data-store-related-item="/g) || []).length, 1);
 });
 
-test("BTU/spec variant selector changes price and short info on selection without a new network fetch, and the book button routes to the selected variant", async () => {
+test("BTU/spec variant selector routes to the sibling's own detail URL on selection, reloading the whole page from a real per-item fetch, and the book button books the routed variant", async () => {
   const context = makeContext();
   const root = loadCustomerFrontend(context);
   root.state.setRoute("storeItem-10");
@@ -1631,9 +1633,10 @@ test("BTU/spec variant selector changes price and short info on selection withou
     { item_id: 10, item_name: "ล้างแอร์ผนัง ล้างธรรมดา", item_category: "ล้างแอร์", base_price: 500, unit_label: "เครื่อง", short_description: "เหมาะกับแอร์ขนาดเล็ก-กลาง", booking_mode: "bookable", job_category: "ล้าง", ac_type: "ผนัง", btu_min: 9000, btu_max: 15000, booking_ac_type: "ผนัง", booking_wash_variant: "ล้างธรรมดา", booking_btu: 9000 },
     { item_id: 11, item_name: "ล้างแอร์ผนัง ล้างธรรมดา ใหญ่", item_category: "ล้างแอร์", base_price: 750, unit_label: "เครื่อง", short_description: "เหมาะกับแอร์ขนาดใหญ่", booking_mode: "bookable", job_category: "ล้าง", ac_type: "ผนัง", btu_min: 18000, booking_ac_type: "ผนัง", booking_wash_variant: "ล้างธรรมดา", booking_btu: 18000 },
   ];
+  const itemsById = new Map(items.map((it) => [String(it.item_id), it]));
   let detailCalls = 0;
   let listCalls = 0;
-  root.api.loadCatalogItem = async () => { detailCalls += 1; return items[0]; };
+  root.api.loadCatalogItem = async (id) => { detailCalls += 1; return itemsById.get(String(id)); };
   root.api.loadCatalogItems = async () => { listCalls += 1; return items; };
 
   const container = new FakeMount();
@@ -1654,8 +1657,17 @@ test("BTU/spec variant selector changes price and short info on selection withou
   assert.ok(bigOption, "18,000 BTU option not found");
   await bigOption.click();
 
-  assert.equal(detailCalls, 1, "switching the BTU variant must never trigger a new detail fetch");
-  assert.equal(listCalls, 1, "switching the BTU variant must never trigger a new catalog list fetch");
+  // The click handler only routes (root.utils.routeTo("storeItem-11")); the
+  // real app's router then re-invokes store.renderDetail for the new route.
+  // This fake DOM has no real EventTarget driving hashchange, so simulate
+  // exactly what the router does on navigation: update the route, then
+  // re-render the detail screen for it.
+  root.state.setRoute("storeItem-11");
+  root.store.renderDetail(container);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.equal(detailCalls, 2, "switching the BTU variant must reload the whole page via a real per-item fetch");
 
   body = container.querySelector("[data-store-detail-body]");
   assert.match(body.innerHTML, /750/);
@@ -1796,7 +1808,7 @@ test("canonical resolver never mixes repair items with wash items, and never put
 // item_name as a deterministic last-resort fallback -- never left as an
 // empty token that silently merges unrelated wash methods together.
 
-test("legacy rows with no booking_wash_variant resolve ล้างปกติ/ล้างธรรมดา from item_name into the same BTU variant group, price changes on selection, and booking uses the selected real item_id", async () => {
+test("legacy rows with no booking_wash_variant resolve ล้างปกติ/ล้างธรรมดา from item_name into the same BTU variant group, the whole page reloads on selection, and booking infers the real wash_variant from the routed item's name", async () => {
   const context = makeContext();
   const root = loadCustomerFrontend(context);
   root.state.setRoute("storeItem-80");
@@ -1804,7 +1816,8 @@ test("legacy rows with no booking_wash_variant resolve ล้างปกติ/
     { item_id: 80, item_name: "ล้างแอร์ผนัง ล้างปกติ 9000", item_category: "ล้างแอร์", base_price: 500, unit_label: "เครื่อง", short_description: "เหมาะกับแอร์ขนาดเล็ก", booking_mode: "bookable", job_category: "ล้าง", ac_type: "ผนัง", btu_min: 9000, btu_max: 15000, booking_ac_type: "ผนัง", booking_btu: 9000 },
     { item_id: 81, item_name: "ล้างแอร์ผนัง ล้างธรรมดา 18000+", item_category: "ล้างแอร์", base_price: 750, unit_label: "เครื่อง", short_description: "เหมาะกับแอร์ขนาดใหญ่", booking_mode: "bookable", job_category: "ล้าง", ac_type: "ผนัง", btu_min: 18000, booking_ac_type: "ผนัง", booking_btu: 18000 },
   ];
-  root.api.loadCatalogItem = async () => items[0];
+  const itemsById = new Map(items.map((it) => [String(it.item_id), it]));
+  root.api.loadCatalogItem = async (id) => itemsById.get(String(id));
   root.api.loadCatalogItems = async () => items;
 
   const container = new FakeMount();
@@ -1821,22 +1834,29 @@ test("legacy rows with no booking_wash_variant resolve ล้างปกติ/
   assert.ok(bigOption, "18,000+ option not found");
   await bigOption.click();
 
+  // Simulate the router re-rendering the detail screen for the newly routed
+  // item, exactly as it would after root.utils.routeTo("storeItem-81") fires
+  // a real hashchange in the browser.
+  root.state.setRoute("storeItem-81");
+  root.store.renderDetail(container);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
   body = container.querySelector("[data-store-detail-body]");
   assert.match(body.innerHTML, /750/);
 
-  // catalogItemToCommerceDraft requires the real booking_wash_variant enum
-  // field (server-validated) to build an actual booking payload -- the
-  // item_name-derived canonical wash variant is for display/grouping only
-  // and must never be used to fabricate that real booking field. With it
-  // missing, tapping book correctly falls back to the contact-admin sheet
-  // for whichever variant (81) was selected, rather than silently booking
-  // with an unverified wash method.
+  // catalogItemToCommerceDraft deterministically infers wash_variant from the
+  // unambiguous "ธรรมดา" keyword in item 81's own name when the real
+  // booking_wash_variant field is missing -- it must never refuse and fall
+  // back to the contact-admin sheet when a fixed keyword resolves cleanly.
   let contactTitle = null;
   root.ui.openContactSheet = (_container, { title }) => { contactTitle = title; };
   const bookButtons = container.querySelectorAll("[data-store-detail-book]");
   assert.ok(bookButtons.length >= 1);
   await bookButtons[0].click();
-  assert.equal(contactTitle, "ล้างแอร์ผนัง ล้างธรรมดา 18000+");
+  assert.equal(contactTitle, null, "a resolvable item-name keyword must never fall back to the contact-admin sheet");
+  assert.equal(root.state.draft.scheduled.catalog_item_id, 81);
+  assert.equal(root.state.draft.scheduled.wash_variant, "ล้างธรรมดา");
 });
 
 test("legacy rows with no booking_wash_variant show all 4 real wash methods (resolved from item_name) in the related slider, exactly once each", async () => {
@@ -1922,4 +1942,208 @@ test("job_category and item_category empty: wash resolves from item_name alone, 
   const html = body.innerHTML;
   assert.match(html, /data-store-related-item="111"/, "job_category/item_category empty must still resolve wash via item_name");
   assert.doesNotMatch(html, /data-store-related-item="112"/, "a repair item named only in item_name must never be mixed into the wash family");
+});
+
+function storeFilterFixtureItems() {
+  return [
+    {
+      item_id: 201, item_name: "ล้างแอร์ผนัง ล้างปกติ 9000 BTU", item_category: "ล้างแอร์",
+      booking_mode: "bookable", booking_ac_type: "ผนัง", booking_wash_variant: "ล้างธรรมดา", booking_btu: 9000,
+      display_price: 500, base_price: 500, has_queue_today: true, booking_count: 50,
+      has_active_promotion: true, normal_price: 600, active_price: 500, campaign_name: "โปรซัมเมอร์", effective_to: "2026-12-31T00:00:00Z",
+    },
+    {
+      item_id: 202, item_name: "ล้างแอร์สี่ทิศทาง ล้างพรีเมียม 12000 BTU", item_category: "ล้างแอร์",
+      booking_mode: "bookable", booking_ac_type: "สี่ทิศทาง", booking_wash_variant: "ล้างพรีเมียม", booking_btu: 12000,
+      display_price: 700, base_price: 700, has_queue_today: false, booking_count: 10,
+    },
+    {
+      item_id: 203, item_name: "ล้างแอร์ผนัง ล้างปกติ 18000 BTU", item_category: "ล้างแอร์",
+      booking_mode: "bookable", booking_ac_type: "ผนัง", booking_wash_variant: "ล้างธรรมดา", booking_btu: 18000,
+      display_price: 300, base_price: 300, has_queue_today: false, booking_count: 5,
+    },
+  ];
+}
+
+test("store ac_type/wash_variant/BTU/queue-today filters narrow the grid using canonical values, never raw category strings", async () => {
+  const context = makeContext();
+  const root = loadCustomerFrontend(context);
+  root.api.loadCatalogItems = async () => storeFilterFixtureItems();
+
+  const container = new FakeMount();
+  root.store.render(container);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const acType = container.querySelector("[data-store-actype]");
+  acType.value = "wall";
+  await acType.dispatch("change");
+  let body = container.querySelector("[data-store-grid-mount]");
+  assert.match(body.innerHTML, /data-store-item="201"/);
+  assert.match(body.innerHTML, /data-store-item="203"/);
+  assert.doesNotMatch(body.innerHTML, /data-store-item="202"/);
+
+  const btu = container.querySelector("[data-store-btu]");
+  btu.value = "9000";
+  await btu.dispatch("change");
+  body = container.querySelector("[data-store-grid-mount]");
+  assert.match(body.innerHTML, /data-store-item="201"/);
+  assert.doesNotMatch(body.innerHTML, /data-store-item="203"/);
+
+  btu.value = "";
+  await btu.dispatch("change");
+  acType.value = "";
+  await acType.dispatch("change");
+  const wash = container.querySelector("[data-store-wash]");
+  wash.value = "premium";
+  await wash.dispatch("change");
+  body = container.querySelector("[data-store-grid-mount]");
+  assert.match(body.innerHTML, /data-store-item="202"/);
+  assert.doesNotMatch(body.innerHTML, /data-store-item="201"/);
+  assert.doesNotMatch(body.innerHTML, /data-store-item="203"/);
+
+  wash.value = "";
+  await wash.dispatch("change");
+  const queueToday = container.querySelector("[data-store-queue-today]");
+  queueToday.checked = true;
+  await queueToday.dispatch("change");
+  body = container.querySelector("[data-store-grid-mount]");
+  assert.match(body.innerHTML, /data-store-item="201"/);
+  assert.doesNotMatch(body.innerHTML, /data-store-item="202"/);
+  assert.doesNotMatch(body.innerHTML, /data-store-item="203"/);
+});
+
+test("store sort options order by CWF recommended (default), booking count, and price low/high", async () => {
+  const context = makeContext();
+  const root = loadCustomerFrontend(context);
+  root.api.loadCatalogItems = async () => storeFilterFixtureItems();
+
+  const container = new FakeMount();
+  root.store.render(container);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const sort = container.querySelector("[data-store-sort]");
+
+  sort.value = "booking_count";
+  await sort.dispatch("change");
+  let grid = container.querySelector("[data-store-grid-mount]");
+  let order = [...grid.innerHTML.matchAll(/data-store-item="(\d+)"/g)].map((m) => m[1]);
+  assert.deepEqual(order, ["201", "202", "203"], "must sort by booking_count descending");
+
+  sort.value = "price_low";
+  await sort.dispatch("change");
+  grid = container.querySelector("[data-store-grid-mount]");
+  order = [...grid.innerHTML.matchAll(/data-store-item="(\d+)"/g)].map((m) => m[1]);
+  assert.deepEqual(order, ["203", "201", "202"], "must sort by effective price ascending");
+
+  sort.value = "price_high";
+  await sort.dispatch("change");
+  grid = container.querySelector("[data-store-grid-mount]");
+  order = [...grid.innerHTML.matchAll(/data-store-item="(\d+)"/g)].map((m) => m[1]);
+  assert.deepEqual(order, ["202", "201", "203"], "must sort by effective price descending");
+});
+
+test("store card and detail show the real promotion name, savings amount, and end date only when has_active_promotion is true", async () => {
+  const context = makeContext();
+  const root = loadCustomerFrontend(context);
+  const items = storeFilterFixtureItems();
+  root.api.loadCatalogItems = async () => items;
+  root.api.loadCatalogItem = async (id) => items.find((it) => String(it.item_id) === String(id));
+
+  const container = new FakeMount();
+  root.store.render(container);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const body = container.querySelector("[data-store-body]");
+  assert.match(body.innerHTML, /store-promo-name">โปรซัมเมอร์/);
+  assert.match(body.innerHTML, /ประหยัด/);
+  const promoCardIndex = body.innerHTML.indexOf("data-store-item=\"201\"");
+  const nextCardIndex = body.innerHTML.indexOf("data-store-item=\"202\"");
+  const card202Html = body.innerHTML.slice(nextCardIndex, nextCardIndex + (body.innerHTML.length - nextCardIndex));
+  assert.ok(promoCardIndex < nextCardIndex, "fixture order must put item 201 before 202");
+  assert.ok(!card202Html.slice(0, card202Html.indexOf("</article>")).includes("store-promo-name"), "item without has_active_promotion must show no promo info");
+
+  root.state.setRoute("storeItem-201");
+  root.store.renderDetail(container);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const detailBody = container.querySelector("[data-store-detail-body]");
+  assert.match(detailBody.innerHTML, /store-promo-name">โปรซัมเมอร์/);
+  assert.match(detailBody.innerHTML, /ประหยัด/);
+});
+
+test("store funnel analytics: cwf_store_view fires on store list render and cwf_store_filter fires with canonical filter_name/filter_value, never PII", async () => {
+  const context = makeContext();
+  const root = loadCustomerFrontend(context);
+  root.api.loadCatalogItems = async () => storeFilterFixtureItems();
+
+  const container = new FakeMount();
+  root.store.render(container);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.ok(context.window.dataLayer.some((e) => e.event === "cwf_store_view"));
+
+  const acType = container.querySelector("[data-store-actype]");
+  acType.value = "wall";
+  await acType.dispatch("change");
+  const filterEvent = context.window.dataLayer.find((e) => e.event === "cwf_store_filter" && e.filter_name === "ac_type");
+  assert.ok(filterEvent, "ac_type filter change must emit cwf_store_filter");
+  assert.equal(filterEvent.filter_value, "wall");
+  assert.equal(Object.keys(filterEvent).sort().join(","), "event,filter_name,filter_value");
+
+  const queueToday = container.querySelector("[data-store-queue-today]");
+  queueToday.checked = true;
+  await queueToday.dispatch("change");
+  const queueEvent = context.window.dataLayer.find((e) => e.event === "cwf_store_filter" && e.filter_name === "queue_today");
+  assert.ok(queueEvent);
+  assert.equal(queueEvent.filter_value, true);
+});
+
+test("store funnel analytics: cwf_store_begin_booking and cwf_store_contact_admin fire with allowed fields only, no booking code/PII", async () => {
+  const context = makeContext();
+  const root = loadCustomerFrontend(context);
+  const items = [
+    { item_id: 301, item_name: "ล้างแอร์ผนัง ล้างปกติ", booking_mode: "bookable", booking_ac_type: "ผนัง", booking_wash_variant: "ล้างธรรมดา", booking_btu: 9000, display_price: 500, base_price: 500 },
+    { item_id: 302, item_name: "ติดตั้งแอร์ใหม่", booking_mode: "contact", display_price: 0, base_price: 0 },
+  ];
+  root.api.loadCatalogItems = async () => items;
+
+  const container = new FakeMount();
+  root.store.render(container);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const bookButton = container.querySelectorAll("[data-store-book]").find((b) => b.getAttribute("data-store-book") === "301");
+  await bookButton.click();
+  const bookingEvent = context.window.dataLayer.find((e) => e.event === "cwf_store_begin_booking");
+  assert.ok(bookingEvent);
+  assert.equal(bookingEvent.item_id, 301);
+  assert.ok(!("booking_code" in bookingEvent) && !("phone" in bookingEvent) && !("token" in bookingEvent));
+
+  const contactButton = container.querySelectorAll("[data-store-contact]").find((b) => b.getAttribute("data-store-contact") === "302");
+  await contactButton.click();
+  const contactEvent = context.window.dataLayer.find((e) => e.event === "cwf_store_contact_admin");
+  assert.ok(contactEvent);
+  assert.equal(contactEvent.item_id, 302);
+});
+
+test("store performance guard: navigating from the loaded list to a product detail page reuses the cached catalog list instead of refetching it", async () => {
+  const context = makeContext();
+  const root = loadCustomerFrontend(context);
+  const items = storeFilterFixtureItems();
+  let listCalls = 0;
+  let detailCalls = 0;
+  root.api.loadCatalogItems = async () => { listCalls += 1; return items; };
+  root.api.loadCatalogItem = async (id) => { detailCalls += 1; return items.find((it) => String(it.item_id) === String(id)); };
+
+  const listContainer = new FakeMount();
+  root.store.render(listContainer);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(listCalls, 1);
+
+  root.state.setRoute("storeItem-201");
+  const detailContainer = new FakeMount();
+  root.store.renderDetail(detailContainer);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.equal(detailCalls, 1, "detail must fetch the routed item exactly once");
+  assert.equal(listCalls, 1, "an already-loaded catalog list must never be refetched just to populate siblings/related items on the detail page");
 });
