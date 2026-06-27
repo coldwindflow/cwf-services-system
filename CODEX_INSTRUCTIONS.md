@@ -75,3 +75,7 @@ CWF เป็นระบบใช้งานจริง ห้ามแก้
   - tests performed
   - risks
   - rollback notes
+
+## Active hotfix handoff
+
+Fix Customer Store product-detail content missing for the same Catalog item. Trace one exact item_id from Admin load/save through GET /catalog/items/:itemId and renderDetailContent. Do not use sibling content inheritance. Full scope is in the Draft PR conversation; remove this temporary section before finalizing the PR.
