@@ -163,7 +163,7 @@ class FakeMount {
     const m = selector.match(/\[data-([a-z-]+)\]/);
     if (!m) return null;
     const attr = `data-${m[1]}`;
-    if (attr === "data-store-body" || attr === "data-store-grid-mount" || attr === "data-contact-sheet-mount" || attr === "data-store-detail-body") {
+    if (attr === "data-store-body" || attr === "data-store-grid-mount" || attr === "data-contact-sheet-mount" || attr === "data-store-detail-body" || attr === "data-store-reviews-section") {
       const owner = this._findOwner(attr);
       if (!owner) return null;
       if (!owner.mountCache.has(attr)) owner.mountCache.set(attr, new FakeMount());
@@ -230,7 +230,7 @@ test("Customer App build id is consistent across shell and service worker", () =
   const sw = read("customer-app/sw.js");
   const app = read("customer-app/assets/customer-app.js");
   const manifest = read("customer-app/manifest.webmanifest");
-  const build = "20260628_store_detail_content_missing";
+  const build = "20260628_store_review_name_final";
 
   assert.match(index, new RegExp(`customer-app\\.css\\?v=${build}`));
   assert.match(index, new RegExp(`modules\\/api\\.js\\?v=${build}`));
@@ -248,7 +248,7 @@ test("Customer App build id is consistent across shell and service worker", () =
 test("store module is loaded in index.html and precached in the service worker app shell", () => {
   const index = read("customer-app/index.html");
   const sw = read("customer-app/sw.js");
-  const build = "20260628_store_detail_content_missing";
+  const build = "20260628_store_review_name_final";
 
   assert.match(index, new RegExp(`modules/store\\.js\\?v=${build}`));
   assert.match(sw, /`\.\/modules\/store\.js\?v=\$\{BUILD_ID\}`/);
@@ -1346,6 +1346,195 @@ test("opening item A then item B ignores the stale item A detail response", asyn
   assert.match(html, /Conditions B/);
   assert.doesNotMatch(html, /Long A/);
   assert.doesNotMatch(html, /Conditions A/);
+});
+
+test("store review card shows the normalized full reviewer name without คุณ prefix or masking", async () => {
+  const context = makeContext();
+  const root = loadCustomerFrontend(context);
+  const item = { item_id: 1, item_name: "Review item", item_category: "service", base_price: 700 };
+  root.state.setRoute("storeItem-1");
+  root.state.setStoreDetail({ status: "success", itemId: "1", data: item, error: "" });
+  root.api.loadCatalogItemReviews = async () => ({
+    reviews: [{ review_id: 1, display_name: "สมชาย ใจดี", rating: 5, comment: "ช่างสุภาพมาก ทำงานละเอียด", created_at: "2026-06-01T00:00:00Z" }],
+    total: 1,
+    rating_average: 5,
+    review_count: 1,
+  });
+
+  const container = new FakeMount();
+  container.innerHTML = `<section data-store-detail-body><div data-store-reviews-section></div></section>`;
+  await root.store._test.loadReviewsList(container, item);
+
+  const section = container.querySelector("[data-store-reviews-section]");
+  assert.match(section.innerHTML, /สมชาย ใจดี/);
+  assert.match(section.innerHTML, /ช่างสุภาพมาก ทำงานละเอียด/);
+  assert.doesNotMatch(section.innerHTML, /คุณ\s*สมชาย/);
+  assert.doesNotMatch(section.innerHTML, /\*\*\*\*/);
+});
+
+test("stale review list response from item A never replaces item B reviews", async () => {
+  const context = makeContext();
+  const root = loadCustomerFrontend(context);
+  const itemA = { item_id: 1, item_name: "Item A", item_category: "service", base_price: 700 };
+  const itemB = { item_id: 2, item_name: "Item B", item_category: "service", base_price: 800 };
+  let resolveA;
+  root.api.loadCatalogItemReviews = async (id) => {
+    if (String(id) === "1") {
+      return new Promise((resolve) => { resolveA = resolve; });
+    }
+    return {
+      reviews: [{ review_id: 2, display_name: "Reviewer B", rating: 4, comment: "Review B", created_at: "2026-06-02T00:00:00Z" }],
+      total: 1,
+      rating_average: 4,
+      review_count: 1,
+    };
+  };
+
+  const container = new FakeMount();
+  container.innerHTML = `<section data-store-detail-body><div data-store-reviews-section></div></section>`;
+  root.state.setRoute("storeItem-1");
+  root.state.setStoreDetail({ status: "success", itemId: "1", data: itemA, error: "" });
+  const loadA = root.store._test.loadReviewsList(container, itemA);
+  root.state.setRoute("storeItem-2");
+  root.state.setStoreDetail({ status: "success", itemId: "2", data: itemB, error: "" });
+  await root.store._test.loadReviewsList(container, itemB);
+  resolveA({ reviews: [{ review_id: 1, display_name: "Reviewer A", rating: 5, comment: "Review A", created_at: "2026-06-01T00:00:00Z" }], total: 1, rating_average: 5, review_count: 1 });
+  await loadA;
+
+  const section = container.querySelector("[data-store-reviews-section]");
+  assert.match(section.innerHTML, /Reviewer B/);
+  assert.match(section.innerHTML, /Review B/);
+  assert.doesNotMatch(section.innerHTML, /Reviewer A/);
+  assert.doesNotMatch(section.innerHTML, /Review A/);
+});
+
+test("stale load-more response from item A is not appended into item B reviews", async () => {
+  const context = makeContext();
+  const root = loadCustomerFrontend(context);
+  const itemA = { item_id: 1, item_name: "Item A", item_category: "service", base_price: 700 };
+  const itemB = { item_id: 2, item_name: "Item B", item_category: "service", base_price: 800 };
+  let resolveALoadMore;
+  root.api.loadCatalogItemReviews = async (id, { offset } = {}) => {
+    if (String(id) === "1" && Number(offset) > 0) {
+      return new Promise((resolve) => { resolveALoadMore = resolve; });
+    }
+    if (String(id) === "1") {
+      return { reviews: [{ review_id: 1, display_name: "Reviewer A1", rating: 5, comment: "A1", created_at: "2026-06-01T00:00:00Z" }], total: 2, rating_average: 5, review_count: 2 };
+    }
+    return { reviews: [{ review_id: 3, display_name: "Reviewer B", rating: 4, comment: "B", created_at: "2026-06-03T00:00:00Z" }], total: 1, rating_average: 4, review_count: 1 };
+  };
+
+  const container = new FakeMount();
+  container.innerHTML = `<section data-store-detail-body><div data-store-reviews-section></div></section>`;
+  root.state.setRoute("storeItem-1");
+  root.state.setStoreDetail({ status: "success", itemId: "1", data: itemA, error: "" });
+  await root.store._test.loadReviewsList(container, itemA);
+  const appendA = root.store._test.loadReviewsList(container, itemA, { append: true });
+  root.state.setRoute("storeItem-2");
+  root.state.setStoreDetail({ status: "success", itemId: "2", data: itemB, error: "" });
+  await root.store._test.loadReviewsList(container, itemB);
+  resolveALoadMore({ reviews: [{ review_id: 2, display_name: "Reviewer A2", rating: 5, comment: "A2", created_at: "2026-06-02T00:00:00Z" }], total: 2, rating_average: 5, review_count: 2 });
+  await appendA;
+
+  const section = container.querySelector("[data-store-reviews-section]");
+  assert.match(section.innerHTML, /Reviewer B/);
+  assert.doesNotMatch(section.innerHTML, /Reviewer A1/);
+  assert.doesNotMatch(section.innerHTML, /Reviewer A2/);
+});
+
+test("stale eligibility response from item A never changes item B review panel", async () => {
+  const context = makeContext();
+  const root = loadCustomerFrontend(context);
+  root.state.customer = { logged_in: true };
+  const itemA = { item_id: 1, item_name: "Item A", item_category: "service", base_price: 700 };
+  const itemB = { item_id: 2, item_name: "Item B", item_category: "service", base_price: 800 };
+  let resolveA;
+  root.api.loadReviewEligibility = async (id) => {
+    if (String(id) === "1") return new Promise((resolve) => { resolveA = resolve; });
+    return { eligible: false, eligible_jobs: [] };
+  };
+
+  const container = new FakeMount();
+  container.innerHTML = `<section data-store-detail-body><div data-store-reviews-section></div></section>`;
+  root.state.setRoute("storeItem-1");
+  root.state.setStoreDetail({ status: "success", itemId: "1", data: itemA, error: "" });
+  const loadA = root.store._test.loadEligibility(container, itemA);
+  root.state.setRoute("storeItem-2");
+  root.state.setStoreDetail({ status: "success", itemId: "2", data: itemB, error: "" });
+  await root.store._test.loadEligibility(container, itemB);
+  resolveA({ eligible: true, eligible_jobs: [{ job_id: 1, appointment_datetime: "2026-06-01T10:00:00Z" }] });
+  await loadA;
+
+  const section = container.querySelector("[data-store-reviews-section]");
+  assert.match(section.innerHTML, /เขียนรีวิวได้หลังงานบริการเสร็จสมบูรณ์/);
+  assert.doesNotMatch(section.innerHTML, /data-store-review-open/);
+  assert.doesNotMatch(section.innerHTML, /คุณยังไม่มีงาน/);
+});
+
+test("eligibility error shows retry for the current item instead of a no-eligible-job message", async () => {
+  const context = makeContext();
+  const root = loadCustomerFrontend(context);
+  root.state.customer = { logged_in: true };
+  const item = { item_id: 9, item_name: "Item 9", item_category: "service", base_price: 700 };
+  let calls = 0;
+  root.api.loadReviewEligibility = async (id) => {
+    calls += 1;
+    assert.equal(String(id), "9");
+    if (calls === 1) throw new Error("network down");
+    return { eligible: true, eligible_jobs: [{ job_id: 99, appointment_datetime: "2026-06-01T10:00:00Z" }] };
+  };
+
+  const container = new FakeMount();
+  container.innerHTML = `<section data-store-detail-body><div data-store-reviews-section></div></section>`;
+  root.state.setRoute("storeItem-9");
+  root.state.setStoreDetail({ status: "success", itemId: "9", data: item, error: "" });
+  await root.store._test.loadEligibility(container, item);
+  let section = container.querySelector("[data-store-reviews-section]");
+  assert.match(section.innerHTML, /ตรวจสอบสิทธิ์รีวิวไม่สำเร็จ/);
+  assert.match(section.innerHTML, /ลองใหม่/);
+  assert.doesNotMatch(section.innerHTML, /คุณยังไม่มีงาน/);
+
+  const retry = container.querySelector("[data-store-review-retry]");
+  assert.ok(retry);
+  await retry.click();
+  section = container.querySelector("[data-store-reviews-section]");
+  assert.match(section.innerHTML, /data-store-review-open/);
+});
+
+test("stale review submit response from item A never patches item B detail state", async () => {
+  const context = makeContext();
+  const root = loadCustomerFrontend(context);
+  root.state.customer = { logged_in: true };
+  const itemA = { item_id: 1, item_name: "Item A", item_category: "service", base_price: 700 };
+  const itemB = { item_id: 2, item_name: "Item B", item_category: "service", base_price: 800 };
+  root.api.loadReviewEligibility = async () => ({ eligible: true, eligible_jobs: [{ job_id: 11, appointment_datetime: "2026-06-01T10:00:00Z" }] });
+  root.api.loadCatalogItem = async () => itemB;
+  root.api.loadCatalogItems = async () => [itemB];
+  root.api.loadCatalogItemReviews = async () => ({ reviews: [], total: 0, rating_average: null, review_count: 0 });
+  let resolveSubmit;
+  root.api.submitCatalogItemReview = async () => new Promise((resolve) => { resolveSubmit = resolve; });
+
+  const container = new FakeMount();
+  container.innerHTML = `<section data-store-detail-body><div data-store-reviews-section></div></section>`;
+  root.state.setRoute("storeItem-1");
+  root.state.setStoreDetail({ status: "success", itemId: "1", data: itemA, error: "" });
+  await root.store._test.loadEligibility(container, itemA);
+  await container.querySelector("[data-store-review-open]").click();
+  await container.querySelectorAll("[data-review-star]")[4].click();
+  await container.querySelector("[data-store-review-next]").click();
+  const submitPromise = container.querySelector("[data-store-review-confirm]").click();
+
+  root.state.setRoute("storeItem-2");
+  await root.store._test.loadDetail(container, "2");
+  resolveSubmit({ review_id: 1, moderation_status: "pending" });
+  await submitPromise;
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const body = container.querySelector("[data-store-detail-body]");
+  assert.equal(root.state.storeDetail.itemId, "2");
+  assert.match(body.innerHTML, /Item B/);
+  assert.doesNotMatch(body.innerHTML, /ส่งรีวิวแล้ว/);
+  assert.doesNotMatch(body.innerHTML, /Item A/);
 });
 
 test("product detail shows a 404-style not-found error when the catalog item does not exist", async () => {

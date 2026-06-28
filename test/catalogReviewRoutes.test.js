@@ -276,6 +276,17 @@ test("createCatalogReviewRoutes throws without requireCustomerJwt or requireAdmi
   assert.throws(() => createCatalogReviewRoutes({ pool: makePool(), requireCustomerJwt: requireCustomerJwtFor("s1") }), /requireAdminSession/);
 });
 
+test("normalizeReviewDisplayName strips only leading repeated คุณ prefixes and never masks names", () => {
+  const { normalizeReviewDisplayName } = require("../server/routes/catalog/reviews");
+  assert.equal(normalizeReviewDisplayName("คุณ สมชาย ใจดี"), "สมชาย ใจดี");
+  assert.equal(normalizeReviewDisplayName("คุณคุณสมชาย"), "สมชาย");
+  assert.equal(normalizeReviewDisplayName("คุณ คุณ แอนนา"), "แอนนา");
+  assert.equal(normalizeReviewDisplayName("Anna Smith"), "Anna Smith");
+  assert.equal(normalizeReviewDisplayName(""), "ลูกค้า CWF");
+  assert.equal(normalizeReviewDisplayName("คุณ"), "ลูกค้า CWF");
+  assert.equal(normalizeReviewDisplayName("บริษัทคุณภาพดี"), "บริษัทคุณภาพดี");
+});
+
 test("public reviews list is approved-only and never exposes job_id, customer_sub, or moderation fields", async () => {
   const pool = makePool({
     items: [{ item_id: 1, item_name: "ล้างแอร์ผนัง" }],
@@ -295,11 +306,59 @@ test("public reviews list is approved-only and never exposes job_id, customer_su
     assert.equal(body.rating_average, 5);
     assert.equal(body.reviews.length, 1);
     assert.equal(body.reviews[0].rating, 5);
-    assert.match(body.reviews[0].display_name, /^คุณ /);
+    assert.equal(body.reviews[0].display_name, "สมชาย");
+    assert.ok(!body.reviews[0].display_name.includes("คุณ"));
+    assert.ok(!body.reviews[0].display_name.includes("*"));
     assert.ok(!("completed_job_id" in body.reviews[0]));
     assert.ok(!("customer_identity" in body.reviews[0]));
     assert.ok(!("moderation_status" in body.reviews[0]));
-    assert.ok(!JSON.stringify(body).includes("สมชาย"));
+    assert.ok(JSON.stringify(body).includes("สมชาย"));
+  });
+});
+
+test("public reviews normalize existing approved rows without exposing raw identity or private fields", async () => {
+  const pool = makePool({
+    items: [{ item_id: 1, item_name: "ล้างแอร์ผนัง" }],
+    reviews: [
+      {
+        review_id: 1,
+        item_id: 1,
+        completed_job_id: 101,
+        customer_identity: "คุณ คุณ สมชาย ใจดี",
+        customer_phone: "0812345678",
+        customer_sub: "line-secret",
+        booking_code: "CWFSECRET",
+        tracking_token_hash: "hash-secret",
+        rating: 5,
+        comment: "ช่างสุภาพมาก ทำงานละเอียด",
+        moderation_status: "approved",
+        moderation_notes: "internal",
+        created_at: "2026-06-01T00:00:00Z",
+      },
+    ],
+  });
+  const router = createCatalogReviewRoutes({ pool, requireCustomerJwt: requireCustomerJwtFor(null), requireAdminSession: denyAdmin });
+
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/catalog/items/1/reviews`);
+    const body = await res.json();
+    const json = JSON.stringify(body);
+    assert.equal(res.status, 200);
+    assert.equal(body.review_count, 1);
+    assert.equal(body.rating_average, 5);
+    assert.equal(body.reviews[0].display_name, "สมชาย ใจดี");
+    assert.equal(body.reviews[0].comment, "ช่างสุภาพมาก ทำงานละเอียด");
+    assert.ok(!body.reviews[0].display_name.includes("คุณ"));
+    assert.ok(!body.reviews[0].display_name.includes("*"));
+    assert.ok(!("customer_identity" in body.reviews[0]));
+    assert.ok(!("completed_job_id" in body.reviews[0]));
+    assert.ok(!("job_id" in body.reviews[0]));
+    assert.ok(!("moderation_status" in body.reviews[0]));
+    assert.ok(!json.includes("0812345678"));
+    assert.ok(!json.includes("line-secret"));
+    assert.ok(!json.includes("CWFSECRET"));
+    assert.ok(!json.includes("hash-secret"));
+    assert.ok(!json.includes("internal"));
   });
 });
 
@@ -404,14 +463,14 @@ test("submitting a review with no eligible job at all is rejected even if the cl
 test("a valid review submission is created as pending and is attached to the real eligible job", async () => {
   const pool = makePool({
     items: [{ item_id: 1, item_name: "ล้างแอร์ผนัง" }],
-    jobs: [{ job_id: 10, customer_sub: "sub-1", catalog_item_id: 1, job_status: DONE_STATUS, appointment_datetime: "2026-06-01T00:00:00Z" }],
+    jobs: [{ job_id: 10, customer_sub: "sub-1", catalog_item_id: 1, job_status: DONE_STATUS, appointment_datetime: "2026-06-01T00:00:00Z", customer_name: "คุณ สมชาย ใจดี" }],
   });
-  const router = createCatalogReviewRoutes({ pool, requireCustomerJwt: requireCustomerJwtFor("sub-1", "ลูกค้า A"), requireAdminSession: denyAdmin });
+  const router = createCatalogReviewRoutes({ pool, requireCustomerJwt: requireCustomerJwtFor("sub-1", "LINE Name"), requireAdminSession: denyAdmin });
   await withServer(router, async (base) => {
     const res = await fetch(`${base}/catalog/items/1/reviews`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ rating: 5, comment: "ดีมาก" }),
+      body: JSON.stringify({ rating: 5, comment: "ดีมาก", customer_name: "ชื่อปลอมจาก client", customer_identity: "ชื่อปลอมจาก client" }),
     });
     const body = await res.json();
     assert.equal(res.status, 201);
@@ -419,6 +478,26 @@ test("a valid review submission is created as pending and is attached to the rea
     assert.equal(pool.state.reviews.length, 1);
     assert.equal(pool.state.reviews[0].completed_job_id, 10);
     assert.equal(pool.state.reviews[0].moderation_status, "pending");
+    assert.equal(pool.state.reviews[0].customer_identity, "สมชาย ใจดี");
+    assert.notEqual(pool.state.reviews[0].customer_identity, "LINE Name");
+    assert.notEqual(pool.state.reviews[0].customer_identity, "ชื่อปลอมจาก client");
+  });
+});
+
+test("customer-app review falls back to ลูกค้า CWF when job and session names are empty", async () => {
+  const pool = makePool({
+    items: [{ item_id: 1, item_name: "ล้างแอร์ผนัง" }],
+    jobs: [{ job_id: 10, customer_sub: "sub-1", catalog_item_id: 1, job_status: DONE_STATUS, appointment_datetime: "2026-06-01T00:00:00Z", customer_name: "" }],
+  });
+  const router = createCatalogReviewRoutes({ pool, requireCustomerJwt: requireCustomerJwtFor("sub-1", ""), requireAdminSession: denyAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/catalog/items/1/reviews`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ rating: 5 }),
+    });
+    assert.equal(res.status, 201);
+    assert.equal(pool.state.reviews[0].customer_identity, "ลูกค้า CWF");
   });
 });
 
@@ -721,7 +800,7 @@ test("GET /public/catalog-reviews/status reflects eligible/already-reviewed stat
 test("POST /public/catalog-reviews never trusts client-supplied job_id/item_id and derives the target from the token's real job", async () => {
   const pool = makePool({
     trackingSchemaReady: true,
-    jobs: [{ job_id: 20, job_type: "ล้าง", catalog_item_id: 1, job_status: DONE_STATUS, canceled_at: null, booking_token: "tok-20", customer_name: "สมชาย" }],
+    jobs: [{ job_id: 20, job_type: "ล้าง", catalog_item_id: 1, job_status: DONE_STATUS, canceled_at: null, booking_token: "tok-20", customer_name: "คุณคุณสมชาย ใจดี" }],
   });
   const router = createCatalogReviewRoutes({ pool, requireCustomerJwt: requireCustomerJwtFor(null), requireAdminSession: denyAdmin });
   await withServer(router, async (base) => {
@@ -735,6 +814,7 @@ test("POST /public/catalog-reviews never trusts client-supplied job_id/item_id a
     assert.equal(pool.state.reviews.length, 1);
     assert.equal(pool.state.reviews[0].completed_job_id, 20);
     assert.equal(pool.state.reviews[0].item_id, 1); // resolved from the job's own catalog_item_id, never the client's item_id
+    assert.equal(pool.state.reviews[0].customer_identity, "สมชาย ใจดี");
     assert.equal(pool.state.reviews[0].review_source, "tracking");
     assert.equal(pool.state.reviews[0].moderation_status, "pending");
     assert.equal(body.moderation_status, "pending");

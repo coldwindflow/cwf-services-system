@@ -71,11 +71,14 @@ function createFixedWindowLimiter({ windowMs, maxRequests, now = () => Date.now(
   };
 }
 
-function maskCustomerDisplayName(name) {
-  const trimmed = String(name || "").trim();
-  if (!trimmed) return "คุณลูกค้า";
-  const first = trimmed[0];
-  return `คุณ ${first}${"*".repeat(Math.max(1, Math.min(trimmed.length - 1, 4)))}`;
+function normalizeReviewDisplayName(value) {
+  let name = String(value || "").trim().replace(/\s+/g, " ");
+  while (name) {
+    const next = name.replace(/^คุณ\s*/u, "").trim().replace(/\s+/g, " ");
+    if (next === name) break;
+    name = next;
+  }
+  return name || "ลูกค้า CWF";
 }
 
 function validateRatingAndComment(body) {
@@ -184,7 +187,7 @@ module.exports = function createCatalogReviewRoutes(deps = {}) {
   // concurrent submissions for the same job can't both see it as eligible).
   async function findEligibleJobsForReview(db, customerSub, itemId, { forUpdate = false } = {}) {
     const r = await db.query(
-      `SELECT j.job_id, j.appointment_datetime
+      `SELECT j.job_id, j.appointment_datetime, j.customer_name
          FROM public.jobs j
         WHERE j.customer_sub = $1
           AND j.catalog_item_id = $2
@@ -240,7 +243,7 @@ module.exports = function createCatalogReviewRoutes(deps = {}) {
         review_id: Number(row.review_id),
         rating: Number(row.rating),
         comment: row.comment || "",
-        display_name: maskCustomerDisplayName(row.customer_identity),
+        display_name: normalizeReviewDisplayName(row.customer_identity),
         created_at: row.created_at,
       }));
 
@@ -336,10 +339,9 @@ module.exports = function createCatalogReviewRoutes(deps = {}) {
           return res.status(403).json({ error: "คุณยังไม่มีงานที่เสร็จสมบูรณ์สำหรับสินค้า/บริการนี้ หรือเคยรีวิวงานนี้ไปแล้ว" });
         }
 
-        // customer_identity stores only the customer's own display name as it
-        // appeared at submission time (used solely to derive the public masked
-        // label, e.g. "คุณ ส***") — never the LINE sub, phone, or email.
-        const customerIdentity = String(req.customer?.name || "").trim() || "ลูกค้า";
+        // customer_identity stores only the normalized display name derived
+        // from the verified job/session, never the LINE sub, phone, or email.
+        const customerIdentity = normalizeReviewDisplayName(matchedJob.customer_name || req.customer?.name);
         insertResult = await client.query(
           `INSERT INTO public.catalog_item_reviews
              (item_id, completed_job_id, customer_identity, rating, comment, moderation_status)
@@ -464,7 +466,7 @@ module.exports = function createCatalogReviewRoutes(deps = {}) {
         }
 
         const target = await resolveHistoricalServiceTarget(client, job.job_id);
-        const customerIdentity = String(job.customer_name || "").trim() || "ลูกค้า";
+        const customerIdentity = normalizeReviewDisplayName(job.customer_name);
 
         insertResult = await client.query(
           `INSERT INTO public.catalog_item_reviews
@@ -728,7 +730,7 @@ module.exports = function createCatalogReviewRoutes(deps = {}) {
 };
 
 module.exports.MAX_COMMENT_LENGTH = MAX_COMMENT_LENGTH;
-module.exports.maskCustomerDisplayName = maskCustomerDisplayName;
+module.exports.normalizeReviewDisplayName = normalizeReviewDisplayName;
 module.exports.validateRatingAndComment = validateRatingAndComment;
 module.exports.DONE_JOB_STATUSES = DONE_JOB_STATUSES;
 module.exports.createFixedWindowLimiter = createFixedWindowLimiter;

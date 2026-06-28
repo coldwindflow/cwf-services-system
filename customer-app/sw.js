@@ -1,6 +1,6 @@
 "use strict";
 
-const BUILD_ID = "20260628_store_detail_content_missing";
+const BUILD_ID = "20260628_store_review_name_final";
 const CACHE_NAME = `cwf-customer-app-v2-${BUILD_ID}`;
 const APP_SHELL = [
   `./index.html?v=${BUILD_ID}`,

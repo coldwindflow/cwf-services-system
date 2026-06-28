@@ -5,8 +5,11 @@
 
   let filterState = { search: "", category: "", acType: "", washVariant: "", btu: "", queueToday: false, sort: "recommended" };
   let detailLoadSeq = 0;
+  let reviewsRequestSeq = 0;
+  let eligibilityRequestSeq = 0;
+  let reviewSubmitSeq = 0;
 
-  console.info("[customer-store] detail-content-hotfix 20260628 loaded");
+  console.info("[customer-store] review-name-final 20260628 loaded");
 
   const FILTER_AC_TYPES = [
     { value: "wall", label: "แอร์ผนัง" },
@@ -1054,14 +1057,39 @@
   };
 
   function resetReviewsState(itemId) {
+    reviewsRequestSeq += 1;
+    eligibilityRequestSeq += 1;
+    reviewSubmitSeq += 1;
     reviewsState = { itemId, status: "idle", reviews: [], total: 0, ratingAverage: null, reviewCount: 0, offset: 0 };
     writeReviewState = {
-      open: false, eligibilityStatus: "idle", eligible: false, eligibleJobs: [],
+      itemId, open: false, eligibilityStatus: "idle", eligible: false, eligibleJobs: [],
       jobId: null, rating: 0, comment: "", step: "form", submitting: false, error: "", success: false,
     };
   }
 
+  function isCurrentDetailContext(itemId) {
+    const bucket = root.state.storeDetail || {};
+    return String(detailItemId()) === String(itemId)
+      && String(bucket.itemId) === String(itemId)
+      && bucket.status === "success"
+      && bucket.data
+      && String(bucket.data.item_id) === String(itemId);
+  }
+
+  function isCurrentReviewsRequest(itemId, requestSeq) {
+    return requestSeq === reviewsRequestSeq && isCurrentDetailContext(itemId) && String(reviewsState.itemId) === String(itemId);
+  }
+
+  function isCurrentEligibilityRequest(itemId, requestSeq) {
+    return requestSeq === eligibilityRequestSeq && isCurrentDetailContext(itemId) && String(writeReviewState.itemId || itemId) === String(itemId);
+  }
+
+  function isCurrentReviewSubmit(itemId, requestSeq) {
+    return requestSeq === reviewSubmitSeq && isCurrentDetailContext(itemId) && String(writeReviewState.itemId || itemId) === String(itemId);
+  }
+
   function patchReviewsSection(container, item) {
+    if (!item || !isCurrentDetailContext(item.item_id)) return;
     const mount = container.querySelector("[data-store-reviews-section]");
     if (!mount) return;
     mount.innerHTML = renderReviewsSectionBody(item);
@@ -1070,11 +1098,16 @@
 
   async function loadReviewsList(container, item, { append } = {}) {
     const itemId = item.item_id;
-    reviewsState.status = append ? reviewsState.status : "loading";
+    if (!isCurrentDetailContext(itemId)) return;
+    if (append && reviewsState.status === "loading_more") return;
+    const requestSeq = ++reviewsRequestSeq;
+    reviewsState.itemId = itemId;
+    reviewsState.status = append ? "loading_more" : "loading";
     if (!append) patchReviewsSection(container, item);
     try {
       const offset = append ? reviewsState.offset : 0;
       const data = await root.api.loadCatalogItemReviews(itemId, { limit: REVIEWS_PAGE_SIZE, offset });
+      if (!isCurrentReviewsRequest(itemId, requestSeq)) return;
       const incoming = root.utils.normalizeList(data, "reviews");
       reviewsState = {
         itemId,
@@ -1086,6 +1119,7 @@
         offset: offset + incoming.length,
       };
     } catch (error) {
+      if (!isCurrentReviewsRequest(itemId, requestSeq)) return;
       reviewsState.status = "error";
       reviewsState.error = error?.message || "โหลดรีวิวไม่สำเร็จ";
     }
@@ -1094,16 +1128,23 @@
 
   async function loadEligibility(container, item) {
     if (!root.state.customer?.logged_in) return;
+    const itemId = item.item_id;
+    if (!isCurrentDetailContext(itemId)) return;
+    const requestSeq = ++eligibilityRequestSeq;
+    writeReviewState.itemId = itemId;
     writeReviewState.eligibilityStatus = "loading";
     try {
-      const data = await root.api.loadReviewEligibility(item.item_id);
+      const data = await root.api.loadReviewEligibility(itemId);
+      if (!isCurrentEligibilityRequest(itemId, requestSeq)) return;
       writeReviewState.eligibilityStatus = "success";
       writeReviewState.eligible = Boolean(data?.eligible);
       writeReviewState.eligibleJobs = root.utils.normalizeList(data, "eligible_jobs");
       writeReviewState.jobId = writeReviewState.eligibleJobs[0]?.job_id || null;
     } catch (error) {
+      if (!isCurrentEligibilityRequest(itemId, requestSeq)) return;
       writeReviewState.eligibilityStatus = "error";
       writeReviewState.eligible = false;
+      writeReviewState.error = error?.message || "ตรวจสอบสิทธิ์รีวิวไม่สำเร็จ";
     }
     patchReviewsSection(container, item);
   }
@@ -1129,8 +1170,16 @@
     if (writeReviewState.eligibilityStatus === "loading" || writeReviewState.eligibilityStatus === "idle") {
       return `<div class="content-skeleton" aria-label="กำลังตรวจสอบสิทธิ์รีวิว"><span></span></div>`;
     }
+    if (writeReviewState.eligibilityStatus === "error") {
+      return `
+        <div class="store-review-write-gate">
+          <p class="store-review-ineligible">ตรวจสอบสิทธิ์รีวิวไม่สำเร็จ</p>
+          <button type="button" class="secondary-btn" data-store-review-retry>ลองใหม่</button>
+        </div>
+      `;
+    }
     if (!writeReviewState.eligible) {
-      return `<p class="store-review-ineligible">คุณยังไม่มีงานที่เสร็จสมบูรณ์สำหรับสินค้า/บริการนี้ที่สามารถรีวิวได้ในขณะนี้</p>`;
+      return `<p class="store-review-ineligible">เขียนรีวิวได้หลังงานบริการเสร็จสมบูรณ์</p>`;
     }
     if (writeReviewState.success) {
       return root.utils.stateBox("success", "ส่งรีวิวแล้ว รอแอดมินตรวจสอบ");
@@ -1207,7 +1256,7 @@
     const hasMore = reviewsState.reviews.length < reviewsState.total;
     return `
       <div class="store-reviews-list">${items}</div>
-      ${hasMore ? `<button type="button" class="secondary-btn store-reviews-load-more" data-store-reviews-more>โหลดรีวิวเพิ่ม</button>` : ""}
+      ${hasMore ? `<button type="button" class="secondary-btn store-reviews-load-more" data-store-reviews-more ${reviewsState.status === "loading_more" ? "disabled" : ""}>${reviewsState.status === "loading_more" ? "กำลังโหลด..." : "โหลดรีวิวเพิ่ม"}</button>` : ""}
     `;
   }
 
@@ -1239,12 +1288,17 @@
 
     const openButton = section.querySelector("[data-store-review-open]");
     if (openButton) openButton.addEventListener("click", () => {
+      if (!isCurrentDetailContext(item.item_id)) return;
       writeReviewState.open = true;
       patchReviewsSection(container, item);
     });
 
+    const retryButton = section.querySelector("[data-store-review-retry]");
+    if (retryButton) retryButton.addEventListener("click", () => loadEligibility(container, root.state.storeDetail?.data || item));
+
     const cancelButton = section.querySelector("[data-store-review-cancel]");
     if (cancelButton) cancelButton.addEventListener("click", () => {
+      if (!isCurrentDetailContext(item.item_id)) return;
       writeReviewState.open = false;
       writeReviewState.rating = 0;
       writeReviewState.comment = "";
@@ -1257,6 +1311,7 @@
 
     section.querySelectorAll("[data-review-star]").forEach((button) => {
       button.addEventListener("click", () => {
+        if (!isCurrentDetailContext(item.item_id)) return;
         writeReviewState.rating = Number(button.getAttribute("data-review-star") || 0);
         patchReviewsSection(container, item);
       });
@@ -1267,6 +1322,7 @@
 
     const nextButton = section.querySelector("[data-store-review-next]");
     if (nextButton) nextButton.addEventListener("click", () => {
+      if (!isCurrentDetailContext(item.item_id)) return;
       if (!writeReviewState.rating) {
         writeReviewState.error = "กรุณาให้คะแนน 1-5 ดาว";
         patchReviewsSection(container, item);
@@ -1279,27 +1335,33 @@
 
     const backButton = section.querySelector("[data-store-review-back]");
     if (backButton) backButton.addEventListener("click", () => {
+      if (!isCurrentDetailContext(item.item_id)) return;
       writeReviewState.step = "form";
       patchReviewsSection(container, item);
     });
 
     const confirmButton = section.querySelector("[data-store-review-confirm]");
     if (confirmButton) confirmButton.addEventListener("click", async () => {
+      if (!isCurrentDetailContext(item.item_id)) return;
       if (writeReviewState.submitting) return;
+      const itemId = item.item_id;
+      const requestSeq = ++reviewSubmitSeq;
       writeReviewState.submitting = true;
       writeReviewState.error = "";
       patchReviewsSection(container, item);
       try {
-        await root.api.submitCatalogItemReview(item.item_id, {
+        await root.api.submitCatalogItemReview(itemId, {
           job_id: writeReviewState.jobId,
           rating: writeReviewState.rating,
           comment: writeReviewState.comment,
         });
+        if (!isCurrentReviewSubmit(itemId, requestSeq)) return;
         writeReviewState.submitting = false;
         writeReviewState.open = false;
         writeReviewState.success = true;
         patchReviewsSection(container, item);
       } catch (error) {
+        if (!isCurrentReviewSubmit(itemId, requestSeq)) return;
         writeReviewState.submitting = false;
         writeReviewState.error = error?.message || "ส่งรีวิวไม่สำเร็จ";
         patchReviewsSection(container, item);
@@ -1575,7 +1637,7 @@
     clearDetailAutoplay();
   };
 
-  store._test = { loadDetail, loadReviewsList, detailItemId, renderDetailBody, renderReviewsSectionBody };
+  store._test = { loadDetail, loadReviewsList, loadEligibility, detailItemId, renderDetailBody, renderReviewsSectionBody };
 
   root.store = store;
 })();
