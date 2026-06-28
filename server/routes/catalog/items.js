@@ -411,8 +411,8 @@ function buildCatalogSelect({ pricingReady, marketplaceReady, autoplayReady, hot
   return CATALOG_SELECT_LEGACY;
 }
 
-async function attachCatalogImages(pool, rows, marketplaceReady) {
-  if (!marketplaceReady || !rows.length) {
+async function attachCatalogImages(pool, rows, imagesReady) {
+  if (!imagesReady || !rows.length) {
     rows.forEach((row) => { row.images = []; });
     return rows;
   }
@@ -916,8 +916,10 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
   }
 
   // Mirrors isMediaPricingSchemaReady's capability-check idiom: read-only, never issues
-  // DDL, caches `true` for the router's lifetime once the marketplace v2 migration
-  // (migrations/20260623_catalog_store_marketplace_v2.sql) has actually been run.
+  // DDL, caches `true` for the router's lifetime once the marketplace v2 columns
+  // (migrations/20260623_catalog_store_marketplace_v2.sql) have actually been run.
+  // The long-form Store detail fields live on catalog_items, so they must not be
+  // hidden just because the optional gallery table is unavailable.
   let marketplaceSchemaReadyCache = false;
   async function isMarketplaceSchemaReady(db) {
     if (marketplaceSchemaReadyCache) return true;
@@ -932,10 +934,16 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
         )
     `);
     const columnsReady = Number(r.rows?.[0]?.cnt || 0) === 10;
-    if (!columnsReady) return false;
+    if (columnsReady) marketplaceSchemaReadyCache = true;
+    return columnsReady;
+  }
+
+  let catalogImagesSchemaReadyCache = false;
+  async function isCatalogImagesSchemaReady(db) {
+    if (catalogImagesSchemaReadyCache) return true;
     const t = await db.query(`SELECT to_regclass('public.catalog_item_images') AS reg`);
     const ready = Boolean(t.rows?.[0]?.reg);
-    if (ready) marketplaceSchemaReadyCache = true;
+    if (ready) catalogImagesSchemaReadyCache = true;
     return ready;
   }
 
@@ -1005,6 +1013,7 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
     try {
       const pricingReady = await isMediaPricingSchemaReady(pool);
       const marketplaceReady = await isMarketplaceSchemaReady(pool);
+      const imagesReady = await isCatalogImagesSchemaReady(pool);
       const autoplayReady = await isAutoplaySchemaReady(pool);
       const hotReady = await isHotSchemaReady(pool);
       const reviewsReady = await isReviewsSchemaReady(pool);
@@ -1033,7 +1042,7 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
          ORDER BY ci.item_category, ci.item_name`,
         params
       );
-      await attachCatalogImages(pool, r.rows, marketplaceReady);
+      await attachCatalogImages(pool, r.rows, imagesReady);
       await attachCatalogRatings(pool, r.rows, reviewsReady);
       await attachBookingCounts(pool, r.rows, jobsCatalogLinkReady);
       await attachTodayQueueAvailability(pool, r.rows, queueSlotDeps);
@@ -1051,6 +1060,7 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
 
       const pricingReady = await isMediaPricingSchemaReady(pool);
       const marketplaceReady = await isMarketplaceSchemaReady(pool);
+      const imagesReady = await isCatalogImagesSchemaReady(pool);
       const autoplayReady = await isAutoplaySchemaReady(pool);
       const hotReady = await isHotSchemaReady(pool);
       const reviewsReady = await isReviewsSchemaReady(pool);
@@ -1063,7 +1073,7 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
       );
       const row = r.rows[0];
       if (!row) return res.status(404).json({ error: "ไม่พบรายการนี้" });
-      await attachCatalogImages(pool, [row], marketplaceReady);
+      await attachCatalogImages(pool, [row], imagesReady);
       await attachCatalogRatings(pool, [row], reviewsReady);
       await attachBookingCounts(pool, [row], jobsCatalogLinkReady);
       await attachTodayQueueAvailability(pool, [row], queueSlotDeps);
@@ -1078,13 +1088,14 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
     try {
       const pricingReady = await isMediaPricingSchemaReady(pool);
       const marketplaceReady = await isMarketplaceSchemaReady(pool);
+      const imagesReady = await isCatalogImagesSchemaReady(pool);
       const autoplayReady = await isAutoplaySchemaReady(pool);
       const hotReady = await isHotSchemaReady(pool);
       const reviewsReady = await isReviewsSchemaReady(pool);
       const jobsCatalogLinkReady = await isJobsCatalogLinkSchemaReady(pool);
       const select = buildCatalogSelect({ pricingReady, marketplaceReady, autoplayReady, hotReady });
       const r = await pool.query(`${select} ORDER BY ci.item_category, ci.item_name`);
-      await attachCatalogImages(pool, r.rows, marketplaceReady);
+      await attachCatalogImages(pool, r.rows, imagesReady);
       await attachCatalogRatings(pool, r.rows, reviewsReady);
       await attachBookingCounts(pool, r.rows, jobsCatalogLinkReady);
       res.json(r.rows.map(serializeAdminCatalogRow));
@@ -1202,9 +1213,10 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
 
       await client.query("COMMIT");
 
+      const imagesReady = await isCatalogImagesSchemaReady(client);
       const select = buildCatalogSelect({ pricingReady: schemaReady, marketplaceReady, autoplayReady, hotReady });
       const final = await client.query(`${select} WHERE ci.item_id = $1`, [itemId]);
-      await attachCatalogImages(client, final.rows, marketplaceReady);
+      await attachCatalogImages(client, final.rows, imagesReady);
       await attachCatalogRatings(client, final.rows, await isReviewsSchemaReady(client));
       res.status(201).json(serializeAdminCatalogRow(final.rows[0]));
     } catch (e) {
@@ -1342,8 +1354,9 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
 
       await client.query("COMMIT");
 
+      const imagesReady = await isCatalogImagesSchemaReady(client);
       const final = await client.query(`${select} WHERE ci.item_id = $1`, [itemId]);
-      await attachCatalogImages(client, final.rows, marketplaceReady);
+      await attachCatalogImages(client, final.rows, imagesReady);
       await attachCatalogRatings(client, final.rows, await isReviewsSchemaReady(client));
       res.json(serializeAdminCatalogRow(final.rows[0]));
     } catch (e) {
@@ -1360,7 +1373,7 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
       const itemId = String(req.params.itemId || "").trim();
       if (!/^\d+$/.test(itemId)) return res.status(400).json({ error: "item_id ไม่ถูกต้อง" });
 
-      const marketplaceReady = await isMarketplaceSchemaReady(pool);
+      const imagesReady = await isCatalogImagesSchemaReady(pool);
 
       const client = await pool.connect();
       let existing;
@@ -1378,7 +1391,7 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
           return res.status(404).json({ error: "ไม่พบรายการนี้" });
         }
 
-        if (marketplaceReady) {
+        if (imagesReady) {
           const galleryResult = await client.query(
             `SELECT image_public_id FROM public.catalog_item_images WHERE item_id = $1 AND image_public_id IS NOT NULL`,
             [itemId]
@@ -1477,11 +1490,12 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
         }
 
         const marketplaceReady = await isMarketplaceSchemaReady(pool);
+        const imagesReady = await isCatalogImagesSchemaReady(pool);
         const autoplayReady = await isAutoplaySchemaReady(pool);
         const hotReady = await isHotSchemaReady(pool);
         const select = buildCatalogSelect({ pricingReady: true, marketplaceReady, autoplayReady, hotReady });
         const final = await pool.query(`${select} WHERE ci.item_id = $1`, [itemId]);
-        await attachCatalogImages(pool, final.rows, marketplaceReady);
+        await attachCatalogImages(pool, final.rows, imagesReady);
         res.json(serializeAdminCatalogRow(final.rows[0]));
       } catch (e) {
         console.error(e);
@@ -1528,11 +1542,12 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
       }
 
       const marketplaceReady = await isMarketplaceSchemaReady(pool);
+      const imagesReady = await isCatalogImagesSchemaReady(pool);
       const autoplayReady = await isAutoplaySchemaReady(pool);
       const hotReady = await isHotSchemaReady(pool);
       const select = buildCatalogSelect({ pricingReady: true, marketplaceReady, autoplayReady, hotReady });
       const final = await pool.query(`${select} WHERE ci.item_id = $1`, [itemId]);
-      await attachCatalogImages(pool, final.rows, marketplaceReady);
+      await attachCatalogImages(pool, final.rows, imagesReady);
       res.json(serializeAdminCatalogRow(final.rows[0]));
     } catch (e) {
       console.error(e);
@@ -1550,8 +1565,8 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
       const itemId = String(req.params.itemId || "").trim();
       if (!/^\d+$/.test(itemId)) return res.status(400).json({ error: "item_id ไม่ถูกต้อง" });
 
-      const marketplaceReady = await isMarketplaceSchemaReady(pool);
-      if (!marketplaceReady) {
+      const imagesReady = await isCatalogImagesSchemaReady(pool);
+      if (!imagesReady) {
         return res.status(503).json({ error: "ระบบ Marketplace ยังไม่พร้อมใช้งาน (ยังไม่ได้รัน migration)" });
       }
 
@@ -1584,8 +1599,8 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
         const itemId = String(req.params.itemId || "").trim();
         if (!/^\d+$/.test(itemId)) return res.status(400).json({ error: "item_id ไม่ถูกต้อง" });
 
-        const marketplaceReady = await isMarketplaceSchemaReady(pool);
-        if (!marketplaceReady) {
+        const imagesReady = await isCatalogImagesSchemaReady(pool);
+        if (!imagesReady) {
           return res.status(503).json({ error: "ระบบ Marketplace ยังไม่พร้อมใช้งาน (ยังไม่ได้รัน migration)" });
         }
 
@@ -1670,8 +1685,8 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
       const imageId = String(req.params.imageId || "").trim();
       if (!/^\d+$/.test(itemId) || !/^\d+$/.test(imageId)) return res.status(400).json({ error: "พารามิเตอร์ไม่ถูกต้อง" });
 
-      const marketplaceReady = await isMarketplaceSchemaReady(pool);
-      if (!marketplaceReady) {
+      const imagesReady = await isCatalogImagesSchemaReady(pool);
+      if (!imagesReady) {
         return res.status(503).json({ error: "ระบบ Marketplace ยังไม่พร้อมใช้งาน (ยังไม่ได้รัน migration)" });
       }
 
@@ -1733,8 +1748,8 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
       const imageId = String(req.params.imageId || "").trim();
       if (!/^\d+$/.test(itemId) || !/^\d+$/.test(imageId)) return res.status(400).json({ error: "พารามิเตอร์ไม่ถูกต้อง" });
 
-      const marketplaceReady = await isMarketplaceSchemaReady(pool);
-      if (!marketplaceReady) {
+      const imagesReady = await isCatalogImagesSchemaReady(pool);
+      if (!imagesReady) {
         return res.status(503).json({ error: "ระบบ Marketplace ยังไม่พร้อมใช้งาน (ยังไม่ได้รัน migration)" });
       }
 
@@ -1776,8 +1791,8 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
       const itemId = String(req.params.itemId || "").trim();
       if (!/^\d+$/.test(itemId)) return res.status(400).json({ error: "item_id ไม่ถูกต้อง" });
 
-      const marketplaceReady = await isMarketplaceSchemaReady(pool);
-      if (!marketplaceReady) {
+      const imagesReady = await isCatalogImagesSchemaReady(pool);
+      if (!imagesReady) {
         return res.status(503).json({ error: "ระบบ Marketplace ยังไม่พร้อมใช้งาน (ยังไม่ได้รัน migration)" });
       }
 

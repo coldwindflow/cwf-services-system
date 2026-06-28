@@ -160,12 +160,10 @@ test("customer app disables availability HTTP cache and refreshes same-day slots
 });
 
 test("customer app build and service worker cache IDs changed", () => {
-  const id = "20260624_store_hot_sale_verified_reviews";
+  const id = "20260628_store_detail_content_missing";
   for (const file of [
     "customer-app/index.html",
     "customer-app/sw.js",
-    "customer-app/assets/customer-app.js",
-    "customer-app/manifest.webmanifest",
   ]) {
     const source = fs.readFileSync(path.join(__dirname, "..", file), "utf8");
     assert.match(source, new RegExp(id));

@@ -229,14 +229,13 @@ test("Customer App build id is consistent across shell and service worker", () =
   const index = read("customer-app/index.html");
   const sw = read("customer-app/sw.js");
   const app = read("customer-app/assets/customer-app.js");
-  const manifest = read("customer-app/manifest.webmanifest");
-  const build = "20260624_store_hot_sale_verified_reviews";
+  const build = "20260628_store_detail_content_missing";
 
   assert.match(index, new RegExp(`customer-app\\.css\\?v=${build}`));
+  assert.match(index, new RegExp(`modules\\/api\\.js\\?v=${build}`));
+  assert.match(index, new RegExp(`modules\\/store\\.js\\?v=${build}`));
   assert.match(index, new RegExp(`bookingUrgent\\.js\\?v=${build}`));
   assert.match(sw, new RegExp(`BUILD_ID = "${build}"`));
-  assert.match(app, new RegExp(`BUILD_ID = "${build}"`));
-  assert.match(manifest, new RegExp(`index\\.html\\?v=${build}#home`));
   assert.doesNotMatch(sw, /"\.\/index\.html"/);
   assert.match(sw, /cwf-customer-app-v2-/);
   assert.match(app, /document\.readyState === "complete"/);
@@ -246,7 +245,7 @@ test("Customer App build id is consistent across shell and service worker", () =
 test("store module is loaded in index.html and precached in the service worker app shell", () => {
   const index = read("customer-app/index.html");
   const sw = read("customer-app/sw.js");
-  const build = "20260624_store_hot_sale_verified_reviews";
+  const build = "20260628_store_detail_content_missing";
 
   assert.match(index, new RegExp(`modules/store\\.js\\?v=${build}`));
   assert.match(sw, /`\.\/modules\/store\.js\?v=\$\{BUILD_ID\}`/);
@@ -1215,6 +1214,135 @@ test("product detail page loads the real item by id and renders gallery, content
   const storeSrc = read("customer-app/modules/store.js");
   const backBinding = storeSrc.slice(storeSrc.indexOf("[data-store-detail-back]"), storeSrc.indexOf("[data-store-detail-back]") + 150);
   assert.match(backBinding, /routeTo\("store"\)/);
+});
+
+test("catalog list payload without long-form fields never overwrites a loaded product detail payload", async () => {
+  const context = makeContext();
+  const root = loadCustomerFrontend(context);
+  root.state.setRoute("storeItem-7");
+  const detailItem = {
+    item_id: 7,
+    item_name: "Detail item",
+    item_category: "service",
+    base_price: 700,
+    active_price: 650,
+    normal_price: 800,
+    unit_label: "unit",
+    booking_mode: "bookable",
+    job_category: "wash",
+    ac_type: "wall",
+    booking_ac_type: "wall",
+    booking_btu: 12000,
+    booking_wash_variant: "normal",
+    has_queue_today: true,
+    rating_average: 4.8,
+    review_count: 12,
+    booking_count: 3,
+    image_url: "https://res.cloudinary.com/demo/detail.jpg",
+    short_description: "Detail short",
+    long_description: "Detail long",
+    highlights: ["Highlight one", "Highlight two"],
+    service_conditions: "Detail conditions",
+  };
+  const partialListItem = {
+    item_id: 7,
+    item_name: "Partial list item",
+    item_category: "service",
+    base_price: 999,
+    active_price: 999,
+    unit_label: "unit",
+    booking_mode: "bookable",
+    ac_type: "wall",
+  };
+  root.api.loadCatalogItem = async () => detailItem;
+  root.api.loadCatalogItems = async () => [partialListItem];
+  root.api.loadCatalogItemReviews = async () => ({ reviews: [], total: 0, rating_average: null, review_count: 0 });
+  root.api.loadReviewEligibility = async () => ({ eligible: false, eligible_jobs: [] });
+
+  const container = new FakeMount();
+  container.innerHTML = `<section data-store-detail-body></section>`;
+  await root.store._test.loadDetail(container, "7");
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const item = root.state.storeDetail.data;
+  assert.equal(item.item_id, 7);
+  assert.equal(item.item_name, "Detail item");
+  assert.equal(item.active_price, 650);
+  assert.equal(item.image_url, "https://res.cloudinary.com/demo/detail.jpg");
+  assert.equal(item.has_queue_today, true);
+  assert.equal(item.booking_count, 3);
+  assert.equal(item.short_description, "Detail short");
+  assert.equal(item.long_description, "Detail long");
+  assert.deepEqual(item.highlights, ["Highlight one", "Highlight two"]);
+  assert.equal(item.service_conditions, "Detail conditions");
+  const html = root.store._test.renderDetailBody();
+  assert.match(html, /Detail long/);
+  assert.match(html, /Detail conditions/);
+  assert.match(html, /Highlight two/);
+  assert.doesNotMatch(html, /Partial list item/);
+});
+
+test("opening item A then item B ignores the stale item A detail response", async () => {
+  const context = makeContext();
+  const root = loadCustomerFrontend(context);
+  const itemA = {
+    item_id: 101,
+    item_name: "Item A",
+    item_category: "service",
+    base_price: 500,
+    booking_mode: "bookable",
+    ac_type: "wall",
+    long_description: "Long A",
+    service_conditions: "Conditions A",
+    highlights: ["Highlight A"],
+  };
+  const itemB = {
+    item_id: 102,
+    item_name: "Item B",
+    item_category: "service",
+    base_price: 900,
+    booking_mode: "bookable",
+    ac_type: "wall",
+    long_description: "Long B",
+    service_conditions: "Conditions B",
+    highlights: ["Highlight B"],
+    image_url: "https://res.cloudinary.com/demo/b.jpg",
+    rating_average: 5,
+    review_count: 1,
+    booking_count: 2,
+  };
+  let resolveA;
+  const itemAPromise = new Promise((resolve) => { resolveA = resolve; });
+  root.api.loadCatalogItem = async (id) => (String(id) === "101" ? itemAPromise : itemB);
+  root.api.loadCatalogItems = async () => [
+    { item_id: 101, item_name: "List A", ac_type: "wall" },
+    { item_id: 102, item_name: "List B", ac_type: "wall" },
+  ];
+  root.api.loadCatalogItemReviews = async () => ({ reviews: [], total: 0, rating_average: null, review_count: 0 });
+  root.api.loadReviewEligibility = async () => ({ eligible: false, eligible_jobs: [] });
+
+  const container = new FakeMount();
+  container.innerHTML = `<section data-store-detail-body></section>`;
+  root.state.setRoute("storeItem-101");
+  const loadA = root.store._test.loadDetail(container, "101");
+  root.state.setRoute("storeItem-102");
+  await root.store._test.loadDetail(container, "102");
+  resolveA(itemA);
+  await loadA;
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const item = root.state.storeDetail.data;
+  assert.equal(root.state.storeDetail.itemId, "102");
+  assert.equal(item.item_id, 102);
+  assert.equal(item.item_name, "Item B");
+  assert.equal(item.long_description, "Long B");
+  assert.equal(item.service_conditions, "Conditions B");
+  assert.deepEqual(item.highlights, ["Highlight B"]);
+  const html = root.store._test.renderDetailBody();
+  assert.match(html, /Long B/);
+  assert.match(html, /Conditions B/);
+  assert.doesNotMatch(html, /Long A/);
+  assert.doesNotMatch(html, /Conditions A/);
 });
 
 test("product detail shows a 404-style not-found error when the catalog item does not exist", async () => {

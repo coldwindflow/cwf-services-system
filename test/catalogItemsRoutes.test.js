@@ -8,7 +8,7 @@ const express = require("express");
 const createCatalogItemRoutes = require("../server/routes/catalog/items");
 const { getBangkokNow } = require("../server/services/jobTiming");
 
-function makePool(initialItems = [], initialRules = [], { schemaReady = true, marketplaceReady = false, autoplayReady = false, jobsCatalogLinkReady = false, jobs = [], jobUnits = [], forceBookingCountError = false, technicians = [], serviceMatrix = [], calendarRows = [] } = {}) {
+function makePool(initialItems = [], initialRules = [], { schemaReady = true, marketplaceReady = false, galleryReady = marketplaceReady, autoplayReady = false, jobsCatalogLinkReady = false, jobs = [], jobUnits = [], forceBookingCountError = false, technicians = [], serviceMatrix = [], calendarRows = [] } = {}) {
   const state = {
     technicians: technicians.map((x) => ({ ...x })),
     serviceMatrix: serviceMatrix.map((x) => ({ ...x })),
@@ -69,7 +69,7 @@ function makePool(initialItems = [], initialRules = [], { schemaReady = true, ma
       return { rows: [{ cnt: marketplaceReady ? 10 : 0 }] };
     }
     if (s.includes("to_regclass('public.catalog_item_images')")) {
-      return { rows: [{ reg: marketplaceReady ? "public.catalog_item_images" : null }] };
+      return { rows: [{ reg: galleryReady ? "public.catalog_item_images" : null }] };
     }
     if (s.includes("information_schema.columns") && s.includes("catalog_items")) {
       return { rows: [{ cnt: schemaReady ? 3 : 0 }] };
@@ -2319,6 +2319,31 @@ test("public GET /catalog/items/:itemId returns the full detail DTO for a bookab
     assert.equal(body.service_conditions, "ราคานี้สำหรับแอร์ผนังเท่านั้น");
     assert.equal(body.booking_ac_type, "ผนัง");
     assert.equal(body.booking_btu, 12000);
+  });
+});
+
+test("public GET /catalog/items/:itemId returns same-item content fields even when the gallery table is not ready", async () => {
+  const items = sampleItems();
+  items[0].item_id = 77;
+  items[0].short_description = "Same item short";
+  items[0].long_description = "Same item long detail";
+  items[0].highlights = ["Same item highlight A", "Same item highlight B"];
+  items[0].service_conditions = "Same item conditions";
+  items[0].ac_type = "wall";
+  const pool = makePool(items, [], { marketplaceReady: true, galleryReady: false });
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/catalog/items/77`);
+    const body = await res.json();
+    assert.equal(res.status, 200);
+    assert.equal(body.item_id, 77);
+    assert.equal(body.ac_type, "wall");
+    assert.equal(body.short_description, "Same item short");
+    assert.equal(body.long_description, "Same item long detail");
+    assert.deepEqual(body.highlights, ["Same item highlight A", "Same item highlight B"]);
+    assert.equal(body.service_conditions, "Same item conditions");
+    assert.deepEqual(body.images, []);
+    assert.ok(!pool.state.queries.some((q) => String(q.sql).includes("FROM public.catalog_item_images")));
   });
 });
 

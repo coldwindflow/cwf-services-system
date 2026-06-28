@@ -4,6 +4,9 @@
   const root = window.CWFCustomerAppV2 = window.CWFCustomerAppV2 || {};
 
   let filterState = { search: "", category: "", acType: "", washVariant: "", btu: "", queueToday: false, sort: "recommended" };
+  let detailLoadSeq = 0;
+
+  console.info("[customer-store] detail-content-hotfix 20260628 loaded");
 
   const FILTER_AC_TYPES = [
     { value: "wall", label: "แอร์ผนัง" },
@@ -1500,6 +1503,7 @@
   }
 
   async function loadDetail(container, itemId) {
+    const requestSeq = ++detailLoadSeq;
     resetReviewsState(itemId);
     if (!itemId) {
       root.state.setStoreDetail({ status: "error", itemId: "", data: null, error: "ไม่พบรายการนี้" });
@@ -1510,16 +1514,23 @@
     patchDetailBody(container);
     try {
       const data = await root.api.loadCatalogItem(itemId);
+      if (requestSeq !== detailLoadSeq || String(detailItemId()) !== String(itemId)) return;
       root.state.setStoreDetail({ status: "success", itemId, data, error: "" });
       trackItemEvent("cwf_store_product_view", data, { source: "store_detail" });
       patchDetailBody(container);
       loadReviewsList(container, data);
       loadEligibility(container, data);
       ensureCatalogListLoaded().then((items) => {
-        if (items.length && String(root.state.storeDetail?.itemId) === String(itemId)) patchDetailBody(container);
+        if (
+          requestSeq === detailLoadSeq
+          && items.length
+          && String(root.state.storeDetail?.itemId) === String(itemId)
+          && String(detailItemId()) === String(itemId)
+        ) patchDetailBody(container);
       });
       return;
     } catch (error) {
+      if (requestSeq !== detailLoadSeq || String(detailItemId()) !== String(itemId)) return;
       const message = error?.status === 404 ? "ไม่พบรายการนี้" : (error?.message || "โหลดข้อมูลไม่สำเร็จ");
       root.state.setStoreDetail({ status: "error", itemId, data: null, error: message });
     }
