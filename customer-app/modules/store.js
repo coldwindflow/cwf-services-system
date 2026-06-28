@@ -9,7 +9,7 @@
   let eligibilityRequestSeq = 0;
   let reviewSubmitSeq = 0;
 
-  console.info("[customer-store] review-name-final 20260628 loaded");
+  console.info("[customer-store] store-card-spacing-review-privacy 20260629 loaded");
 
   const FILTER_AC_TYPES = [
     { value: "wall", label: "แอร์ผนัง" },
@@ -538,7 +538,7 @@
         <div class="store-card-price">
           <span class="price-text${priceIsAsk(item) ? " is-estimate" : ""}">${root.utils.escapeHtml(priceLabel(item))}</span>
           ${promo ? `<span class="price-strike">${root.utils.escapeHtml(root.utils.formatBaht(item.normal_price))}</span>` : ""}
-          ${unit && !priceIsAsk(item) ? `<span class="muted">/ ${root.utils.escapeHtml(unit)}</span>` : ""}
+          ${unit && !priceIsAsk(item) ? `<span class="muted price-unit">/ ${root.utils.escapeHtml(unit)}</span>` : ""}
         </div>
         ${renderPromoInfo(item)}
         <div class="store-card-actions">

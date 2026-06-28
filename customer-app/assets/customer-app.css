@@ -3568,9 +3568,11 @@ body.has-contact-sheet { overflow: hidden; }
 .store-promo-info {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  column-gap: 8px;
+  row-gap: 4px;
   margin: 4px 0;
   font-size: 12px;
+  line-height: 1.35;
 }
 .store-promo-name {
   color: var(--danger);
@@ -3615,10 +3617,12 @@ body.has-contact-sheet { overflow: hidden; }
 .store-card-badges,
 .store-card-head,
 .store-rating-badge,
+.store-booking-count,
 .store-card-price,
+.store-promo-info,
 .store-card-actions {
-  padding-left: 10px;
-  padding-right: 10px;
+  padding-left: 14px;
+  padding-right: 14px;
 }
 .store-card-head {
   display: flex;
@@ -3803,7 +3807,7 @@ body.has-contact-sheet { overflow: hidden; }
 
 /* Note: padding is intentionally top/bottom only here -- this rule shares
    specificity with the combined ".store-card-badges, .store-card-head, ..."
-   rule above that grants 10px horizontal padding on the card; a shorthand
+   rule above that grants horizontal padding on the card; a shorthand
    `padding` here would zero that back out and cram the rating row against
    the card's left edge. */
 .store-rating-badge {
@@ -3849,8 +3853,10 @@ body.has-contact-sheet { overflow: hidden; }
 .store-card-price {
   display: flex;
   align-items: baseline;
-  gap: 6px;
+  column-gap: 8px;
+  row-gap: 3px;
   flex-wrap: wrap;
+  line-height: 1.35;
 }
 .price-strike {
   text-decoration: line-through;
@@ -3858,13 +3864,16 @@ body.has-contact-sheet { overflow: hidden; }
   font-size: 12px;
 }
 .price-text { font-weight: 700; }
+.price-unit {
+  flex-basis: 100%;
+}
 .price-text.is-estimate { font-weight: 600; color: var(--muted); }
 
 .store-card-actions {
   display: grid;
   grid-template-columns: 1fr;
   gap: 6px;
-  margin-top: 4px;
+  margin-top: auto;
 }
 .store-card-actions .primary-btn,
 .store-card-actions .secondary-btn {
@@ -4259,13 +4268,27 @@ body.has-contact-sheet { overflow: hidden; }
 }
 .store-review-item-head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
   margin-bottom: 4px;
 }
-.store-review-item-name { font-size: 12.5px; font-weight: 700; color: var(--ink); }
-.store-review-item-stars { font-size: 12px; }
+.store-review-item-name {
+  min-width: 0;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.store-review-item-stars {
+  flex: 0 0 auto;
+  font-size: 12px;
+  line-height: 1.2;
+}
 .store-review-item-comment { font-size: 13px; color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; margin-bottom: 4px; }
 .store-review-item-date { font-size: 11px; color: var(--muted); }
 .store-reviews-load-more { width: 100%; margin-bottom: 12px; }

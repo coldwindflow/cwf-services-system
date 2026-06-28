@@ -230,7 +230,7 @@ test("Customer App build id is consistent across shell and service worker", () =
   const sw = read("customer-app/sw.js");
   const app = read("customer-app/assets/customer-app.js");
   const manifest = read("customer-app/manifest.webmanifest");
-  const build = "20260628_store_review_name_final";
+  const build = "20260629_store_card_spacing_review_privacy";
 
   assert.match(index, new RegExp(`customer-app\\.css\\?v=${build}`));
   assert.match(index, new RegExp(`modules\\/api\\.js\\?v=${build}`));
@@ -248,7 +248,7 @@ test("Customer App build id is consistent across shell and service worker", () =
 test("store module is loaded in index.html and precached in the service worker app shell", () => {
   const index = read("customer-app/index.html");
   const sw = read("customer-app/sw.js");
-  const build = "20260628_store_review_name_final";
+  const build = "20260629_store_card_spacing_review_privacy";
 
   assert.match(index, new RegExp(`modules/store\\.js\\?v=${build}`));
   assert.match(sw, /`\.\/modules\/store\.js\?v=\$\{BUILD_ID\}`/);
@@ -956,6 +956,35 @@ test("store grid stays 2-column at every viewport width since the app shell neve
   assert.doesNotMatch(css, /\.store-grid\s*\{\s*grid-template-columns:\s*repeat\(5,/);
 });
 
+test("store card text regions share horizontal padding while images stay edge-to-edge and CTAs align to the bottom", () => {
+  const css = read("customer-app/assets/customer-app.css");
+  const sharedPaddingBlock = css.slice(css.indexOf(".store-card-badges,"), css.indexOf(".store-card-badges,") + 260);
+  for (const selector of [
+    ".store-card-badges",
+    ".store-card-head",
+    ".store-rating-badge",
+    ".store-booking-count",
+    ".store-card-price",
+    ".store-promo-info",
+    ".store-card-actions",
+  ]) {
+    assert.match(sharedPaddingBlock, new RegExp(selector.replace(".", "\\.")));
+  }
+  assert.match(sharedPaddingBlock, /padding-left:\s*14px/);
+  assert.match(sharedPaddingBlock, /padding-right:\s*14px/);
+  const galleryBlock = css.slice(css.indexOf(".store-card-gallery {"), css.indexOf(".store-card-gallery {") + 260);
+  assert.doesNotMatch(galleryBlock, /padding-left|padding-right|padding:/);
+  const priceBlock = css.slice(css.indexOf(".store-card-price {"), css.indexOf(".store-card-price {") + 260);
+  assert.match(priceBlock, /flex-wrap:\s*wrap/);
+  assert.match(priceBlock, /column-gap:\s*8px/);
+  assert.match(priceBlock, /row-gap:\s*3px/);
+  assert.doesNotMatch(priceBlock, /white-space:\s*nowrap/);
+  const unitBlock = css.slice(css.indexOf(".price-unit {"), css.indexOf(".price-unit {") + 120);
+  assert.match(unitBlock, /flex-basis:\s*100%/);
+  const actionsBlock = css.match(/\.store-card-actions \{\s*display: grid[\s\S]*?\}/)?.[0] || "";
+  assert.match(actionsBlock, /margin-top:\s*auto/);
+});
+
 test("store card shows a multi-image slider with dot indicators when an item has several images", async () => {
   const context = makeContext();
   const root = loadCustomerFrontend(context);
@@ -1348,14 +1377,14 @@ test("opening item A then item B ignores the stale item A detail response", asyn
   assert.doesNotMatch(html, /Conditions A/);
 });
 
-test("store review card shows the normalized full reviewer name without คุณ prefix or masking", async () => {
+test("store review card shows the public shortened reviewer name without คุณ prefix, full surname, or masking", async () => {
   const context = makeContext();
   const root = loadCustomerFrontend(context);
   const item = { item_id: 1, item_name: "Review item", item_category: "service", base_price: 700 };
   root.state.setRoute("storeItem-1");
   root.state.setStoreDetail({ status: "success", itemId: "1", data: item, error: "" });
   root.api.loadCatalogItemReviews = async () => ({
-    reviews: [{ review_id: 1, display_name: "สมชาย ใจดี", rating: 5, comment: "ช่างสุภาพมาก ทำงานละเอียด", created_at: "2026-06-01T00:00:00Z" }],
+    reviews: [{ review_id: 1, display_name: "สมชาย ใ.", rating: 5, comment: "ช่างสุภาพมาก ทำงานละเอียด", created_at: "2026-06-01T00:00:00Z" }],
     total: 1,
     rating_average: 5,
     review_count: 1,
@@ -1366,10 +1395,20 @@ test("store review card shows the normalized full reviewer name without คุ�
   await root.store._test.loadReviewsList(container, item);
 
   const section = container.querySelector("[data-store-reviews-section]");
-  assert.match(section.innerHTML, /สมชาย ใจดี/);
+  assert.match(section.innerHTML, /สมชาย ใ\./);
   assert.match(section.innerHTML, /ช่างสุภาพมาก ทำงานละเอียด/);
   assert.doesNotMatch(section.innerHTML, /คุณ\s*สมชาย/);
+  assert.doesNotMatch(section.innerHTML, /ใจดี/);
   assert.doesNotMatch(section.innerHTML, /\*\*\*\*/);
+  const css = read("customer-app/assets/customer-app.css");
+  const headBlock = css.slice(css.indexOf(".store-review-item-head {"), css.indexOf(".store-review-item-head {") + 220);
+  const nameBlock = css.slice(css.indexOf(".store-review-item-name {"), css.indexOf(".store-review-item-name {") + 360);
+  const starsBlock = css.slice(css.indexOf(".store-review-item-stars {"), css.indexOf(".store-review-item-stars {") + 180);
+  assert.match(headBlock, /display:\s*flex/);
+  assert.match(nameBlock, /min-width:\s*0/);
+  assert.match(nameBlock, /overflow-wrap:\s*anywhere/);
+  assert.match(nameBlock, /-webkit-line-clamp:\s*2/);
+  assert.match(starsBlock, /flex:\s*0 0 auto/);
 });
 
 test("stale review list response from item A never replaces item B reviews", async () => {

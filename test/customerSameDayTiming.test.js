@@ -160,7 +160,7 @@ test("customer app disables availability HTTP cache and refreshes same-day slots
 });
 
 test("customer app build and service worker cache IDs changed", () => {
-  const id = "20260628_store_review_name_final";
+  const id = "20260629_store_card_spacing_review_privacy";
   for (const file of [
     "customer-app/index.html",
     "customer-app/sw.js",

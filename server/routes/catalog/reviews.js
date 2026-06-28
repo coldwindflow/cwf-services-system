@@ -92,6 +92,33 @@ function normalizeReviewDisplayName(value) {
   return normalizeReviewNameCore(value) || "ลูกค้า CWF";
 }
 
+function segmentGraphemes(value) {
+  const text = String(value || "");
+  if (typeof Intl !== "undefined" && typeof Intl.Segmenter === "function") {
+    return Array.from(new Intl.Segmenter("th", { granularity: "grapheme" }).segment(text), (part) => part.segment);
+  }
+  return Array.from(text);
+}
+
+function publicNameInitial(value) {
+  const graphemes = segmentGraphemes(value);
+  if (graphemes[0] === "ห" && /^[งญนมยรวล]$/u.test(graphemes[1] || "")) return graphemes[1];
+  return graphemes[0] || "";
+}
+
+function formatPublicReviewDisplayName(value) {
+  const name = normalizeReviewDisplayName(value);
+  if (name === "ลูกค้า CWF") return name;
+  const parts = name.split(" ").filter(Boolean);
+  if (parts.length >= 2) {
+    const lastInitial = publicNameInitial(parts[parts.length - 1]);
+    return `${parts[0]} ${lastInitial}.`;
+  }
+  const graphemes = segmentGraphemes(name);
+  if (graphemes.length > 3) return `${graphemes.slice(0, 3).join("")}…`;
+  return name;
+}
+
 function validateRatingAndComment(body) {
   const rating = Number(body?.rating);
   if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
@@ -254,7 +281,7 @@ module.exports = function createCatalogReviewRoutes(deps = {}) {
         review_id: Number(row.review_id),
         rating: Number(row.rating),
         comment: row.comment || "",
-        display_name: normalizeReviewDisplayName(row.customer_identity),
+        display_name: formatPublicReviewDisplayName(row.customer_identity),
         created_at: row.created_at,
       }));
 
@@ -745,6 +772,7 @@ module.exports = function createCatalogReviewRoutes(deps = {}) {
 module.exports.MAX_COMMENT_LENGTH = MAX_COMMENT_LENGTH;
 module.exports.normalizeReviewNameCore = normalizeReviewNameCore;
 module.exports.normalizeReviewDisplayName = normalizeReviewDisplayName;
+module.exports.formatPublicReviewDisplayName = formatPublicReviewDisplayName;
 module.exports.validateRatingAndComment = validateRatingAndComment;
 module.exports.DONE_JOB_STATUSES = DONE_JOB_STATUSES;
 module.exports.createFixedWindowLimiter = createFixedWindowLimiter;
