@@ -276,12 +276,22 @@ test("createCatalogReviewRoutes throws without requireCustomerJwt or requireAdmi
   assert.throws(() => createCatalogReviewRoutes({ pool: makePool(), requireCustomerJwt: requireCustomerJwtFor("s1") }), /requireAdminSession/);
 });
 
-test("normalizeReviewDisplayName strips only leading repeated คุณ prefixes and never masks names", () => {
-  const { normalizeReviewDisplayName } = require("../server/routes/catalog/reviews");
+test("normalizeReviewDisplayName strips only proven leading คุณ honorifics and never masks names", () => {
+  const { normalizeReviewNameCore, normalizeReviewDisplayName } = require("../server/routes/catalog/reviews");
+  assert.equal(normalizeReviewNameCore("คุณ สมชาย ใจดี"), "สมชาย ใจดี");
+  assert.equal(normalizeReviewNameCore("คุณคุณสมชาย"), "สมชาย");
+  assert.equal(normalizeReviewNameCore("คุณ คุณ แอนนา"), "แอนนา");
+  assert.equal(normalizeReviewNameCore("คุณากร"), "คุณากร");
+  assert.equal(normalizeReviewNameCore("คุณภาพดี"), "คุณภาพดี");
+  assert.equal(normalizeReviewNameCore("บริษัทคุณภาพดี"), "บริษัทคุณภาพดี");
+  assert.equal(normalizeReviewNameCore(""), "");
+  assert.equal(normalizeReviewNameCore("คุณ"), "");
   assert.equal(normalizeReviewDisplayName("คุณ สมชาย ใจดี"), "สมชาย ใจดี");
   assert.equal(normalizeReviewDisplayName("คุณคุณสมชาย"), "สมชาย");
   assert.equal(normalizeReviewDisplayName("คุณ คุณ แอนนา"), "แอนนา");
   assert.equal(normalizeReviewDisplayName("Anna Smith"), "Anna Smith");
+  assert.equal(normalizeReviewDisplayName("คุณากร"), "คุณากร");
+  assert.equal(normalizeReviewDisplayName("คุณภาพดี"), "คุณภาพดี");
   assert.equal(normalizeReviewDisplayName(""), "ลูกค้า CWF");
   assert.equal(normalizeReviewDisplayName("คุณ"), "ลูกค้า CWF");
   assert.equal(normalizeReviewDisplayName("บริษัทคุณภาพดี"), "บริษัทคุณภาพดี");
@@ -499,6 +509,39 @@ test("customer-app review falls back to ลูกค้า CWF when job and sess
     assert.equal(res.status, 201);
     assert.equal(pool.state.reviews[0].customer_identity, "ลูกค้า CWF");
   });
+});
+
+test("customer-app review chooses the first source with a real normalized name", async () => {
+  const scenarios = [
+    { jobName: "คุณ", sessionName: "สมหญิง", expected: "สมหญิง" },
+    { jobName: "   ", sessionName: "Anna Smith", expected: "Anna Smith" },
+    { jobName: "คุณ สมชาย", sessionName: "LINE Name", expected: "สมชาย" },
+  ];
+
+  for (const [index, scenario] of scenarios.entries()) {
+    const pool = makePool({
+      items: [{ item_id: 1, item_name: "ล้างแอร์ผนัง" }],
+      jobs: [{
+        job_id: 100 + index,
+        customer_sub: "sub-1",
+        catalog_item_id: 1,
+        job_status: DONE_STATUS,
+        appointment_datetime: "2026-06-01T00:00:00Z",
+        customer_name: scenario.jobName,
+      }],
+    });
+    const router = createCatalogReviewRoutes({ pool, requireCustomerJwt: requireCustomerJwtFor("sub-1", scenario.sessionName), requireAdminSession: denyAdmin });
+    await withServer(router, async (base) => {
+      const res = await fetch(`${base}/catalog/items/1/reviews`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ rating: 5, customer_name: "ชื่อปลอมจาก client" }),
+      });
+      assert.equal(res.status, 201);
+      assert.equal(pool.state.reviews[0].customer_identity, scenario.expected);
+      assert.notEqual(pool.state.reviews[0].customer_identity, "ชื่อปลอมจาก client");
+    });
+  }
 });
 
 test("a duplicate review on the same job is rejected and never inserts a second row", async () => {

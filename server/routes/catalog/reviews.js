@@ -71,14 +71,25 @@ function createFixedWindowLimiter({ windowMs, maxRequests, now = () => Date.now(
   };
 }
 
-function normalizeReviewDisplayName(value) {
+function normalizeReviewNameCore(value) {
   let name = String(value || "").trim().replace(/\s+/g, " ");
+  if (name === "คุณ" || name === "คุณคุณ") return "";
   while (name) {
-    const next = name.replace(/^คุณ\s*/u, "").trim().replace(/\s+/g, " ");
+    let next = name;
+    if (/^คุณ\s+/u.test(name)) {
+      next = name.replace(/^คุณ\s+/u, "");
+    } else if (/^คุณคุณ\S/u.test(name)) {
+      next = name.replace(/^คุณคุณ/u, "");
+    }
     if (next === name) break;
-    name = next;
+    name = next.trim().replace(/\s+/g, " ");
+    if (name === "คุณ" || name === "คุณคุณ") return "";
   }
-  return name || "ลูกค้า CWF";
+  return name;
+}
+
+function normalizeReviewDisplayName(value) {
+  return normalizeReviewNameCore(value) || "ลูกค้า CWF";
 }
 
 function validateRatingAndComment(body) {
@@ -341,7 +352,9 @@ module.exports = function createCatalogReviewRoutes(deps = {}) {
 
         // customer_identity stores only the normalized display name derived
         // from the verified job/session, never the LINE sub, phone, or email.
-        const customerIdentity = normalizeReviewDisplayName(matchedJob.customer_name || req.customer?.name);
+        const customerIdentity = normalizeReviewNameCore(matchedJob.customer_name)
+          || normalizeReviewNameCore(req.customer?.name)
+          || "ลูกค้า CWF";
         insertResult = await client.query(
           `INSERT INTO public.catalog_item_reviews
              (item_id, completed_job_id, customer_identity, rating, comment, moderation_status)
@@ -730,6 +743,7 @@ module.exports = function createCatalogReviewRoutes(deps = {}) {
 };
 
 module.exports.MAX_COMMENT_LENGTH = MAX_COMMENT_LENGTH;
+module.exports.normalizeReviewNameCore = normalizeReviewNameCore;
 module.exports.normalizeReviewDisplayName = normalizeReviewDisplayName;
 module.exports.validateRatingAndComment = validateRatingAndComment;
 module.exports.DONE_JOB_STATUSES = DONE_JOB_STATUSES;

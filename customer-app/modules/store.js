@@ -1103,7 +1103,7 @@
     const requestSeq = ++reviewsRequestSeq;
     reviewsState.itemId = itemId;
     reviewsState.status = append ? "loading_more" : "loading";
-    if (!append) patchReviewsSection(container, item);
+    patchReviewsSection(container, item);
     try {
       const offset = append ? reviewsState.offset : 0;
       const data = await root.api.loadCatalogItemReviews(itemId, { limit: REVIEWS_PAGE_SIZE, offset });
@@ -1133,6 +1133,7 @@
     const requestSeq = ++eligibilityRequestSeq;
     writeReviewState.itemId = itemId;
     writeReviewState.eligibilityStatus = "loading";
+    writeReviewState.error = "";
     try {
       const data = await root.api.loadReviewEligibility(itemId);
       if (!isCurrentEligibilityRequest(itemId, requestSeq)) return;
@@ -1140,6 +1141,7 @@
       writeReviewState.eligible = Boolean(data?.eligible);
       writeReviewState.eligibleJobs = root.utils.normalizeList(data, "eligible_jobs");
       writeReviewState.jobId = writeReviewState.eligibleJobs[0]?.job_id || null;
+      writeReviewState.error = "";
     } catch (error) {
       if (!isCurrentEligibilityRequest(itemId, requestSeq)) return;
       writeReviewState.eligibilityStatus = "error";

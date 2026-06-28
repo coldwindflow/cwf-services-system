@@ -1442,6 +1442,55 @@ test("stale load-more response from item A is not appended into item B reviews",
   assert.doesNotMatch(section.innerHTML, /Reviewer A2/);
 });
 
+test("review load-more shows a loading state and ignores duplicate clicks while the request is pending", async () => {
+  const context = makeContext();
+  const root = loadCustomerFrontend(context);
+  const item = { item_id: 1, item_name: "Item", item_category: "service", base_price: 700 };
+  let calls = 0;
+  let resolveLoadMore;
+  root.api.loadCatalogItemReviews = async (_id, { offset } = {}) => {
+    calls += 1;
+    if (Number(offset) > 0) {
+      return new Promise((resolve) => { resolveLoadMore = resolve; });
+    }
+    return {
+      reviews: [{ review_id: 1, display_name: "Reviewer 1", rating: 5, comment: "First", created_at: "2026-06-01T00:00:00Z" }],
+      total: 2,
+      rating_average: 5,
+      review_count: 2,
+    };
+  };
+
+  const container = new FakeMount();
+  container.innerHTML = `<section data-store-detail-body><div data-store-reviews-section></div></section>`;
+  root.state.setRoute("storeItem-1");
+  root.state.setStoreDetail({ status: "success", itemId: "1", data: item, error: "" });
+  await root.store._test.loadReviewsList(container, item);
+  const append = root.store._test.loadReviewsList(container, item, { append: true });
+
+  let section = container.querySelector("[data-store-reviews-section]");
+  assert.match(section.innerHTML, /กำลังโหลด\.\.\./);
+  assert.match(section.innerHTML, /data-store-reviews-more disabled/);
+  assert.equal(calls, 2);
+
+  const more = container.querySelector("[data-store-reviews-more]");
+  assert.ok(more);
+  await more.click();
+  assert.equal(calls, 2, "duplicate click while loading_more must not start a second request");
+
+  resolveLoadMore({
+    reviews: [{ review_id: 2, display_name: "Reviewer 2", rating: 4, comment: "Second", created_at: "2026-06-02T00:00:00Z" }],
+    total: 2,
+    rating_average: 4.5,
+    review_count: 2,
+  });
+  await append;
+  section = container.querySelector("[data-store-reviews-section]");
+  assert.match(section.innerHTML, /Reviewer 1/);
+  assert.match(section.innerHTML, /Reviewer 2/);
+  assert.doesNotMatch(section.innerHTML, /กำลังโหลด\.\.\./);
+});
+
 test("stale eligibility response from item A never changes item B review panel", async () => {
   const context = makeContext();
   const root = loadCustomerFrontend(context);
@@ -1499,6 +1548,12 @@ test("eligibility error shows retry for the current item instead of a no-eligibl
   await retry.click();
   section = container.querySelector("[data-store-reviews-section]");
   assert.match(section.innerHTML, /data-store-review-open/);
+  assert.doesNotMatch(section.innerHTML, /network down/);
+
+  await container.querySelector("[data-store-review-open]").click();
+  section = container.querySelector("[data-store-reviews-section]");
+  assert.match(section.innerHTML, /data-store-review-next/);
+  assert.doesNotMatch(section.innerHTML, /network down/);
 });
 
 test("stale review submit response from item A never patches item B detail state", async () => {
