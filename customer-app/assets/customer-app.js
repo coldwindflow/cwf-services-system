@@ -3,7 +3,7 @@
 
   const App = window.CWFCustomerAppV2;
   const BOOT_TIMEOUT_MS = 3500;
-  const BUILD_ID = "20260628_store_review_name_final";
+  const BUILD_ID = "20260629_store_card_spacing_review_privacy";
 
   function withTimeout(promise, timeoutMs) {
     return Promise.race([

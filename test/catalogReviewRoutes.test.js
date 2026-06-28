@@ -277,7 +277,7 @@ test("createCatalogReviewRoutes throws without requireCustomerJwt or requireAdmi
 });
 
 test("normalizeReviewDisplayName strips only proven leading คุณ honorifics and never masks names", () => {
-  const { normalizeReviewNameCore, normalizeReviewDisplayName } = require("../server/routes/catalog/reviews");
+  const { normalizeReviewNameCore, normalizeReviewDisplayName, formatPublicReviewDisplayName } = require("../server/routes/catalog/reviews");
   assert.equal(normalizeReviewNameCore("คุณ สมชาย ใจดี"), "สมชาย ใจดี");
   assert.equal(normalizeReviewNameCore("คุณคุณสมชาย"), "สมชาย");
   assert.equal(normalizeReviewNameCore("คุณ คุณ แอนนา"), "แอนนา");
@@ -295,6 +295,16 @@ test("normalizeReviewDisplayName strips only proven leading คุณ honorifics
   assert.equal(normalizeReviewDisplayName(""), "ลูกค้า CWF");
   assert.equal(normalizeReviewDisplayName("คุณ"), "ลูกค้า CWF");
   assert.equal(normalizeReviewDisplayName("บริษัทคุณภาพดี"), "บริษัทคุณภาพดี");
+  assert.equal(formatPublicReviewDisplayName("คุณ เสาวลักษณ์ หมอยา"), "เสาวลักษณ์ ม.");
+  assert.equal(formatPublicReviewDisplayName("สมชาย ใจดี"), "สมชาย ใ.");
+  assert.equal(formatPublicReviewDisplayName("Anna Smith"), "Anna S.");
+  assert.equal(formatPublicReviewDisplayName("แพรพลอย"), "แพร…");
+  assert.equal(formatPublicReviewDisplayName("Bob"), "Bob");
+  assert.equal(formatPublicReviewDisplayName("คุณ คุณ แอนนา"), "แอน…");
+  assert.equal(formatPublicReviewDisplayName("คุณ"), "ลูกค้า CWF");
+  assert.equal(formatPublicReviewDisplayName(""), "ลูกค้า CWF");
+  assert.ok(!formatPublicReviewDisplayName("คุณ เสาวลักษณ์ หมอยา").includes("คุณ"));
+  assert.ok(!formatPublicReviewDisplayName("คุณ เสาวลักษณ์ หมอยา").includes("*"));
 });
 
 test("public reviews list is approved-only and never exposes job_id, customer_sub, or moderation fields", async () => {
@@ -316,13 +326,13 @@ test("public reviews list is approved-only and never exposes job_id, customer_su
     assert.equal(body.rating_average, 5);
     assert.equal(body.reviews.length, 1);
     assert.equal(body.reviews[0].rating, 5);
-    assert.equal(body.reviews[0].display_name, "สมชาย");
+    assert.equal(body.reviews[0].display_name, "สมช…");
     assert.ok(!body.reviews[0].display_name.includes("คุณ"));
     assert.ok(!body.reviews[0].display_name.includes("*"));
     assert.ok(!("completed_job_id" in body.reviews[0]));
     assert.ok(!("customer_identity" in body.reviews[0]));
     assert.ok(!("moderation_status" in body.reviews[0]));
-    assert.ok(JSON.stringify(body).includes("สมชาย"));
+    assert.ok(!JSON.stringify(body).includes("สมชาย ใจดี"));
   });
 });
 
@@ -356,10 +366,11 @@ test("public reviews normalize existing approved rows without exposing raw ident
     assert.equal(res.status, 200);
     assert.equal(body.review_count, 1);
     assert.equal(body.rating_average, 5);
-    assert.equal(body.reviews[0].display_name, "สมชาย ใจดี");
+    assert.equal(body.reviews[0].display_name, "สมชาย ใ.");
     assert.equal(body.reviews[0].comment, "ช่างสุภาพมาก ทำงานละเอียด");
     assert.ok(!body.reviews[0].display_name.includes("คุณ"));
     assert.ok(!body.reviews[0].display_name.includes("*"));
+    assert.ok(!body.reviews[0].display_name.includes("ใจดี"));
     assert.ok(!("customer_identity" in body.reviews[0]));
     assert.ok(!("completed_job_id" in body.reviews[0]));
     assert.ok(!("job_id" in body.reviews[0]));
