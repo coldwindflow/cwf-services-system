@@ -164,6 +164,8 @@ test("customer app build and service worker cache IDs changed", () => {
   for (const file of [
     "customer-app/index.html",
     "customer-app/sw.js",
+    "customer-app/assets/customer-app.js",
+    "customer-app/manifest.webmanifest",
   ]) {
     const source = fs.readFileSync(path.join(__dirname, "..", file), "utf8");
     assert.match(source, new RegExp(id));

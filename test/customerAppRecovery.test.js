@@ -229,6 +229,7 @@ test("Customer App build id is consistent across shell and service worker", () =
   const index = read("customer-app/index.html");
   const sw = read("customer-app/sw.js");
   const app = read("customer-app/assets/customer-app.js");
+  const manifest = read("customer-app/manifest.webmanifest");
   const build = "20260628_store_detail_content_missing";
 
   assert.match(index, new RegExp(`customer-app\\.css\\?v=${build}`));
@@ -236,6 +237,8 @@ test("Customer App build id is consistent across shell and service worker", () =
   assert.match(index, new RegExp(`modules\\/store\\.js\\?v=${build}`));
   assert.match(index, new RegExp(`bookingUrgent\\.js\\?v=${build}`));
   assert.match(sw, new RegExp(`BUILD_ID = "${build}"`));
+  assert.match(app, new RegExp(`BUILD_ID = "${build}"`));
+  assert.match(manifest, new RegExp(`index\\.html\\?v=${build}#home`));
   assert.doesNotMatch(sw, /"\.\/index\.html"/);
   assert.match(sw, /cwf-customer-app-v2-/);
   assert.match(app, /document\.readyState === "complete"/);
