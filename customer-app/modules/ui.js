@@ -333,8 +333,15 @@
   }
 
   function renderHomepageFeaturedSection(section) {
+    const catalog = root.state.catalog || { status: "idle", items: [] };
+    if (catalog.status === "success" && !featuredCatalogItems(section).length) {
+      // No valid items after resolving against real Catalog data (e.g. every
+      // manually-selected item became inactive/hidden) — hide the section
+      // entirely rather than show admin-authored copy with an empty body.
+      return `<div data-home-featured-section></div>`;
+    }
     return `
-      <section class="homepage-section">
+      <section class="homepage-section" data-home-featured-section>
         <div class="homepage-section-head">
           <div>
             <h2>${root.utils.escapeHtml(section.title || "")}</h2>
@@ -540,7 +547,7 @@
     const tasks = [];
     if (needsAuth) tasks.push(root.auth.loadCustomer(null));
     if (needsHomepage) tasks.push(loadHomepageData());
-    if (needsCatalog) tasks.push(loadCollection("catalog", () => root.api.loadCatalogItems(), ""));
+    if (needsCatalog) tasks.push(loadCollection("catalog", () => root.api.loadCatalogItems(), "items"));
     if (needsPromotions) tasks.push(loadCollection("promotions", root.api.loadPromotions, "promotions"));
     if (needsZones) tasks.push(loadCollection("zones", root.api.loadServiceZones, "zones"));
     if (needsPricing) tasks.push(loadHomePricingData());
@@ -723,8 +730,9 @@
       account.innerHTML = renderAccountShortcut();
       root.auth?.bindAvatarFallbacks?.(account);
     }
-    const featured = container.querySelector("[data-homepage-featured]");
-    if (featured) featured.innerHTML = renderHomepageFeaturedServices(sectionByType("featured_services"));
+    const featuredSection = container.querySelector("[data-home-featured-section]");
+    const featuredCfg = sectionByType("featured_services");
+    if (featuredSection && featuredCfg) featuredSection.outerHTML = renderHomepageFeaturedSection(featuredCfg);
     const activeJob = container.querySelector("[data-home-active-job]");
     const activeSection = sectionByType("active_job");
     if (activeJob && activeSection) activeJob.outerHTML = renderHomepageActiveJob(activeSection);

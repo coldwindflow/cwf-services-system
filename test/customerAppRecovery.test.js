@@ -441,7 +441,11 @@ test("homepage section sort_order controls DOM order", () => {
   const context = makeContext();
   const root = loadCustomerFrontend(context);
   root.auth = { displayName: () => "Customer", loadCustomer: async () => ({ logged_in: false }) };
-  root.state.setCollection("catalog", { status: "success", error: "", items: [] });
+  root.state.setCollection("catalog", {
+    status: "success",
+    error: "",
+    items: [{ item_id: 1, item_name: "Featured Item", is_featured: true, is_active: true, is_customer_visible: true }],
+  });
   root.state.setHomepage({
     status: "success",
     fallback: false,

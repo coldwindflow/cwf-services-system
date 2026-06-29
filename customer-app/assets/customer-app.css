@@ -4889,3 +4889,50 @@ body.has-contact-sheet { overflow: hidden; }
 }
 .nav-item-primary.is-active,
 .nav-item-primary.is-active::before { color: #657187; }
+
+/* Homepage CMS premium visual polish: hierarchy, elevation, typography.
+   Additive only — does not touch .bottom-nav / .nav-item layout/geometry. */
+.homepage-kicker { letter-spacing: 0.4px; }
+.homepage-hero h2 { text-shadow: 0 2px 14px rgba(0, 9, 26, 0.35); }
+.homepage-hero p { letter-spacing: 0.1px; }
+.homepage-section-head h2 {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  letter-spacing: 0.1px;
+}
+.homepage-section-head h2::before {
+  display: inline-block;
+  width: 4px;
+  height: 16px;
+  border-radius: 3px;
+  background: linear-gradient(180deg, var(--blue), var(--navy-3));
+  content: "";
+}
+.homepage-quick,
+.homepage-active-job-card,
+.homepage-service-card,
+.homepage-announcement-card,
+.homepage-update-card,
+.homepage-article-card,
+.homepage-trust-item {
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+.homepage-quick:active,
+.homepage-active-job-card:active,
+.homepage-service-card:active,
+.homepage-announcement-card:active,
+.homepage-update-card:active,
+.homepage-article-card:active {
+  transform: scale(0.97);
+}
+.homepage-service-card,
+.homepage-announcement-card,
+.homepage-update-card,
+.homepage-article-card {
+  box-shadow: 0 10px 26px rgba(13, 45, 88, 0.09);
+}
+.homepage-trust-item {
+  box-shadow: 0 5px 16px rgba(13, 45, 88, 0.05);
+}
+.homepage-card-body strong { letter-spacing: 0.05px; }

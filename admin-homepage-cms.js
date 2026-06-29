@@ -41,11 +41,34 @@
   async function ensureCatalogItems() {
     if (catalogItems || catalogLoadFailed) return;
     try {
-      catalogItems = await requestJson("/admin/catalog/items");
-      renderEditor();
+      const data = await requestJson("/admin/catalog/items");
+      catalogItems = Array.isArray(data?.items) ? data.items : [];
     } catch (_) {
       catalogLoadFailed = true;
     }
+    render();
+  }
+
+  function retryLoadCatalogItems() {
+    catalogLoadFailed = false;
+    catalogItems = null;
+    render();
+    ensureCatalogItems();
+  }
+
+  function catalogIsSelectable(item) {
+    return Boolean(item) && item.is_active !== false && item.is_customer_visible !== false;
+  }
+
+  function resolveFeaturedPreviewItems(section) {
+    const rows = catalogItems || [];
+    const limitRaw = Number(section.featured_limit);
+    const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(12, Math.round(limitRaw))) : 8;
+    if (section.featured_mode === "manual") {
+      const byId = new Map(rows.map((item) => [String(item.item_id), item]));
+      return (section.item_ids || []).map((id) => byId.get(String(id))).filter(catalogIsSelectable).slice(0, limit);
+    }
+    return rows.filter((item) => item && item.is_featured && catalogIsSelectable(item)).slice(0, limit);
   }
 
   async function requestJson(url, options) {
@@ -62,6 +85,7 @@
     selected = current()?.id || "hero";
     render();
     setStatus(`Draft v${data.version || 1}${data.published_at ? " · Published แล้ว" : ""}`, "ok");
+    ensureCatalogItems();
   }
 
   async function saveDraft() {
@@ -223,20 +247,48 @@
 
   function featuredServicesEditor(section) {
     const mode = section.featured_mode === "manual" ? "manual" : "auto";
-    const selectedIds = new Set((section.item_ids || []).map(String));
+    const itemIds = (Array.isArray(section.item_ids) ? section.item_ids : []).map(String);
     if (mode === "manual") ensureCatalogItems();
-    const manualList = mode !== "manual" ? "" : (
-      !catalogItems
-        ? `<p>${catalogLoadFailed ? "โหลดรายการ Catalog ไม่สำเร็จ" : "กำลังโหลดรายการ Catalog..."}</p>`
-        : `<div class="editor" style="max-height:260px;overflow:auto;border:1px solid #dce4ef;border-radius:11px;padding:8px">
-            ${catalogItems.map((item) => `
-              <label class="switch" style="justify-content:flex-start">
-                <input type="checkbox" data-featured-item="${esc(item.item_id)}" ${selectedIds.has(String(item.item_id)) ? "checked" : ""}>
-                ${esc(item.item_name || item.item_id)}
-              </label>
-            `).join("") || "<p>ไม่มีรายการใน Catalog</p>"}
-          </div>`
-    );
+    let manualBlock = "";
+    if (mode === "manual") {
+      if (catalogLoadFailed) {
+        manualBlock = `<p>โหลดรายการ Catalog ไม่สำเร็จ</p><button class="btn" type="button" id="retryCatalog">ลองใหม่</button>`;
+      } else if (!catalogItems) {
+        manualBlock = `<p>กำลังโหลดรายการ Catalog...</p>`;
+      } else {
+        const byId = new Map(catalogItems.map((item) => [String(item.item_id), item]));
+        const selectedRows = itemIds.map((id) => byId.get(id)).filter(Boolean);
+        const unselectedRows = catalogItems.filter((item) => !itemIds.includes(String(item.item_id)));
+        const inactiveNote = (item) => (catalogIsSelectable(item) ? "" : ` <small style="color:#b42318">(ปิดใช้งาน/ไม่แสดงลูกค้า — จะไม่แสดงจริง)</small>`);
+        manualBlock = `
+          <p style="margin:8px 0 4px;font-weight:600">รายการที่เลือก (ลำดับ = ลำดับที่แสดงจริง)</p>
+          <div class="editor" style="max-height:240px;overflow:auto;border:1px solid #dce4ef;border-radius:11px;padding:8px">
+            ${selectedRows.length ? selectedRows.map((item, index) => `
+              <div class="section-row">
+                <div>
+                  <button class="mini" type="button" data-move-featured-item="${esc(item.item_id)}" data-dir="-1" ${index === 0 ? "disabled" : ""}>↑</button>
+                  <button class="mini" type="button" data-move-featured-item="${esc(item.item_id)}" data-dir="1" ${index === selectedRows.length - 1 ? "disabled" : ""}>↓</button>
+                </div>
+                <div><b>${esc(item.item_name || item.item_id)}</b>${inactiveNote(item)}</div>
+                <label class="switch"><input type="checkbox" data-featured-item="${esc(item.item_id)}" checked> แสดงผล</label>
+              </div>
+            `).join("") : "<p>ยังไม่ได้เลือกรายการ</p>"}
+          </div>
+          <p style="margin:10px 0 4px;font-weight:600">รายการที่ยังไม่เลือก</p>
+          <div class="editor" style="max-height:240px;overflow:auto;border:1px solid #dce4ef;border-radius:11px;padding:8px">
+            ${unselectedRows.length ? unselectedRows.map((item) => {
+              const selectable = catalogIsSelectable(item);
+              return `
+                <label class="switch" style="justify-content:flex-start">
+                  <input type="checkbox" data-featured-item="${esc(item.item_id)}" ${selectable ? "" : "disabled"}>
+                  ${esc(item.item_name || item.item_id)}${inactiveNote(item)}
+                </label>
+              `;
+            }).join("") : "<p>ไม่มีรายการเพิ่มเติม</p>"}
+          </div>
+        `;
+      }
+    }
     return `
       <label>แหล่งข้อมูลบริการแนะนำ<select data-featured-mode>
         <option value="auto" ${mode === "auto" ? "selected" : ""}>ดึงจาก Catalog อัตโนมัติ (is_featured)</option>
@@ -245,7 +297,7 @@
       <label>จำนวนรายการสูงสุด<input type="number" min="1" max="12" data-featured-limit value="${esc(section.featured_limit || 8)}"></label>
       <label class="switch"><input type="checkbox" data-featured-bool="show_price" ${section.show_price !== false ? "checked" : ""}> แสดงราคา</label>
       <label class="switch"><input type="checkbox" data-featured-bool="show_badge" ${section.show_badge !== false ? "checked" : ""}> แสดง Badge สถานะจอง</label>
-      ${mode === "manual" ? `<label>เลือกบริการที่ต้องการแสดง${manualList}</label>` : ""}
+      ${mode === "manual" ? `<label>เลือกและจัดลำดับบริการที่ต้องการแสดง${manualBlock}</label>` : ""}
     `;
   }
 
@@ -278,7 +330,29 @@
       }
       if (section.type === "quick") return `<section class="quick">${(section.items || []).slice(0, 4).map((item) => `<div>${esc(item.title || "")}</div>`).join("")}</section>`;
       if (section.type === "active_job") return `<section class="sec"><div class="sec-head"><div><b>${esc(section.title || "")}</b><br><span>Shown only when the logged-in customer has an active job</span></div></div></section>`;
-      if (section.type === "featured_services") return `<section class="sec"><div class="sec-head"><div><b>${esc(section.title || "")}</b><br><span>${esc(section.body || "")}</span></div></div><div class="cards"><article class="card"><b>Featured services</b><p>Catalog cards render here in the Customer App</p></article></div></section>`;
+      if (section.type === "featured_services") {
+        const items = resolveFeaturedPreviewItems(section);
+        const showPrice = section.show_price !== false;
+        const showBadge = section.show_badge !== false;
+        const priceText = (item) => {
+          const value = Number(item.display_price ?? item.active_price ?? item.base_price);
+          return Number.isFinite(value) && value > 0 ? `${value.toLocaleString("th-TH")} บาท` : "สอบถามราคา";
+        };
+        const cards = items.length
+          ? items.map((item) => `
+              <article class="card">
+                <b>${esc(item.item_name || item.item_id)}</b>
+                ${showBadge ? `<p><span style="display:inline-block;padding:2px 8px;border-radius:999px;background:#eef2ff;color:#3346a6;font-size:11px">${item.booking_mode === "bookable" ? "จองได้" : "สอบถามแอดมิน"}</span></p>` : ""}
+                ${showPrice ? `<p>${esc(priceText(item))}</p>` : ""}
+              </article>
+            `).join("")
+          : catalogLoadFailed
+            ? `<article class="card"><b>โหลด Catalog ไม่สำเร็จ</b><p>กดลองใหม่ในตัวแก้ไข</p></article>`
+            : !catalogItems
+              ? `<article class="card"><b>กำลังโหลด Catalog...</b></article>`
+              : `<article class="card"><b>ไม่มีบริการแนะนำที่แสดงผลได้</b><p>Section นี้จะถูกซ่อนจากลูกค้าจริง</p></article>`;
+        return `<section class="sec"><div class="sec-head"><div><b>${esc(section.title || "")}</b><br><span>${esc(section.body || "")}</span></div></div><div class="cards">${cards}</div></section>`;
+      }
       return `<section class="sec"><div class="sec-head"><div><b>${esc(section.title || "")}</b><br><span>${esc(section.body || "")}</span></div><span>ดูทั้งหมด</span></div><div class="cards">${(section.items || []).slice(0, 3).map((item) => `<article class="card"><b>${esc(item.title || "")}</b><p>${esc(item.body || "")}</p></article>`).join("") || `<article class="card"><b>ไม่มีรายการ</b><p>เพิ่มรายการใน editor</p></article>`}</div></section>`;
     }).join("");
   }
@@ -309,6 +383,20 @@
     }
     const clearImage = event.target.closest("[data-clear-section-image]");
     if (clearImage) { delete current().image_url; delete current().image_public_id; render(); }
+    const moveFeatured = event.target.closest("[data-move-featured-item]");
+    if (moveFeatured) {
+      const section = current();
+      const ids = (Array.isArray(section.item_ids) ? section.item_ids : []).map(String);
+      const id = moveFeatured.dataset.moveFeaturedItem;
+      const index = ids.indexOf(id);
+      const next = index + Number(moveFeatured.dataset.dir);
+      if (index >= 0 && next >= 0 && next < ids.length) {
+        [ids[index], ids[next]] = [ids[next], ids[index]];
+        section.item_ids = ids;
+        render();
+      }
+    }
+    if (event.target.id === "retryCatalog") retryLoadCatalogItems();
     if (event.target.id === "addItem") {
       current().items = current().items || [];
       if (current().type === "quick" && current().items.length >= 4) { setStatus("Quick จำกัด 4 รายการ", "bad"); return; }
@@ -369,7 +457,7 @@
       } else {
         section.item_ids = section.item_ids.filter((value) => value !== id);
       }
-      renderPreview();
+      render();
     }
     if (target.matches("[data-item-target]")) {
       const item = current().items[Number(target.dataset.itemTarget)];
