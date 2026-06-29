@@ -19,9 +19,10 @@ function createPool() {
       draft_config: DEFAULT_CONFIG,
       published_config: null,
       version: 1,
-      updated_by: null,
-      updated_at: null,
-      published_at: null,
+    updated_by: null,
+    updated_at: null,
+    published_at: null,
+    activeJob: null,
     },
     queries: [],
   };
@@ -54,14 +55,18 @@ function createPool() {
       }
       if (normalized.includes("INSERT INTO public.homepage_cms_media")) return { rows: [] };
       if (normalized.includes("UPDATE public.homepage_cms_media")) return { rows: [] };
+      if (normalized.includes("FROM public.jobs") && normalized.includes("customer_sub=$1")) {
+        return { rows: state.activeJob && params[0] === "customer-1" ? [state.activeJob] : [] };
+      }
       throw new Error(`Unhandled query: ${normalized}`);
     },
   };
 }
 
-async function withServer(pool, requireAdminSession) {
+async function withServer(pool, requireAdminSession, beforeRoutes) {
   const app = express();
   app.use(express.json({ limit: "200kb" }));
+  if (beforeRoutes) app.use(beforeRoutes);
   app.use(createHomepageRoutes({
     pool,
     requireAdminSession,
@@ -260,13 +265,14 @@ test("backend defaults contain exactly the standard homepage section types in or
   assert.deepEqual(DEFAULT_CONFIG.sections.map((section) => section.type), [
     "hero",
     "quick",
+    "active_job",
     "announcements",
     "featured_services",
     "updates",
     "articles",
     "trust",
   ]);
-  assert.deepEqual(DEFAULT_CONFIG.sections.map((section) => section.sort_order), [10, 20, 30, 40, 50, 60, 70]);
+  assert.deepEqual(DEFAULT_CONFIG.sections.map((section) => section.sort_order), [10, 20, 30, 40, 50, 60, 70, 80]);
 });
 
 test("homepage validation preserves hero image metadata and rejects quick sections over four items", () => {
@@ -279,12 +285,19 @@ test("homepage validation preserves hero image metadata and rejects quick sectio
       title: "Hero",
       image_url: "https://res.cloudinary.com/demo/hero.jpg",
       image_public_id: "cwf/homepage/hero",
-      items: [],
+      items: [{
+        title: "Slide",
+        image_url: "https://res.cloudinary.com/demo/slide.jpg",
+        cta_primary: { label: "Book", route: "scheduled" },
+        cta_secondary: { label: "Line", url: "https://example.com/line" },
+      }],
     }],
   });
   assert.equal(valid.ok, true);
   assert.equal(valid.config.sections[0].image_url, "https://res.cloudinary.com/demo/hero.jpg");
   assert.equal(valid.config.sections[0].image_public_id, "cwf/homepage/hero");
+  assert.equal(valid.config.sections[0].items[0].cta_primary.route, "scheduled");
+  assert.equal(valid.config.sections[0].items[0].cta_secondary.url, "https://example.com/line");
 
   const invalid = validateConfig({
     sections: [{
@@ -324,6 +337,47 @@ test("public homepage strips section and item image_public_id while keeping imag
     assert.doesNotMatch(JSON.stringify(data), /image_public_id|cwf\/homepage\/hero|secret_item_id/);
   } finally {
     await server.close();
+  }
+});
+
+test("public active job endpoint is session scoped and returns safe fields only", async () => {
+  const pool = createPool();
+  pool.state.activeJob = {
+    booking_code: "CWF-102",
+    job_type: "ล้างแอร์",
+    job_status: "นัดหมายแล้ว",
+    appointment_datetime: "2026-06-30T03:00:00.000Z",
+    job_id: 99,
+    customer_name: "Private",
+    customer_phone: "0999999999",
+  };
+  const noSession = await withServer(pool, (_req, _res, next) => next());
+  try {
+    const res = await fetch(`${noSession.base}/public/homepage/active-job`);
+    const data = await res.json();
+    assert.equal(res.status, 200);
+    assert.equal(data.active_job, null);
+  } finally {
+    await noSession.close();
+  }
+
+  const session = await withServer(
+    pool,
+    (_req, _res, next) => next(),
+    (req, _res, next) => { req.customer = { sub: "customer-1" }; next(); },
+  );
+  try {
+    const res = await fetch(`${session.base}/public/homepage/active-job`);
+    const data = await res.json();
+    assert.equal(res.status, 200);
+    assert.equal(data.active_job.booking_code, "CWF-102");
+    assert.equal(data.active_job.job_type, "ล้างแอร์");
+    assert.equal(data.active_job.job_status, "นัดหมายแล้ว");
+    assert.deepEqual(Object.keys(data.active_job).sort(), ["appointment_datetime", "booking_code", "job_status", "job_type"]);
+    assert.doesNotMatch(JSON.stringify(data), /job_id|customer_name|customer_phone|0999999999|Private/);
+    assert.equal(pool.state.queries.some((query) => query.params[0] === "customer-1"), true);
+  } finally {
+    await session.close();
   }
 });
 
@@ -367,7 +421,7 @@ test("backend admin customer defaults and homepage migration stay in allowed sco
   const admin = read("admin-homepage-cms.js");
   const customer = read("customer-app/modules/ui.js");
   const migration = read("migrations/20260629_homepage_cms.sql");
-  for (const type of ["hero", "quick", "announcements", "featured_services", "updates", "articles", "trust"]) {
+  for (const type of ["hero", "quick", "active_job", "announcements", "featured_services", "updates", "articles", "trust"]) {
     assert.match(admin, new RegExp(`type:\\s*"${type}"`));
     assert.match(customer, new RegExp(`type:\\s*"${type}"`));
   }
@@ -394,6 +448,18 @@ test("homepage service carousel constrains card and image geometry on mobile", (
   assert.match(imageImgBlock, /width:\s*100%/);
   assert.match(imageImgBlock, /height:\s*100%/);
   assert.match(imageImgBlock, /object-fit:\s*cover/);
+});
+
+test("customer homepage renderer supports hero slider, active job placeholder, and real empty states", () => {
+  const ui = read("customer-app/modules/ui.js");
+  assert.match(ui, /const slides = Array\.isArray\(section\.items\) && section\.items\.length \? section\.items : \[section\]/);
+  assert.match(ui, /homepage-hero-slider/);
+  assert.match(ui, /homepage-hero-dots/);
+  assert.match(ui, /slide\.cta_primary \|\| section\.cta_primary/);
+  assert.match(ui, /function renderHomepageActiveJob\(section\)/);
+  assert.match(ui, /data-home-active-job/);
+  assert.match(ui, /loadHomeActiveJobData/);
+  assert.match(ui, /homepage-section-empty/);
 });
 
 test("homepage target validation stores exactly one quick or announcement target", () => {

@@ -6,11 +6,12 @@
     sections: [
       { id: "hero", type: "hero", enabled: true, sort_order: 10, kicker: "Coldwindflow", title: "ดูแลแอร์ง่าย จองงานได้ในไม่กี่ขั้นตอน", body: "จองล้างแอร์ ติดตามงาน และรับประกาศสำคัญจาก CWF ได้ในหน้าเดียว", cta_primary: { label: "จองล้างแอร์", route: "scheduled" }, cta_secondary: { label: "ติดตามงาน", route: "tracking" }, items: [] },
       { id: "quick", type: "quick", enabled: true, sort_order: 20, title: "เมนูด่วน", body: "", items: [{ title: "จองล้างแอร์", route: "scheduled", icon: "sparkle" }, { title: "แจ้งซ่อม", action: "contact", icon: "wrench" }, { title: "ติดตามงาน", route: "tracking", icon: "pin" }, { title: "LINE", url: "https://lin.ee/fG1Oq7y", icon: "chat" }] },
-      { id: "announcements", type: "announcements", enabled: true, sort_order: 30, title: "ข่าวและประกาศ CWF", body: "", items: [] },
-      { id: "featured_services", type: "featured_services", enabled: true, sort_order: 40, title: "บริการแนะนำ", body: "ราคาและรายละเอียดจาก Catalog", items: [] },
-      { id: "updates", type: "updates", enabled: true, sort_order: 50, title: "ภาพกิจกรรมและโพสต์", body: "เชื่อมต่อไปยัง Facebook", items: [] },
-      { id: "articles", type: "articles", enabled: true, sort_order: 60, title: "บทความแนะนำ", body: "อ่านต่อบน cwf-air.com", items: [] },
-      { id: "trust", type: "trust", enabled: true, sort_order: 70, title: "มาตรฐานที่ลูกค้าวางใจ", body: "", items: [{ title: "แจ้งราคาก่อนทำ", body: "ระบบคำนวณจากข้อมูลบริการจริง" }, { title: "ช่างผ่านมาตรฐาน", body: "ทีมงานได้รับการตรวจสอบก่อนรับงาน" }, { title: "ติดตามงานได้", body: "ดูสถานะสำคัญด้วย Booking Code" }, { title: "ติดต่อแอดมินง่าย", body: "รองรับ LINE และโทรศัพท์" }] },
+      { id: "active_job", type: "active_job", enabled: true, sort_order: 30, title: "Active job", body: "", items: [] },
+      { id: "announcements", type: "announcements", enabled: true, sort_order: 40, title: "ข่าวและประกาศ CWF", body: "", items: [] },
+      { id: "featured_services", type: "featured_services", enabled: true, sort_order: 50, title: "บริการแนะนำ", body: "ราคาและรายละเอียดจาก Catalog", items: [] },
+      { id: "updates", type: "updates", enabled: true, sort_order: 60, title: "ภาพกิจกรรมและโพสต์", body: "เชื่อมต่อไปยัง Facebook", items: [] },
+      { id: "articles", type: "articles", enabled: true, sort_order: 70, title: "บทความแนะนำ", body: "อ่านต่อบน cwf-air.com", items: [] },
+      { id: "trust", type: "trust", enabled: true, sort_order: 80, title: "มาตรฐานที่ลูกค้าวางใจ", body: "", items: [{ title: "แจ้งราคาก่อนทำ", body: "ระบบคำนวณจากข้อมูลบริการจริง" }, { title: "ช่างผ่านมาตรฐาน", body: "ทีมงานได้รับการตรวจสอบก่อนรับงาน" }, { title: "ติดตามงานได้", body: "ดูสถานะสำคัญด้วย Booking Code" }, { title: "ติดต่อแอดมินง่าย", body: "รองรับ LINE และโทรศัพท์" }] },
     ],
   };
   let config = clone(DEFAULT_CONFIG);
@@ -192,6 +193,7 @@
         return `<section class="hero" ${section.image_url ? `style="background-image:linear-gradient(rgba(7,27,56,.62),rgba(7,27,56,.62)),url('${esc(section.image_url)}');background-size:cover;background-position:center"` : ""}><small>${esc(section.kicker || "Coldwindflow")}</small><h3>${esc(section.title || "")}</h3><p>${esc(section.body || "")}</p></section>`;
       }
       if (section.type === "quick") return `<section class="quick">${(section.items || []).slice(0, 4).map((item) => `<div>${esc(item.title || "")}</div>`).join("")}</section>`;
+      if (section.type === "active_job") return `<section class="sec"><div class="sec-head"><div><b>${esc(section.title || "")}</b><br><span>Shown only when the logged-in customer has an active job</span></div></div></section>`;
       if (section.type === "featured_services") return `<section class="sec"><div class="sec-head"><div><b>${esc(section.title || "")}</b><br><span>${esc(section.body || "")}</span></div></div><div class="cards"><article class="card"><b>Featured services</b><p>Catalog cards render here in the Customer App</p></article></div></section>`;
       return `<section class="sec"><div class="sec-head"><div><b>${esc(section.title || "")}</b><br><span>${esc(section.body || "")}</span></div><span>ดูทั้งหมด</span></div><div class="cards">${(section.items || []).slice(0, 3).map((item) => `<article class="card"><b>${esc(item.title || "")}</b><p>${esc(item.body || "")}</p></article>`).join("") || `<article class="card"><b>ไม่มีรายการ</b><p>เพิ่มรายการใน editor</p></article>`}</div></section>`;
     }).join("");

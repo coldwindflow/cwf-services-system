@@ -87,10 +87,19 @@
         ],
       },
       {
+        id: "active_job",
+        type: "active_job",
+        enabled: true,
+        sort_order: 30,
+        title: "งานของฉัน",
+        body: "",
+        items: [],
+      },
+      {
         id: "announcements",
         type: "announcements",
         enabled: true,
-        sort_order: 30,
+        sort_order: 40,
         title: "ข่าวและประกาศ CWF",
         body: "",
         items: [],
@@ -99,7 +108,7 @@
         id: "featured_services",
         type: "featured_services",
         enabled: true,
-        sort_order: 40,
+        sort_order: 50,
         title: "บริการแนะนำ",
         body: "ราคาและรายละเอียดดึงจาก Catalog",
         items: [],
@@ -108,7 +117,7 @@
         id: "updates",
         type: "updates",
         enabled: true,
-        sort_order: 50,
+        sort_order: 60,
         title: "ภาพกิจกรรมและโพสต์",
         body: "เชื่อมต่อไปยัง Facebook",
         items: [],
@@ -117,7 +126,7 @@
         id: "articles",
         type: "articles",
         enabled: true,
-        sort_order: 60,
+        sort_order: 70,
         title: "บทความแนะนำ",
         body: "อ่านต่อบน cwf-air.com",
         items: [],
@@ -126,7 +135,7 @@
         id: "trust",
         type: "trust",
         enabled: true,
-        sort_order: 70,
+        sort_order: 80,
         title: "มาตรฐานที่ลูกค้าวางใจ",
         items: [
           { title: "แจ้งราคาก่อนทำ", body: "ระบบคำนวณจากข้อมูลบริการจริง" },
@@ -261,18 +270,49 @@
 
   function renderHomepageHero(section) {
     if (!section) return "";
+    const slides = Array.isArray(section.items) && section.items.length ? section.items : [section];
     return `
       <section class="homepage-hero">
-        ${section.image_url ? `<div class="homepage-hero-media"><img src="${root.utils.escapeHtml(section.image_url)}" alt="" loading="lazy"></div>` : ""}
-        <div class="homepage-hero-inner">
-          ${section.kicker ? `<span class="homepage-kicker">${root.utils.escapeHtml(section.kicker)}</span>` : ""}
-          <h2>${root.utils.escapeHtml(section.title || "")}</h2>
-          ${section.body ? `<p>${root.utils.escapeHtml(section.body)}</p>` : ""}
-          <div class="homepage-hero-actions">
-            ${renderHomepageCta(section.cta_primary, "hero-main-btn")}
-            ${renderHomepageCta(section.cta_secondary, "hero-ghost-btn")}
+        <div class="homepage-hero-slider">
+          ${slides.map((slide, index) => `
+            <article class="homepage-hero-slide" data-home-hero-slide="${index}">
+              ${slide.image_url ? `<div class="homepage-hero-media"><img src="${root.utils.escapeHtml(slide.image_url)}" alt="" loading="lazy"></div>` : ""}
+              <div class="homepage-hero-inner">
+                ${slide.kicker || section.kicker ? `<span class="homepage-kicker">${root.utils.escapeHtml(slide.kicker || section.kicker)}</span>` : ""}
+                <h2>${root.utils.escapeHtml(slide.title || section.title || "")}</h2>
+                ${slide.body || section.body ? `<p>${root.utils.escapeHtml(slide.body || section.body)}</p>` : ""}
+                <div class="homepage-hero-actions">
+                  ${renderHomepageCta(slide.cta_primary || section.cta_primary, "hero-main-btn")}
+                  ${renderHomepageCta(slide.cta_secondary || section.cta_secondary, "hero-ghost-btn")}
+                </div>
+              </div>
+            </article>
+          `).join("")}
+        </div>
+        ${slides.length > 1 ? `<div class="homepage-hero-dots" aria-label="Homepage slides">${slides.map((_, index) => `<span class="${index === 0 ? "is-active" : ""}"></span>`).join("")}</div>` : ""}
+      </section>
+    `;
+  }
+
+  function renderHomepageActiveJob(section) {
+    const bucket = root.state.homeActiveJob || { status: "idle", data: null };
+    const job = bucket.data;
+    if (!job || bucket.status !== "success") return `<div data-home-active-job></div>`;
+    const dateLabel = job.appointment_datetime ? root.utils.formatDateTime(job.appointment_datetime) : "";
+    return `
+      <section class="homepage-section homepage-active-job" data-home-active-job>
+        <div class="homepage-section-head">
+          <div>
+            <h2>${root.utils.escapeHtml(section.title || "")}</h2>
+            ${section.body ? `<p>${root.utils.escapeHtml(section.body)}</p>` : ""}
           </div>
         </div>
+        <button class="homepage-active-job-card" type="button" data-route="tracking">
+          <span>${root.utils.escapeHtml(job.job_status || "")}</span>
+          <strong>${root.utils.escapeHtml(job.job_type || job.booking_code || "")}</strong>
+          ${dateLabel ? `<small>${root.utils.escapeHtml(dateLabel)}</small>` : ""}
+          <small>${root.utils.escapeHtml(job.booking_code || "")}</small>
+        </button>
       </section>
     `;
   }
@@ -294,7 +334,6 @@
 
   function renderHomepageManualSection(section) {
     const items = (section.items || []).slice(0, 8);
-    if (!items.length) return "";
     return `
       <section class="homepage-section">
         <div class="homepage-section-head">
@@ -303,6 +342,7 @@
             ${section.body ? `<p>${root.utils.escapeHtml(section.body)}</p>` : ""}
           </div>
         </div>
+        ${items.length ? `
         <div class="homepage-carousel">
           ${items.map((item) => {
             const attrs = item.action === "contact"
@@ -322,6 +362,7 @@
             `;
           }).join("")}
         </div>
+        ` : `<div class="homepage-section-empty">${root.utils.escapeHtml(section.body || "ยังไม่มีรายการเผยแพร่")}</div>`}
       </section>
     `;
   }
@@ -352,6 +393,7 @@
     if (!section) return "";
     if (section.type === "hero") return renderHomepageHero(section);
     if (section.type === "quick") return renderHomepageQuick(section);
+    if (section.type === "active_job") return renderHomepageActiveJob(section);
     if (section.type === "featured_services") return renderHomepageFeaturedSection(section);
     if (["announcements", "updates", "articles"].includes(section.type)) return renderHomepageManualSection(section);
     if (section.type === "trust") return renderHomepageTrust(section);
@@ -452,6 +494,25 @@
     root.state.setHomePricing({ status: "success", items: Object.fromEntries(entries), error: "" });
   }
 
+  async function loadHomeActiveJobData() {
+    if (root.state.homeActiveJob?.status !== "idle") return;
+    root.state.setCollection("homeActiveJob", { status: "loading", data: null, error: "" });
+    try {
+      const data = await root.api.loadHomeActiveJob();
+      root.state.setCollection("homeActiveJob", {
+        status: "success",
+        data: data?.active_job || null,
+        error: "",
+      });
+    } catch (error) {
+      root.state.setCollection("homeActiveJob", {
+        status: "error",
+        data: null,
+        error: error?.message || "ACTIVE_JOB_UNAVAILABLE",
+      });
+    }
+  }
+
   async function loadHomeData() {
     if (homeLoadPromise) return homeLoadPromise;
     const needsAuth = root.state.authStatus === "idle" && !root.state.customer;
@@ -460,7 +521,8 @@
     const needsPromotions = root.state.promotions?.status === "idle";
     const needsZones = root.state.zones?.status === "idle";
     const needsPricing = root.state.homePricing?.status === "idle";
-    if (!needsAuth && !needsHomepage && !needsCatalog && !needsPromotions && !needsZones && !needsPricing) return Promise.resolve([]);
+    const needsActiveJob = root.state.homeActiveJob?.status === "idle";
+    if (!needsAuth && !needsHomepage && !needsCatalog && !needsPromotions && !needsZones && !needsPricing && !needsActiveJob) return Promise.resolve([]);
     const tasks = [];
     if (needsAuth) tasks.push(root.auth.loadCustomer(null));
     if (needsHomepage) tasks.push(loadHomepageData());
@@ -468,6 +530,7 @@
     if (needsPromotions) tasks.push(loadCollection("promotions", root.api.loadPromotions, "promotions"));
     if (needsZones) tasks.push(loadCollection("zones", root.api.loadServiceZones, "zones"));
     if (needsPricing) tasks.push(loadHomePricingData());
+    if (needsActiveJob) tasks.push(loadHomeActiveJobData());
     homeLoadPromise = Promise.allSettled(tasks).finally(() => {
       homeLoadPromise = null;
       patchHomeData();
@@ -597,6 +660,9 @@
     }
     const featured = container.querySelector("[data-homepage-featured]");
     if (featured) featured.innerHTML = renderHomepageFeaturedServices();
+    const activeJob = container.querySelector("[data-home-active-job]");
+    const activeSection = sectionByType("active_job");
+    if (activeJob && activeSection) activeJob.outerHTML = renderHomepageActiveJob(activeSection);
     container.querySelectorAll("[data-quick-price]").forEach((mount) => {
       const card = root.services.quickServices.find((item) => item.id === mount.getAttribute("data-quick-price"));
       if (card) mount.innerHTML = renderQuickPrice(card);
