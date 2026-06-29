@@ -59,6 +59,195 @@
     `);
   }
 
+  const DEFAULT_HOME_CONFIG = {
+    sections: [
+      {
+        id: "hero",
+        type: "hero",
+        kicker: "Coldwindflow",
+        title: "ดูแลแอร์ง่าย จองงานได้ในไม่กี่ขั้นตอน",
+        body: "จองล้างแอร์ ติดตามงาน และรับประกาศสำคัญจาก CWF ได้ในหน้าเดียว",
+        cta_primary: { label: "จองล้างแอร์", route: "scheduled" },
+        cta_secondary: { label: "ติดตามงาน", route: "tracking" },
+        items: [],
+      },
+      {
+        id: "quick",
+        type: "quick",
+        title: "เมนูด่วน",
+        items: [
+          { title: "จองล้างแอร์", route: "scheduled", icon: "sparkle" },
+          { title: "แจ้งซ่อม", action: "contact", icon: "wrench" },
+          { title: "ติดตามงาน", route: "tracking", icon: "pin" },
+          { title: "LINE", url: "https://lin.ee/fG1Oq7y", icon: "chat" },
+        ],
+      },
+      {
+        id: "featured_services",
+        type: "featured_services",
+        title: "บริการแนะนำ",
+        body: "ราคาและรายละเอียดดึงจาก Catalog",
+        items: [],
+      },
+      {
+        id: "trust",
+        type: "trust",
+        title: "มาตรฐานที่ลูกค้าวางใจ",
+        items: [
+          { title: "แจ้งราคาก่อนทำ", body: "ระบบคำนวณจากข้อมูลบริการจริง" },
+          { title: "ช่างผ่านมาตรฐาน", body: "ทีมงานได้รับการตรวจสอบก่อนรับงาน" },
+          { title: "ติดตามงานได้", body: "ดูสถานะสำคัญด้วย Booking Code" },
+          { title: "ติดต่อแอดมินง่าย", body: "รองรับ LINE และโทรศัพท์" },
+        ],
+      },
+    ],
+  };
+
+  function homepageConfig() {
+    return root.state.homepage?.config || DEFAULT_HOME_CONFIG;
+  }
+
+  function homepageSections() {
+    return (homepageConfig().sections || []).slice().sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0));
+  }
+
+  function sectionByType(type) {
+    return homepageSections().find((section) => section.type === type || section.id === type) || null;
+  }
+
+  function renderHomepageCta(cta, className) {
+    if (!cta || !cta.label) return "";
+    const label = root.utils.escapeHtml(cta.label);
+    if (cta.url) {
+      return `<a class="${className}" href="${root.utils.escapeHtml(cta.url)}" target="_blank" rel="noopener noreferrer">${label}</a>`;
+    }
+    if (cta.action === "contact") {
+      return `<button class="${className}" type="button" data-home-contact="${label}">${label}</button>`;
+    }
+    return `<button class="${className}" type="button" data-route="${root.utils.escapeHtml(cta.route || "home")}">${label}</button>`;
+  }
+
+  function homepageImage(item, className, fallbackIcon = "sparkle") {
+    const imageUrl = String(item?.image_url || "").trim();
+    if (imageUrl) {
+      return `<div class="${className}"><img src="${root.utils.escapeHtml(imageUrl)}" alt="${root.utils.escapeHtml(item.title || "")}" loading="lazy"></div>`;
+    }
+    return `<div class="${className}" aria-hidden="true">${root.utils.icon(fallbackIcon, 28)}</div>`;
+  }
+
+  function firstCatalogImage(item) {
+    const images = Array.isArray(item?.images) ? item.images : [];
+    const primary = images.find((image) => image && image.is_primary) || images[0];
+    return primary?.image_url || item?.image_url || "";
+  }
+
+  function catalogDisplayPrice(item) {
+    const value = item?.display_price ?? item?.active_price ?? item?.base_price;
+    const n = Number(value);
+    return Number.isFinite(n) && n > 0 ? root.utils.formatBaht(n) : "สอบถามราคา";
+  }
+
+  function strictCatalogCommerceDraft(item) {
+    if (!item || item.booking_mode !== "bookable") return null;
+    if (!item.booking_ac_type || !Number(item.booking_btu)) return null;
+    if (item.booking_ac_type === root.services.WALL_AC && !item.booking_wash_variant) return null;
+    return root.services.catalogItemToCommerceDraft(item);
+  }
+
+  function featuredCatalogItems() {
+    const rows = root.state.catalog?.items || [];
+    return rows.filter((item) => item && item.is_featured).slice(0, 8);
+  }
+
+  function renderHomepageFeaturedServices() {
+    const catalog = root.state.catalog || { status: "idle", items: [] };
+    if (catalog.status === "loading" || catalog.status === "idle") {
+      return `<div class="content-skeleton" aria-label="กำลังโหลดบริการแนะนำ"><span></span><span></span></div>`;
+    }
+    if (catalog.status === "error") return root.utils.stateBox("error", catalog.error || "โหลดบริการแนะนำไม่สำเร็จ");
+    const items = featuredCatalogItems();
+    if (!items.length) return root.utils.stateBox("", "ยังไม่มีบริการแนะนำที่เปิดแสดง");
+    return `
+      <div class="homepage-carousel homepage-featured-services">
+        ${items.map((item) => {
+          const id = root.utils.escapeHtml(item.item_id);
+          const imageUrl = firstCatalogImage(item);
+          const promo = item.has_active_promotion || item.has_promo;
+          return `
+            <article class="homepage-service-card">
+              <button type="button" class="homepage-card-link" data-home-featured-detail="${id}">
+                <div class="homepage-card-image">
+                  ${imageUrl
+                    ? `<img src="${root.utils.escapeHtml(imageUrl)}" alt="${root.utils.escapeHtml(item.item_name || "บริการ CWF")}" loading="lazy">`
+                    : root.utils.icon("sparkle", 28)}
+                </div>
+                <span class="homepage-service-badge">${root.utils.escapeHtml(item.booking_mode === "bookable" ? "จองได้" : "สอบถามแอดมิน")}</span>
+                <div class="homepage-card-body">
+                  <strong>${root.utils.escapeHtml(item.item_name || "-")}</strong>
+                  <small>${root.utils.escapeHtml(item.short_description || item.item_category || "")}</small>
+                  <span>${root.utils.escapeHtml(catalogDisplayPrice(item))}${item.unit_label && catalogDisplayPrice(item) !== "สอบถามราคา" ? ` / ${root.utils.escapeHtml(item.unit_label)}` : ""}</span>
+                  ${promo ? `<small class="homepage-promo-text">${root.utils.escapeHtml(item.campaign_name || item.price_label || "มีโปรโมชัน")}</small>` : ""}
+                </div>
+              </button>
+              <button type="button" class="${item.booking_mode === "bookable" ? "primary-btn" : "secondary-btn"} homepage-service-action" data-home-featured-action="${id}">
+                ${item.booking_mode === "bookable" ? "จองคิว" : "สอบถามแอดมิน"}
+              </button>
+            </article>
+          `;
+        }).join("")}
+      </div>
+    `;
+  }
+
+  function renderHomepageQuick(section) {
+    const items = (section?.items || []).slice(0, 6);
+    if (!items.length) return "";
+    return `
+      <div class="homepage-quick-grid">
+        ${items.map((item, index) => {
+          const attrs = item.url
+            ? `href="${root.utils.escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer"`
+            : item.action === "contact"
+              ? `href="#" data-home-contact="${root.utils.escapeHtml(item.title || "ติดต่อ CWF")}"`
+              : `href="#${root.utils.escapeHtml(item.route || "home")}" data-route="${root.utils.escapeHtml(item.route || "home")}"`;
+          return `
+            <a class="homepage-quick" ${attrs}>
+              <span>${root.utils.icon(item.icon || ["sparkle", "wrench", "pin", "chat"][index] || "sparkle", 20)}</span>
+              <strong>${root.utils.escapeHtml(item.title || "-")}</strong>
+            </a>
+          `;
+        }).join("")}
+      </div>
+    `;
+  }
+
+  function renderHomepageManualSection(section) {
+    const items = (section.items || []).slice(0, 8);
+    if (!items.length) return "";
+    return `
+      <section class="homepage-section">
+        <div class="homepage-section-head">
+          <div>
+            <h2>${root.utils.escapeHtml(section.title || "")}</h2>
+            ${section.body ? `<p>${root.utils.escapeHtml(section.body)}</p>` : ""}
+          </div>
+        </div>
+        <div class="homepage-carousel">
+          ${items.map((item) => `
+            <a class="homepage-${section.type === "articles" ? "article" : section.type === "updates" ? "update" : "announcement"}-card" href="${root.utils.escapeHtml(item.url || "#home")}" ${item.url ? 'target="_blank" rel="noopener noreferrer"' : `data-route="${root.utils.escapeHtml(item.route || "home")}"`}>
+              ${homepageImage(item, "homepage-card-image", "sparkle")}
+              <div class="homepage-card-body">
+                <strong>${root.utils.escapeHtml(item.title || "")}</strong>
+                ${item.body ? `<small>${root.utils.escapeHtml(item.body)}</small>` : ""}
+                ${item.tag || item.date_label ? `<span>${root.utils.escapeHtml(item.tag || item.date_label)}</span>` : ""}
+              </div>
+            </a>
+          `).join("")}
+        </div>
+      </section>
+    `;
+  }
+
   function renderAccountShortcut() {
     const customer = root.state.customer;
     if (root.state.authStatus === "loading" && !customer) {
@@ -112,6 +301,27 @@
     }
   }
 
+  async function loadHomepageData() {
+    if (root.state.homepage?.status !== "idle") return;
+    root.state.setHomepage({ status: "loading", error: "" });
+    try {
+      const data = await root.api.loadHomepage();
+      root.state.setHomepage({
+        status: "success",
+        config: data?.config || DEFAULT_HOME_CONFIG,
+        fallback: Boolean(data?.fallback),
+        error: "",
+      });
+    } catch (error) {
+      root.state.setHomepage({
+        status: "error",
+        config: DEFAULT_HOME_CONFIG,
+        fallback: true,
+        error: error?.message || "โหลดหน้าแรกไม่สำเร็จ",
+      });
+    }
+  }
+
   async function loadHomePricingData() {
     if (root.state.homePricing.status !== "idle") return;
     const cards = root.services.quickServices.filter((card) => card.priceable);
@@ -135,12 +345,16 @@
   async function loadHomeData() {
     if (homeLoadPromise) return homeLoadPromise;
     const needsAuth = root.state.authStatus === "idle" && !root.state.customer;
+    const needsHomepage = root.state.homepage?.status === "idle";
+    const needsCatalog = root.state.catalog?.status === "idle";
     const needsPromotions = root.state.promotions?.status === "idle";
     const needsZones = root.state.zones?.status === "idle";
     const needsPricing = root.state.homePricing?.status === "idle";
-    if (!needsAuth && !needsPromotions && !needsZones && !needsPricing) return Promise.resolve([]);
+    if (!needsAuth && !needsHomepage && !needsCatalog && !needsPromotions && !needsZones && !needsPricing) return Promise.resolve([]);
     const tasks = [];
     if (needsAuth) tasks.push(root.auth.loadCustomer(null));
+    if (needsHomepage) tasks.push(loadHomepageData());
+    if (needsCatalog) tasks.push(loadCollection("catalog", () => root.api.loadCatalogItems(), ""));
     if (needsPromotions) tasks.push(loadCollection("promotions", root.api.loadPromotions, "promotions"));
     if (needsZones) tasks.push(loadCollection("zones", root.api.loadServiceZones, "zones"));
     if (needsPricing) tasks.push(loadHomePricingData());
@@ -225,6 +439,39 @@
     });
   }
 
+  function bindHomepage(container) {
+    bindCommerceHome(container);
+    container.querySelectorAll("[data-home-contact]").forEach((button) => {
+      button.addEventListener("click", (event) => {
+        event.preventDefault?.();
+        openContactSheet(container, { title: button.getAttribute("data-home-contact") || "ติดต่อ CWF" });
+      });
+    });
+    container.querySelectorAll("[data-home-featured-detail]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const id = button.getAttribute("data-home-featured-detail");
+        if (id) root.utils.routeTo(`storeItem-${id}`);
+      });
+    });
+    container.querySelectorAll("[data-home-featured-action]").forEach((button) => {
+      button.addEventListener("click", (event) => {
+        event.preventDefault?.();
+        event.stopPropagation?.();
+        const id = button.getAttribute("data-home-featured-action");
+        const item = (root.state.catalog?.items || []).find((row) => String(row.item_id) === String(id));
+        if (!item) return;
+        if (item.booking_mode === "bookable") {
+          const draftItem = strictCatalogCommerceDraft(item);
+          if (draftItem && root.services.applyCommerceDraft("scheduled", draftItem)) {
+            root.utils.routeTo("scheduled");
+            return;
+          }
+        }
+        openContactSheet(container, { title: item.item_name || "บริการนี้" });
+      });
+    });
+  }
+
   function patchHomeData() {
     if (root.state.currentRoute !== "home") return;
     const container = document.getElementById("app");
@@ -238,10 +485,13 @@
       account.innerHTML = renderAccountShortcut();
       root.auth?.bindAvatarFallbacks?.(account);
     }
+    const featured = container.querySelector("[data-homepage-featured]");
+    if (featured) featured.innerHTML = renderHomepageFeaturedServices();
     container.querySelectorAll("[data-quick-price]").forEach((mount) => {
       const card = root.services.quickServices.find((item) => item.id === mount.getAttribute("data-quick-price"));
       if (card) mount.innerHTML = renderQuickPrice(card);
     });
+    bindHomepage(container);
   }
 
   function updateAccountChrome() {
@@ -278,90 +528,63 @@
     openContactSheet,
 
     renderHome(container) {
+      const hero = sectionByType("hero") || DEFAULT_HOME_CONFIG.sections[0];
+      const quick = sectionByType("quick");
+      const featured = sectionByType("featured_services") || { title: "บริการแนะนำ", body: "ราคาและรายละเอียดดึงจาก Catalog" };
+      const manualSections = homepageSections().filter((section) => ["announcements", "updates", "articles"].includes(section.type));
+      const trust = sectionByType("trust");
       container.innerHTML = `
-        <section class="screen commerce-home">
-          <div class="hero home-hero">
-            <div class="hero-badge">CWF Premium Air Service</div>
-            <h2>จองล้างแอร์ด้วยคิวช่างจริง</h2>
-            <p>เลือกบริการล้าง ดูราคาจากระบบ เลือกวันและช่วงเวลาที่มีช่างว่าง แล้วติดตามงานด้วย Booking Code</p>
-            <div class="hero-proof-row" aria-label="จุดเด่น CWF">
-              <span>แจ้งราคาก่อนเริ่ม</span>
-              <span>ช่างผ่านมาตรฐาน</span>
-              <span>รับประกันงานล้าง 30 วัน</span>
-            </div>
-          </div>
-
-        <section class="commerce-primary-cta">
-          <button class="primary-btn" type="button" data-commerce-service="wall-normal">จองล้างแอร์</button>
-          <button class="secondary-btn" type="button" data-route="urgent">เรียกช่างด่วน</button>
-          <button class="secondary-btn" type="button" data-route="tracking">ติดตามงาน</button>
-          <button class="secondary-btn" type="button" data-route="profile">ติดต่อ CWF</button>
-        </section>
-
-          <section class="card commerce-section">
-            <div class="section-head">
-              <h2>บริการ CWF</h2>
-              <p class="muted">ขณะนี้เปิดจองอัตโนมัติเฉพาะงานล้าง บริการอื่นติดต่อแอดมินเพื่อประเมินก่อน</p>
-            </div>
-            <div class="commerce-category-grid">
-              ${root.services.commerceCategories.map((item) => `
-                <button class="commerce-category-card ${item.action === "contact" ? "is-contact-only" : "is-bookable"}" type="button"
-                  ${item.action === "contact" ? `data-contact-service="${root.utils.escapeHtml(item.id)}"` : `data-commerce-service="${root.utils.escapeHtml(item.id)}"`}>
-                  <span class="trust-ico">${root.utils.icon(item.glyph || "sparkle", 20)}</span>
-                  <strong>${root.utils.escapeHtml(item.title)}</strong>
-                  <span>${root.utils.escapeHtml(item.copy)}</span>
-                  <small>${item.action === "contact" ? "ติดต่อแอดมิน" : item.action === "urgent" ? "ส่งคำขอคิวด่วน" : "จองในแอปได้"}</small>
-                </button>
-              `).join("")}
+        <section class="screen commerce-home homepage-screen">
+          <section class="homepage-hero">
+            ${hero.image_url ? `<div class="homepage-hero-media"><img src="${root.utils.escapeHtml(hero.image_url)}" alt="" loading="lazy"></div>` : ""}
+            <div class="homepage-hero-inner">
+              ${hero.kicker ? `<span class="homepage-kicker">${root.utils.escapeHtml(hero.kicker)}</span>` : ""}
+              <h2>${root.utils.escapeHtml(hero.title || "ดูแลแอร์ง่าย จองงานได้ในไม่กี่ขั้นตอน")}</h2>
+              ${hero.body ? `<p>${root.utils.escapeHtml(hero.body)}</p>` : ""}
+              <div class="homepage-hero-actions">
+                ${renderHomepageCta(hero.cta_primary || { label: "จองล้างแอร์", route: "scheduled" }, "hero-main-btn")}
+                ${renderHomepageCta(hero.cta_secondary || { label: "ติดตามงาน", route: "tracking" }, "hero-ghost-btn")}
+              </div>
             </div>
           </section>
 
-          <section class="card commerce-section">
-            <div class="section-head"><h2>บริการล้างที่เลือกบ่อย</h2></div>
-            <div class="quick-service-grid">
-              ${root.services.quickServices.map((card) => `
-                <button class="quick-service-card" type="button" data-commerce-service="${root.utils.escapeHtml(card.id)}">
-                  <span class="quick-kicker">${root.utils.escapeHtml(card.kicker || "")}</span>
-                  <strong>${root.utils.escapeHtml(card.title)}</strong>
-                  <span>${root.utils.escapeHtml(card.copy)}</span>
-                  <span class="quick-price" data-quick-price="${root.utils.escapeHtml(card.id)}">${renderQuickPrice(card)}</span>
-                </button>
-              `).join("")}
+          ${renderHomepageQuick(quick)}
+
+          <section class="homepage-section">
+            <div class="homepage-section-head">
+              <div>
+                <h2>${root.utils.escapeHtml(featured.title || "บริการแนะนำ")}</h2>
+                ${featured.body ? `<p>${root.utils.escapeHtml(featured.body)}</p>` : ""}
+              </div>
+              <button type="button" class="text-link-btn" data-route="store">ดูทั้งหมด</button>
             </div>
+            <div data-homepage-featured>${renderHomepageFeaturedServices()}</div>
           </section>
 
-          <section class="card commerce-section">
-            <div class="section-head"><h2>โปรโมชันปัจจุบัน</h2></div>
-            <div data-promotions>${renderPromotionSummary()}</div>
-          </section>
+          ${manualSections.map(renderHomepageManualSection).join("")}
 
-          <section class="card commerce-section">
-            <div class="section-head"><h2>เลือกระดับการล้าง</h2></div>
-            <div class="method-grid">
-              ${root.services.cleaningMethods.map((item) => `
-                <button class="method-row" type="button" data-commerce-method="${root.utils.escapeHtml(item.id)}">
-                  <strong>${root.utils.escapeHtml(item.title)}</strong>
-                  <span>${root.utils.escapeHtml(item.copy)}</span>
-                </button>
-              `).join("")}
-            </div>
-          </section>
-
-          <section class="card trust-card commerce-section">
-            <div class="section-head"><h2>มาตรฐานบริการ CWF</h2></div>
-            <div class="trust-grid">
-              ${root.services.trustItems.map((item) => `
-                <div class="trust-item">
-                  <span class="trust-ico">${root.utils.icon(item.glyph || "shield", 20)}</span>
-                  <strong>${root.utils.escapeHtml(item.title)}</strong>
-                  <span>${root.utils.escapeHtml(item.copy)}</span>
+          ${trust ? `
+            <section class="homepage-section">
+              <div class="homepage-section-head">
+                <div>
+                  <h2>${root.utils.escapeHtml(trust.title || "มาตรฐานที่ลูกค้าวางใจ")}</h2>
+                  ${trust.body ? `<p>${root.utils.escapeHtml(trust.body)}</p>` : ""}
                 </div>
-              `).join("")}
-            </div>
-          </section>
+              </div>
+              <div class="homepage-trust-grid">
+                ${(trust.items || []).slice(0, 6).map((item) => `
+                  <div class="homepage-trust-item">
+                    <strong>${root.utils.escapeHtml(item.title || "")}</strong>
+                    ${item.body ? `<span>${root.utils.escapeHtml(item.body)}</span>` : ""}
+                  </div>
+                `).join("")}
+              </div>
+            </section>
+          ` : ""}
 
           <section class="card commerce-section">
-            <div class="section-head"><h2>พื้นที่ให้บริการ</h2></div>
+            <div class="section-head"><h2>โปรโมชันและพื้นที่ให้บริการ</h2></div>
+            <div data-promotions>${renderPromotionSummary()}</div>
             <div data-zones>${renderCoverageSummary()}</div>
           </section>
 
@@ -369,7 +592,7 @@
           <div data-contact-sheet-mount></div>
         </section>
       `;
-      bindCommerceHome(container);
+      bindHomepage(container);
       root.auth?.bindAvatarFallbacks?.(container);
       loadHomeData();
     },

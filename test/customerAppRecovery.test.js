@@ -88,6 +88,10 @@ class HomeContainer {
     commerce.forEach((match) => this.buttons.push(new FakeButton({ "data-commerce-service": match[1] })));
     const contact = [...this._innerHTML.matchAll(/data-contact-service="([^"]+)"/g)];
     contact.forEach((match) => this.buttons.push(new FakeButton({ "data-contact-service": match[1] })));
+    const featuredAction = [...this._innerHTML.matchAll(/data-home-featured-action="([^"]+)"/g)];
+    featuredAction.forEach((match) => this.buttons.push(new FakeButton({ "data-home-featured-action": match[1] })));
+    const featuredDetail = [...this._innerHTML.matchAll(/data-home-featured-detail="([^"]+)"/g)];
+    featuredDetail.forEach((match) => this.buttons.push(new FakeButton({ "data-home-featured-detail": match[1] })));
   }
   get innerHTML() { return this._innerHTML; }
   appendChild() {}
@@ -95,6 +99,8 @@ class HomeContainer {
   querySelectorAll(selector) {
     if (selector === "[data-commerce-service]") return this.buttons.filter((button) => button.hasAttribute("data-commerce-service"));
     if (selector === "[data-contact-service]") return this.buttons.filter((button) => button.hasAttribute("data-contact-service"));
+    if (selector === "[data-home-featured-action]") return this.buttons.filter((button) => button.hasAttribute("data-home-featured-action"));
+    if (selector === "[data-home-featured-detail]") return this.buttons.filter((button) => button.hasAttribute("data-home-featured-detail"));
     if (selector === "[data-commerce-method]") return [];
     return [];
   }
@@ -230,7 +236,7 @@ test("Customer App build id is consistent across shell and service worker", () =
   const sw = read("customer-app/sw.js");
   const app = read("customer-app/assets/customer-app.js");
   const manifest = read("customer-app/manifest.webmanifest");
-  const build = "20260629_store_card_spacing_review_privacy";
+  const build = "20260629_customer_homepage_cms_rebased";
 
   assert.match(index, new RegExp(`customer-app\\.css\\?v=${build}`));
   assert.match(index, new RegExp(`modules\\/api\\.js\\?v=${build}`));
@@ -248,7 +254,7 @@ test("Customer App build id is consistent across shell and service worker", () =
 test("store module is loaded in index.html and precached in the service worker app shell", () => {
   const index = read("customer-app/index.html");
   const sw = read("customer-app/sw.js");
-  const build = "20260629_store_card_spacing_review_privacy";
+  const build = "20260629_customer_homepage_cms_rebased";
 
   assert.match(index, new RegExp(`modules/store\\.js\\?v=${build}`));
   assert.match(sw, /`\.\/modules\/store\.js\?v=\$\{BUILD_ID\}`/);
@@ -350,7 +356,7 @@ test("legacy scheduled draft from older flow is mapped safely into the three-ste
   assert.equal(root.state.draft.scheduled.address_text, "Legacy Address");
 });
 
-test("home CTA click writes scheduled draft and routes to scheduled flow", async () => {
+test("home featured service CTA writes scheduled draft from catalog metadata and routes to scheduled flow", async () => {
   const context = makeContext();
   const root = loadCustomerFrontend(context);
   const routeCalls = [];
@@ -359,15 +365,47 @@ test("home CTA click writes scheduled draft and routes to scheduled flow", async
     root.state.setRoute(route);
   };
   root.auth = { displayName: () => "Customer", loadCustomer: async () => ({ logged_in: false }) };
+  root.state.setHomepage({
+    status: "success",
+    config: {
+      version: 1,
+      sections: [
+        { id: "hero", type: "hero", enabled: true, sort_order: 1, title: "Home", items: [] },
+        { id: "featured", type: "featured_services", enabled: true, sort_order: 2, title: "Services", items: [] },
+      ],
+    },
+    fallback: false,
+    error: "",
+  });
+  root.state.setCollection("catalog", {
+    status: "success",
+    error: "",
+    items: [{
+      item_id: 901,
+      item_name: "ล้างแอร์ผนัง ล้างธรรมดา",
+      is_featured: true,
+      booking_mode: "bookable",
+      booking_ac_type: "ผนัง",
+      booking_btu: 9000,
+      booking_wash_variant: "ล้างธรรมดา",
+      job_type: "ล้าง",
+      unit_label: "เครื่อง",
+      display_price: 1200,
+    }],
+  });
   const container = new HomeContainer();
 
   root.ui.renderHome(container);
-  const cta = container.querySelectorAll("[data-commerce-service]").find((button) => button.getAttribute("data-commerce-service") === "wall-normal");
+  const cta = container.querySelectorAll("[data-home-featured-action]").find((button) => button.getAttribute("data-home-featured-action") === "901");
   assert.ok(cta);
   await cta.click();
 
   assert.deepEqual(routeCalls, ["scheduled"]);
   assert.equal(root.state.scheduledWizard.step, 1);
+  assert.equal(root.state.draft.scheduled.catalog_item_id, 901);
+  assert.equal(root.state.draft.scheduled.ac_type, "ผนัง");
+  assert.equal(root.state.draft.scheduled.btu, "9000");
+  assert.equal(root.state.draft.scheduled.wash_variant, "ล้างธรรมดา");
   assert.equal(root.state.draft.scheduled.job_type, "ล้าง");
   assert.equal(root.state.draft.scheduled.selectedSlot, null);
 });

@@ -121,6 +121,7 @@
     authStatus: "idle",
     authError: "",
     authConfig: null,
+    homepage: { status: "idle", config: null, fallback: false, error: "" },
     catalog: { status: "idle", items: [], error: "" },
     storeDetail: { status: "idle", itemId: "", data: null, error: "" },
     storeScrollY: 0,
@@ -276,6 +277,12 @@
     setCollection(name, patch) {
       this[name] = {
         ...(this[name] || {}),
+        ...(patch || {}),
+      };
+    },
+    setHomepage(patch) {
+      this.homepage = {
+        ...(this.homepage || {}),
         ...(patch || {}),
       };
     },

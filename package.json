@@ -9,6 +9,7 @@
     "migrate:catalog-marketplace-v2": "node scripts/run-catalog-marketplace-v2-migration.js",
     "migrate:catalog-autoplay": "node scripts/run-catalog-autoplay-migration.js",
     "migrate:catalog-hot-sale-reviews": "node scripts/run-catalog-store-hot-sale-reviews-migration.js",
+    "migrate:homepage-cms": "node scripts/run-homepage-cms-migration.js",
     "test": "node --test test/*.test.js"
   },
   "dependencies": {
