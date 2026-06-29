@@ -234,7 +234,7 @@ test("customer homepage has no admin control, bottom nav is fixed five-tab, and 
   const sw = read("customer-app/sw.js");
   const app = read("customer-app/assets/customer-app.js");
   const manifest = read("customer-app/manifest.webmanifest");
-  const build = "20260629_customer_homepage_mobile_hotfix";
+  const build = "20260629_homepage_cms_catalog_v2";
 
   assert.doesNotMatch(index + ui, /โหมดแอดมิน|openCms|localStorage\.getItem\('cwfHomeCmsDemo'/);
   assert.match(index, /data-route="store"[\s\S]*ร้านค้า/);
@@ -665,5 +665,57 @@ test("admin hero slide editor supports add edit remove reorder upload and CTA ta
   assert.match(admin, /if \(current\(\)\.items\.length >= 5\)/);
   assert.match(admin, /delete item\[ctaName\]\.route;\s*delete item\[ctaName\]\.url;\s*delete item\[ctaName\]\.action;/);
   const previewSource = admin.slice(admin.indexOf("function renderPreview()"), admin.indexOf("function render()"));
-  assert.match(previewSource, /const slides = Array\.isArray\(section\.items\) && section\.items\.length \? section\.items : \[section\]/);
+  assert.match(previewSource, /const slides = enabledSlides\.length \? enabledSlides : \[section\]/);
+});
+
+test("admin catalog loader accepts the real direct-array /admin/catalog/items response shape", () => {
+  const admin = read("admin-homepage-cms.js");
+  assert.match(admin, /catalogItems = Array\.isArray\(data\) \? data : Array\.isArray\(data\?\.items\) \? data\.items : \[\];/);
+});
+
+test("per-item enabled toggle is normalized, persisted, and stripped from public config when disabled", () => {
+  const disabled = validateConfig({
+    sections: [{
+      id: "trust", type: "trust", enabled: true, sort_order: 80, title: "Trust",
+      items: [{ title: "Visible", enabled: true }, { title: "Hidden", enabled: false }],
+    }],
+  });
+  assert.equal(disabled.ok, true);
+  assert.equal(disabled.config.sections[0].items[0].enabled, true);
+  assert.equal(disabled.config.sections[0].items[1].enabled, false);
+
+  const legacyNoFlag = validateConfig({
+    sections: [{ id: "trust", type: "trust", enabled: true, sort_order: 80, title: "Trust", items: [{ title: "Legacy item" }] }],
+  });
+  assert.equal(legacyNoFlag.config.sections[0].items[0].enabled, true);
+});
+
+test("public homepage hides disabled items but keeps enabled ones", async () => {
+  const pool = createPool();
+  pool.state.row.published_config = {
+    version: 1,
+    sections: [{
+      id: "trust", type: "trust", enabled: true, sort_order: 80, title: "Trust",
+      items: [{ title: "Visible item", enabled: true }, { title: "Disabled item", enabled: false }],
+    }],
+  };
+  const server = await withServer(pool, (_req, _res, next) => next());
+  try {
+    const res = await fetch(`${server.base}/public/homepage`);
+    const data = await res.json();
+    const items = data.config.sections[0].items;
+    assert.deepEqual(items.map((item) => item.title), ["Visible item"]);
+  } finally {
+    await server.close();
+  }
+});
+
+test("admin per-item enable/disable toggle is wired to editor, change handler, and live preview filtering", () => {
+  const admin = read("admin-homepage-cms.js");
+  assert.match(admin, /data-item-enabled="\$\{index\}"/);
+  assert.match(admin, /target\.matches\("\[data-item-enabled\]"\)/);
+  assert.match(admin, /item\.enabled = target\.checked;/);
+  const previewSource = admin.slice(admin.indexOf("function renderPreview()"), admin.indexOf("function render()"));
+  assert.match(previewSource, /filter\(\(slide\) => slide\.enabled !== false\)/);
+  assert.match(previewSource, /filter\(\(item\) => item\.enabled !== false\)/);
 });

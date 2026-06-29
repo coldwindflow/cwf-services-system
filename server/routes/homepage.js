@@ -195,6 +195,7 @@ function normalizeItem(raw, sectionType, index, errors) {
     tag: cleanText(item.tag || item.source, 40),
     date_label: cleanText(item.date_label || item.date, 40),
     sort_order: Number.isFinite(Number(item.sort_order)) ? Number(item.sort_order) : index + 1,
+    enabled: item.enabled !== false,
   };
   if (cleanText(item.icon, 30)) out.icon = cleanText(item.icon, 30);
   if (cleanText(item.route, 40)) out.route = cleanText(item.route, 40);
@@ -289,7 +290,7 @@ function stripPublicConfig(config) {
       delete cleanSection.updated_by;
       delete cleanSection.image_public_id;
       cleanSection.items = (section.items || [])
-        .filter((item) => activeNow(item, now))
+        .filter((item) => item.enabled !== false && activeNow(item, now))
         .sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0))
         .map((item) => {
           const cleanItem = { ...item };

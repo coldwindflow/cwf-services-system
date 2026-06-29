@@ -42,7 +42,7 @@
     if (catalogItems || catalogLoadFailed) return;
     try {
       const data = await requestJson("/admin/catalog/items");
-      catalogItems = Array.isArray(data?.items) ? data.items : [];
+      catalogItems = Array.isArray(data) ? data : Array.isArray(data?.items) ? data.items : [];
     } catch (_) {
       catalogLoadFailed = true;
     }
@@ -148,6 +148,7 @@
     return `
       <div class="item">
         <h3>รายการ ${index + 1}</h3>
+        <label class="switch"><input type="checkbox" data-item-enabled="${index}" ${item.enabled !== false ? "checked" : ""}> เปิดใช้งานรายการนี้</label>
         <div class="two">
           <label>หัวข้อ<input data-item="${index}" data-prop="title" value="${esc(item.title || "")}"></label>
           <label>ป้าย/วันที่<input data-item="${index}" data-prop="tag" value="${esc(item.tag || item.date_label || "")}"></label>
@@ -198,6 +199,7 @@
     return `
       <div class="item">
         <h3>Hero slide ${index + 1}</h3>
+        <label class="switch"><input type="checkbox" data-item-enabled="${index}" ${item.enabled !== false ? "checked" : ""}> เปิดใช้งานสไลด์นี้</label>
         <div>
           <button class="mini" type="button" data-move-item="${index}" data-dir="-1" ${index === 0 ? "disabled" : ""}>↑</button>
           <button class="mini" type="button" data-move-item="${index}" data-dir="1" ${index === total - 1 ? "disabled" : ""}>↓</button>
@@ -325,10 +327,11 @@
   function renderPreview() {
     $("preview").innerHTML = sections().filter((section) => section.enabled !== false).map((section) => {
       if (section.type === "hero") {
-        const slides = Array.isArray(section.items) && section.items.length ? section.items : [section];
+        const enabledSlides = (section.items || []).filter((slide) => slide.enabled !== false);
+        const slides = enabledSlides.length ? enabledSlides : [section];
         return `<section class="hero">${slides.map((slide) => `<div ${slide.image_url ? `style="background-image:linear-gradient(rgba(7,27,56,.62),rgba(7,27,56,.62)),url('${esc(slide.image_url)}');background-size:cover;background-position:center"` : ""}><small>${esc(slide.kicker || section.kicker || "Coldwindflow")}</small><h3>${esc(slide.title || section.title || "")}</h3><p>${esc(slide.body || section.body || "")}</p></div>`).join("")}</section>`;
       }
-      if (section.type === "quick") return `<section class="quick">${(section.items || []).slice(0, 4).map((item) => `<div>${esc(item.title || "")}</div>`).join("")}</section>`;
+      if (section.type === "quick") return `<section class="quick">${(section.items || []).filter((item) => item.enabled !== false).slice(0, 4).map((item) => `<div>${esc(item.title || "")}</div>`).join("")}</section>`;
       if (section.type === "active_job") return `<section class="sec"><div class="sec-head"><div><b>${esc(section.title || "")}</b><br><span>Shown only when the logged-in customer has an active job</span></div></div></section>`;
       if (section.type === "featured_services") {
         const items = resolveFeaturedPreviewItems(section);
@@ -353,7 +356,7 @@
               : `<article class="card"><b>ไม่มีบริการแนะนำที่แสดงผลได้</b><p>Section นี้จะถูกซ่อนจากลูกค้าจริง</p></article>`;
         return `<section class="sec"><div class="sec-head"><div><b>${esc(section.title || "")}</b><br><span>${esc(section.body || "")}</span></div></div><div class="cards">${cards}</div></section>`;
       }
-      return `<section class="sec"><div class="sec-head"><div><b>${esc(section.title || "")}</b><br><span>${esc(section.body || "")}</span></div><span>ดูทั้งหมด</span></div><div class="cards">${(section.items || []).slice(0, 3).map((item) => `<article class="card"><b>${esc(item.title || "")}</b><p>${esc(item.body || "")}</p></article>`).join("") || `<article class="card"><b>ไม่มีรายการ</b><p>เพิ่มรายการใน editor</p></article>`}</div></section>`;
+      return `<section class="sec"><div class="sec-head"><div><b>${esc(section.title || "")}</b><br><span>${esc(section.body || "")}</span></div><span>ดูทั้งหมด</span></div><div class="cards">${(section.items || []).filter((item) => item.enabled !== false).slice(0, 3).map((item) => `<article class="card"><b>${esc(item.title || "")}</b><p>${esc(item.body || "")}</p></article>`).join("") || `<article class="card"><b>ไม่มีรายการ</b><p>เพิ่มรายการใน editor</p></article>`}</div></section>`;
     }).join("");
   }
 
@@ -458,6 +461,12 @@
         section.item_ids = section.item_ids.filter((value) => value !== id);
       }
       render();
+    }
+    if (target.matches("[data-item-enabled]")) {
+      const item = current().items[Number(target.dataset.itemEnabled)];
+      if (!item) return;
+      item.enabled = target.checked;
+      renderPreview();
     }
     if (target.matches("[data-item-target]")) {
       const item = current().items[Number(target.dataset.itemTarget)];
