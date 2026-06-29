@@ -1,6 +1,6 @@
 "use strict";
 
-const BUILD_ID = "20260629_customer_homepage_cms_rebased";
+const BUILD_ID = "20260629_customer_homepage_mobile_hotfix";
 const CACHE_NAME = `cwf-customer-app-v2-${BUILD_ID}`;
 const APP_SHELL = [
   `./index.html?v=${BUILD_ID}`,

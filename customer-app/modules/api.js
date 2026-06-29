@@ -110,6 +110,10 @@
       return requestJson("/public/homepage", { cache: "no-store" });
     },
 
+    async loadHomeActiveJob() {
+      return requestJson("/public/homepage/active-job", { cache: "no-store" });
+    },
+
     async loadCatalogItems(query) {
       return requestJson("/catalog/items", { query: { customer: 1, ...(query || {}) }, cache: "no-store" });
     },

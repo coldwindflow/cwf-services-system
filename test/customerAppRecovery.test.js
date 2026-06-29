@@ -236,7 +236,7 @@ test("Customer App build id is consistent across shell and service worker", () =
   const sw = read("customer-app/sw.js");
   const app = read("customer-app/assets/customer-app.js");
   const manifest = read("customer-app/manifest.webmanifest");
-  const build = "20260629_customer_homepage_cms_rebased";
+  const build = "20260629_customer_homepage_mobile_hotfix";
 
   assert.match(index, new RegExp(`customer-app\\.css\\?v=${build}`));
   assert.match(index, new RegExp(`modules\\/api\\.js\\?v=${build}`));
@@ -254,7 +254,7 @@ test("Customer App build id is consistent across shell and service worker", () =
 test("store module is loaded in index.html and precached in the service worker app shell", () => {
   const index = read("customer-app/index.html");
   const sw = read("customer-app/sw.js");
-  const build = "20260629_customer_homepage_cms_rebased";
+  const build = "20260629_customer_homepage_mobile_hotfix";
 
   assert.match(index, new RegExp(`modules/store\\.js\\?v=${build}`));
   assert.match(sw, /`\.\/modules\/store\.js\?v=\$\{BUILD_ID\}`/);
@@ -507,6 +507,47 @@ test("homepage announcement cards preserve contact, route, and external URL targ
   assert.doesNotMatch(container.innerHTML, /data-route="home"[^>]*Contact Admin/);
   assert.match(container.innerHTML, /class="homepage-announcement-card" href="#store" data-route="store"/);
   assert.match(container.innerHTML, /class="homepage-announcement-card" href="https:\/\/example\.com\/news" target="_blank" rel="noopener noreferrer"/);
+});
+
+test("homepage hero slider renders dots only for multiple slides", () => {
+  const context = makeContext();
+  const root = loadCustomerFrontend(context);
+  root.auth = { displayName: () => "Customer", loadCustomer: async () => ({ logged_in: false }) };
+  root.state.setHomepage({
+    status: "success",
+    fallback: false,
+    error: "",
+    config: {
+      version: 1,
+      sections: [{
+        id: "hero",
+        type: "hero",
+        enabled: true,
+        sort_order: 10,
+        title: "Hero",
+        items: [
+          { title: "Slide A", cta_primary: { label: "A", route: "store" } },
+          { title: "Slide B", cta_primary: { label: "B", route: "scheduled" } },
+        ],
+      }],
+    },
+  });
+  const container = new HomeContainer();
+  root.ui.renderHome(container);
+  assert.match(container.innerHTML, /data-home-hero-dot="0"/);
+  assert.match(container.innerHTML, /data-home-hero-dot="1"/);
+
+  root.state.setHomepage({
+    status: "success",
+    fallback: false,
+    error: "",
+    config: {
+      version: 1,
+      sections: [{ id: "hero", type: "hero", enabled: true, sort_order: 10, title: "Single", items: [{ title: "Only" }] }],
+    },
+  });
+  root.ui.renderHome(container);
+  assert.doesNotMatch(container.innerHTML, /data-home-hero-dot=/);
 });
 
 test("homepage ui has no mojibake marker and renderHome has a single render path", () => {

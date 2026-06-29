@@ -19,9 +19,10 @@ function createPool() {
       draft_config: DEFAULT_CONFIG,
       published_config: null,
       version: 1,
-      updated_by: null,
-      updated_at: null,
-      published_at: null,
+    updated_by: null,
+    updated_at: null,
+    published_at: null,
+    activeJob: null,
     },
     queries: [],
   };
@@ -54,17 +55,21 @@ function createPool() {
       }
       if (normalized.includes("INSERT INTO public.homepage_cms_media")) return { rows: [] };
       if (normalized.includes("UPDATE public.homepage_cms_media")) return { rows: [] };
+      if (normalized.includes("FROM public.jobs") && normalized.includes("customer_sub=$1")) {
+        return { rows: state.activeJob && params[0] === "customer-1" ? [state.activeJob] : [] };
+      }
       throw new Error(`Unhandled query: ${normalized}`);
     },
   };
 }
 
-async function withServer(pool, requireAdminSession) {
+async function withServer(pool, requireAdminSession, requireCustomerJwt) {
   const app = express();
   app.use(express.json({ limit: "200kb" }));
   app.use(createHomepageRoutes({
     pool,
     requireAdminSession,
+    requireCustomerJwt,
     upload: { single: () => (_req, _res, next) => next() },
   }));
   const server = await new Promise((resolve) => {
@@ -179,7 +184,7 @@ test("customer homepage has no admin control, bottom nav is fixed five-tab, and 
   const sw = read("customer-app/sw.js");
   const app = read("customer-app/assets/customer-app.js");
   const manifest = read("customer-app/manifest.webmanifest");
-  const build = "20260629_customer_homepage_cms_rebased";
+  const build = "20260629_customer_homepage_mobile_hotfix";
 
   assert.doesNotMatch(index + ui, /โหมดแอดมิน|openCms|localStorage\.getItem\('cwfHomeCmsDemo'/);
   assert.match(index, /data-route="store"[\s\S]*ร้านค้า/);
@@ -191,9 +196,11 @@ test("customer homepage has no admin control, bottom nav is fixed five-tab, and 
   assert.match(css, /grid-template-columns: repeat\(5, minmax\(0, 1fr\)\)/);
   assert.match(css, /background:\s*rgba\(255,255,255,\.97\)/);
   assert.match(css, /box-shadow:\s*0 -10px 30px rgba\(7,27,56,\.10\)/);
-  assert.match(css, /margin:\s*-28px 0 0/);
-  assert.match(css, /width:\s*54px/);
-  assert.match(css, /height:\s*54px/);
+  assert.doesNotMatch(css, /margin:\s*-28px 0 0/);
+  const primaryNavBlock = css.slice(css.lastIndexOf(".nav-item-primary {"), css.lastIndexOf(".nav-item-primary {") + 220);
+  assert.doesNotMatch(primaryNavBlock, /translateY\(-/);
+  assert.match(css, /width:\s*44px/);
+  assert.match(css, /height:\s*44px/);
   assert.match(css, /background:\s*linear-gradient\(145deg,#ffd43b,#ffbd17\)/);
   assert.match(css, /background:\s*#2b2500/);
   assert.match(index, new RegExp(`customer-app\\.css\\?v=${build}`));
@@ -258,13 +265,14 @@ test("backend defaults contain exactly the standard homepage section types in or
   assert.deepEqual(DEFAULT_CONFIG.sections.map((section) => section.type), [
     "hero",
     "quick",
+    "active_job",
     "announcements",
     "featured_services",
     "updates",
     "articles",
     "trust",
   ]);
-  assert.deepEqual(DEFAULT_CONFIG.sections.map((section) => section.sort_order), [10, 20, 30, 40, 50, 60, 70]);
+  assert.deepEqual(DEFAULT_CONFIG.sections.map((section) => section.sort_order), [10, 20, 30, 40, 50, 60, 70, 80]);
 });
 
 test("homepage validation preserves hero image metadata and rejects quick sections over four items", () => {
@@ -277,12 +285,19 @@ test("homepage validation preserves hero image metadata and rejects quick sectio
       title: "Hero",
       image_url: "https://res.cloudinary.com/demo/hero.jpg",
       image_public_id: "cwf/homepage/hero",
-      items: [],
+      items: [{
+        title: "Slide",
+        image_url: "https://res.cloudinary.com/demo/slide.jpg",
+        cta_primary: { label: "Book", route: "scheduled" },
+        cta_secondary: { label: "Line", url: "https://example.com/line" },
+      }],
     }],
   });
   assert.equal(valid.ok, true);
   assert.equal(valid.config.sections[0].image_url, "https://res.cloudinary.com/demo/hero.jpg");
   assert.equal(valid.config.sections[0].image_public_id, "cwf/homepage/hero");
+  assert.equal(valid.config.sections[0].items[0].cta_primary.route, "scheduled");
+  assert.equal(valid.config.sections[0].items[0].cta_secondary.url, "https://example.com/line");
 
   const invalid = validateConfig({
     sections: [{
@@ -296,6 +311,32 @@ test("homepage validation preserves hero image metadata and rejects quick sectio
   });
   assert.equal(invalid.ok, false);
   assert.ok(invalid.errors.includes("quick.items too many"));
+
+  const tooManySlides = validateConfig({
+    sections: [{
+      id: "hero",
+      type: "hero",
+      enabled: true,
+      sort_order: 10,
+      title: "Hero",
+      items: [1, 2, 3, 4, 5, 6].map((i) => ({ title: `Slide ${i}` })),
+    }],
+  });
+  assert.equal(tooManySlides.ok, false);
+  assert.ok(tooManySlides.errors.includes("hero.items too many"));
+
+  const ctaConflict = validateConfig({
+    sections: [{
+      id: "hero",
+      type: "hero",
+      enabled: true,
+      sort_order: 10,
+      title: "Hero",
+      items: [{ title: "Slide", cta_primary: { label: "Go", route: "store", url: "https://example.com" } }],
+    }],
+  });
+  assert.equal(ctaConflict.ok, false);
+  assert.ok(ctaConflict.errors.some((error) => error.includes("cta_primary.target conflict")));
 });
 
 test("public homepage strips section and item image_public_id while keeping image_url", async () => {
@@ -323,6 +364,62 @@ test("public homepage strips section and item image_public_id while keeping imag
   } finally {
     await server.close();
   }
+});
+
+test("public active job endpoint is session scoped and returns safe fields only", async () => {
+  const pool = createPool();
+  pool.state.activeJob = {
+    booking_code: "CWF-102",
+    job_type: "ล้างแอร์",
+    job_status: "นัดหมายแล้ว",
+    appointment_datetime: "2026-06-30T03:00:00.000Z",
+    job_id: 99,
+    customer_name: "Private",
+    customer_phone: "0999999999",
+  };
+  const customerSession = (req, res, next) => {
+    if (String(req.headers.cookie || "").includes("cwf_token=customer-1")) {
+      req.customer = { sub: "customer-1" };
+      return next();
+    }
+    return res.status(401).json({ error: "NOT_LOGGED_IN" });
+  };
+  const noSession = await withServer(pool, (_req, _res, next) => next(), customerSession);
+  try {
+    const res = await fetch(`${noSession.base}/public/homepage/active-job`);
+    const data = await res.json();
+    assert.equal(res.status, 200);
+    assert.equal(data.active_job, null);
+  } finally {
+    await noSession.close();
+  }
+
+  const session = await withServer(pool, (_req, _res, next) => next(), customerSession);
+  try {
+    const noJob = await fetch(`${session.base}/public/homepage/active-job`, { headers: { cookie: "cwf_token=customer-2" } });
+    assert.equal((await noJob.json()).active_job, null);
+
+    const res = await fetch(`${session.base}/public/homepage/active-job`, { headers: { cookie: "cwf_token=customer-1" } });
+    const data = await res.json();
+    assert.equal(res.status, 200);
+    assert.equal(data.active_job.booking_code, "CWF-102");
+    assert.equal(data.active_job.job_type, "ล้างแอร์");
+    assert.equal(data.active_job.job_status, "นัดหมายแล้ว");
+    assert.deepEqual(Object.keys(data.active_job).sort(), ["appointment_datetime", "booking_code", "job_status", "job_type"]);
+    assert.doesNotMatch(JSON.stringify(data), /job_id|customer_name|customer_phone|0999999999|Private/);
+    assert.equal(pool.state.queries.some((query) => query.params[0] === "customer-1"), true);
+  } finally {
+    await session.close();
+  }
+});
+
+test("production homepage mount passes the customer JWT middleware and active job does not accept client identity", () => {
+  const index = read("index.js");
+  const homepage = read("server/routes/homepage.js");
+  assert.match(index, /createHomepageRoutes\(\{[^}]*requireCustomerJwt[^}]*\}\)/s);
+  assert.match(homepage, /router\.get\("\/public\/homepage\/active-job", optionalCustomerSession/);
+  assert.match(homepage, /loadActiveJobForCustomer\(pool, req\.customer\?\.sub \|\| ""\)/);
+  assert.doesNotMatch(homepage, /req\.(query|body)\?\.(customer_sub|customerSub|customer_id|booking_code|phone)/);
 });
 
 test("admin save and publish preserve hero image fields", async () => {
@@ -365,18 +462,55 @@ test("backend admin customer defaults and homepage migration stay in allowed sco
   const admin = read("admin-homepage-cms.js");
   const customer = read("customer-app/modules/ui.js");
   const migration = read("migrations/20260629_homepage_cms.sql");
-  for (const type of ["hero", "quick", "announcements", "featured_services", "updates", "articles", "trust"]) {
+  for (const type of ["hero", "quick", "active_job", "announcements", "featured_services", "updates", "articles", "trust"]) {
     assert.match(admin, new RegExp(`type:\\s*"${type}"`));
     assert.match(customer, new RegExp(`type:\\s*"${type}"`));
   }
   assert.doesNotMatch(migration, /ALTER TABLE\s+public\.catalog_items/i);
   assert.doesNotMatch(migration, /idx_catalog_items_customer_featured/i);
+  assert.match(customer, /items:\s*\[\{ title: "ติดต่อทีม CWF", action: "contact"/);
+  assert.match(admin, /items:\s*\[\{ title: "ติดต่อทีม CWF", action: "contact"/);
+  assert.doesNotMatch(customer, /เชื่อมต่อไปยัง Facebook|อ่านต่อบน cwf-air\.com/);
+  assert.doesNotMatch(admin, /เชื่อมต่อไปยัง Facebook|อ่านต่อบน cwf-air\.com/);
 });
 
 test("bottom navigation border and padding match the fixed-nav reference", () => {
   const css = read("customer-app/assets/customer-app.css");
   assert.match(css, /border-top:\s*1px solid var\(--line\)/);
-  assert.match(css, /padding:\s*9px 6px calc\(8px \+ var\(--safe-b\)\)/);
+  assert.match(css, /padding:\s*7px 6px calc\(7px \+ var\(--safe-b\)\)/);
+  assert.match(css, /\.bottom-nav \.nav-item-primary::after\s*\{[\s\S]*width:\s*44px[\s\S]*height:\s*44px/);
+});
+
+test("homepage service carousel constrains card and image geometry on mobile", () => {
+  const css = read("customer-app/assets/customer-app.css");
+  const serviceBlock = css.slice(css.lastIndexOf(".homepage-service-card {"), css.lastIndexOf(".homepage-service-card {") + 320);
+  assert.match(serviceBlock, /flex:\s*0 0 calc\(\(100% - 10px\) \/ 2\)/);
+  assert.match(serviceBlock, /max-width:\s*calc\(\(100% - 10px\) \/ 2\)/);
+  const imageBlock = css.slice(css.lastIndexOf(".homepage-card-image {"), css.lastIndexOf(".homepage-card-image {") + 180);
+  assert.match(imageBlock, /overflow:\s*hidden/);
+  const imageImgBlock = css.slice(css.lastIndexOf(".homepage-card-image img"), css.lastIndexOf(".homepage-card-image img") + 180);
+  assert.match(imageImgBlock, /display:\s*block/);
+  assert.match(imageImgBlock, /width:\s*100%/);
+  assert.match(imageImgBlock, /height:\s*100%/);
+  assert.match(imageImgBlock, /object-fit:\s*cover/);
+});
+
+test("customer homepage renderer supports hero slider, active job placeholder, and real empty states", () => {
+  const ui = read("customer-app/modules/ui.js");
+  assert.match(ui, /const slides = Array\.isArray\(section\.items\) && section\.items\.length \? section\.items : \[section\]/);
+  assert.match(ui, /homepage-hero-slider/);
+  assert.match(ui, /homepage-hero-dots/);
+  assert.match(ui, /data-home-hero-dot/);
+  assert.match(ui, /addEventListener\("scroll", onScroll, \{ passive: true \}\)/);
+  assert.match(ui, /requestAnimationFrame/);
+  assert.match(ui, /slider\.scrollTo/);
+  assert.match(ui, /aria-selected/);
+  assert.match(ui, /slide\.cta_primary \|\| section\.cta_primary/);
+  assert.match(ui, /function renderHomepageActiveJob\(section\)/);
+  assert.match(ui, /data-home-active-job/);
+  assert.match(ui, /loadHomeActiveJobData/);
+  assert.match(ui, /if \(!items\.length\) return "";/);
+  assert.doesNotMatch(ui, /ยังไม่มีรายการเผยแพร่/);
 });
 
 test("homepage target validation stores exactly one quick or announcement target", () => {
@@ -468,4 +602,18 @@ test("admin target editor renders mode-specific fields and no stale target field
     admin.indexOf("function render()"),
   );
   assert.equal((renderPreviewSource.match(/\$\("preview"\)\.innerHTML/g) || []).length, 1);
+});
+
+test("admin hero slide editor supports add edit remove reorder upload and CTA targets", () => {
+  const admin = read("admin-homepage-cms.js");
+  assert.match(admin, /id="addHeroSlide"/);
+  assert.match(admin, /function heroSlideEditor/);
+  assert.match(admin, /data-move-item/);
+  assert.match(admin, /data-upload="\$\{index\}"/);
+  assert.match(admin, /data-hero-cta/);
+  assert.match(admin, /data-hero-cta-target/);
+  assert.match(admin, /if \(current\(\)\.items\.length >= 5\)/);
+  assert.match(admin, /delete item\[ctaName\]\.route;\s*delete item\[ctaName\]\.url;\s*delete item\[ctaName\]\.action;/);
+  const previewSource = admin.slice(admin.indexOf("function renderPreview()"), admin.indexOf("function render()"));
+  assert.match(previewSource, /const slides = Array\.isArray\(section\.items\) && section\.items\.length \? section\.items : \[section\]/);
 });

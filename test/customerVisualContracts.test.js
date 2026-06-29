@@ -73,7 +73,8 @@ test("visual unification remains scoped to customer app routes", () => {
   assert.match(css, /\.homepage-hero/);
   assert.match(css, /\.homepage-service-card/);
   assert.match(css, /\.bottom-nav\s*\{[\s\S]*max-width:\s*480px/);
-  assert.match(css, /\.nav-item-primary::after\s*\{[\s\S]*width:\s*54px/);
+  assert.match(css, /\.nav-item-primary::after\s*\{[\s\S]*width:\s*44px/);
+  assert.match(css, /\.nav-item-primary::after\s*\{[\s\S]*height:\s*44px/);
   assert.match(css, /\.nav-item-primary::after\s*\{[\s\S]*background:\s*linear-gradient\(145deg,#ffd43b,#ffbd17\)/);
   assert.match(css, /\.nav-item-primary::before\s*\{[\s\S]*background:\s*#2b2500/);
   assert.doesNotMatch(css, /body\s*\{[^}]*position:\s*fixed/);

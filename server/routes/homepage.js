@@ -7,9 +7,11 @@ const { validateCatalogImageFile } = require("../lib/cloudinaryImageUpload");
 const CONFIG_KEY = "customer_homepage_v1";
 const MAX_JSON_BYTES = 120 * 1024;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const MAX_HERO_SLIDES = 5;
 const SECTION_TYPES = new Set([
   "hero",
   "quick",
+  "active_job",
   "announcements",
   "featured_services",
   "updates",
@@ -48,19 +50,30 @@ const DEFAULT_CONFIG = {
       ],
     },
     {
+      id: "active_job",
+      type: "active_job",
+      enabled: true,
+      sort_order: 30,
+      title: "งานของฉัน",
+      body: "",
+      items: [],
+    },
+    {
       id: "announcements",
       type: "announcements",
       enabled: true,
-      sort_order: 30,
+      sort_order: 40,
       title: "ข่าวและประกาศ CWF",
       body: "",
-      items: [],
+      items: [
+        { title: "ติดต่อทีม CWF", action: "contact", body: "สอบถามบริการหรือแจ้งข้อมูลเพิ่มเติมกับแอดมิน" },
+      ],
     },
     {
       id: "featured_services",
       type: "featured_services",
       enabled: true,
-      sort_order: 40,
+      sort_order: 50,
       title: "บริการแนะนำ",
       body: "ราคาและรายละเอียดดึงจาก Catalog",
       items: [],
@@ -69,25 +82,25 @@ const DEFAULT_CONFIG = {
       id: "updates",
       type: "updates",
       enabled: true,
-      sort_order: 50,
+      sort_order: 60,
       title: "ภาพกิจกรรมและโพสต์",
-      body: "เชื่อมต่อไปยัง Facebook",
+      body: "",
       items: [],
     },
     {
       id: "articles",
       type: "articles",
       enabled: true,
-      sort_order: 60,
+      sort_order: 70,
       title: "บทความแนะนำ",
-      body: "อ่านต่อบน cwf-air.com",
+      body: "",
       items: [],
     },
     {
       id: "trust",
       type: "trust",
       enabled: true,
-      sort_order: 70,
+      sort_order: 80,
       title: "มาตรฐานที่ลูกค้าวางใจ",
       body: "ทีม Coldwindflow ดูแลงานด้วยขั้นตอนที่ตรวจสอบได้",
       items: [
@@ -184,6 +197,8 @@ function normalizeItem(raw, sectionType, index, errors) {
   if (cleanText(item.action, 40)) out.action = cleanText(item.action, 40);
   if (cleanText(item.image_url, 700)) out.image_url = cleanText(item.image_url, 700);
   if (cleanText(item.image_public_id, 300)) out.image_public_id = cleanText(item.image_public_id, 300);
+  if (item.cta_primary && typeof item.cta_primary === "object") out.cta_primary = normalizeCta(item.cta_primary, errors, `${pathName}.cta_primary`);
+  if (item.cta_secondary && typeof item.cta_secondary === "object") out.cta_secondary = normalizeCta(item.cta_secondary, errors, `${pathName}.cta_secondary`);
   if (cleanText(item.active_from, 32)) out.active_from = cleanText(item.active_from, 32);
   if (cleanText(item.active_to, 32)) out.active_to = cleanText(item.active_to, 32);
   if (!out.title && sectionType !== "quick") errors.push(`${pathName}.title required`);
@@ -202,7 +217,7 @@ function normalizeSection(raw, index, errors) {
   if (!SECTION_TYPES.has(type)) errors.push(`sections.${index}.type invalid`);
   const id = cleanText(section.id || type, 60) || type;
   const items = Array.isArray(section.items) ? section.items : [];
-  const maxItems = type === "quick" ? 4 : 12;
+  const maxItems = type === "quick" ? 4 : type === "hero" ? MAX_HERO_SLIDES : 12;
   if (items.length > maxItems) errors.push(`${id}.items too many`);
   const out = {
     id,
@@ -271,6 +286,31 @@ function stripPublicConfig(config) {
   return { version: 1, sections };
 }
 
+function safeHomepageActiveJob(row) {
+  if (!row) return null;
+  return {
+    booking_code: cleanText(row.booking_code, 40),
+    job_type: cleanText(row.job_type, 80),
+    job_status: cleanText(row.job_status, 80),
+    appointment_datetime: row.appointment_datetime || null,
+  };
+}
+
+async function loadActiveJobForCustomer(pool, customerSub) {
+  const sub = cleanText(customerSub, 160);
+  if (!sub) return null;
+  const result = await pool.query(
+    `SELECT booking_code, job_type, job_status, appointment_datetime
+       FROM public.jobs
+      WHERE customer_sub=$1
+        AND COALESCE(job_status,'') NOT IN ('เสร็จสิ้น', 'ยกเลิก', 'ยกเลิกงาน', 'ปิดงานแล้ว')
+      ORDER BY appointment_datetime NULLS LAST, job_id DESC
+      LIMIT 1`,
+    [sub]
+  );
+  return safeHomepageActiveJob(result.rows?.[0]);
+}
+
 async function ensureDraftRow(pool) {
   const existing = await pool.query(
     `SELECT config_key, draft_config, published_config, version, updated_by, updated_at, published_at
@@ -308,8 +348,34 @@ function createHomepageRoutes(deps = {}) {
   const upload = deps.upload;
   const cloudinaryUploadBuffer = deps.cloudinaryUploadBuffer;
   const cloudinaryDestroyPublicId = deps.cloudinaryDestroyPublicId;
+  const requireCustomerJwt = deps.requireCustomerJwt;
   if (!pool) throw new Error("createHomepageRoutes requires pool");
   if (!requireAdminSession) throw new Error("createHomepageRoutes requires requireAdminSession");
+  if (requireCustomerJwt && typeof requireCustomerJwt !== "function") throw new Error("createHomepageRoutes requires requireCustomerJwt to be a function");
+
+  function optionalCustomerSession(req, res, next) {
+    if (!requireCustomerJwt) return next();
+    let finished = false;
+    const passthrough = () => {
+      if (finished) return;
+      finished = true;
+      next();
+    };
+    const failClosedRes = {
+      status() { return this; },
+      json() {
+        req.customer = null;
+        passthrough();
+        return this;
+      },
+    };
+    try {
+      return requireCustomerJwt(req, failClosedRes, passthrough);
+    } catch (_) {
+      req.customer = null;
+      return passthrough();
+    }
+  }
 
   router.get("/public/homepage", async (_req, res) => {
     res.set("Cache-Control", "no-store");
@@ -328,6 +394,18 @@ function createHomepageRoutes(deps = {}) {
       }
       console.error("[homepage/public] failed", error);
       res.status(500).json({ error: "โหลดหน้าแรกไม่สำเร็จ" });
+    }
+  });
+
+  router.get("/public/homepage/active-job", optionalCustomerSession, async (req, res) => {
+    res.set("Cache-Control", "no-store");
+    try {
+      const activeJob = await loadActiveJobForCustomer(pool, req.customer?.sub || "");
+      return res.json({ ok: true, active_job: activeJob });
+    } catch (error) {
+      if (isSchemaError(error)) return res.json({ ok: true, active_job: null, schema_ready: false });
+      console.error("[homepage/active-job] failed", { code: error?.code || "ERR" });
+      return res.json({ ok: true, active_job: null });
     }
   });
 

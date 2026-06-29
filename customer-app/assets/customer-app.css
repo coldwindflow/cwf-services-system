@@ -4382,6 +4382,19 @@ body.has-contact-sheet { overflow: hidden; }
   background: linear-gradient(140deg, #06162e 0%, #0b3976 52%, #1463ff 100%);
   box-shadow: 0 18px 38px rgba(7, 38, 85, 0.23);
 }
+.homepage-hero-slider {
+  display: flex;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+}
+.homepage-hero-slider::-webkit-scrollbar { display: none; }
+.homepage-hero-slide {
+  position: relative;
+  flex: 0 0 100%;
+  min-height: 235px;
+  scroll-snap-align: start;
+}
 .homepage-hero-media {
   position: absolute;
   inset: 0;
@@ -4439,6 +4452,26 @@ body.has-contact-sheet { overflow: hidden; }
   grid-template-columns: 1.15fr 0.85fr;
   gap: 8px;
   margin-top: 16px;
+}
+.homepage-hero-dots {
+  position: absolute;
+  z-index: 2;
+  right: 18px;
+  bottom: 13px;
+  display: flex;
+  gap: 6px;
+}
+.homepage-hero-dots button {
+  width: 7px;
+  height: 7px;
+  padding: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.45);
+}
+.homepage-hero-dots button.is-active { background: #fff; }
+.homepage-hero-dots button:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 3px;
 }
 .hero-main-btn,
 .hero-ghost-btn {
@@ -4513,6 +4546,15 @@ body.has-contact-sheet { overflow: hidden; }
   color: var(--muted);
   font-size: 10px;
 }
+.homepage-section-empty {
+  border: 1px dashed var(--line);
+  border-radius: 16px;
+  padding: 14px;
+  background: #fff;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
 .text-link-btn {
   flex: 0 0 auto;
   padding: 4px 0;
@@ -4535,6 +4577,31 @@ body.has-contact-sheet { overflow: hidden; }
   scrollbar-width: none;
 }
 .homepage-carousel::-webkit-scrollbar { display: none; }
+.homepage-active-job-card {
+  display: grid;
+  gap: 5px;
+  width: 100%;
+  border: 1px solid rgba(20, 99, 255, 0.16);
+  border-radius: 18px;
+  padding: 14px;
+  background: #fff;
+  color: var(--ink);
+  text-align: left;
+  box-shadow: 0 6px 20px rgba(13, 45, 88, 0.06);
+}
+.homepage-active-job-card span {
+  color: var(--blue);
+  font-size: 11px;
+  font-weight: 900;
+}
+.homepage-active-job-card strong {
+  font-size: 15px;
+  line-height: 1.25;
+}
+.homepage-active-job-card small {
+  color: var(--muted);
+  font-size: 11px;
+}
 .homepage-service-card,
 .homepage-announcement-card,
 .homepage-update-card,
@@ -4610,6 +4677,118 @@ body.has-contact-sheet { overflow: hidden; }
   margin: 0 11px 11px;
   font-size: 11.5px !important;
 }
+
+/* Issue #102 Phase A: lock homepage card/media geometry and keep the
+   primary bottom-nav action inside the nav bar on narrow phones. */
+.homepage-carousel {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.homepage-service-card {
+  flex: 0 0 calc((100% - 10px) / 2);
+  width: calc((100% - 10px) / 2);
+  min-width: calc((100% - 10px) / 2);
+  max-width: calc((100% - 10px) / 2);
+}
+.homepage-announcement-card,
+.homepage-update-card,
+.homepage-article-card {
+  max-width: min(78%, 320px);
+}
+.homepage-card-image {
+  width: 100%;
+  overflow: hidden;
+  flex: 0 0 auto;
+}
+.homepage-card-image img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.homepage-card-body,
+.homepage-service-badge,
+.homepage-service-action {
+  position: relative;
+  z-index: 1;
+}
+.homepage-card-body strong {
+  display: -webkit-box;
+  min-width: 0;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.homepage-card-body small,
+.homepage-card-body span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.bottom-nav {
+  align-items: center;
+  height: calc(var(--nav-h) + var(--safe-b));
+  padding: 7px 6px calc(7px + var(--safe-b));
+  overflow: visible;
+}
+.bottom-nav .nav-item {
+  min-height: 58px;
+  padding: 4px 1px;
+  border-radius: 14px;
+}
+.bottom-nav .nav-item span {
+  display: block;
+  max-width: 100%;
+  font-size: 10px;
+  line-height: 1.15;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bottom-nav .nav-item span::after {
+  content: none !important;
+}
+.bottom-nav .nav-item-primary {
+  position: relative;
+  margin: 0;
+  background: transparent;
+  color: #657187;
+  box-shadow: none;
+  transform: none;
+}
+.bottom-nav .nav-item-primary::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 50%;
+  width: 44px;
+  height: 44px;
+  border: 4px solid #fff;
+  border-radius: 16px;
+  background: linear-gradient(145deg,#ffd43b,#ffbd17);
+  box-shadow: 0 8px 18px rgba(255,190,23,.26);
+  transform: translateX(-50%);
+  z-index: 0;
+}
+.bottom-nav .nav-item-primary::before {
+  position: relative;
+  z-index: 1;
+  width: 22px;
+  height: 22px;
+  margin-top: 7px;
+  background: #2b2500;
+  opacity: 1;
+}
+.bottom-nav .nav-item-primary span {
+  position: relative;
+  z-index: 1;
+  margin-top: 2px;
+  color: #657187;
+}
+.bottom-nav .nav-item-primary.is-active,
+.bottom-nav .nav-item-primary.is-active::before {
+  color: #657187;
+}
 .homepage-trust-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -4655,11 +4834,11 @@ body.has-contact-sheet { overflow: hidden; }
   z-index: 40;
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  align-items: stretch;
+  align-items: center;
   width: 100%;
   max-width: 480px;
-  height: calc(78px + var(--safe-b));
-  padding: 9px 6px calc(8px + var(--safe-b));
+  height: calc(var(--nav-h) + var(--safe-b));
+  padding: 7px 6px calc(7px + var(--safe-b));
   transform: translateX(-50%);
   background: rgba(255,255,255,.97);
   border-top: 1px solid var(--line);
@@ -4672,7 +4851,7 @@ body.has-contact-sheet { overflow: hidden; }
 }
 .nav-item.is-active { color: #1463ff; }
 .nav-item-primary {
-  margin: -28px 0 0;
+  margin: 0;
   background: transparent;
   color: #657187;
   border-radius: 0;
@@ -4683,21 +4862,21 @@ body.has-contact-sheet { overflow: hidden; }
   top: 0;
   left: 50%;
   z-index: 0;
-  width: 54px;
-  height: 54px;
-  border: 5px solid #fff;
-  border-radius: 19px;
+  width: 44px;
+  height: 44px;
+  border: 4px solid #fff;
+  border-radius: 16px;
   background: linear-gradient(145deg,#ffd43b,#ffbd17);
-  box-shadow: 0 10px 24px rgba(255,190,23,.30);
+  box-shadow: 0 8px 18px rgba(255,190,23,.26);
   content: "";
   transform: translateX(-50%);
 }
 .nav-item-primary::before {
   position: relative;
   z-index: 1;
-  width: 24px;
-  height: 24px;
-  margin-top: 10px;
+  width: 22px;
+  height: 22px;
+  margin-top: 7px;
   background: #2b2500;
   opacity: 1;
 }
