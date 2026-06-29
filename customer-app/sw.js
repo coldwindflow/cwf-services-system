@@ -1,6 +1,6 @@
 "use strict";
 
-const BUILD_ID = "20260629_store_card_spacing_review_privacy";
+const BUILD_ID = "20260629_customer_homepage_cms_rebased";
 const CACHE_NAME = `cwf-customer-app-v2-${BUILD_ID}`;
 const APP_SHELL = [
   `./index.html?v=${BUILD_ID}`,

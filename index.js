@@ -43,6 +43,7 @@ const createSystemRoutes = require("./server/routes/system");
 const createTechnicianDirectoryRoutes = require("./server/routes/users/technicians");
 const createCatalogItemRoutes = require("./server/routes/catalog/items");
 const createCatalogReviewRoutes = require("./server/routes/catalog/reviews");
+const { createHomepageRoutes } = require("./server/routes/homepage");
 const createServiceZoneRoutes = require("./server/routes/serviceZones");
 const createPageRoutes = require("./server/routes/pages");
 const createDocumentRoutes = require("./server/routes/docs");
@@ -13189,6 +13190,7 @@ app.use(createCatalogItemRoutes({
   minToHHMM,
 }));
 app.use(createCatalogReviewRoutes({ pool, requireCustomerJwt, requireAdminSession }));
+app.use(createHomepageRoutes({ pool, requireAdminSession, upload, cloudinaryUploadBuffer, cloudinaryDestroyPublicId }));
 
 
 app.post("/catalog/items", requireAdminSession, async (req, res) => {
@@ -26254,6 +26256,8 @@ function aiOfficeNoCache(req, res, next) {
 // before express.static(ROOT_DIR), otherwise static serving can bypass auth.
 app.get("/admin-partner-onboarding", requireAdminSession, (req, res) => res.sendFile(sendHtml("admin-partner-onboarding.html")));
 app.get("/admin-partner-onboarding.html", requireAdminSession, (req, res) => res.sendFile(sendHtml("admin-partner-onboarding.html")));
+app.get("/admin/homepage-cms", requireAdminSession, (req, res) => res.sendFile(sendHtml("admin-homepage-cms.html")));
+app.get("/admin/homepage-cms.html", requireAdminSession, (req, res) => res.sendFile(sendHtml("admin-homepage-cms.html")));
 
 if (fs.existsSync(FRONTEND_DIR)) app.use(express.static(FRONTEND_DIR));
 app.use(express.static(ROOT_DIR));

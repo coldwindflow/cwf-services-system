@@ -106,8 +106,12 @@
       return requestJson("/service_zones");
     },
 
-    async loadCatalogItems() {
-      return requestJson("/catalog/items", { query: { customer: 1 }, cache: "no-store" });
+    async loadHomepage() {
+      return requestJson("/public/homepage", { cache: "no-store" });
+    },
+
+    async loadCatalogItems(query) {
+      return requestJson("/catalog/items", { query: { customer: 1, ...(query || {}) }, cache: "no-store" });
     },
 
     async loadCatalogItem(itemId) {

@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CWF Homepage CMS</title>
+  <style>
+    :root{--navy:#071b38;--blue:#1463ff;--yellow:#ffd43b;--bg:#f3f6fb;--card:#fff;--ink:#10213b;--muted:#6f7d92;--line:#e5ebf4;--bad:#b91c1c;--ok:#15803d}
+    *{box-sizing:border-box}
+    body{margin:0;font-family:"Noto Sans Thai","Segoe UI",Arial,sans-serif;background:var(--bg);color:var(--ink)}
+    button,input,textarea,select{font:inherit}
+    button{cursor:pointer}
+    .shell{max-width:1220px;margin:0 auto;padding:22px 14px 44px}
+    .top{display:flex;justify-content:space-between;gap:14px;align-items:flex-start;margin-bottom:16px}
+    .top h1{margin:0;color:var(--navy);font-size:28px;line-height:1.15}.top p{margin:6px 0 0;color:var(--muted);font-weight:700}
+    .status{padding:10px 12px;border-radius:12px;background:#fff;border:1px solid var(--line);font-size:13px;font-weight:800;color:var(--muted)}
+    .status.ok{color:var(--ok);background:#ecfdf5}.status.bad{color:var(--bad);background:#fef2f2}
+    .grid{display:grid;grid-template-columns:minmax(0,1fr) 390px;gap:14px;align-items:start}
+    .panel{background:#fff;border:1px solid var(--line);border-radius:18px;box-shadow:0 10px 28px rgba(13,45,88,.07);padding:14px}
+    .panel h2{margin:0 0 12px;font-size:17px;color:var(--navy)}
+    .toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+    .btn{border:0;border-radius:12px;min-height:42px;padding:10px 13px;font-weight:900;background:#eaf2ff;color:var(--blue)}
+    .btn.primary{background:var(--blue);color:#fff}.btn.publish{background:var(--yellow);color:#2c2600}.btn.danger{background:#fee2e2;color:#991b1b}
+    .section-row{display:grid;grid-template-columns:auto 1fr auto auto;gap:9px;align-items:center;padding:10px;border:1px solid var(--line);border-radius:14px;margin-bottom:8px;background:#fbfcff}
+    .section-row b{display:block;font-size:13px}.section-row small{display:block;color:var(--muted);font-size:11px}
+    .mini{width:32px;height:32px;border:1px solid var(--line);border-radius:10px;background:#fff;font-weight:900}
+    .switch{display:flex;gap:5px;align-items:center;color:var(--muted);font-size:12px;font-weight:800}
+    .editor{display:grid;gap:10px}
+    label{display:grid;gap:5px;color:#3f4d63;font-size:12px;font-weight:900}
+    input,textarea,select{width:100%;border:1px solid #dce4ef;border-radius:11px;padding:10px;background:#fff;color:var(--ink)}
+    textarea{min-height:78px;resize:vertical}.two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    .item{border:1px solid var(--line);border-radius:14px;padding:10px;margin-bottom:8px;background:#fff}.item h3{margin:0 0 8px;font-size:13px}
+    .preview-wrap{position:sticky;top:12px}.phone{width:100%;max-width:390px;margin:auto;background:#f3f6fb;border:1px solid #dce4ef;border-radius:28px;overflow:hidden;box-shadow:0 18px 48px rgba(7,27,56,.18)}
+    .phone-head{padding:12px 14px;background:#fff;border-bottom:1px solid var(--line);font-weight:950}.phone-body{padding:10px 12px 90px;min-height:680px}
+    .hero{min-height:220px;border-radius:24px;color:#fff;background:linear-gradient(140deg,#06162e,#0b3976 52%,#1463ff);padding:22px 18px;display:flex;flex-direction:column;justify-content:flex-end}.hero small{font-weight:900}.hero h3{font-size:25px;line-height:1.12;margin:10px 0 6px}.hero p{font-size:12px;line-height:1.55;margin:0;color:rgba(255,255,255,.85)}
+    .quick{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px}.quick div{min-height:84px;background:#fff;border:1px solid var(--line);border-radius:18px;padding:10px 5px;text-align:center;font-size:10px;font-weight:900}
+    .sec{margin-top:20px}.sec-head{display:flex;justify-content:space-between;gap:10px;margin-bottom:8px}.sec-head b{font-size:16px}.sec-head span{color:var(--muted);font-size:10px}
+    .cards{display:flex;gap:9px;overflow:hidden}.card{min-width:72%;background:#fff;border:1px solid var(--line);border-radius:18px;padding:12px}.card b{font-size:13px}.card p{font-size:10px;color:var(--muted);line-height:1.45}
+    .bottom{position:absolute}
+    @media(max-width:900px){.grid{grid-template-columns:1fr}.preview-wrap{position:static}.top{display:block}.status{margin-top:10px}}
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="top">
+      <div>
+        <h1>Homepage CMS</h1>
+        <p>จัดหน้าแรก Customer App: Draft, Preview และ Publish</p>
+      </div>
+      <div id="status" class="status">กำลังโหลด...</div>
+    </header>
+    <div class="grid">
+      <section class="panel">
+        <div class="toolbar">
+          <button class="btn primary" id="saveDraft" type="button">บันทึก Draft</button>
+          <button class="btn publish" id="publish" type="button">Publish</button>
+          <button class="btn" id="reload" type="button">โหลดใหม่</button>
+        </div>
+        <h2>Section</h2>
+        <div id="sectionList"></div>
+      </section>
+      <aside class="preview-wrap">
+        <section class="panel">
+          <h2>Mobile Preview</h2>
+          <div class="phone">
+            <div class="phone-head">Coldwindflow</div>
+            <div class="phone-body" id="preview"></div>
+          </div>
+        </section>
+      </aside>
+      <section class="panel">
+        <h2>Content Editor</h2>
+        <label>เลือก Section<select id="sectionPicker"></select></label>
+        <div id="editor" class="editor"></div>
+      </section>
+    </div>
+  </main>
+  <script src="/admin-homepage-cms.js"></script>
+</body>
+</html>

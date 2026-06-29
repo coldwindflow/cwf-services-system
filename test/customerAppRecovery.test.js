@@ -88,6 +88,10 @@ class HomeContainer {
     commerce.forEach((match) => this.buttons.push(new FakeButton({ "data-commerce-service": match[1] })));
     const contact = [...this._innerHTML.matchAll(/data-contact-service="([^"]+)"/g)];
     contact.forEach((match) => this.buttons.push(new FakeButton({ "data-contact-service": match[1] })));
+    const featuredAction = [...this._innerHTML.matchAll(/data-home-featured-action="([^"]+)"/g)];
+    featuredAction.forEach((match) => this.buttons.push(new FakeButton({ "data-home-featured-action": match[1] })));
+    const featuredDetail = [...this._innerHTML.matchAll(/data-home-featured-detail="([^"]+)"/g)];
+    featuredDetail.forEach((match) => this.buttons.push(new FakeButton({ "data-home-featured-detail": match[1] })));
   }
   get innerHTML() { return this._innerHTML; }
   appendChild() {}
@@ -95,6 +99,8 @@ class HomeContainer {
   querySelectorAll(selector) {
     if (selector === "[data-commerce-service]") return this.buttons.filter((button) => button.hasAttribute("data-commerce-service"));
     if (selector === "[data-contact-service]") return this.buttons.filter((button) => button.hasAttribute("data-contact-service"));
+    if (selector === "[data-home-featured-action]") return this.buttons.filter((button) => button.hasAttribute("data-home-featured-action"));
+    if (selector === "[data-home-featured-detail]") return this.buttons.filter((button) => button.hasAttribute("data-home-featured-detail"));
     if (selector === "[data-commerce-method]") return [];
     return [];
   }
@@ -230,7 +236,7 @@ test("Customer App build id is consistent across shell and service worker", () =
   const sw = read("customer-app/sw.js");
   const app = read("customer-app/assets/customer-app.js");
   const manifest = read("customer-app/manifest.webmanifest");
-  const build = "20260629_store_card_spacing_review_privacy";
+  const build = "20260629_customer_homepage_cms_rebased";
 
   assert.match(index, new RegExp(`customer-app\\.css\\?v=${build}`));
   assert.match(index, new RegExp(`modules\\/api\\.js\\?v=${build}`));
@@ -248,7 +254,7 @@ test("Customer App build id is consistent across shell and service worker", () =
 test("store module is loaded in index.html and precached in the service worker app shell", () => {
   const index = read("customer-app/index.html");
   const sw = read("customer-app/sw.js");
-  const build = "20260629_store_card_spacing_review_privacy";
+  const build = "20260629_customer_homepage_cms_rebased";
 
   assert.match(index, new RegExp(`modules/store\\.js\\?v=${build}`));
   assert.match(sw, /`\.\/modules\/store\.js\?v=\$\{BUILD_ID\}`/);
@@ -350,7 +356,7 @@ test("legacy scheduled draft from older flow is mapped safely into the three-ste
   assert.equal(root.state.draft.scheduled.address_text, "Legacy Address");
 });
 
-test("home CTA click writes scheduled draft and routes to scheduled flow", async () => {
+test("home featured service CTA writes scheduled draft from catalog metadata and routes to scheduled flow", async () => {
   const context = makeContext();
   const root = loadCustomerFrontend(context);
   const routeCalls = [];
@@ -359,17 +365,160 @@ test("home CTA click writes scheduled draft and routes to scheduled flow", async
     root.state.setRoute(route);
   };
   root.auth = { displayName: () => "Customer", loadCustomer: async () => ({ logged_in: false }) };
+  root.state.setHomepage({
+    status: "success",
+    config: {
+      version: 1,
+      sections: [
+        { id: "hero", type: "hero", enabled: true, sort_order: 1, title: "Home", items: [] },
+        { id: "featured", type: "featured_services", enabled: true, sort_order: 2, title: "Services", items: [] },
+      ],
+    },
+    fallback: false,
+    error: "",
+  });
+  root.state.setCollection("catalog", {
+    status: "success",
+    error: "",
+    items: [{
+      item_id: 901,
+      item_name: "ล้างแอร์ผนัง ล้างธรรมดา",
+      is_featured: true,
+      booking_mode: "bookable",
+      booking_ac_type: "ผนัง",
+      booking_btu: 9000,
+      booking_wash_variant: "ล้างธรรมดา",
+      job_type: "ล้าง",
+      unit_label: "เครื่อง",
+      display_price: 1200,
+    }],
+  });
   const container = new HomeContainer();
 
   root.ui.renderHome(container);
-  const cta = container.querySelectorAll("[data-commerce-service]").find((button) => button.getAttribute("data-commerce-service") === "wall-normal");
+  const cta = container.querySelectorAll("[data-home-featured-action]").find((button) => button.getAttribute("data-home-featured-action") === "901");
   assert.ok(cta);
   await cta.click();
 
   assert.deepEqual(routeCalls, ["scheduled"]);
   assert.equal(root.state.scheduledWizard.step, 1);
+  assert.equal(root.state.draft.scheduled.catalog_item_id, 901);
+  assert.equal(root.state.draft.scheduled.ac_type, "ผนัง");
+  assert.equal(root.state.draft.scheduled.btu, "9000");
+  assert.equal(root.state.draft.scheduled.wash_variant, "ล้างธรรมดา");
   assert.equal(root.state.draft.scheduled.job_type, "ล้าง");
   assert.equal(root.state.draft.scheduled.selectedSlot, null);
+});
+
+test("homepage renders only enabled published sections without reviving hidden hero or featured", () => {
+  const context = makeContext();
+  const root = loadCustomerFrontend(context);
+  root.auth = { displayName: () => "Customer", loadCustomer: async () => ({ logged_in: false }) };
+  root.state.setHomepage({
+    status: "success",
+    fallback: false,
+    error: "",
+    config: {
+      version: 1,
+      sections: [
+        { id: "hero", type: "hero", enabled: false, sort_order: 10, title: "Hidden Hero", items: [] },
+        { id: "featured", type: "featured_services", enabled: false, sort_order: 20, title: "Hidden Featured", items: [] },
+        { id: "trust", type: "trust", enabled: true, sort_order: 30, title: "Visible Trust", items: [{ title: "Trust A", body: "Trust body" }] },
+      ],
+    },
+  });
+  const container = new HomeContainer();
+
+  root.ui.renderHome(container);
+
+  assert.doesNotMatch(container.innerHTML, /Hidden Hero/);
+  assert.doesNotMatch(container.innerHTML, /Hidden Featured/);
+  assert.match(container.innerHTML, /Visible Trust/);
+  assert.doesNotMatch(container.innerHTML, /data-homepage-featured/);
+});
+
+test("homepage section sort_order controls DOM order", () => {
+  const context = makeContext();
+  const root = loadCustomerFrontend(context);
+  root.auth = { displayName: () => "Customer", loadCustomer: async () => ({ logged_in: false }) };
+  root.state.setCollection("catalog", { status: "success", error: "", items: [] });
+  root.state.setHomepage({
+    status: "success",
+    fallback: false,
+    error: "",
+    config: {
+      version: 1,
+      sections: [
+        { id: "featured", type: "featured_services", enabled: true, sort_order: 50, title: "Featured Later", body: "", items: [] },
+        { id: "trust", type: "trust", enabled: true, sort_order: 10, title: "Trust First", items: [{ title: "Trust", body: "Body" }] },
+      ],
+    },
+  });
+  const container = new HomeContainer();
+
+  root.ui.renderHome(container);
+
+  assert.ok(container.innerHTML.indexOf("Trust First") >= 0);
+  assert.ok(container.innerHTML.indexOf("Featured Later") >= 0);
+  assert.ok(container.innerHTML.indexOf("Trust First") < container.innerHTML.indexOf("Featured Later"));
+});
+
+test("homepage announcement cards preserve contact, route, and external URL targets", () => {
+  const context = makeContext();
+  const root = loadCustomerFrontend(context);
+  root.auth = { displayName: () => "Customer", loadCustomer: async () => ({ logged_in: false }) };
+  root.state.setHomepage({
+    status: "success",
+    fallback: false,
+    error: "",
+    config: {
+      version: 1,
+      sections: [
+        {
+          id: "quick",
+          type: "quick",
+          enabled: true,
+          sort_order: 10,
+          title: "Quick",
+          items: [{ title: "Quick Contact", action: "contact", icon: "chat" }],
+        },
+        {
+          id: "announcements",
+          type: "announcements",
+          enabled: true,
+          sort_order: 20,
+          title: "Announcements",
+          items: [
+            { title: "Contact Admin", action: "contact" },
+            { title: "Open Store", route: "store" },
+            { title: "External News", url: "https://example.com/news" },
+          ],
+        },
+      ],
+    },
+  });
+  const container = new HomeContainer();
+
+  root.ui.renderHome(container);
+
+  assert.match(container.innerHTML, /class="homepage-quick" href="#" data-home-contact="Quick Contact"/);
+  assert.match(container.innerHTML, /class="homepage-announcement-card" href="#" data-home-contact="Contact Admin"/);
+  assert.doesNotMatch(container.innerHTML, /data-home-contact="Contact Admin"[^>]*data-route="home"/);
+  assert.doesNotMatch(container.innerHTML, /data-route="home"[^>]*Contact Admin/);
+  assert.match(container.innerHTML, /class="homepage-announcement-card" href="#store" data-route="store"/);
+  assert.match(container.innerHTML, /class="homepage-announcement-card" href="https:\/\/example\.com\/news" target="_blank" rel="noopener noreferrer"/);
+});
+
+test("homepage ui has no mojibake marker and renderHome has a single render path", () => {
+  const uiSource = fs.readFileSync(path.join(__dirname, "..", "customer-app", "modules", "ui.js"), "utf8");
+  assert.doesNotMatch(uiSource, /à¸|à¹/);
+  assert.match(uiSource, />ดูทั้งหมด<\/button>/);
+  assert.equal((uiSource.match(/sectionByType\("hero"\) \|\| DEFAULT_HOME_CONFIG/g) || []).length, 0);
+  const renderHomeSource = uiSource.slice(
+    uiSource.indexOf("renderHome(container)"),
+    uiSource.indexOf("renderBookingMode(container)"),
+  );
+  assert.equal((renderHomeSource.match(/container\.innerHTML/g) || []).length, 1);
 });
 
 test("scheduled booking renders one active step and preserves draft across three steps", async () => {
