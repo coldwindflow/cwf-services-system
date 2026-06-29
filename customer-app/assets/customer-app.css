@@ -4659,10 +4659,10 @@ body.has-contact-sheet { overflow: hidden; }
   width: 100%;
   max-width: 480px;
   height: calc(78px + var(--safe-b));
-  padding: 8px 10px calc(8px + var(--safe-b));
+  padding: 9px 6px calc(8px + var(--safe-b));
   transform: translateX(-50%);
   background: rgba(255,255,255,.97);
-  border-top: 0;
+  border-top: 1px solid var(--line);
   box-shadow: 0 -10px 30px rgba(7,27,56,.10);
 }
 .nav-item {

@@ -410,6 +410,59 @@ test("home featured service CTA writes scheduled draft from catalog metadata and
   assert.equal(root.state.draft.scheduled.selectedSlot, null);
 });
 
+test("homepage renders only enabled published sections without reviving hidden hero or featured", () => {
+  const context = makeContext();
+  const root = loadCustomerFrontend(context);
+  root.auth = { displayName: () => "Customer", loadCustomer: async () => ({ logged_in: false }) };
+  root.state.setHomepage({
+    status: "success",
+    fallback: false,
+    error: "",
+    config: {
+      version: 1,
+      sections: [
+        { id: "hero", type: "hero", enabled: false, sort_order: 10, title: "Hidden Hero", items: [] },
+        { id: "featured", type: "featured_services", enabled: false, sort_order: 20, title: "Hidden Featured", items: [] },
+        { id: "trust", type: "trust", enabled: true, sort_order: 30, title: "Visible Trust", items: [{ title: "Trust A", body: "Trust body" }] },
+      ],
+    },
+  });
+  const container = new HomeContainer();
+
+  root.ui.renderHome(container);
+
+  assert.doesNotMatch(container.innerHTML, /Hidden Hero/);
+  assert.doesNotMatch(container.innerHTML, /Hidden Featured/);
+  assert.match(container.innerHTML, /Visible Trust/);
+  assert.doesNotMatch(container.innerHTML, /data-homepage-featured/);
+});
+
+test("homepage section sort_order controls DOM order", () => {
+  const context = makeContext();
+  const root = loadCustomerFrontend(context);
+  root.auth = { displayName: () => "Customer", loadCustomer: async () => ({ logged_in: false }) };
+  root.state.setCollection("catalog", { status: "success", error: "", items: [] });
+  root.state.setHomepage({
+    status: "success",
+    fallback: false,
+    error: "",
+    config: {
+      version: 1,
+      sections: [
+        { id: "featured", type: "featured_services", enabled: true, sort_order: 50, title: "Featured Later", body: "", items: [] },
+        { id: "trust", type: "trust", enabled: true, sort_order: 10, title: "Trust First", items: [{ title: "Trust", body: "Body" }] },
+      ],
+    },
+  });
+  const container = new HomeContainer();
+
+  root.ui.renderHome(container);
+
+  assert.ok(container.innerHTML.indexOf("Trust First") >= 0);
+  assert.ok(container.innerHTML.indexOf("Featured Later") >= 0);
+  assert.ok(container.innerHTML.indexOf("Trust First") < container.innerHTML.indexOf("Featured Later"));
+});
+
 test("scheduled booking renders one active step and preserves draft across three steps", async () => {
   const context = makeContext();
   const root = loadCustomerFrontend(context);

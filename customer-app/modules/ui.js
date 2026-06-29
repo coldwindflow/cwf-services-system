@@ -64,6 +64,8 @@
       {
         id: "hero",
         type: "hero",
+        enabled: true,
+        sort_order: 10,
         kicker: "Coldwindflow",
         title: "ดูแลแอร์ง่าย จองงานได้ในไม่กี่ขั้นตอน",
         body: "จองล้างแอร์ ติดตามงาน และรับประกาศสำคัญจาก CWF ได้ในหน้าเดียว",
@@ -74,6 +76,8 @@
       {
         id: "quick",
         type: "quick",
+        enabled: true,
+        sort_order: 20,
         title: "เมนูด่วน",
         items: [
           { title: "จองล้างแอร์", route: "scheduled", icon: "sparkle" },
@@ -83,15 +87,46 @@
         ],
       },
       {
+        id: "announcements",
+        type: "announcements",
+        enabled: true,
+        sort_order: 30,
+        title: "ข่าวและประกาศ CWF",
+        body: "",
+        items: [],
+      },
+      {
         id: "featured_services",
         type: "featured_services",
+        enabled: true,
+        sort_order: 40,
         title: "บริการแนะนำ",
         body: "ราคาและรายละเอียดดึงจาก Catalog",
         items: [],
       },
       {
+        id: "updates",
+        type: "updates",
+        enabled: true,
+        sort_order: 50,
+        title: "ภาพกิจกรรมและโพสต์",
+        body: "เชื่อมต่อไปยัง Facebook",
+        items: [],
+      },
+      {
+        id: "articles",
+        type: "articles",
+        enabled: true,
+        sort_order: 60,
+        title: "บทความแนะนำ",
+        body: "อ่านต่อบน cwf-air.com",
+        items: [],
+      },
+      {
         id: "trust",
         type: "trust",
+        enabled: true,
+        sort_order: 70,
         title: "มาตรฐานที่ลูกค้าวางใจ",
         items: [
           { title: "แจ้งราคาก่อนทำ", body: "ระบบคำนวณจากข้อมูลบริการจริง" },
@@ -108,7 +143,10 @@
   }
 
   function homepageSections() {
-    return (homepageConfig().sections || []).slice().sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0));
+    return (homepageConfig().sections || [])
+      .filter((section) => section && section.enabled !== false)
+      .slice()
+      .sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0));
   }
 
   function sectionByType(type) {
@@ -200,7 +238,7 @@
   }
 
   function renderHomepageQuick(section) {
-    const items = (section?.items || []).slice(0, 6);
+    const items = (section?.items || []).slice(0, 4);
     if (!items.length) return "";
     return `
       <div class="homepage-quick-grid">
@@ -218,6 +256,39 @@
           `;
         }).join("")}
       </div>
+    `;
+  }
+
+  function renderHomepageHero(section) {
+    if (!section) return "";
+    return `
+      <section class="homepage-hero">
+        ${section.image_url ? `<div class="homepage-hero-media"><img src="${root.utils.escapeHtml(section.image_url)}" alt="" loading="lazy"></div>` : ""}
+        <div class="homepage-hero-inner">
+          ${section.kicker ? `<span class="homepage-kicker">${root.utils.escapeHtml(section.kicker)}</span>` : ""}
+          <h2>${root.utils.escapeHtml(section.title || "")}</h2>
+          ${section.body ? `<p>${root.utils.escapeHtml(section.body)}</p>` : ""}
+          <div class="homepage-hero-actions">
+            ${renderHomepageCta(section.cta_primary, "hero-main-btn")}
+            ${renderHomepageCta(section.cta_secondary, "hero-ghost-btn")}
+          </div>
+        </div>
+      </section>
+    `;
+  }
+
+  function renderHomepageFeaturedSection(section) {
+    return `
+      <section class="homepage-section">
+        <div class="homepage-section-head">
+          <div>
+            <h2>${root.utils.escapeHtml(section.title || "")}</h2>
+            ${section.body ? `<p>${root.utils.escapeHtml(section.body)}</p>` : ""}
+          </div>
+          <button type="button" class="text-link-btn" data-route="store">à¸”à¸¹à¸—à¸±à¹‰à¸‡à¸«à¸¡à¸”</button>
+        </div>
+        <div data-homepage-featured>${renderHomepageFeaturedServices()}</div>
+      </section>
     `;
   }
 
@@ -246,6 +317,38 @@
         </div>
       </section>
     `;
+  }
+
+  function renderHomepageTrust(section) {
+    if (!section) return "";
+    return `
+      <section class="homepage-section">
+        <div class="homepage-section-head">
+          <div>
+            <h2>${root.utils.escapeHtml(section.title || "")}</h2>
+            ${section.body ? `<p>${root.utils.escapeHtml(section.body)}</p>` : ""}
+          </div>
+        </div>
+        <div class="homepage-trust-grid">
+          ${(section.items || []).slice(0, 6).map((item) => `
+            <div class="homepage-trust-item">
+              <strong>${root.utils.escapeHtml(item.title || "")}</strong>
+              ${item.body ? `<span>${root.utils.escapeHtml(item.body)}</span>` : ""}
+            </div>
+          `).join("")}
+        </div>
+      </section>
+    `;
+  }
+
+  function renderHomepageSection(section) {
+    if (!section) return "";
+    if (section.type === "hero") return renderHomepageHero(section);
+    if (section.type === "quick") return renderHomepageQuick(section);
+    if (section.type === "featured_services") return renderHomepageFeaturedSection(section);
+    if (["announcements", "updates", "articles"].includes(section.type)) return renderHomepageManualSection(section);
+    if (section.type === "trust") return renderHomepageTrust(section);
+    return "";
   }
 
   function renderAccountShortcut() {
@@ -528,6 +631,17 @@
     openContactSheet,
 
     renderHome(container) {
+      const sectionsHtml = homepageSections().map(renderHomepageSection).filter(Boolean).join("");
+      container.innerHTML = `
+        <section class="screen commerce-home homepage-screen">
+          ${sectionsHtml}
+          <div data-contact-sheet-mount></div>
+        </section>
+      `;
+      bindHomepage(container);
+      root.auth?.bindAvatarFallbacks?.(container);
+      loadHomeData();
+      return;
       const hero = sectionByType("hero") || DEFAULT_HOME_CONFIG.sections[0];
       const quick = sectionByType("quick");
       const featured = sectionByType("featured_services") || { title: "บริการแนะนำ", body: "ราคาและรายละเอียดดึงจาก Catalog" };

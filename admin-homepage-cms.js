@@ -19,6 +19,17 @@
   const $ = (id) => document.getElementById(id);
   const esc = (value) => String(value == null ? "" : value).replace(/[&<>"']/g, (s) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[s]));
   function clone(value) { return JSON.parse(JSON.stringify(value)); }
+  function standardSections() { return clone(DEFAULT_CONFIG).sections; }
+  function normalizeAdminConfig(value) {
+    const next = value && Array.isArray(value.sections) ? clone(value) : clone(DEFAULT_CONFIG);
+    const standard = standardSections();
+    const existingTypes = new Set(next.sections.map((section) => section.type));
+    standard.forEach((section) => {
+      if (!existingTypes.has(section.type)) next.sections.push(section);
+    });
+    next.sections = next.sections.filter((section) => standard.some((std) => std.type === section.type));
+    return next;
+  }
   function setStatus(text, kind) { $("status").textContent = text; $("status").className = `status ${kind || ""}`; }
   function sections() { return config.sections.sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0)); }
   function current() { return sections().find((section) => section.id === selected) || sections()[0]; }
@@ -33,7 +44,7 @@
   async function load() {
     setStatus("กำลังโหลด...", "");
     const data = await requestJson("/admin/homepage-cms/config");
-    config = data.draft_config || clone(DEFAULT_CONFIG);
+    config = normalizeAdminConfig(data.draft_config);
     selected = current()?.id || "hero";
     render();
     setStatus(`Draft v${data.version || 1}${data.published_at ? " · Published แล้ว" : ""}`, "ok");
@@ -82,6 +93,9 @@
 
   function itemEditor(item, index, sectionType) {
     const external = sectionType === "updates" || sectionType === "articles";
+    const trust = sectionType === "trust";
+    const quick = sectionType === "quick";
+    const targetMode = item.url ? "url" : item.action === "contact" ? "contact" : "route";
     return `
       <div class="item">
         <h3>รายการ ${index + 1}</h3>
@@ -90,13 +104,21 @@
           <label>ป้าย/วันที่<input data-item="${index}" data-prop="tag" value="${esc(item.tag || item.date_label || "")}"></label>
         </div>
         <label>คำอธิบาย<textarea data-item="${index}" data-prop="body">${esc(item.body || "")}</textarea></label>
-        <label>${external ? "External URL" : "Route / URL"}<input data-item="${index}" data-prop="${external ? "url" : "route"}" value="${esc(external ? item.url || "" : item.route || item.url || "")}"></label>
-        <label>Image URL<input data-item="${index}" data-prop="image_url" value="${esc(item.image_url || "")}"></label>
-        <div class="two">
+        ${quick || sectionType === "announcements" ? `
+          <label>Target type<select data-item-target="${index}">
+            <option value="route" ${targetMode === "route" ? "selected" : ""}>Internal route</option>
+            <option value="contact" ${targetMode === "contact" ? "selected" : ""}>Contact admin</option>
+            <option value="url" ${targetMode === "url" ? "selected" : ""}>External URL</option>
+          </select></label>
+        ` : ""}
+        ${quick ? `<label>Icon<input data-item="${index}" data-prop="icon" value="${esc(item.icon || "")}" placeholder="sparkle, wrench, pin, chat"></label>` : ""}
+        ${trust ? "" : `<label>${external ? "External URL" : "Route / URL"}<input data-item="${index}" data-prop="${external ? "url" : "route"}" value="${esc(external ? item.url || "" : item.route || item.url || "")}"></label>`}
+        ${trust ? "" : `<label>Image URL<input data-item="${index}" data-prop="image_url" value="${esc(item.image_url || "")}"></label>`}
+        ${trust ? "" : `<div class="two">
           <label>Active from<input data-item="${index}" data-prop="active_from" value="${esc(item.active_from || "")}" placeholder="YYYY-MM-DD"></label>
           <label>Active to<input data-item="${index}" data-prop="active_to" value="${esc(item.active_to || "")}" placeholder="YYYY-MM-DD"></label>
         </div>
-        <label>อัปโหลดรูป<input type="file" accept="image/jpeg,image/png,image/webp" data-upload="${index}"></label>
+        <label>อัปโหลดรูป<input type="file" accept="image/jpeg,image/png,image/webp" data-upload="${index}"></label>`}
         <button class="btn danger" type="button" data-remove-item="${index}">ลบรายการ</button>
       </div>
     `;
@@ -111,6 +133,9 @@
       ${field("คำอธิบาย", "body", "textarea")}
       ${section.type === "hero" ? `
         ${field("Kicker", "kicker")}
+        <label>Hero Image URL<input data-field="image_url" value="${esc(section.image_url || "")}"></label>
+        <label>Hero Image Upload<input type="file" accept="image/jpeg,image/png,image/webp" data-upload-section="hero"></label>
+        ${section.image_url ? `<button class="btn danger" type="button" data-clear-section-image="hero">Remove hero image</button>` : ""}
         <div class="two">
           <label>ปุ่มหลัก<input data-cta="cta_primary" data-prop="label" value="${esc(section.cta_primary?.label || "")}"></label>
           <label>Route ปุ่มหลัก<input data-cta="cta_primary" data-prop="route" value="${esc(section.cta_primary?.route || "")}"></label>
@@ -137,13 +162,27 @@
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.error || "อัปโหลดรูปไม่สำเร็จ");
     const section = current();
-    section.items[itemIndex].image_url = data.image_url;
-    section.items[itemIndex].image_public_id = data.image_public_id;
+    if (itemIndex === "hero") {
+      section.image_url = data.image_url;
+      section.image_public_id = data.image_public_id;
+    } else {
+      section.items[itemIndex].image_url = data.image_url;
+      section.items[itemIndex].image_public_id = data.image_public_id;
+    }
     render();
     setStatus("อัปโหลดรูปแล้ว", "ok");
   }
 
   function renderPreview() {
+    $("preview").innerHTML = sections().filter((section) => section.enabled !== false).map((section) => {
+      if (section.type === "hero") {
+        return `<section class="hero" ${section.image_url ? `style="background-image:linear-gradient(rgba(7,27,56,.62),rgba(7,27,56,.62)),url('${esc(section.image_url)}');background-size:cover;background-position:center"` : ""}><small>${esc(section.kicker || "Coldwindflow")}</small><h3>${esc(section.title || "")}</h3><p>${esc(section.body || "")}</p></section>`;
+      }
+      if (section.type === "quick") return `<section class="quick">${(section.items || []).slice(0, 4).map((item) => `<div>${esc(item.title || "")}</div>`).join("")}</section>`;
+      if (section.type === "featured_services") return `<section class="sec"><div class="sec-head"><div><b>${esc(section.title || "")}</b><br><span>${esc(section.body || "")}</span></div></div><div class="cards"><article class="card"><b>Featured services</b><p>Catalog cards render here in the Customer App</p></article></div></section>`;
+      return `<section class="sec"><div class="sec-head"><div><b>${esc(section.title || "")}</b><br><span>${esc(section.body || "")}</span></div><span>ดูทั้งหมด</span></div><div class="cards">${(section.items || []).slice(0, 3).map((item) => `<article class="card"><b>${esc(item.title || "")}</b><p>${esc(item.body || "")}</p></article>`).join("") || `<article class="card"><b>ไม่มีรายการ</b><p>เพิ่มรายการใน editor</p></article>`}</div></section>`;
+    }).join("");
+    return;
     const hero = sections().find((section) => section.type === "hero");
     const quick = sections().find((section) => section.type === "quick");
     const manual = sections().filter((section) => section.enabled !== false && ["announcements", "updates", "articles", "trust"].includes(section.type));
@@ -167,7 +206,14 @@
     if (edit) { selected = edit.dataset.edit; render(); }
     const remove = event.target.closest("[data-remove-item]");
     if (remove) { current().items.splice(Number(remove.dataset.removeItem), 1); render(); }
-    if (event.target.id === "addItem") { current().items = current().items || []; current().items.push({ title: "", body: "", url: "" }); render(); }
+    const clearImage = event.target.closest("[data-clear-section-image]");
+    if (clearImage) { delete current().image_url; delete current().image_public_id; render(); }
+    if (event.target.id === "addItem") {
+      current().items = current().items || [];
+      if (current().type === "quick" && current().items.length >= 4) { setStatus("Quick จำกัด 4 รายการ", "bad"); return; }
+      current().items.push({ title: "", body: "", url: "" });
+      render();
+    }
   });
 
   document.addEventListener("input", (event) => {
@@ -188,6 +234,18 @@
     }
     if (target.id === "sectionPicker") { selected = target.value; render(); }
     if (target.matches("[data-upload]")) uploadImage(target, Number(target.dataset.upload)).catch((error) => setStatus(error.message, "bad"));
+    if (target.matches("[data-upload-section]")) uploadImage(target, target.dataset.uploadSection).catch((error) => setStatus(error.message, "bad"));
+    if (target.matches("[data-item-target]")) {
+      const item = current().items[Number(target.dataset.itemTarget)];
+      if (!item) return;
+      delete item.route;
+      delete item.url;
+      delete item.action;
+      if (target.value === "contact") item.action = "contact";
+      if (target.value === "route") item.route = "home";
+      if (target.value === "url") item.url = "";
+      render();
+    }
   });
 
   $("saveDraft").addEventListener("click", () => saveDraft().catch((error) => setStatus(error.message, "bad")));

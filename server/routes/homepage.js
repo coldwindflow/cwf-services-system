@@ -10,7 +10,6 @@ const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const SECTION_TYPES = new Set([
   "hero",
   "quick",
-  "active_job",
   "announcements",
   "featured_services",
   "updates",
@@ -49,19 +48,46 @@ const DEFAULT_CONFIG = {
       ],
     },
     {
+      id: "announcements",
+      type: "announcements",
+      enabled: true,
+      sort_order: 30,
+      title: "ข่าวและประกาศ CWF",
+      body: "",
+      items: [],
+    },
+    {
       id: "featured_services",
       type: "featured_services",
       enabled: true,
-      sort_order: 50,
+      sort_order: 40,
       title: "บริการแนะนำ",
       body: "ราคาและรายละเอียดดึงจาก Catalog",
+      items: [],
+    },
+    {
+      id: "updates",
+      type: "updates",
+      enabled: true,
+      sort_order: 50,
+      title: "ภาพกิจกรรมและโพสต์",
+      body: "เชื่อมต่อไปยัง Facebook",
+      items: [],
+    },
+    {
+      id: "articles",
+      type: "articles",
+      enabled: true,
+      sort_order: 60,
+      title: "บทความแนะนำ",
+      body: "อ่านต่อบน cwf-air.com",
       items: [],
     },
     {
       id: "trust",
       type: "trust",
       enabled: true,
-      sort_order: 80,
+      sort_order: 70,
       title: "มาตรฐานที่ลูกค้าวางใจ",
       body: "ทีม Coldwindflow ดูแลงานด้วยขั้นตอนที่ตรวจสอบได้",
       items: [
@@ -114,6 +140,7 @@ function validateUrlOrRoute(target, errors, pathName, options = {}) {
   }
   if (action && !["contact"].includes(action)) errors.push(`${pathName}.action not allowed`);
   if (options.externalRequired && !url) errors.push(`${pathName}.url required`);
+  if (options.noImage && (target.image_url || target.image_public_id)) errors.push(`${pathName}.image not allowed`);
 }
 
 function normalizeCta(input, errors, pathName) {
@@ -147,7 +174,10 @@ function normalizeItem(raw, sectionType, index, errors) {
   if (cleanText(item.active_from, 32)) out.active_from = cleanText(item.active_from, 32);
   if (cleanText(item.active_to, 32)) out.active_to = cleanText(item.active_to, 32);
   if (!out.title && sectionType !== "quick") errors.push(`${pathName}.title required`);
-  validateUrlOrRoute(out, errors, pathName, { externalRequired: sectionType === "updates" || sectionType === "articles" });
+  validateUrlOrRoute(out, errors, pathName, {
+    externalRequired: sectionType === "updates" || sectionType === "articles",
+    noImage: sectionType === "trust",
+  });
   validateDateRange(out, errors, pathName);
   return out;
 }
@@ -158,7 +188,7 @@ function normalizeSection(raw, index, errors) {
   if (!SECTION_TYPES.has(type)) errors.push(`sections.${index}.type invalid`);
   const id = cleanText(section.id || type, 60) || type;
   const items = Array.isArray(section.items) ? section.items : [];
-  const maxItems = type === "quick" ? 6 : 12;
+  const maxItems = type === "quick" ? 4 : 12;
   if (items.length > maxItems) errors.push(`${id}.items too many`);
   const out = {
     id,
@@ -172,6 +202,8 @@ function normalizeSection(raw, index, errors) {
     cta_secondary: normalizeCta(section.cta_secondary, errors, `${id}.cta_secondary`),
     items: items.slice(0, maxItems).map((item, itemIndex) => normalizeItem(item, type, itemIndex, errors)),
   };
+  if (cleanText(section.image_url, 700)) out.image_url = cleanText(section.image_url, 700);
+  if (cleanText(section.image_public_id, 300)) out.image_public_id = cleanText(section.image_public_id, 300);
   validateDateRange(out, errors, id);
   if (type === "hero" && !out.title) errors.push("hero.title required");
   return out;
@@ -209,6 +241,7 @@ function stripPublicConfig(config) {
     .map((section) => {
       const cleanSection = { ...section };
       delete cleanSection.updated_by;
+      delete cleanSection.image_public_id;
       cleanSection.items = (section.items || [])
         .filter((item) => activeNow(item, now))
         .sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0))
@@ -389,6 +422,28 @@ function createHomepageRoutes(deps = {}) {
   router.delete("/admin/homepage-cms/images/:publicId", requireAdminSession, async (req, res) => {
     try {
       const publicId = cleanText(req.params.publicId, 300);
+      if (!publicId) return res.status(400).json({ error: "INVALID_PUBLIC_ID" });
+      const row = await ensureDraftRow(pool);
+      const publishedText = JSON.stringify(row.published_config || {});
+      if (publishedText.includes(publicId)) return res.status(409).json({ error: "IMAGE_USED_BY_PUBLISHED_CONFIG" });
+      if (cloudinaryDestroyPublicId) await cloudinaryDestroyPublicId(publicId);
+      await pool.query(
+        `UPDATE public.homepage_cms_media
+         SET deleted_at=NOW(), deleted_by=$2
+         WHERE image_public_id=$1 AND deleted_at IS NULL`,
+        [publicId, actorName(req)]
+      );
+      res.json({ ok: true });
+    } catch (error) {
+      if (isSchemaError(error)) return res.status(503).json({ error: "HOMEPAGE_CMS_SCHEMA_NOT_READY" });
+      console.error("[homepage/admin/delete-image] failed", error);
+      res.status(500).json({ error: "ลบรูปไม่สำเร็จ" });
+    }
+  });
+
+  router.delete("/admin/homepage-cms/images", requireAdminSession, async (req, res) => {
+    try {
+      const publicId = cleanText(req.body?.public_id || req.body?.image_public_id, 300);
       if (!publicId) return res.status(400).json({ error: "INVALID_PUBLIC_ID" });
       const row = await ensureDraftRow(pool);
       const publishedText = JSON.stringify(row.published_config || {});

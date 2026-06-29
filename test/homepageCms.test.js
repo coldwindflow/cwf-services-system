@@ -253,3 +253,128 @@ test("forbidden booking pricing and tracking endpoints are not edited by homepag
     assert.doesNotMatch(homepageRoute, new RegExp(target.replace(/\//g, "\\/")));
   }
 });
+
+test("backend defaults contain exactly the standard homepage section types in order", () => {
+  assert.deepEqual(DEFAULT_CONFIG.sections.map((section) => section.type), [
+    "hero",
+    "quick",
+    "announcements",
+    "featured_services",
+    "updates",
+    "articles",
+    "trust",
+  ]);
+  assert.deepEqual(DEFAULT_CONFIG.sections.map((section) => section.sort_order), [10, 20, 30, 40, 50, 60, 70]);
+});
+
+test("homepage validation preserves hero image metadata and rejects quick sections over four items", () => {
+  const valid = validateConfig({
+    sections: [{
+      id: "hero",
+      type: "hero",
+      enabled: true,
+      sort_order: 10,
+      title: "Hero",
+      image_url: "https://res.cloudinary.com/demo/hero.jpg",
+      image_public_id: "cwf/homepage/hero",
+      items: [],
+    }],
+  });
+  assert.equal(valid.ok, true);
+  assert.equal(valid.config.sections[0].image_url, "https://res.cloudinary.com/demo/hero.jpg");
+  assert.equal(valid.config.sections[0].image_public_id, "cwf/homepage/hero");
+
+  const invalid = validateConfig({
+    sections: [{
+      id: "quick",
+      type: "quick",
+      enabled: true,
+      sort_order: 20,
+      title: "Quick",
+      items: [{ title: "1" }, { title: "2" }, { title: "3" }, { title: "4" }, { title: "5" }],
+    }],
+  });
+  assert.equal(invalid.ok, false);
+  assert.ok(invalid.errors.includes("quick.items too many"));
+});
+
+test("public homepage strips section and item image_public_id while keeping image_url", async () => {
+  const pool = createPool();
+  pool.state.row.published_config = {
+    version: 1,
+    sections: [{
+      id: "hero",
+      type: "hero",
+      enabled: true,
+      sort_order: 10,
+      title: "Published",
+      image_url: "https://res.cloudinary.com/demo/hero.jpg",
+      image_public_id: "cwf/homepage/hero",
+      items: [{ title: "Post", url: "https://example.com", image_public_id: "secret_item_id" }],
+    }],
+  };
+  const server = await withServer(pool, (_req, _res, next) => next());
+  try {
+    const res = await fetch(`${server.base}/public/homepage`);
+    const data = await res.json();
+    assert.equal(res.status, 200);
+    assert.equal(data.config.sections[0].image_url, "https://res.cloudinary.com/demo/hero.jpg");
+    assert.doesNotMatch(JSON.stringify(data), /image_public_id|cwf\/homepage\/hero|secret_item_id/);
+  } finally {
+    await server.close();
+  }
+});
+
+test("admin save and publish preserve hero image fields", async () => {
+  const pool = createPool();
+  const allow = await withServer(pool, (req, _res, next) => { req.actor = { username: "admin", role: "admin" }; next(); });
+  try {
+    const config = {
+      version: 1,
+      sections: [{
+        id: "hero",
+        type: "hero",
+        enabled: true,
+        sort_order: 10,
+        title: "Hero image",
+        image_url: "https://res.cloudinary.com/demo/hero.jpg",
+        image_public_id: "cwf/homepage/hero",
+        items: [],
+      }],
+    };
+    const saved = await fetch(`${allow.base}/admin/homepage-cms/draft`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ config }),
+    });
+    assert.equal(saved.status, 200);
+    assert.equal(pool.state.row.draft_config.sections[0].image_url, "https://res.cloudinary.com/demo/hero.jpg");
+    const published = await fetch(`${allow.base}/admin/homepage-cms/publish`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ config }),
+    });
+    assert.equal(published.status, 200);
+    assert.equal(pool.state.row.published_config.sections[0].image_url, "https://res.cloudinary.com/demo/hero.jpg");
+  } finally {
+    await allow.close();
+  }
+});
+
+test("backend admin customer defaults and homepage migration stay in allowed scope", () => {
+  const admin = read("admin-homepage-cms.js");
+  const customer = read("customer-app/modules/ui.js");
+  const migration = read("migrations/20260629_homepage_cms.sql");
+  for (const type of ["hero", "quick", "announcements", "featured_services", "updates", "articles", "trust"]) {
+    assert.match(admin, new RegExp(`type:\\s*"${type}"`));
+    assert.match(customer, new RegExp(`type:\\s*"${type}"`));
+  }
+  assert.doesNotMatch(migration, /ALTER TABLE\s+public\.catalog_items/i);
+  assert.doesNotMatch(migration, /idx_catalog_items_customer_featured/i);
+});
+
+test("bottom navigation border and padding match the fixed-nav reference", () => {
+  const css = read("customer-app/assets/customer-app.css");
+  assert.match(css, /border-top:\s*1px solid var\(--line\)/);
+  assert.match(css, /padding:\s*9px 6px calc\(8px \+ var\(--safe-b\)\)/);
+});
