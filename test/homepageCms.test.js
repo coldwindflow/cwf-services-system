@@ -63,13 +63,13 @@ function createPool() {
   };
 }
 
-async function withServer(pool, requireAdminSession, beforeRoutes) {
+async function withServer(pool, requireAdminSession, requireCustomerJwt) {
   const app = express();
   app.use(express.json({ limit: "200kb" }));
-  if (beforeRoutes) app.use(beforeRoutes);
   app.use(createHomepageRoutes({
     pool,
     requireAdminSession,
+    requireCustomerJwt,
     upload: { single: () => (_req, _res, next) => next() },
   }));
   const server = await new Promise((resolve) => {
@@ -311,6 +311,32 @@ test("homepage validation preserves hero image metadata and rejects quick sectio
   });
   assert.equal(invalid.ok, false);
   assert.ok(invalid.errors.includes("quick.items too many"));
+
+  const tooManySlides = validateConfig({
+    sections: [{
+      id: "hero",
+      type: "hero",
+      enabled: true,
+      sort_order: 10,
+      title: "Hero",
+      items: [1, 2, 3, 4, 5, 6].map((i) => ({ title: `Slide ${i}` })),
+    }],
+  });
+  assert.equal(tooManySlides.ok, false);
+  assert.ok(tooManySlides.errors.includes("hero.items too many"));
+
+  const ctaConflict = validateConfig({
+    sections: [{
+      id: "hero",
+      type: "hero",
+      enabled: true,
+      sort_order: 10,
+      title: "Hero",
+      items: [{ title: "Slide", cta_primary: { label: "Go", route: "store", url: "https://example.com" } }],
+    }],
+  });
+  assert.equal(ctaConflict.ok, false);
+  assert.ok(ctaConflict.errors.some((error) => error.includes("cta_primary.target conflict")));
 });
 
 test("public homepage strips section and item image_public_id while keeping image_url", async () => {
@@ -351,7 +377,14 @@ test("public active job endpoint is session scoped and returns safe fields only"
     customer_name: "Private",
     customer_phone: "0999999999",
   };
-  const noSession = await withServer(pool, (_req, _res, next) => next());
+  const customerSession = (req, res, next) => {
+    if (String(req.headers.cookie || "").includes("cwf_token=customer-1")) {
+      req.customer = { sub: "customer-1" };
+      return next();
+    }
+    return res.status(401).json({ error: "NOT_LOGGED_IN" });
+  };
+  const noSession = await withServer(pool, (_req, _res, next) => next(), customerSession);
   try {
     const res = await fetch(`${noSession.base}/public/homepage/active-job`);
     const data = await res.json();
@@ -361,13 +394,12 @@ test("public active job endpoint is session scoped and returns safe fields only"
     await noSession.close();
   }
 
-  const session = await withServer(
-    pool,
-    (_req, _res, next) => next(),
-    (req, _res, next) => { req.customer = { sub: "customer-1" }; next(); },
-  );
+  const session = await withServer(pool, (_req, _res, next) => next(), customerSession);
   try {
-    const res = await fetch(`${session.base}/public/homepage/active-job`);
+    const noJob = await fetch(`${session.base}/public/homepage/active-job`, { headers: { cookie: "cwf_token=customer-2" } });
+    assert.equal((await noJob.json()).active_job, null);
+
+    const res = await fetch(`${session.base}/public/homepage/active-job`, { headers: { cookie: "cwf_token=customer-1" } });
     const data = await res.json();
     assert.equal(res.status, 200);
     assert.equal(data.active_job.booking_code, "CWF-102");
@@ -379,6 +411,15 @@ test("public active job endpoint is session scoped and returns safe fields only"
   } finally {
     await session.close();
   }
+});
+
+test("production homepage mount passes the customer JWT middleware and active job does not accept client identity", () => {
+  const index = read("index.js");
+  const homepage = read("server/routes/homepage.js");
+  assert.match(index, /createHomepageRoutes\(\{[^}]*requireCustomerJwt[^}]*\}\)/s);
+  assert.match(homepage, /router\.get\("\/public\/homepage\/active-job", optionalCustomerSession/);
+  assert.match(homepage, /loadActiveJobForCustomer\(pool, req\.customer\?\.sub \|\| ""\)/);
+  assert.doesNotMatch(homepage, /req\.(query|body)\?\.(customer_sub|customerSub|customer_id|booking_code|phone)/);
 });
 
 test("admin save and publish preserve hero image fields", async () => {
@@ -427,6 +468,10 @@ test("backend admin customer defaults and homepage migration stay in allowed sco
   }
   assert.doesNotMatch(migration, /ALTER TABLE\s+public\.catalog_items/i);
   assert.doesNotMatch(migration, /idx_catalog_items_customer_featured/i);
+  assert.match(customer, /items:\s*\[\{ title: "ติดต่อทีม CWF", action: "contact"/);
+  assert.match(admin, /items:\s*\[\{ title: "ติดต่อทีม CWF", action: "contact"/);
+  assert.doesNotMatch(customer, /เชื่อมต่อไปยัง Facebook|อ่านต่อบน cwf-air\.com/);
+  assert.doesNotMatch(admin, /เชื่อมต่อไปยัง Facebook|อ่านต่อบน cwf-air\.com/);
 });
 
 test("bottom navigation border and padding match the fixed-nav reference", () => {
@@ -455,11 +500,17 @@ test("customer homepage renderer supports hero slider, active job placeholder, a
   assert.match(ui, /const slides = Array\.isArray\(section\.items\) && section\.items\.length \? section\.items : \[section\]/);
   assert.match(ui, /homepage-hero-slider/);
   assert.match(ui, /homepage-hero-dots/);
+  assert.match(ui, /data-home-hero-dot/);
+  assert.match(ui, /addEventListener\("scroll", onScroll, \{ passive: true \}\)/);
+  assert.match(ui, /requestAnimationFrame/);
+  assert.match(ui, /slider\.scrollTo/);
+  assert.match(ui, /aria-selected/);
   assert.match(ui, /slide\.cta_primary \|\| section\.cta_primary/);
   assert.match(ui, /function renderHomepageActiveJob\(section\)/);
   assert.match(ui, /data-home-active-job/);
   assert.match(ui, /loadHomeActiveJobData/);
-  assert.match(ui, /homepage-section-empty/);
+  assert.match(ui, /if \(!items\.length\) return "";/);
+  assert.doesNotMatch(ui, /ยังไม่มีรายการเผยแพร่/);
 });
 
 test("homepage target validation stores exactly one quick or announcement target", () => {
@@ -551,4 +602,18 @@ test("admin target editor renders mode-specific fields and no stale target field
     admin.indexOf("function render()"),
   );
   assert.equal((renderPreviewSource.match(/\$\("preview"\)\.innerHTML/g) || []).length, 1);
+});
+
+test("admin hero slide editor supports add edit remove reorder upload and CTA targets", () => {
+  const admin = read("admin-homepage-cms.js");
+  assert.match(admin, /id="addHeroSlide"/);
+  assert.match(admin, /function heroSlideEditor/);
+  assert.match(admin, /data-move-item/);
+  assert.match(admin, /data-upload="\$\{index\}"/);
+  assert.match(admin, /data-hero-cta/);
+  assert.match(admin, /data-hero-cta-target/);
+  assert.match(admin, /if \(current\(\)\.items\.length >= 5\)/);
+  assert.match(admin, /delete item\[ctaName\]\.route;\s*delete item\[ctaName\]\.url;\s*delete item\[ctaName\]\.action;/);
+  const previewSource = admin.slice(admin.indexOf("function renderPreview()"), admin.indexOf("function render()"));
+  assert.match(previewSource, /const slides = Array\.isArray\(section\.items\) && section\.items\.length \? section\.items : \[section\]/);
 });

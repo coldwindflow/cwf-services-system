@@ -4461,13 +4461,18 @@ body.has-contact-sheet { overflow: hidden; }
   display: flex;
   gap: 6px;
 }
-.homepage-hero-dots span {
+.homepage-hero-dots button {
   width: 7px;
   height: 7px;
+  padding: 0;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.45);
 }
-.homepage-hero-dots span.is-active { background: #fff; }
+.homepage-hero-dots button.is-active { background: #fff; }
+.homepage-hero-dots button:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 3px;
+}
 .hero-main-btn,
 .hero-ghost-btn {
   display: inline-flex;

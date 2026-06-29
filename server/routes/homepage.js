@@ -7,6 +7,7 @@ const { validateCatalogImageFile } = require("../lib/cloudinaryImageUpload");
 const CONFIG_KEY = "customer_homepage_v1";
 const MAX_JSON_BYTES = 120 * 1024;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const MAX_HERO_SLIDES = 5;
 const SECTION_TYPES = new Set([
   "hero",
   "quick",
@@ -64,7 +65,9 @@ const DEFAULT_CONFIG = {
       sort_order: 40,
       title: "ข่าวและประกาศ CWF",
       body: "",
-      items: [],
+      items: [
+        { title: "ติดต่อทีม CWF", action: "contact", body: "สอบถามบริการหรือแจ้งข้อมูลเพิ่มเติมกับแอดมิน" },
+      ],
     },
     {
       id: "featured_services",
@@ -81,7 +84,7 @@ const DEFAULT_CONFIG = {
       enabled: true,
       sort_order: 60,
       title: "ภาพกิจกรรมและโพสต์",
-      body: "เชื่อมต่อไปยัง Facebook",
+      body: "",
       items: [],
     },
     {
@@ -90,7 +93,7 @@ const DEFAULT_CONFIG = {
       enabled: true,
       sort_order: 70,
       title: "บทความแนะนำ",
-      body: "อ่านต่อบน cwf-air.com",
+      body: "",
       items: [],
     },
     {
@@ -214,7 +217,7 @@ function normalizeSection(raw, index, errors) {
   if (!SECTION_TYPES.has(type)) errors.push(`sections.${index}.type invalid`);
   const id = cleanText(section.id || type, 60) || type;
   const items = Array.isArray(section.items) ? section.items : [];
-  const maxItems = type === "quick" ? 4 : 12;
+  const maxItems = type === "quick" ? 4 : type === "hero" ? MAX_HERO_SLIDES : 12;
   if (items.length > maxItems) errors.push(`${id}.items too many`);
   const out = {
     id,
@@ -345,8 +348,34 @@ function createHomepageRoutes(deps = {}) {
   const upload = deps.upload;
   const cloudinaryUploadBuffer = deps.cloudinaryUploadBuffer;
   const cloudinaryDestroyPublicId = deps.cloudinaryDestroyPublicId;
+  const requireCustomerJwt = deps.requireCustomerJwt;
   if (!pool) throw new Error("createHomepageRoutes requires pool");
   if (!requireAdminSession) throw new Error("createHomepageRoutes requires requireAdminSession");
+  if (requireCustomerJwt && typeof requireCustomerJwt !== "function") throw new Error("createHomepageRoutes requires requireCustomerJwt to be a function");
+
+  function optionalCustomerSession(req, res, next) {
+    if (!requireCustomerJwt) return next();
+    let finished = false;
+    const passthrough = () => {
+      if (finished) return;
+      finished = true;
+      next();
+    };
+    const failClosedRes = {
+      status() { return this; },
+      json() {
+        req.customer = null;
+        passthrough();
+        return this;
+      },
+    };
+    try {
+      return requireCustomerJwt(req, failClosedRes, passthrough);
+    } catch (_) {
+      req.customer = null;
+      return passthrough();
+    }
+  }
 
   router.get("/public/homepage", async (_req, res) => {
     res.set("Cache-Control", "no-store");
@@ -368,7 +397,7 @@ function createHomepageRoutes(deps = {}) {
     }
   });
 
-  router.get("/public/homepage/active-job", async (req, res) => {
+  router.get("/public/homepage/active-job", optionalCustomerSession, async (req, res) => {
     res.set("Cache-Control", "no-store");
     try {
       const activeJob = await loadActiveJobForCustomer(pool, req.customer?.sub || "");

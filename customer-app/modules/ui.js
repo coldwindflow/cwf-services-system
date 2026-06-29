@@ -102,7 +102,7 @@
         sort_order: 40,
         title: "ข่าวและประกาศ CWF",
         body: "",
-        items: [],
+        items: [{ title: "ติดต่อทีม CWF", action: "contact", body: "สอบถามบริการหรือแจ้งข้อมูลเพิ่มเติมกับแอดมิน" }],
       },
       {
         id: "featured_services",
@@ -119,7 +119,7 @@
         enabled: true,
         sort_order: 60,
         title: "ภาพกิจกรรมและโพสต์",
-        body: "เชื่อมต่อไปยัง Facebook",
+        body: "",
         items: [],
       },
       {
@@ -128,7 +128,7 @@
         enabled: true,
         sort_order: 70,
         title: "บทความแนะนำ",
-        body: "อ่านต่อบน cwf-air.com",
+        body: "",
         items: [],
       },
       {
@@ -289,7 +289,7 @@
             </article>
           `).join("")}
         </div>
-        ${slides.length > 1 ? `<div class="homepage-hero-dots" aria-label="Homepage slides">${slides.map((_, index) => `<span class="${index === 0 ? "is-active" : ""}"></span>`).join("")}</div>` : ""}
+        ${slides.length > 1 ? `<div class="homepage-hero-dots" aria-label="Homepage slides">${slides.map((_, index) => `<button type="button" class="${index === 0 ? "is-active" : ""}" data-home-hero-dot="${index}" aria-label="ไปยังสไลด์ ${index + 1}" aria-selected="${index === 0 ? "true" : "false"}"></button>`).join("")}</div>` : ""}
       </section>
     `;
   }
@@ -334,6 +334,7 @@
 
   function renderHomepageManualSection(section) {
     const items = (section.items || []).slice(0, 8);
+    if (!items.length) return "";
     return `
       <section class="homepage-section">
         <div class="homepage-section-head">
@@ -342,7 +343,6 @@
             ${section.body ? `<p>${root.utils.escapeHtml(section.body)}</p>` : ""}
           </div>
         </div>
-        ${items.length ? `
         <div class="homepage-carousel">
           ${items.map((item) => {
             const attrs = item.action === "contact"
@@ -362,7 +362,6 @@
             `;
           }).join("")}
         </div>
-        ` : `<div class="homepage-section-empty">${root.utils.escapeHtml(section.body || "ยังไม่มีรายการเผยแพร่")}</div>`}
       </section>
     `;
   }
@@ -614,6 +613,7 @@
 
   function bindHomepage(container) {
     bindCommerceHome(container);
+    bindHomepageHeroSliders(container);
     container.querySelectorAll("[data-home-contact]").forEach((button) => {
       button.addEventListener("click", (event) => {
         event.preventDefault?.();
@@ -642,6 +642,56 @@
         }
         openContactSheet(container, { title: item.item_name || "บริการนี้" });
       });
+    });
+  }
+
+  function bindHomepageHeroSliders(container) {
+    container.querySelectorAll(".homepage-hero").forEach((hero) => {
+      const slider = hero.querySelector(".homepage-hero-slider");
+      const slides = Array.from(hero.querySelectorAll("[data-home-hero-slide]"));
+      const dots = Array.from(hero.querySelectorAll("[data-home-hero-dot]"));
+      if (!slider || slides.length <= 1 || !dots.length || slider.dataset.bound === "1") return;
+      slider.dataset.bound = "1";
+      let raf = 0;
+      const setActive = (index) => {
+        dots.forEach((dot, dotIndex) => {
+          const active = dotIndex === index;
+          dot.classList.toggle("is-active", active);
+          dot.setAttribute("aria-selected", active ? "true" : "false");
+        });
+      };
+      const update = () => {
+        raf = 0;
+        const width = slider.clientWidth || 1;
+        const index = Math.max(0, Math.min(slides.length - 1, Math.round((slider.scrollLeft || 0) / width)));
+        setActive(index);
+      };
+      const onScroll = () => {
+        if (raf) return;
+        raf = requestAnimationFrame(update);
+      };
+      slider.addEventListener("scroll", onScroll, { passive: true });
+      dots.forEach((dot, index) => {
+        dot.addEventListener("click", () => {
+          const slide = slides[index];
+          if (!slide) return;
+          if (typeof slider.scrollTo === "function") {
+            slider.scrollTo({ left: slide.offsetLeft || index * (slider.clientWidth || 0), behavior: "smooth" });
+          } else if (typeof slide.scrollIntoView === "function") {
+            slide.scrollIntoView({ behavior: "smooth", inline: "start", block: "nearest" });
+          }
+          setActive(index);
+        });
+        dot.addEventListener("keydown", (event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault?.();
+            dot.click();
+          }
+          if (event.key === "ArrowRight" && dots[index + 1]) dots[index + 1].focus();
+          if (event.key === "ArrowLeft" && dots[index - 1]) dots[index - 1].focus();
+        });
+      });
+      update();
     });
   }
 

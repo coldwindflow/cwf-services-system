@@ -13190,7 +13190,7 @@ app.use(createCatalogItemRoutes({
   minToHHMM,
 }));
 app.use(createCatalogReviewRoutes({ pool, requireCustomerJwt, requireAdminSession }));
-app.use(createHomepageRoutes({ pool, requireAdminSession, upload, cloudinaryUploadBuffer, cloudinaryDestroyPublicId }));
+app.use(createHomepageRoutes({ pool, requireAdminSession, requireCustomerJwt, upload, cloudinaryUploadBuffer, cloudinaryDestroyPublicId }));
 
 
 app.post("/catalog/items", requireAdminSession, async (req, res) => {
