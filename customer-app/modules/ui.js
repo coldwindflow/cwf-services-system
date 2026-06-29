@@ -285,7 +285,7 @@
             <h2>${root.utils.escapeHtml(section.title || "")}</h2>
             ${section.body ? `<p>${root.utils.escapeHtml(section.body)}</p>` : ""}
           </div>
-          <button type="button" class="text-link-btn" data-route="store">à¸”à¸¹à¸—à¸±à¹‰à¸‡à¸«à¸¡à¸”</button>
+          <button type="button" class="text-link-btn" data-route="store">ดูทั้งหมด</button>
         </div>
         <div data-homepage-featured>${renderHomepageFeaturedServices()}</div>
       </section>
@@ -635,74 +635,6 @@
       container.innerHTML = `
         <section class="screen commerce-home homepage-screen">
           ${sectionsHtml}
-          <div data-contact-sheet-mount></div>
-        </section>
-      `;
-      bindHomepage(container);
-      root.auth?.bindAvatarFallbacks?.(container);
-      loadHomeData();
-      return;
-      const hero = sectionByType("hero") || DEFAULT_HOME_CONFIG.sections[0];
-      const quick = sectionByType("quick");
-      const featured = sectionByType("featured_services") || { title: "บริการแนะนำ", body: "ราคาและรายละเอียดดึงจาก Catalog" };
-      const manualSections = homepageSections().filter((section) => ["announcements", "updates", "articles"].includes(section.type));
-      const trust = sectionByType("trust");
-      container.innerHTML = `
-        <section class="screen commerce-home homepage-screen">
-          <section class="homepage-hero">
-            ${hero.image_url ? `<div class="homepage-hero-media"><img src="${root.utils.escapeHtml(hero.image_url)}" alt="" loading="lazy"></div>` : ""}
-            <div class="homepage-hero-inner">
-              ${hero.kicker ? `<span class="homepage-kicker">${root.utils.escapeHtml(hero.kicker)}</span>` : ""}
-              <h2>${root.utils.escapeHtml(hero.title || "ดูแลแอร์ง่าย จองงานได้ในไม่กี่ขั้นตอน")}</h2>
-              ${hero.body ? `<p>${root.utils.escapeHtml(hero.body)}</p>` : ""}
-              <div class="homepage-hero-actions">
-                ${renderHomepageCta(hero.cta_primary || { label: "จองล้างแอร์", route: "scheduled" }, "hero-main-btn")}
-                ${renderHomepageCta(hero.cta_secondary || { label: "ติดตามงาน", route: "tracking" }, "hero-ghost-btn")}
-              </div>
-            </div>
-          </section>
-
-          ${renderHomepageQuick(quick)}
-
-          <section class="homepage-section">
-            <div class="homepage-section-head">
-              <div>
-                <h2>${root.utils.escapeHtml(featured.title || "บริการแนะนำ")}</h2>
-                ${featured.body ? `<p>${root.utils.escapeHtml(featured.body)}</p>` : ""}
-              </div>
-              <button type="button" class="text-link-btn" data-route="store">ดูทั้งหมด</button>
-            </div>
-            <div data-homepage-featured>${renderHomepageFeaturedServices()}</div>
-          </section>
-
-          ${manualSections.map(renderHomepageManualSection).join("")}
-
-          ${trust ? `
-            <section class="homepage-section">
-              <div class="homepage-section-head">
-                <div>
-                  <h2>${root.utils.escapeHtml(trust.title || "มาตรฐานที่ลูกค้าวางใจ")}</h2>
-                  ${trust.body ? `<p>${root.utils.escapeHtml(trust.body)}</p>` : ""}
-                </div>
-              </div>
-              <div class="homepage-trust-grid">
-                ${(trust.items || []).slice(0, 6).map((item) => `
-                  <div class="homepage-trust-item">
-                    <strong>${root.utils.escapeHtml(item.title || "")}</strong>
-                    ${item.body ? `<span>${root.utils.escapeHtml(item.body)}</span>` : ""}
-                  </div>
-                `).join("")}
-              </div>
-            </section>
-          ` : ""}
-
-          <section class="card commerce-section">
-            <div class="section-head"><h2>โปรโมชันและพื้นที่ให้บริการ</h2></div>
-            <div data-promotions>${renderPromotionSummary()}</div>
-            <div data-zones>${renderCoverageSummary()}</div>
-          </section>
-
-          <div data-home-account>${renderAccountShortcut()}</div>
           <div data-contact-sheet-mount></div>
         </section>
       `;

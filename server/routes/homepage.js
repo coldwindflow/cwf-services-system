@@ -129,6 +129,8 @@ function validateUrlOrRoute(target, errors, pathName, options = {}) {
   const route = cleanText(target.route || "", 40);
   const url = cleanText(target.url || "", 500);
   const action = cleanText(target.action || "", 40);
+  const targetCount = [route, url, action].filter(Boolean).length;
+  if (targetCount > 1) errors.push(`${pathName}.target conflict`);
   if (route && !INTERNAL_ROUTES.has(route)) errors.push(`${pathName}.route not allowed`);
   if (url) {
     try {
@@ -141,6 +143,17 @@ function validateUrlOrRoute(target, errors, pathName, options = {}) {
   if (action && !["contact"].includes(action)) errors.push(`${pathName}.action not allowed`);
   if (options.externalRequired && !url) errors.push(`${pathName}.url required`);
   if (options.noImage && (target.image_url || target.image_public_id)) errors.push(`${pathName}.image not allowed`);
+}
+
+function validateImageUrl(value, errors, pathName) {
+  const imageUrl = cleanText(value || "", 700);
+  if (!imageUrl) return;
+  try {
+    const parsed = new URL(imageUrl);
+    if (!["http:", "https:"].includes(parsed.protocol)) errors.push(`${pathName} must be http/https`);
+  } catch (_) {
+    errors.push(`${pathName} invalid`);
+  }
 }
 
 function normalizeCta(input, errors, pathName) {
@@ -178,6 +191,7 @@ function normalizeItem(raw, sectionType, index, errors) {
     externalRequired: sectionType === "updates" || sectionType === "articles",
     noImage: sectionType === "trust",
   });
+  validateImageUrl(out.image_url, errors, `${pathName}.image_url`);
   validateDateRange(out, errors, pathName);
   return out;
 }
@@ -204,6 +218,7 @@ function normalizeSection(raw, index, errors) {
   };
   if (cleanText(section.image_url, 700)) out.image_url = cleanText(section.image_url, 700);
   if (cleanText(section.image_public_id, 300)) out.image_public_id = cleanText(section.image_public_id, 300);
+  validateImageUrl(out.image_url, errors, `${id}.image_url`);
   validateDateRange(out, errors, id);
   if (type === "hero" && !out.title) errors.push("hero.title required");
   return out;

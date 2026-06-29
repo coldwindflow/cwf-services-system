@@ -463,6 +463,18 @@ test("homepage section sort_order controls DOM order", () => {
   assert.ok(container.innerHTML.indexOf("Trust First") < container.innerHTML.indexOf("Featured Later"));
 });
 
+test("homepage ui has no mojibake marker and renderHome has a single render path", () => {
+  const uiSource = fs.readFileSync(path.join(__dirname, "..", "customer-app", "modules", "ui.js"), "utf8");
+  assert.doesNotMatch(uiSource, /à¸|à¹/);
+  assert.match(uiSource, />ดูทั้งหมด<\/button>/);
+  assert.equal((uiSource.match(/sectionByType\("hero"\) \|\| DEFAULT_HOME_CONFIG/g) || []).length, 0);
+  const renderHomeSource = uiSource.slice(
+    uiSource.indexOf("renderHome(container)"),
+    uiSource.indexOf("renderBookingMode(container)"),
+  );
+  assert.equal((renderHomeSource.match(/container\.innerHTML/g) || []).length, 1);
+});
+
 test("scheduled booking renders one active step and preserves draft across three steps", async () => {
   const context = makeContext();
   const root = loadCustomerFrontend(context);

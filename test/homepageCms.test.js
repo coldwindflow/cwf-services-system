@@ -378,3 +378,94 @@ test("bottom navigation border and padding match the fixed-nav reference", () =>
   assert.match(css, /border-top:\s*1px solid var\(--line\)/);
   assert.match(css, /padding:\s*9px 6px calc\(8px \+ var\(--safe-b\)\)/);
 });
+
+test("homepage target validation stores exactly one quick or announcement target", () => {
+  const valid = validateConfig({
+    version: 1,
+    sections: [
+      {
+        id: "quick",
+        type: "quick",
+        enabled: true,
+        sort_order: 10,
+        items: [
+          { title: "External quick", url: "https://example.com/quick", icon: "chat" },
+          { title: "Contact quick", action: "contact", icon: "wrench" },
+        ],
+      },
+      {
+        id: "announcements",
+        type: "announcements",
+        enabled: true,
+        sort_order: 20,
+        title: "Announcements",
+        items: [{ title: "External announcement", url: "https://example.com/news" }],
+      },
+    ],
+  });
+  assert.equal(valid.ok, true);
+  assert.equal(valid.config.sections[0].items[0].url, "https://example.com/quick");
+  assert.equal(valid.config.sections[0].items[1].action, "contact");
+  assert.equal(valid.config.sections[0].items[1].route, undefined);
+  assert.equal(valid.config.sections[0].items[1].url, undefined);
+  assert.equal(valid.config.sections[1].items[0].url, "https://example.com/news");
+
+  const conflict = validateConfig({
+    version: 1,
+    sections: [{
+      id: "quick",
+      type: "quick",
+      enabled: true,
+      sort_order: 10,
+      items: [{ title: "Bad target", route: "store", url: "https://example.com" }],
+    }],
+  });
+  assert.equal(conflict.ok, false);
+  assert.ok(conflict.errors.some((error) => error.includes("target conflict")));
+});
+
+test("homepage image URLs allow http/https and reject unsafe protocols", () => {
+  const valid = validateConfig({
+    version: 1,
+    sections: [{
+      id: "hero",
+      type: "hero",
+      enabled: true,
+      sort_order: 10,
+      title: "Hero",
+      image_url: "https://res.cloudinary.com/demo/image/upload/cwf/homepage/hero.webp",
+      items: [{ title: "Card", image_url: "http://res.cloudinary.com/demo/card.png", route: "store" }],
+    }],
+  });
+  assert.equal(valid.ok, true);
+
+  for (const image_url of ["javascript:alert(1)", "data:image/png;base64,AAAA", "file:///tmp/image.png", "not a url"]) {
+    const invalid = validateConfig({
+      version: 1,
+      sections: [{
+        id: "hero",
+        type: "hero",
+        enabled: true,
+        sort_order: 10,
+        title: "Hero",
+        image_url,
+        items: [],
+      }],
+    });
+    assert.equal(invalid.ok, false, image_url);
+  }
+});
+
+test("admin target editor renders mode-specific fields and no stale target field", () => {
+  const admin = read("admin-homepage-cms.js");
+  assert.match(admin, /data-item-target/);
+  assert.match(admin, /data-prop="url"/);
+  assert.match(admin, /data-prop="route"/);
+  assert.match(admin, /delete item\.route;\s*delete item\.url;\s*delete item\.action;/);
+  assert.match(admin, /if \(targetMode === "contact"\) return "";/);
+  const renderPreviewSource = admin.slice(
+    admin.indexOf("function renderPreview()"),
+    admin.indexOf("function render()"),
+  );
+  assert.equal((renderPreviewSource.match(/\$\("preview"\)\.innerHTML/g) || []).length, 1);
+});

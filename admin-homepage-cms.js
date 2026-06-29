@@ -15,6 +15,7 @@
   };
   let config = clone(DEFAULT_CONFIG);
   let selected = "hero";
+  const ROUTE_OPTIONS = ["home", "store", "scheduled", "urgent", "tracking", "profile"];
 
   const $ = (id) => document.getElementById(id);
   const esc = (value) => String(value == null ? "" : value).replace(/[&<>"']/g, (s) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[s]));
@@ -95,7 +96,18 @@
     const external = sectionType === "updates" || sectionType === "articles";
     const trust = sectionType === "trust";
     const quick = sectionType === "quick";
+    const targetEditable = quick || sectionType === "announcements";
     const targetMode = item.url ? "url" : item.action === "contact" ? "contact" : "route";
+    const targetField = (() => {
+      if (!targetEditable) return "";
+      if (targetMode === "contact") return "";
+      if (targetMode === "url") {
+        return `<label>External URL<input data-item="${index}" data-prop="url" value="${esc(item.url || "")}" placeholder="https://..."></label>`;
+      }
+      return `<label>Internal route<select data-item="${index}" data-prop="route">
+        ${ROUTE_OPTIONS.map((route) => `<option value="${route}" ${String(item.route || "home") === route ? "selected" : ""}>${route}</option>`).join("")}
+      </select></label>`;
+    })();
     return `
       <div class="item">
         <h3>รายการ ${index + 1}</h3>
@@ -104,7 +116,7 @@
           <label>ป้าย/วันที่<input data-item="${index}" data-prop="tag" value="${esc(item.tag || item.date_label || "")}"></label>
         </div>
         <label>คำอธิบาย<textarea data-item="${index}" data-prop="body">${esc(item.body || "")}</textarea></label>
-        ${quick || sectionType === "announcements" ? `
+        ${targetEditable ? `
           <label>Target type<select data-item-target="${index}">
             <option value="route" ${targetMode === "route" ? "selected" : ""}>Internal route</option>
             <option value="contact" ${targetMode === "contact" ? "selected" : ""}>Contact admin</option>
@@ -112,7 +124,8 @@
           </select></label>
         ` : ""}
         ${quick ? `<label>Icon<input data-item="${index}" data-prop="icon" value="${esc(item.icon || "")}" placeholder="sparkle, wrench, pin, chat"></label>` : ""}
-        ${trust ? "" : `<label>${external ? "External URL" : "Route / URL"}<input data-item="${index}" data-prop="${external ? "url" : "route"}" value="${esc(external ? item.url || "" : item.route || item.url || "")}"></label>`}
+        ${targetField}
+        ${trust || targetEditable ? "" : `<label>${external ? "External URL" : "Route / URL"}<input data-item="${index}" data-prop="${external ? "url" : "route"}" value="${esc(external ? item.url || "" : item.route || item.url || "")}"></label>`}
         ${trust ? "" : `<label>Image URL<input data-item="${index}" data-prop="image_url" value="${esc(item.image_url || "")}"></label>`}
         ${trust ? "" : `<div class="two">
           <label>Active from<input data-item="${index}" data-prop="active_from" value="${esc(item.active_from || "")}" placeholder="YYYY-MM-DD"></label>
@@ -182,15 +195,6 @@
       if (section.type === "featured_services") return `<section class="sec"><div class="sec-head"><div><b>${esc(section.title || "")}</b><br><span>${esc(section.body || "")}</span></div></div><div class="cards"><article class="card"><b>Featured services</b><p>Catalog cards render here in the Customer App</p></article></div></section>`;
       return `<section class="sec"><div class="sec-head"><div><b>${esc(section.title || "")}</b><br><span>${esc(section.body || "")}</span></div><span>ดูทั้งหมด</span></div><div class="cards">${(section.items || []).slice(0, 3).map((item) => `<article class="card"><b>${esc(item.title || "")}</b><p>${esc(item.body || "")}</p></article>`).join("") || `<article class="card"><b>ไม่มีรายการ</b><p>เพิ่มรายการใน editor</p></article>`}</div></section>`;
     }).join("");
-    return;
-    const hero = sections().find((section) => section.type === "hero");
-    const quick = sections().find((section) => section.type === "quick");
-    const manual = sections().filter((section) => section.enabled !== false && ["announcements", "updates", "articles", "trust"].includes(section.type));
-    $("preview").innerHTML = `
-      <section class="hero"><small>${esc(hero?.kicker || "Coldwindflow")}</small><h3>${esc(hero?.title || "")}</h3><p>${esc(hero?.body || "")}</p></section>
-      <section class="quick">${(quick?.items || []).slice(0, 4).map((item) => `<div>${esc(item.title || "")}</div>`).join("")}</section>
-      ${manual.map((section) => `<section class="sec"><div class="sec-head"><div><b>${esc(section.title || "")}</b><br><span>${esc(section.body || "")}</span></div><span>ดูทั้งหมด</span></div><div class="cards">${(section.items || []).slice(0, 3).map((item) => `<article class="card"><b>${esc(item.title || "")}</b><p>${esc(item.body || "")}</p></article>`).join("") || `<article class="card"><b>ไม่มีรายการ</b><p>เพิ่มรายการใน editor</p></article>`}</div></section>`).join("")}
-    `;
   }
 
   function render() {
