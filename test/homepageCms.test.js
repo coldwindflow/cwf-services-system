@@ -179,7 +179,7 @@ test("customer homepage has no admin control, bottom nav is fixed five-tab, and 
   const sw = read("customer-app/sw.js");
   const app = read("customer-app/assets/customer-app.js");
   const manifest = read("customer-app/manifest.webmanifest");
-  const build = "20260629_customer_homepage_cms_rebased";
+  const build = "20260629_customer_homepage_mobile_hotfix";
 
   assert.doesNotMatch(index + ui, /โหมดแอดมิน|openCms|localStorage\.getItem\('cwfHomeCmsDemo'/);
   assert.match(index, /data-route="store"[\s\S]*ร้านค้า/);
@@ -191,9 +191,11 @@ test("customer homepage has no admin control, bottom nav is fixed five-tab, and 
   assert.match(css, /grid-template-columns: repeat\(5, minmax\(0, 1fr\)\)/);
   assert.match(css, /background:\s*rgba\(255,255,255,\.97\)/);
   assert.match(css, /box-shadow:\s*0 -10px 30px rgba\(7,27,56,\.10\)/);
-  assert.match(css, /margin:\s*-28px 0 0/);
-  assert.match(css, /width:\s*54px/);
-  assert.match(css, /height:\s*54px/);
+  assert.doesNotMatch(css, /margin:\s*-28px 0 0/);
+  const primaryNavBlock = css.slice(css.lastIndexOf(".nav-item-primary {"), css.lastIndexOf(".nav-item-primary {") + 220);
+  assert.doesNotMatch(primaryNavBlock, /translateY\(-/);
+  assert.match(css, /width:\s*44px/);
+  assert.match(css, /height:\s*44px/);
   assert.match(css, /background:\s*linear-gradient\(145deg,#ffd43b,#ffbd17\)/);
   assert.match(css, /background:\s*#2b2500/);
   assert.match(index, new RegExp(`customer-app\\.css\\?v=${build}`));
@@ -376,7 +378,22 @@ test("backend admin customer defaults and homepage migration stay in allowed sco
 test("bottom navigation border and padding match the fixed-nav reference", () => {
   const css = read("customer-app/assets/customer-app.css");
   assert.match(css, /border-top:\s*1px solid var\(--line\)/);
-  assert.match(css, /padding:\s*9px 6px calc\(8px \+ var\(--safe-b\)\)/);
+  assert.match(css, /padding:\s*7px 6px calc\(7px \+ var\(--safe-b\)\)/);
+  assert.match(css, /\.bottom-nav \.nav-item-primary::after\s*\{[\s\S]*width:\s*44px[\s\S]*height:\s*44px/);
+});
+
+test("homepage service carousel constrains card and image geometry on mobile", () => {
+  const css = read("customer-app/assets/customer-app.css");
+  const serviceBlock = css.slice(css.lastIndexOf(".homepage-service-card {"), css.lastIndexOf(".homepage-service-card {") + 320);
+  assert.match(serviceBlock, /flex:\s*0 0 calc\(\(100% - 10px\) \/ 2\)/);
+  assert.match(serviceBlock, /max-width:\s*calc\(\(100% - 10px\) \/ 2\)/);
+  const imageBlock = css.slice(css.lastIndexOf(".homepage-card-image {"), css.lastIndexOf(".homepage-card-image {") + 180);
+  assert.match(imageBlock, /overflow:\s*hidden/);
+  const imageImgBlock = css.slice(css.lastIndexOf(".homepage-card-image img"), css.lastIndexOf(".homepage-card-image img") + 180);
+  assert.match(imageImgBlock, /display:\s*block/);
+  assert.match(imageImgBlock, /width:\s*100%/);
+  assert.match(imageImgBlock, /height:\s*100%/);
+  assert.match(imageImgBlock, /object-fit:\s*cover/);
 });
 
 test("homepage target validation stores exactly one quick or announcement target", () => {
