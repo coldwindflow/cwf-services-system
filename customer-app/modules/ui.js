@@ -304,16 +304,23 @@
           </div>
         </div>
         <div class="homepage-carousel">
-          ${items.map((item) => `
-            <a class="homepage-${section.type === "articles" ? "article" : section.type === "updates" ? "update" : "announcement"}-card" href="${root.utils.escapeHtml(item.url || "#home")}" ${item.url ? 'target="_blank" rel="noopener noreferrer"' : `data-route="${root.utils.escapeHtml(item.route || "home")}"`}>
-              ${homepageImage(item, "homepage-card-image", "sparkle")}
-              <div class="homepage-card-body">
-                <strong>${root.utils.escapeHtml(item.title || "")}</strong>
-                ${item.body ? `<small>${root.utils.escapeHtml(item.body)}</small>` : ""}
-                ${item.tag || item.date_label ? `<span>${root.utils.escapeHtml(item.tag || item.date_label)}</span>` : ""}
-              </div>
-            </a>
-          `).join("")}
+          ${items.map((item) => {
+            const attrs = item.action === "contact"
+              ? `href="#" data-home-contact="${root.utils.escapeHtml(item.title || "ติดต่อ CWF")}"`
+              : item.url
+                ? `href="${root.utils.escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer"`
+                : `href="#${root.utils.escapeHtml(item.route || "home")}" data-route="${root.utils.escapeHtml(item.route || "home")}"`;
+            return `
+              <a class="homepage-${section.type === "articles" ? "article" : section.type === "updates" ? "update" : "announcement"}-card" ${attrs}>
+                ${homepageImage(item, "homepage-card-image", "sparkle")}
+                <div class="homepage-card-body">
+                  <strong>${root.utils.escapeHtml(item.title || "")}</strong>
+                  ${item.body ? `<small>${root.utils.escapeHtml(item.body)}</small>` : ""}
+                  ${item.tag || item.date_label ? `<span>${root.utils.escapeHtml(item.tag || item.date_label)}</span>` : ""}
+                </div>
+              </a>
+            `;
+          }).join("")}
         </div>
       </section>
     `;

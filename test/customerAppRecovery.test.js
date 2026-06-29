@@ -463,6 +463,52 @@ test("homepage section sort_order controls DOM order", () => {
   assert.ok(container.innerHTML.indexOf("Trust First") < container.innerHTML.indexOf("Featured Later"));
 });
 
+test("homepage announcement cards preserve contact, route, and external URL targets", () => {
+  const context = makeContext();
+  const root = loadCustomerFrontend(context);
+  root.auth = { displayName: () => "Customer", loadCustomer: async () => ({ logged_in: false }) };
+  root.state.setHomepage({
+    status: "success",
+    fallback: false,
+    error: "",
+    config: {
+      version: 1,
+      sections: [
+        {
+          id: "quick",
+          type: "quick",
+          enabled: true,
+          sort_order: 10,
+          title: "Quick",
+          items: [{ title: "Quick Contact", action: "contact", icon: "chat" }],
+        },
+        {
+          id: "announcements",
+          type: "announcements",
+          enabled: true,
+          sort_order: 20,
+          title: "Announcements",
+          items: [
+            { title: "Contact Admin", action: "contact" },
+            { title: "Open Store", route: "store" },
+            { title: "External News", url: "https://example.com/news" },
+          ],
+        },
+      ],
+    },
+  });
+  const container = new HomeContainer();
+
+  root.ui.renderHome(container);
+
+  assert.match(container.innerHTML, /class="homepage-quick" href="#" data-home-contact="Quick Contact"/);
+  assert.match(container.innerHTML, /class="homepage-announcement-card" href="#" data-home-contact="Contact Admin"/);
+  assert.doesNotMatch(container.innerHTML, /data-home-contact="Contact Admin"[^>]*data-route="home"/);
+  assert.doesNotMatch(container.innerHTML, /data-route="home"[^>]*Contact Admin/);
+  assert.match(container.innerHTML, /class="homepage-announcement-card" href="#store" data-route="store"/);
+  assert.match(container.innerHTML, /class="homepage-announcement-card" href="https:\/\/example\.com\/news" target="_blank" rel="noopener noreferrer"/);
+});
+
 test("homepage ui has no mojibake marker and renderHome has a single render path", () => {
   const uiSource = fs.readFileSync(path.join(__dirname, "..", "customer-app", "modules", "ui.js"), "utf8");
   assert.doesNotMatch(uiSource, /à¸|à¹/);
