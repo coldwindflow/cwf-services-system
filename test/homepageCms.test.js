@@ -106,6 +106,56 @@ test("homepage validation rejects invalid section, URL, date, and oversized payl
   assert.ok(oversized.errors.includes("payload too large"));
 });
 
+test("featured_services normalizes auto-mode defaults and validates manual selection", () => {
+  const auto = validateConfig({
+    sections: [{ id: "featured_services", type: "featured_services", title: "บริการแนะนำ", items: [] }],
+  });
+  assert.equal(auto.ok, true);
+  const fs1 = auto.config.sections[0];
+  assert.equal(fs1.featured_mode, "auto");
+  assert.equal(fs1.featured_limit, 8);
+  assert.equal(fs1.show_price, true);
+  assert.equal(fs1.show_badge, true);
+  assert.deepEqual(fs1.item_ids, []);
+
+  const manualNoIds = validateConfig({
+    sections: [{ id: "featured_services", type: "featured_services", title: "x", featured_mode: "manual", item_ids: [], items: [] }],
+  });
+  assert.equal(manualNoIds.ok, false);
+  assert.ok(manualNoIds.errors.some((error) => error.includes("item_ids required")));
+
+  const manual = validateConfig({
+    sections: [{
+      id: "featured_services", type: "featured_services", title: "x", featured_mode: "manual",
+      featured_limit: 99, show_price: false, show_badge: false, item_ids: ["a", "b", "a"], items: [],
+    }],
+  });
+  assert.equal(manual.ok, true);
+  const fs2 = manual.config.sections[0];
+  assert.equal(fs2.featured_mode, "manual");
+  assert.equal(fs2.featured_limit, 12);
+  assert.equal(fs2.show_price, false);
+  assert.equal(fs2.show_badge, false);
+  assert.deepEqual(fs2.item_ids, ["a", "b"]);
+});
+
+test("legacy published config without featured_services fields gets safe defaults without losing existing content", () => {
+  const legacy = validateConfig({
+    sections: [{
+      id: "featured_services", type: "featured_services", enabled: true, sort_order: 5,
+      title: "บริการเก่าของแอดมิน", body: "คำอธิบายเดิม", items: [],
+    }],
+  });
+  assert.equal(legacy.ok, true);
+  const section = legacy.config.sections[0];
+  assert.equal(section.title, "บริการเก่าของแอดมิน");
+  assert.equal(section.body, "คำอธิบายเดิม");
+  assert.equal(section.featured_mode, "auto");
+  assert.equal(section.featured_limit, 8);
+  assert.equal(section.show_price, true);
+  assert.equal(section.show_badge, true);
+});
+
 test("public homepage returns published config only and strips admin image metadata", async () => {
   const pool = createPool();
   pool.state.row.draft_config = { version: 1, sections: [{ id: "hero", type: "hero", enabled: true, sort_order: 1, title: "Draft title", items: [] }] };

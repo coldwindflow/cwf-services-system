@@ -76,6 +76,11 @@ const DEFAULT_CONFIG = {
       sort_order: 50,
       title: "บริการแนะนำ",
       body: "ราคาและรายละเอียดดึงจาก Catalog",
+      featured_mode: "auto",
+      featured_limit: 8,
+      show_price: true,
+      show_badge: true,
+      item_ids: [],
       items: [],
     },
     {
@@ -236,6 +241,17 @@ function normalizeSection(raw, index, errors) {
   validateImageUrl(out.image_url, errors, `${id}.image_url`);
   validateDateRange(out, errors, id);
   if (type === "hero" && !out.title) errors.push("hero.title required");
+  if (type === "featured_services") {
+    const mode = cleanText(section.featured_mode, 10) === "manual" ? "manual" : "auto";
+    const limit = Number(section.featured_limit);
+    out.featured_mode = mode;
+    out.featured_limit = Number.isFinite(limit) ? Math.max(1, Math.min(12, Math.round(limit))) : 8;
+    out.show_price = section.show_price !== false;
+    out.show_badge = section.show_badge !== false;
+    const itemIds = Array.isArray(section.item_ids) ? section.item_ids : [];
+    out.item_ids = [...new Set(itemIds.map((value) => cleanText(value, 80)).filter(Boolean))].slice(0, 12);
+    if (mode === "manual" && !out.item_ids.length) errors.push(`${id}.item_ids required for manual mode`);
+  }
   return out;
 }
 

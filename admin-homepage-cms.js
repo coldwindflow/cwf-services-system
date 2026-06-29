@@ -8,7 +8,7 @@
       { id: "quick", type: "quick", enabled: true, sort_order: 20, title: "เมนูด่วน", body: "", items: [{ title: "จองล้างแอร์", route: "scheduled", icon: "sparkle" }, { title: "แจ้งซ่อม", action: "contact", icon: "wrench" }, { title: "ติดตามงาน", route: "tracking", icon: "pin" }, { title: "LINE", url: "https://lin.ee/fG1Oq7y", icon: "chat" }] },
       { id: "active_job", type: "active_job", enabled: true, sort_order: 30, title: "Active job", body: "", items: [] },
       { id: "announcements", type: "announcements", enabled: true, sort_order: 40, title: "ข่าวและประกาศ CWF", body: "", items: [{ title: "ติดต่อทีม CWF", action: "contact", body: "สอบถามบริการหรือแจ้งข้อมูลเพิ่มเติมกับแอดมิน" }] },
-      { id: "featured_services", type: "featured_services", enabled: true, sort_order: 50, title: "บริการแนะนำ", body: "ราคาและรายละเอียดจาก Catalog", items: [] },
+      { id: "featured_services", type: "featured_services", enabled: true, sort_order: 50, title: "บริการแนะนำ", body: "ราคาและรายละเอียดจาก Catalog", featured_mode: "auto", featured_limit: 8, show_price: true, show_badge: true, item_ids: [], items: [] },
       { id: "updates", type: "updates", enabled: true, sort_order: 60, title: "ภาพกิจกรรมและโพสต์", body: "", items: [] },
       { id: "articles", type: "articles", enabled: true, sort_order: 70, title: "บทความแนะนำ", body: "", items: [] },
       { id: "trust", type: "trust", enabled: true, sort_order: 80, title: "มาตรฐานที่ลูกค้าวางใจ", body: "", items: [{ title: "แจ้งราคาก่อนทำ", body: "ระบบคำนวณจากข้อมูลบริการจริง" }, { title: "ช่างผ่านมาตรฐาน", body: "ทีมงานได้รับการตรวจสอบก่อนรับงาน" }, { title: "ติดตามงานได้", body: "ดูสถานะสำคัญด้วย Booking Code" }, { title: "ติดต่อแอดมินง่าย", body: "รองรับ LINE และโทรศัพท์" }] },
@@ -16,6 +16,8 @@
   };
   let config = clone(DEFAULT_CONFIG);
   let selected = "hero";
+  let catalogItems = null;
+  let catalogLoadFailed = false;
   const ROUTE_OPTIONS = ["home", "store", "scheduled", "urgent", "tracking", "profile"];
 
   const $ = (id) => document.getElementById(id);
@@ -35,6 +37,16 @@
   function setStatus(text, kind) { $("status").textContent = text; $("status").className = `status ${kind || ""}`; }
   function sections() { return config.sections.sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0)); }
   function current() { return sections().find((section) => section.id === selected) || sections()[0]; }
+
+  async function ensureCatalogItems() {
+    if (catalogItems || catalogLoadFailed) return;
+    try {
+      catalogItems = await requestJson("/admin/catalog/items");
+      renderEditor();
+    } catch (_) {
+      catalogLoadFailed = true;
+    }
+  }
 
   async function requestJson(url, options) {
     const response = await fetch(url, { credentials: "include", headers: options?.body ? { "Content-Type": "application/json" } : undefined, ...options });
@@ -205,6 +217,35 @@
         <div class="toolbar"><button class="btn" type="button" id="addItem">เพิ่มรายการ</button></div>
         ${(section.items || []).map((item, index) => itemEditor(item, index, section.type)).join("")}
       ` : ""}
+      ${section.type === "featured_services" ? featuredServicesEditor(section) : ""}
+    `;
+  }
+
+  function featuredServicesEditor(section) {
+    const mode = section.featured_mode === "manual" ? "manual" : "auto";
+    const selectedIds = new Set((section.item_ids || []).map(String));
+    if (mode === "manual") ensureCatalogItems();
+    const manualList = mode !== "manual" ? "" : (
+      !catalogItems
+        ? `<p>${catalogLoadFailed ? "โหลดรายการ Catalog ไม่สำเร็จ" : "กำลังโหลดรายการ Catalog..."}</p>`
+        : `<div class="editor" style="max-height:260px;overflow:auto;border:1px solid #dce4ef;border-radius:11px;padding:8px">
+            ${catalogItems.map((item) => `
+              <label class="switch" style="justify-content:flex-start">
+                <input type="checkbox" data-featured-item="${esc(item.item_id)}" ${selectedIds.has(String(item.item_id)) ? "checked" : ""}>
+                ${esc(item.item_name || item.item_id)}
+              </label>
+            `).join("") || "<p>ไม่มีรายการใน Catalog</p>"}
+          </div>`
+    );
+    return `
+      <label>แหล่งข้อมูลบริการแนะนำ<select data-featured-mode>
+        <option value="auto" ${mode === "auto" ? "selected" : ""}>ดึงจาก Catalog อัตโนมัติ (is_featured)</option>
+        <option value="manual" ${mode === "manual" ? "selected" : ""}>เลือกรายการเอง</option>
+      </select></label>
+      <label>จำนวนรายการสูงสุด<input type="number" min="1" max="12" data-featured-limit value="${esc(section.featured_limit || 8)}"></label>
+      <label class="switch"><input type="checkbox" data-featured-bool="show_price" ${section.show_price !== false ? "checked" : ""}> แสดงราคา</label>
+      <label class="switch"><input type="checkbox" data-featured-bool="show_badge" ${section.show_badge !== false ? "checked" : ""}> แสดง Badge สถานะจอง</label>
+      ${mode === "manual" ? `<label>เลือกบริการที่ต้องการแสดง${manualList}</label>` : ""}
     `;
   }
 
@@ -303,6 +344,7 @@
       if (target.dataset.prop === "url") { delete item[ctaName].route; delete item[ctaName].action; }
     }
     if (target.matches("[data-item]")) section.items[Number(target.dataset.item)][target.dataset.prop] = target.value;
+    if (target.matches("[data-featured-limit]")) section.featured_limit = Math.max(1, Math.min(12, Number(target.value) || 8));
     renderPreview();
   });
 
@@ -316,6 +358,19 @@
     if (target.id === "sectionPicker") { selected = target.value; render(); }
     if (target.matches("[data-upload]")) uploadImage(target, Number(target.dataset.upload)).catch((error) => setStatus(error.message, "bad"));
     if (target.matches("[data-upload-section]")) uploadImage(target, target.dataset.uploadSection).catch((error) => setStatus(error.message, "bad"));
+    if (target.matches("[data-featured-mode]")) { current().featured_mode = target.value; render(); }
+    if (target.matches("[data-featured-bool]")) { current()[target.dataset.featuredBool] = target.checked; renderPreview(); }
+    if (target.matches("[data-featured-item]")) {
+      const section = current();
+      section.item_ids = Array.isArray(section.item_ids) ? section.item_ids : [];
+      const id = target.dataset.featuredItem;
+      if (target.checked) {
+        if (!section.item_ids.includes(id)) section.item_ids.push(id);
+      } else {
+        section.item_ids = section.item_ids.filter((value) => value !== id);
+      }
+      renderPreview();
+    }
     if (target.matches("[data-item-target]")) {
       const item = current().items[Number(target.dataset.itemTarget)];
       if (!item) return;
