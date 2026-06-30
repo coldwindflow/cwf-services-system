@@ -43,7 +43,8 @@ const createSystemRoutes = require("./server/routes/system");
 const createTechnicianDirectoryRoutes = require("./server/routes/users/technicians");
 const createCatalogItemRoutes = require("./server/routes/catalog/items");
 const createCatalogReviewRoutes = require("./server/routes/catalog/reviews");
-const { createHomepageRoutes } = require("./server/routes/homepage");
+const { createHomepageRoutes, CONFIG_KEY: HOMEPAGE_CONFIG_KEY } = require("./server/routes/homepage");
+const articleSync = require("./server/services/articleSync");
 const createServiceZoneRoutes = require("./server/routes/serviceZones");
 const createPageRoutes = require("./server/routes/pages");
 const createDocumentRoutes = require("./server/routes/docs");
@@ -18665,6 +18666,54 @@ function startUrgentFinalizerRunner() {
   return urgentFinalizerRunnerTimer;
 }
 
+// Homepage CMS "articles" section auto-sync (e.g. pulling posts from
+// www.cwf-air.com). Source URL / seed URLs are whatever the admin configured
+// in the CMS draft's published config — no server env config needed, the
+// admin controls it entirely from the Homepage CMS editor.
+const ARTICLE_SYNC_INTERVAL_MS = Math.max(1, Number(process.env.ARTICLE_SYNC_INTERVAL_HOURS) || 6) * 60 * 60 * 1000;
+let articleSyncRunnerInFlight = false;
+let articleSyncRunnerTimer = null;
+
+async function runArticleSyncOnce(source = 'manual') {
+  if (articleSyncRunnerInFlight) return { skipped: true, reason: 'in_flight' };
+  articleSyncRunnerInFlight = true;
+  try {
+    const configRow = await pool.query(
+      `SELECT published_config FROM public.homepage_cms_configs WHERE config_key=$1`,
+      [HOMEPAGE_CONFIG_KEY]
+    );
+    const config = configRow.rows?.[0]?.published_config;
+    const sections = Array.isArray(config?.sections) ? config.sections : [];
+    const results = [];
+    for (const section of sections) {
+      if (section?.type !== 'articles' || !section.auto_sync || !section.source_url) continue;
+      try {
+        const result = await articleSync.syncArticles(pool, section.source_url, { seedUrls: section.seed_urls || [], limit: 12 });
+        results.push({ source_url: section.source_url, ...result });
+      } catch (e) {
+        console.warn('[article_sync_runner] section sync failed', { source, source_url: section.source_url, error: e.message });
+      }
+    }
+    return { ok: true, results };
+  } catch (e) {
+    console.warn('[article_sync_runner] skip', { source, error: e.message });
+    return { ok: false, error: e.message };
+  } finally {
+    articleSyncRunnerInFlight = false;
+  }
+}
+
+function startArticleSyncRunner() {
+  if (articleSyncRunnerTimer) return articleSyncRunnerTimer;
+  if (!envBool('ARTICLE_SYNC_ENABLED', true)) return null;
+  setTimeout(() => { runArticleSyncOnce('startup').catch(() => {}); }, 15000).unref?.();
+  articleSyncRunnerTimer = setInterval(() => {
+    runArticleSyncOnce('interval').catch(() => {});
+  }, ARTICLE_SYNC_INTERVAL_MS);
+  if (typeof articleSyncRunnerTimer.unref === 'function') articleSyncRunnerTimer.unref();
+  return articleSyncRunnerTimer;
+}
+
 app.post("/tech/income-summary-batch", requireTechnicianSession, async (req, res) => {
   const requestedUsername = String(req.body?.username || req.query?.username || '').trim();
   const username = _authUsername(req);
@@ -26321,6 +26370,7 @@ function startServer() {
         console.log(`🔒 HTTPS CWF Server running`);
         console.log(`🔒 Local: https://localhost:${PORT}`);
         startUrgentFinalizerRunner();
+        startArticleSyncRunner();
       });
       return;
     }
@@ -26331,6 +26381,7 @@ function startServer() {
   app.listen(PORT, HOST, () => {
     console.log(`🌐 HTTP CWF Server running at http://localhost:${PORT}`);
     startUrgentFinalizerRunner();
+    startArticleSyncRunner();
   });
 }
 

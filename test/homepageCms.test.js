@@ -25,6 +25,7 @@ function createPool() {
     activeJob: null,
     },
     queries: [],
+    syncedArticles: [],
   };
   return {
     state,
@@ -58,8 +59,51 @@ function createPool() {
       if (normalized.includes("FROM public.jobs") && normalized.includes("customer_sub=$1")) {
         return { rows: state.activeJob && params[0] === "customer-1" ? [state.activeJob] : [] };
       }
+      if (normalized.includes("INSERT INTO public.homepage_synced_articles")) {
+        const [source_url, external_id, title, summary, image_url, link, published_at] = params;
+        const idx = state.syncedArticles.findIndex((row) => row.source_url === source_url && row.external_id === external_id);
+        const row = { source_url, external_id, title, summary, image_url, link, published_at, synced_at: new Date().toISOString() };
+        if (idx >= 0) state.syncedArticles[idx] = row; else state.syncedArticles.push(row);
+        return { rows: [] };
+      }
+      if (normalized.includes("FROM public.homepage_synced_articles")) {
+        const [sourceUrl, limit] = params;
+        const rows = state.syncedArticles
+          .filter((row) => row.source_url === sourceUrl)
+          .sort((a, b) => {
+            const ad = a.published_at ? new Date(a.published_at).getTime() : -Infinity;
+            const bd = b.published_at ? new Date(b.published_at).getTime() : -Infinity;
+            if (bd !== ad) return bd - ad;
+            return new Date(b.synced_at).getTime() - new Date(a.synced_at).getTime();
+          })
+          .slice(0, limit);
+        return { rows };
+      }
       throw new Error(`Unhandled query: ${normalized}`);
     },
+  };
+}
+
+async function withMockFetch(handler, fn) {
+  const original = global.fetch;
+  global.fetch = (url, options) => {
+    if (String(url).includes("127.0.0.1")) return original(url, options);
+    return handler(url, options);
+  };
+  try {
+    return await fn();
+  } finally {
+    global.fetch = original;
+  }
+}
+
+function jsonFetchResponse(body, init = {}) {
+  return {
+    ok: init.status == null || (init.status >= 200 && init.status < 300),
+    status: init.status || 200,
+    headers: { get: (name) => (String(name).toLowerCase() === "content-type" ? (init.contentType || "application/json") : "") },
+    json: async () => body,
+    text: async () => JSON.stringify(body),
   };
 }
 
@@ -234,7 +278,7 @@ test("customer homepage has no admin control, bottom nav is fixed five-tab, and 
   const sw = read("customer-app/sw.js");
   const app = read("customer-app/assets/customer-app.js");
   const manifest = read("customer-app/manifest.webmanifest");
-  const build = "20260630_homepage_live_fixes";
+  const build = "20260630_homepage_polish_v1";
 
   assert.doesNotMatch(index + ui, /โหมดแอดมิน|openCms|localStorage\.getItem\('cwfHomeCmsDemo'/);
   assert.match(index, /data-route="store"[\s\S]*ร้านค้า/);
@@ -1097,4 +1141,168 @@ test("activeNow: explicit date-time active_from/active_to keep their own offset 
 test("activeNow: an invalid date boundary fails closed (excludes the item) rather than showing it indefinitely", () => {
   assert.equal(activeNow({ active_from: "not-a-date" }, new Date("2026-06-30T08:00:00.000Z")), false);
   assert.equal(activeNow({ active_to: "not-a-date" }, new Date("2026-06-30T08:00:00.000Z")), false);
+});
+
+test("articles section validates auto_sync, source_url, and seed_urls and requires source_url when auto_sync is on", () => {
+  const valid = validateConfig({
+    sections: [{
+      id: "articles", type: "articles", title: "บทความแนะนำ",
+      auto_sync: true, source_url: "https://www.cwf-air.com",
+      seed_urls: ["https://www.cwf-air.com/air-conditioner-not-cooling/", "https://www.cwf-air.com/air-conditioner-water-leaking/"],
+      items: [],
+    }],
+  });
+  assert.equal(valid.ok, true);
+  const section = valid.config.sections[0];
+  assert.equal(section.auto_sync, true);
+  assert.equal(section.source_url, "https://www.cwf-air.com");
+  assert.deepEqual(section.seed_urls, ["https://www.cwf-air.com/air-conditioner-not-cooling/", "https://www.cwf-air.com/air-conditioner-water-leaking/"]);
+
+  const badSourceUrl = validateConfig({
+    sections: [{ id: "articles", type: "articles", title: "x", source_url: "javascript:alert(1)", items: [] }],
+  });
+  assert.equal(badSourceUrl.ok, false);
+  assert.ok(badSourceUrl.errors.some((error) => error.includes("source_url must be http/https")));
+
+  const badSeedUrl = validateConfig({
+    sections: [{ id: "articles", type: "articles", title: "x", seed_urls: ["not-a-url"], items: [] }],
+  });
+  assert.equal(badSeedUrl.ok, false);
+  assert.ok(badSeedUrl.errors.some((error) => error.includes("seed_urls.0 invalid")));
+
+  const autoSyncWithoutSource = validateConfig({
+    sections: [{ id: "articles", type: "articles", title: "x", auto_sync: true, items: [] }],
+  });
+  assert.equal(autoSyncWithoutSource.ok, false);
+  assert.ok(autoSyncWithoutSource.errors.some((error) => error.includes("source_url required when auto_sync is enabled")));
+
+  const tooManySeedUrls = validateConfig({
+    sections: [{ id: "articles", type: "articles", title: "x", seed_urls: Array.from({ length: 12 }, (_, i) => `https://www.cwf-air.com/post-${i}/`), items: [] }],
+  });
+  assert.equal(tooManySeedUrls.ok, true);
+  assert.equal(tooManySeedUrls.config.sections[0].seed_urls.length, 8);
+});
+
+test("POST /admin/homepage-cms/sync-articles requires admin auth and a source_url, then upserts and returns synced articles", async () => {
+  const pool = createPool();
+  const deny = await withServer(pool, (_req, res) => res.status(401).json({ error: "UNAUTHORIZED" }));
+  try {
+    const denied = await fetch(`${deny.base}/admin/homepage-cms/sync-articles`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source_url: "https://www.cwf-air.com" }) });
+    assert.equal(denied.status, 401);
+  } finally {
+    await deny.close();
+  }
+
+  const allow = await withServer(pool, (req, _res, next) => { req.actor = { username: "admin", role: "admin" }; next(); });
+  try {
+    const missingUrl = await fetch(`${allow.base}/admin/homepage-cms/sync-articles`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) });
+    assert.equal(missingUrl.status, 400);
+
+    await withMockFetch(async () => jsonFetchResponse([
+      { id: 1, slug: "air-conditioner-not-cooling", link: "https://www.cwf-air.com/air-conditioner-not-cooling/", title: { rendered: "แอร์ไม่เย็น" }, excerpt: { rendered: "สาเหตุและวิธีแก้" }, date_gmt: "2026-05-20T08:00:00", _embedded: { "wp:featuredmedia": [{ source_url: "https://www.cwf-air.com/img.jpg" }] } },
+    ]), async () => {
+      const res = await fetch(`${allow.base}/admin/homepage-cms/sync-articles`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source_url: "https://www.cwf-air.com" }),
+      });
+      assert.equal(res.status, 200);
+      const data = await res.json();
+      assert.equal(data.ok, true);
+      assert.equal(data.synced_count, 1);
+      assert.equal(data.articles.length, 1);
+      assert.equal(data.articles[0].title, "แอร์ไม่เย็น");
+      assert.ok(data.last_synced_at);
+    });
+
+    const statusRes = await fetch(`${allow.base}/admin/homepage-cms/synced-articles?source_url=${encodeURIComponent("https://www.cwf-air.com")}`);
+    const statusData = await statusRes.json();
+    assert.equal(statusData.ok, true);
+    assert.equal(statusData.articles.length, 1);
+    assert.ok(statusData.last_synced_at);
+  } finally {
+    await allow.close();
+  }
+});
+
+test("GET /admin/homepage-cms/synced-articles returns an empty result without a source_url and requires admin auth", async () => {
+  const pool = createPool();
+  const deny = await withServer(pool, (_req, res) => res.status(401).json({ error: "UNAUTHORIZED" }));
+  try {
+    const denied = await fetch(`${deny.base}/admin/homepage-cms/synced-articles?source_url=https://www.cwf-air.com`);
+    assert.equal(denied.status, 401);
+  } finally {
+    await deny.close();
+  }
+
+  const allow = await withServer(pool, (req, _res, next) => { req.actor = { username: "admin", role: "admin" }; next(); });
+  try {
+    const res = await fetch(`${allow.base}/admin/homepage-cms/synced-articles`);
+    const data = await res.json();
+    assert.equal(data.ok, true);
+    assert.deepEqual(data.articles, []);
+    assert.equal(data.last_synced_at, null);
+  } finally {
+    await allow.close();
+  }
+});
+
+test("public homepage hydrates an auto_sync articles section from the synced-articles cache, replacing manually-curated items", async () => {
+  const pool = createPool();
+  pool.state.syncedArticles = [
+    { source_url: "https://www.cwf-air.com", external_id: "a", title: "แอร์ไม่เย็น", summary: "สาเหตุและวิธีแก้", image_url: "https://www.cwf-air.com/a.jpg", link: "https://www.cwf-air.com/a/", published_at: "2026-05-20T08:00:00Z", synced_at: new Date().toISOString() },
+  ];
+  pool.state.row.published_config = {
+    version: 1,
+    sections: [{
+      id: "articles", type: "articles", enabled: true, sort_order: 70, title: "บทความแนะนำ",
+      auto_sync: true, source_url: "https://www.cwf-air.com", seed_urls: [],
+      items: [{ title: "บทความเดิมที่กรอกด้วยมือ", url: "https://example.com/manual" }],
+    }],
+  };
+  const server = await withServer(pool, (_req, _res, next) => next());
+  try {
+    const res = await fetch(`${server.base}/public/homepage`);
+    const data = await res.json();
+    const section = data.config.sections.find((s) => s.type === "articles");
+    assert.ok(section);
+    assert.equal(section.items.length, 1);
+    assert.equal(section.items[0].title, "แอร์ไม่เย็น");
+    assert.equal(section.items[0].url, "https://www.cwf-air.com/a/");
+    assert.ok(!JSON.stringify(section.items).includes("บทความเดิมที่กรอกด้วยมือ"));
+  } finally {
+    await server.close();
+  }
+});
+
+test("public homepage leaves manually-curated articles items untouched when auto_sync is off", async () => {
+  const pool = createPool();
+  pool.state.row.published_config = {
+    version: 1,
+    sections: [{
+      id: "articles", type: "articles", enabled: true, sort_order: 70, title: "บทความแนะนำ",
+      auto_sync: false, source_url: "", seed_urls: [],
+      items: [{ title: "บทความที่กรอกด้วยมือ", url: "https://example.com/manual" }],
+    }],
+  };
+  const server = await withServer(pool, (_req, _res, next) => next());
+  try {
+    const res = await fetch(`${server.base}/public/homepage`);
+    const data = await res.json();
+    const section = data.config.sections.find((s) => s.type === "articles");
+    assert.equal(section.items[0].title, "บทความที่กรอกด้วยมือ");
+  } finally {
+    await server.close();
+  }
+});
+
+test("admin-homepage-cms.js wires the articles auto-sync editor: toggle, source_url, seed_urls, sync-now, and hiding manual items when enabled", () => {
+  const admin = read("admin-homepage-cms.js");
+  assert.match(admin, /data-auto-sync/);
+  assert.match(admin, /\.auto_sync = target\.checked/);
+  assert.match(admin, /data-seed-urls/);
+  assert.match(admin, /id="syncArticlesNow"/);
+  assert.match(admin, /\/admin\/homepage-cms\/sync-articles/);
+  assert.match(admin, /\/admin\/homepage-cms\/synced-articles/);
+  assert.match(admin, /itemTypes\.includes\(section\.type\) && !\(section\.type === "articles" && section\.auto_sync\)/);
 });

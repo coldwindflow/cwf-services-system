@@ -3,6 +3,7 @@
 const crypto = require("crypto");
 const express = require("express");
 const { validateCatalogImageFile } = require("../lib/cloudinaryImageUpload");
+const articleSync = require("../services/articleSync");
 
 const CONFIG_KEY = "customer_homepage_v1";
 const MAX_JSON_BYTES = 120 * 1024;
@@ -25,6 +26,7 @@ const FOCAL_POSITIONS = new Set(["top", "center", "bottom"]);
 const ASPECT_MODES = new Set(["contain", "cover"]);
 const MAX_PROMO_BANNERS = 8;
 const MAX_SOCIAL_ITEMS = 8;
+const MAX_SEED_URLS = 8;
 const SOCIAL_PLATFORMS = new Set(["facebook", "youtube"]);
 // Admin pastes a public post/video URL; no Graph/YouTube Data API calls are
 // made server-side, so the only safety check we can do is confirm the URL
@@ -308,6 +310,32 @@ function normalizeSection(raw, index, errors) {
     out.item_ids = [...new Set(itemIds.map((value) => cleanText(value, 80)).filter(Boolean))].slice(0, 12);
     if (mode === "manual" && !out.item_ids.length) errors.push(`${id}.item_ids required for manual mode`);
   }
+  if (type === "articles") {
+    out.auto_sync = section.auto_sync === true;
+    const sourceUrl = cleanText(section.source_url, 300);
+    if (sourceUrl) {
+      try {
+        const parsed = new URL(sourceUrl);
+        if (!["http:", "https:"].includes(parsed.protocol)) errors.push(`${id}.source_url must be http/https`);
+      } catch (_) {
+        errors.push(`${id}.source_url invalid`);
+      }
+    }
+    out.source_url = sourceUrl;
+    const seedUrls = Array.isArray(section.seed_urls) ? section.seed_urls : [];
+    out.seed_urls = seedUrls.slice(0, MAX_SEED_URLS).map((value, seedIndex) => {
+      const url = cleanText(value, 500);
+      if (!url) return "";
+      try {
+        const parsed = new URL(url);
+        if (!["http:", "https:"].includes(parsed.protocol)) errors.push(`${id}.seed_urls.${seedIndex} must be http/https`);
+      } catch (_) {
+        errors.push(`${id}.seed_urls.${seedIndex} invalid`);
+      }
+      return url;
+    }).filter(Boolean);
+    if (out.auto_sync && !out.source_url) errors.push(`${id}.source_url required when auto_sync is enabled`);
+  }
   return out;
 }
 
@@ -381,6 +409,20 @@ function stripPublicConfig(config) {
       return cleanSection;
     });
   return { version: 1, sections };
+}
+
+async function hydrateAutoSyncArticles(pool, publicConfig) {
+  const sections = publicConfig?.sections || [];
+  for (const section of sections) {
+    if (section.type !== "articles" || !section.auto_sync || !section.source_url) continue;
+    try {
+      const synced = await articleSync.getSyncedArticles(pool, section.source_url, 8);
+      if (synced.articles.length) section.items = synced.articles;
+    } catch (error) {
+      if (!isSchemaError(error)) console.error("[homepage/public/sync-hydrate] failed", error);
+      // sync cache unavailable — keep whatever items were already on the section
+    }
+  }
 }
 
 function safeHomepageActiveJob(row) {
@@ -490,9 +532,11 @@ function createHomepageRoutes(deps = {}) {
     try {
       const row = await loadPublished(pool);
       const config = row?.published_config || DEFAULT_CONFIG;
+      const publicConfig = stripPublicConfig(config);
+      await hydrateAutoSyncArticles(pool, publicConfig);
       res.json({
         ok: true,
-        config: stripPublicConfig(config),
+        config: publicConfig,
         featured_services: [],
         fallback: !row?.published_config,
       });
@@ -661,6 +705,43 @@ function createHomepageRoutes(deps = {}) {
       if (isSchemaError(error)) return res.status(503).json({ error: "HOMEPAGE_CMS_SCHEMA_NOT_READY" });
       console.error("[homepage/admin/delete-image] failed", error);
       res.status(500).json({ error: "ลบรูปไม่สำเร็จ" });
+    }
+  });
+
+  router.post("/admin/homepage-cms/sync-articles", requireAdminSession, async (req, res) => {
+    try {
+      const sourceUrl = cleanText(req.body?.source_url, 300);
+      if (!sourceUrl) return res.status(400).json({ error: "source_url required" });
+      const seedUrls = Array.isArray(req.body?.seed_urls)
+        ? req.body.seed_urls.map((value) => cleanText(value, 500)).filter(Boolean).slice(0, MAX_SEED_URLS)
+        : [];
+      const result = await articleSync.syncArticles(pool, sourceUrl, { seedUrls, limit: 12 });
+      if (!result.ok) return res.status(400).json({ error: result.error || "SYNC_FAILED" });
+      const synced = await articleSync.getSyncedArticles(pool, sourceUrl, 12);
+      res.json({
+        ok: true,
+        synced_count: result.synced,
+        fetched_count: result.fetched,
+        articles: synced.articles,
+        last_synced_at: synced.last_synced_at,
+      });
+    } catch (error) {
+      if (isSchemaError(error)) return res.status(503).json({ error: "HOMEPAGE_CMS_SCHEMA_NOT_READY" });
+      console.error("[homepage/admin/sync-articles] failed", error);
+      res.status(500).json({ error: error.message || "ซิงค์บทความไม่สำเร็จ" });
+    }
+  });
+
+  router.get("/admin/homepage-cms/synced-articles", requireAdminSession, async (req, res) => {
+    try {
+      const sourceUrl = cleanText(req.query?.source_url, 300);
+      if (!sourceUrl) return res.json({ ok: true, articles: [], last_synced_at: null });
+      const synced = await articleSync.getSyncedArticles(pool, sourceUrl, 12);
+      res.json({ ok: true, ...synced });
+    } catch (error) {
+      if (isSchemaError(error)) return res.status(503).json({ error: "HOMEPAGE_CMS_SCHEMA_NOT_READY" });
+      console.error("[homepage/admin/synced-articles] failed", error);
+      res.status(500).json({ error: "โหลดข้อมูลที่ซิงค์ไม่สำเร็จ" });
     }
   });
 

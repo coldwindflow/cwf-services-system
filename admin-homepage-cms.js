@@ -20,6 +20,8 @@
   let selected = "hero";
   let catalogItems = null;
   let catalogLoadFailed = false;
+  let articleSyncStatus = null;
+  let articleSyncStatusLoading = false;
   const ROUTE_OPTIONS = ["home", "store", "scheduled", "urgent", "tracking", "profile"];
 
   const $ = (id) => document.getElementById(id);
@@ -238,6 +240,66 @@
     `;
   }
 
+  async function ensureArticleSyncStatus(sourceUrl) {
+    if (!sourceUrl) return;
+    if (articleSyncStatusLoading) return;
+    if (articleSyncStatus && articleSyncStatus.source_url === sourceUrl) return;
+    articleSyncStatusLoading = true;
+    try {
+      const data = await requestJson(`/admin/homepage-cms/synced-articles?source_url=${encodeURIComponent(sourceUrl)}`);
+      articleSyncStatus = { source_url: sourceUrl, count: (data.articles || []).length, last_synced_at: data.last_synced_at || null };
+    } catch (_) {
+      articleSyncStatus = { source_url: sourceUrl, count: 0, last_synced_at: null, error: true };
+    }
+    articleSyncStatusLoading = false;
+    render();
+  }
+
+  async function syncArticlesNow() {
+    const section = current();
+    if (section.type !== "articles") return;
+    if (!section.source_url) { setStatus("กรอก URL เว็บไซต์ต้นทางก่อนซิงค์", "bad"); return; }
+    setStatus("กำลังซิงค์บทความ...", "");
+    const data = await requestJson("/admin/homepage-cms/sync-articles", {
+      method: "POST",
+      body: JSON.stringify({ source_url: section.source_url, seed_urls: section.seed_urls || [] }),
+    });
+    articleSyncStatus = { source_url: section.source_url, count: (data.articles || []).length, last_synced_at: data.last_synced_at || null };
+    setStatus(`ซิงค์สำเร็จ ดึงได้ ${data.synced_count} บทความ (พบทั้งหมด ${data.fetched_count})`, "ok");
+    render();
+  }
+
+  function formatSyncedAt(value) {
+    if (!value) return "ยังไม่เคยซิงค์";
+    try {
+      return new Date(value).toLocaleString("th-TH", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+    } catch (_) {
+      return "ยังไม่เคยซิงค์";
+    }
+  }
+
+  function articlesAutoSyncEditor(section) {
+    const seedUrlsText = (Array.isArray(section.seed_urls) ? section.seed_urls : []).join("\n");
+    if (section.source_url) ensureArticleSyncStatus(section.source_url);
+    const status = articleSyncStatus && articleSyncStatus.source_url === section.source_url ? articleSyncStatus : null;
+    const statusText = articleSyncStatusLoading
+      ? "กำลังตรวจสอบสถานะ..."
+      : status
+        ? (status.error ? "ตรวจสอบสถานะไม่สำเร็จ" : `ซิงค์ล่าสุด: ${formatSyncedAt(status.last_synced_at)} · มีบทความ ${status.count} รายการ`)
+        : "";
+    return `
+      <div class="item" style="border-style:dashed">
+        <h3>ดึงบทความอัตโนมัติจากเว็บไซต์</h3>
+        <label class="switch"><input type="checkbox" data-auto-sync ${section.auto_sync ? "checked" : ""}> เปิดดึงบทความอัตโนมัติ (sync เป็นระยะ)</label>
+        <label>URL เว็บไซต์ต้นทาง<input data-field="source_url" value="${esc(section.source_url || "")}" placeholder="https://www.cwf-air.com"></label>
+        <label>Seed URL สำรอง (ใช้เมื่อ API ของเว็บไม่พร้อม ใส่ลิงก์บทความทีละบรรทัด)<textarea data-seed-urls>${esc(seedUrlsText)}</textarea></label>
+        <div class="toolbar"><button class="btn" type="button" id="syncArticlesNow">ซิงค์ตอนนี้</button></div>
+        ${statusText ? `<p style="color:#7d899c;font-size:13px">${esc(statusText)}</p>` : ""}
+        ${section.auto_sync ? `<p style="color:#7d899c;font-size:12px">เปิดใช้งานแล้ว ระบบจะดึงบทความให้อัตโนมัติเป็นระยะ รายการที่เพิ่มด้วยมือด้านบนจะไม่ถูกใช้แสดงผลจริงขณะเปิดโหมดนี้</p>` : ""}
+      </div>
+    `;
+  }
+
   function renderEditor() {
     const section = current();
     if (!section) return;
@@ -266,7 +328,8 @@
         <div class="toolbar"><button class="btn" type="button" id="addHeroSlide">Add hero slide</button></div>
         ${(section.items || []).map((item, index) => heroSlideEditor(item, index, section.items.length)).join("")}
       ` : ""}
-      ${itemTypes.includes(section.type) ? `
+      ${section.type === "articles" ? articlesAutoSyncEditor(section) : ""}
+      ${itemTypes.includes(section.type) && !(section.type === "articles" && section.auto_sync) ? `
         <div class="toolbar"><button class="btn" type="button" id="addItem">เพิ่มรายการ</button></div>
         ${section.type === "promo_banner" ? (section.items || []).map((item, index) => `
           <div>
@@ -437,6 +500,7 @@
       }
     }
     if (event.target.id === "retryCatalog") retryLoadCatalogItems();
+    if (event.target.id === "syncArticlesNow") syncArticlesNow().catch((error) => setStatus(error.message, "bad"));
     if (event.target.id === "addItem") {
       current().items = current().items || [];
       if (current().type === "quick" && current().items.length >= 4) { setStatus("Quick จำกัด 4 รายการ", "bad"); return; }
@@ -480,6 +544,7 @@
     }
     if (target.matches("[data-item]")) section.items[Number(target.dataset.item)][target.dataset.prop] = target.value;
     if (target.matches("[data-featured-limit]")) section.featured_limit = Math.max(1, Math.min(12, Number(target.value) || 8));
+    if (target.matches("[data-seed-urls]")) section.seed_urls = target.value.split("\n").map((line) => line.trim()).filter(Boolean).slice(0, 8);
     renderPreview();
   });
 
@@ -496,6 +561,7 @@
     if (target.matches("[data-upload]")) uploadImage(target, Number(target.dataset.upload)).catch((error) => setStatus(error.message, "bad"));
     if (target.matches("[data-upload-section]")) uploadImage(target, target.dataset.uploadSection).catch((error) => setStatus(error.message, "bad"));
     if (target.matches("[data-featured-mode]")) { current().featured_mode = target.value; render(); }
+    if (target.matches("[data-auto-sync]")) { current().auto_sync = target.checked; render(); }
     if (target.matches("[data-featured-bool]")) { current()[target.dataset.featuredBool] = target.checked; renderPreview(); }
     if (target.matches("[data-featured-item]")) {
       const section = current();
