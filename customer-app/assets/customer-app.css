@@ -4481,9 +4481,9 @@ body.has-contact-sheet { overflow: hidden; }
   font-weight: 900;
   text-decoration: none;
   transition: transform 0.1s, box-shadow 0.15s;
-  background: var(--yellow);
+  background: var(--grad-gold);
   color: #1c1400;
-  box-shadow: 0 6px 14px rgba(255, 185, 23, 0.26);
+  box-shadow: 0 8px 18px rgba(255, 185, 23, 0.32);
 }
 .hero-main-btn:active { transform: scale(0.97); }
 /* Secondary CTA — plain text link, not a second button */
@@ -4527,9 +4527,13 @@ body.has-contact-sheet { overflow: hidden; }
   color: var(--ink);
   background: #fff;
   border: 1px solid var(--line);
-  box-shadow: 0 4px 14px rgba(6, 24, 47, 0.05);
+  box-shadow: var(--shadow-soft);
 }
-.homepage-hero.is-no-image::after { content: none; }
+.homepage-hero.is-no-image::after {
+  background:
+    radial-gradient(120% 140% at 100% 0%, rgba(255, 210, 59, 0.16) 0%, transparent 55%),
+    radial-gradient(90% 120% at 0% 100%, rgba(22, 89, 224, 0.10) 0%, transparent 50%);
+}
 .homepage-hero.is-no-image .homepage-hero-slide { height: auto; }
 .homepage-hero.is-no-image .homepage-hero-inner {
   height: auto;
@@ -4580,16 +4584,16 @@ body.has-contact-sheet { overflow: hidden; }
   transition: transform 0.1s, box-shadow 0.15s;
 }
 .homepage-quick:active { transform: scale(0.94); box-shadow: 0 1px 5px rgba(6, 24, 47, 0.08); }
-/* Light icon chip — soft tint, not heavy gradient */
+/* Soft gradient icon chip — light tint with a touch of depth */
 .homepage-quick span:first-child {
   display: grid;
   place-items: center;
   width: 32px; height: 32px;
   margin-bottom: 6px;
   border-radius: 11px;
-  background: var(--soft-blue);
+  background: linear-gradient(135deg, var(--soft-blue) 0%, var(--soft-blue-2) 100%);
   color: var(--blue);
-  box-shadow: none;
+  box-shadow: 0 3px 8px rgba(22, 89, 224, 0.16);
 }
 .homepage-quick strong {
   display: block;
@@ -4678,7 +4682,7 @@ body.has-contact-sheet { overflow: hidden; }
   flex: 0 0 auto;
   width: 3px; height: 14px;
   border-radius: 2px;
-  background: var(--blue);
+  background: var(--grad-cta);
   content: "";
 }
 .homepage-section-head p { margin-top: 3px; color: var(--muted); font-size: 10.5px; }
@@ -4795,10 +4799,20 @@ body.has-contact-sheet { overflow: hidden; }
   width: 100%;
   overflow: hidden;
   flex: 0 0 auto;
-  background: var(--soft-blue-2);
+  background: linear-gradient(155deg, var(--soft-blue) 0%, var(--soft-blue-2) 55%, #c9def6 100%);
   color: var(--blue);
   display: grid;
   place-items: center;
+}
+/* Real photos (img) fully cover this box, so this chip only ever shows
+   in the no-image fallback state — never layered over a real photo. */
+.homepage-card-image .cwf-ico {
+  display: grid;
+  place-items: center;
+  width: 52px; height: 52px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.62);
+  box-shadow: 0 6px 16px rgba(22, 89, 224, 0.16);
 }
 /* Fixed aspect ratios keep images consistent across widths */
 .homepage-service-card .homepage-card-image    { aspect-ratio: 4 / 3; }
@@ -4864,7 +4878,7 @@ body.has-contact-sheet { overflow: hidden; }
   margin: 9px 12px 0;
   padding: 3px 9px;
   border-radius: 999px;
-  background: var(--soft-blue);
+  background: linear-gradient(135deg, var(--soft-blue) 0%, var(--soft-blue-2) 100%);
   color: var(--blue-2);
   font-size: 9.5px;
   font-weight: 900;
@@ -4939,7 +4953,7 @@ body.has-contact-sheet { overflow: hidden; }
   border: 1px solid var(--line);
   border-radius: 16px;
   background: #fff;
-  box-shadow: 0 4px 14px rgba(6, 24, 47, 0.05);
+  box-shadow: 0 6px 16px rgba(6, 24, 47, 0.07);
 }
 /* Blue gradient checkmark chip via pseudo-element, spans both text rows */
 .homepage-trust-item::before {
@@ -4950,10 +4964,11 @@ body.has-contact-sheet { overflow: hidden; }
   place-items: center;
   width: 30px; height: 30px;
   border-radius: 9px;
-  background: var(--soft-blue);
+  background: linear-gradient(135deg, var(--soft-blue) 0%, var(--soft-blue-2) 100%);
   color: var(--blue);
   font-size: 15px;
   font-weight: 900;
+  box-shadow: 0 3px 8px rgba(22, 89, 224, 0.14);
   content: "\2713";
 }
 .homepage-trust-item strong {
