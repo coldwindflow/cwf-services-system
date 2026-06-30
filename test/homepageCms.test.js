@@ -4,7 +4,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const express = require("express");
 
-const { DEFAULT_CONFIG, createHomepageRoutes, validateConfig } = require("../server/routes/homepage");
+const { DEFAULT_CONFIG, createHomepageRoutes, validateConfig, activeNow } = require("../server/routes/homepage");
 
 const REPO_ROOT = path.resolve(__dirname, "..");
 
@@ -234,7 +234,7 @@ test("customer homepage has no admin control, bottom nav is fixed five-tab, and 
   const sw = read("customer-app/sw.js");
   const app = read("customer-app/assets/customer-app.js");
   const manifest = read("customer-app/manifest.webmanifest");
-  const build = "20260629_homepage_cms_catalog_v3";
+  const build = "20260630_homepage_promo_banner_v1";
 
   assert.doesNotMatch(index + ui, /โหมดแอดมิน|openCms|localStorage\.getItem\('cwfHomeCmsDemo'/);
   assert.match(index, /data-route="store"[\s\S]*ร้านค้า/);
@@ -249,8 +249,8 @@ test("customer homepage has no admin control, bottom nav is fixed five-tab, and 
   assert.doesNotMatch(css, /margin:\s*-28px 0 0/);
   const primaryNavBlock = css.slice(css.lastIndexOf(".nav-item-primary {"), css.lastIndexOf(".nav-item-primary {") + 220);
   assert.doesNotMatch(primaryNavBlock, /translateY\(-/);
-  assert.match(css, /width:\s*44px/);
-  assert.match(css, /height:\s*44px/);
+  assert.match(css, /width:\s*38px/);
+  assert.match(css, /height:\s*38px/);
   assert.match(css, /background:\s*linear-gradient\(145deg,#ffd43b,#ffbd17\)/);
   assert.match(css, /background:\s*#2b2500/);
   assert.match(index, new RegExp(`customer-app\\.css\\?v=${build}`));
@@ -315,6 +315,7 @@ test("backend defaults contain exactly the standard homepage section types in or
   assert.deepEqual(DEFAULT_CONFIG.sections.map((section) => section.type), [
     "hero",
     "quick",
+    "promo_banner",
     "active_job",
     "announcements",
     "featured_services",
@@ -322,7 +323,7 @@ test("backend defaults contain exactly the standard homepage section types in or
     "articles",
     "trust",
   ]);
-  assert.deepEqual(DEFAULT_CONFIG.sections.map((section) => section.sort_order), [10, 20, 30, 40, 50, 60, 70, 80]);
+  assert.deepEqual(DEFAULT_CONFIG.sections.map((section) => section.sort_order), [10, 20, 25, 30, 40, 50, 60, 70, 80]);
 });
 
 test("homepage validation preserves hero image metadata and rejects quick sections over four items", () => {
@@ -512,7 +513,7 @@ test("backend admin customer defaults and homepage migration stay in allowed sco
   const admin = read("admin-homepage-cms.js");
   const customer = read("customer-app/modules/ui.js");
   const migration = read("migrations/20260629_homepage_cms.sql");
-  for (const type of ["hero", "quick", "active_job", "announcements", "featured_services", "updates", "articles", "trust"]) {
+  for (const type of ["hero", "quick", "promo_banner", "active_job", "announcements", "featured_services", "updates", "articles", "trust"]) {
     assert.match(admin, new RegExp(`type:\\s*"${type}"`));
     assert.match(customer, new RegExp(`type:\\s*"${type}"`));
   }
@@ -528,7 +529,7 @@ test("bottom navigation border and padding match the fixed-nav reference", () =>
   const css = read("customer-app/assets/customer-app.css");
   assert.match(css, /border-top:\s*1px solid var\(--line\)/);
   assert.match(css, /padding:\s*7px 6px calc\(7px \+ var\(--safe-b\)\)/);
-  assert.match(css, /\.bottom-nav \.nav-item-primary::after\s*\{[\s\S]*width:\s*44px[\s\S]*height:\s*44px/);
+  assert.match(css, /\.bottom-nav \.nav-item-primary::after\s*\{[\s\S]*width:\s*38px[\s\S]*height:\s*38px/);
 });
 
 test("homepage service carousel constrains card and image geometry on mobile", () => {
@@ -718,4 +719,306 @@ test("admin per-item enable/disable toggle is wired to editor, change handler, a
   const previewSource = admin.slice(admin.indexOf("function renderPreview()"), admin.indexOf("function render()"));
   assert.match(previewSource, /filter\(\(slide\) => slide\.enabled !== false\)/);
   assert.match(previewSource, /filter\(\(item\) => item\.enabled !== false\)/);
+});
+
+test("promo_banner validation requires image_url, normalizes alt_text and aspect_mode, and allows a blank title", () => {
+  const missingImage = validateConfig({
+    sections: [{ id: "promo_banner", type: "promo_banner", enabled: true, sort_order: 25, items: [{ alt_text: "No image" }] }],
+  });
+  assert.equal(missingImage.ok, false);
+  assert.ok(missingImage.errors.some((error) => error.includes("image_url required")));
+
+  const valid = validateConfig({
+    sections: [{
+      id: "promo_banner",
+      type: "promo_banner",
+      enabled: true,
+      sort_order: 25,
+      items: [{
+        image_url: "https://res.cloudinary.com/demo/image/upload/cwf/homepage/daikin.png",
+        image_public_id: "cwf/homepage/daikin",
+        alt_text: "CWF x DAIKIN training banner",
+      }],
+    }],
+  });
+  assert.equal(valid.ok, true);
+  const item = valid.config.sections[0].items[0];
+  assert.equal(item.title, "");
+  assert.equal(item.alt_text, "CWF x DAIKIN training banner");
+  assert.equal(item.aspect_mode, "contain");
+  assert.equal(item.image_url, "https://res.cloudinary.com/demo/image/upload/cwf/homepage/daikin.png");
+
+  const cover = validateConfig({
+    sections: [{
+      id: "promo_banner",
+      type: "promo_banner",
+      enabled: true,
+      sort_order: 25,
+      items: [{ image_url: "https://res.cloudinary.com/demo/banner.png", aspect_mode: "cover" }],
+    }],
+  });
+  assert.equal(cover.ok, true);
+  assert.equal(cover.config.sections[0].items[0].aspect_mode, "cover");
+
+  const badAspect = validateConfig({
+    sections: [{
+      id: "promo_banner",
+      type: "promo_banner",
+      enabled: true,
+      sort_order: 25,
+      items: [{ image_url: "https://res.cloudinary.com/demo/banner.png", aspect_mode: "stretch" }],
+    }],
+  });
+  assert.equal(badAspect.ok, true);
+  assert.equal(badAspect.config.sections[0].items[0].aspect_mode, "contain");
+
+  const tooMany = validateConfig({
+    sections: [{
+      id: "promo_banner",
+      type: "promo_banner",
+      enabled: true,
+      sort_order: 25,
+      items: Array.from({ length: 9 }, (_, i) => ({ image_url: `https://res.cloudinary.com/demo/b${i}.png` })),
+    }],
+  });
+  assert.equal(tooMany.ok, false);
+  assert.ok(tooMany.errors.includes("promo_banner.items too many"));
+});
+
+test("hero focal_position normalizes per-slide and per-section, defaulting to center for invalid values", () => {
+  const valid = validateConfig({
+    sections: [{
+      id: "hero",
+      type: "hero",
+      enabled: true,
+      sort_order: 10,
+      title: "Hero",
+      focal_position: "top",
+      items: [{ title: "Slide", focal_position: "bottom" }],
+    }],
+  });
+  assert.equal(valid.ok, true);
+  assert.equal(valid.config.sections[0].focal_position, "top");
+  assert.equal(valid.config.sections[0].items[0].focal_position, "bottom");
+
+  const invalid = validateConfig({
+    sections: [{
+      id: "hero",
+      type: "hero",
+      enabled: true,
+      sort_order: 10,
+      title: "Hero",
+      focal_position: "diagonal",
+      items: [{ title: "Slide", focal_position: "sideways" }],
+    }],
+  });
+  assert.equal(invalid.ok, true);
+  assert.equal(invalid.config.sections[0].focal_position, "center");
+  assert.equal(invalid.config.sections[0].items[0].focal_position, "center");
+});
+
+test("public homepage strips promo_banner image_public_id while keeping image_url and alt_text", async () => {
+  const pool = createPool();
+  pool.state.row.published_config = {
+    version: 1,
+    sections: [{
+      id: "promo_banner",
+      type: "promo_banner",
+      enabled: true,
+      sort_order: 25,
+      items: [{
+        image_url: "https://res.cloudinary.com/demo/daikin.png",
+        image_public_id: "cwf/homepage/daikin_secret",
+        alt_text: "CWF x DAIKIN",
+        aspect_mode: "contain",
+        enabled: true,
+      }],
+    }],
+  };
+  const server = await withServer(pool, (_req, _res, next) => next());
+  try {
+    const res = await fetch(`${server.base}/public/homepage`);
+    const data = await res.json();
+    const banner = data.config.sections.find((section) => section.type === "promo_banner");
+    assert.ok(banner);
+    assert.equal(banner.items[0].image_url, "https://res.cloudinary.com/demo/daikin.png");
+    assert.equal(banner.items[0].alt_text, "CWF x DAIKIN");
+    assert.doesNotMatch(JSON.stringify(data), /daikin_secret/);
+  } finally {
+    await server.close();
+  }
+});
+
+test("promo_banner draft save, reload, and publish round-trip preserves banner order and fields", async () => {
+  const pool = createPool();
+  const allow = await withServer(pool, (req, _res, next) => { req.actor = { username: "admin", role: "admin" }; next(); });
+  try {
+    const config = {
+      version: 1,
+      sections: [{
+        id: "promo_banner",
+        type: "promo_banner",
+        enabled: true,
+        sort_order: 25,
+        items: [
+          { image_url: "https://res.cloudinary.com/demo/second.png", alt_text: "Second", sort_order: 2 },
+          { image_url: "https://res.cloudinary.com/demo/first.png", alt_text: "First", sort_order: 1 },
+        ],
+      }],
+    };
+    const saved = await fetch(`${allow.base}/admin/homepage-cms/draft`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ config }),
+    });
+    assert.equal(saved.status, 200);
+    const draftBanner = pool.state.row.draft_config.sections.find((section) => section.type === "promo_banner");
+    assert.equal(draftBanner.items[0].alt_text, "Second");
+    assert.equal(draftBanner.items[1].alt_text, "First");
+
+    const publicBefore = await fetch(`${allow.base}/public/homepage`);
+    const publicBeforeData = await publicBefore.json();
+    assert.doesNotMatch(JSON.stringify(publicBeforeData), /First|Second/);
+
+    const published = await fetch(`${allow.base}/admin/homepage-cms/publish`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ config }),
+    });
+    assert.equal(published.status, 200);
+
+    const publicAfter = await fetch(`${allow.base}/public/homepage`);
+    const publicAfterData = await publicAfter.json();
+    const publishedBanner = publicAfterData.config.sections.find((section) => section.type === "promo_banner");
+    assert.equal(publishedBanner.items[0].alt_text, "First");
+    assert.equal(publishedBanner.items[1].alt_text, "Second");
+  } finally {
+    await allow.close();
+  }
+});
+
+test("promo_banner items respect active_from/active_to date gating on the public endpoint", async () => {
+  const pool = createPool();
+  pool.state.row.published_config = {
+    version: 1,
+    sections: [{
+      id: "promo_banner",
+      type: "promo_banner",
+      enabled: true,
+      sort_order: 25,
+      items: [
+        { image_url: "https://res.cloudinary.com/demo/past.png", alt_text: "Expired", active_to: "2000-01-01" },
+        { image_url: "https://res.cloudinary.com/demo/future.png", alt_text: "Not yet", active_from: "2099-01-01" },
+        { image_url: "https://res.cloudinary.com/demo/now.png", alt_text: "Live now" },
+      ],
+    }],
+  };
+  const server = await withServer(pool, (_req, _res, next) => next());
+  try {
+    const res = await fetch(`${server.base}/public/homepage`);
+    const data = await res.json();
+    const banner = data.config.sections.find((section) => section.type === "promo_banner");
+    assert.deepEqual(banner.items.map((item) => item.alt_text), ["Live now"]);
+  } finally {
+    await server.close();
+  }
+});
+
+test("customer ui.js renders promo_banner section with image-only markup, hides when empty, and supports slider for multiple banners", () => {
+  const ui = read("customer-app/modules/ui.js");
+  assert.match(ui, /function renderHomepagePromoBanner\(section\)/);
+  assert.match(ui, /homepage-promo-banner/);
+  assert.match(ui, /if \(!banners\.length\) return "";/);
+  assert.match(ui, /homepage-promo-banner-dots/);
+  assert.match(ui, /data-home-promo-dot/);
+  assert.match(ui, /is-contain|is-cover/);
+});
+
+test("admin draft GET hydrates a legacy row missing promo_banner without touching existing content or published config", async () => {
+  const pool = createPool();
+  const legacySections = [
+    { id: "hero", type: "hero", enabled: true, sort_order: 10, title: "Legacy hero title", body: "Legacy body", focal_position: "center", items: [] },
+    { id: "quick", type: "quick", enabled: true, sort_order: 20, title: "เมนูด่วน", body: "", items: [{ title: "จองล้างแอร์", route: "scheduled", icon: "sparkle" }] },
+    { id: "trust", type: "trust", enabled: false, sort_order: 80, title: "มาตรฐานที่ลูกค้าวางใจ", body: "", items: [{ title: "แจ้งราคาก่อนทำ", body: "ระบบคำนวณจากข้อมูลบริการจริง" }] },
+  ];
+  pool.state.row.draft_config = { version: 1, sections: legacySections };
+  pool.state.row.published_config = { version: 1, sections: legacySections };
+  const server = await withServer(pool, (_req, _res, next) => next());
+  try {
+    const res = await fetch(`${server.base}/admin/homepage-cms/config`);
+    const data = await res.json();
+    assert.equal(res.status, 200);
+
+    const banner = data.draft_config.sections.find((section) => section.type === "promo_banner");
+    assert.ok(banner, "hydrated draft should include an empty promo_banner section");
+    assert.deepEqual(banner.items, []);
+
+    const hero = data.draft_config.sections.find((section) => section.type === "hero");
+    assert.equal(hero.title, "Legacy hero title");
+    assert.equal(hero.body, "Legacy body");
+    const quick = data.draft_config.sections.find((section) => section.type === "quick");
+    assert.equal(quick.items.length, 1);
+    const trust = data.draft_config.sections.find((section) => section.type === "trust");
+    assert.equal(trust.enabled, false);
+    assert.equal(trust.items[0].title, "แจ้งราคาก่อนทำ");
+
+    assert.deepEqual(data.published_config.sections.map((section) => section.type), ["hero", "quick", "trust"]);
+
+    const pubRes = await fetch(`${server.base}/public/homepage`);
+    const pubData = await pubRes.json();
+    assert.ok(!pubData.config.sections.some((section) => section.type === "promo_banner"), "publishing the hydrated section must not happen implicitly");
+  } finally {
+    await server.close();
+  }
+});
+
+test("hero renders a compact no-image variant instead of a tall blue panel when no slide has an image", () => {
+  const ui = read("customer-app/modules/ui.js");
+  assert.match(ui, /const hasImage = slides\.some\(\(slide\) => slide\.image_url\);/);
+  assert.match(ui, /class="homepage-hero\$\{hasImage \? "" : " is-no-image"\}"/);
+
+  const css = read("customer-app/assets/customer-app.css");
+  const noImageBlock = css.match(/\.homepage-hero\.is-no-image\s*\{[^}]*\}/)[0];
+  assert.match(noImageBlock, /min-height:\s*0/);
+  assert.doesNotMatch(noImageBlock, /linear-gradient/);
+});
+
+test("activeNow: date-only active_from is not yet active before the start of that day in Asia/Bangkok", () => {
+  // active_from "2026-06-30" should not begin until 2026-06-30T00:00:00+07:00,
+  // i.e. 2026-06-29T17:00:00.000Z. One second before that boundary must be inactive.
+  const justBeforeStart = new Date("2026-06-29T16:59:59.000Z");
+  assert.equal(activeNow({ active_from: "2026-06-30" }, justBeforeStart), false);
+
+  const exactStart = new Date("2026-06-29T17:00:00.000Z");
+  assert.equal(activeNow({ active_from: "2026-06-30" }, exactStart), true);
+});
+
+test("activeNow: date-only active_to stays active through the entire end date in Asia/Bangkok", () => {
+  // active_to "2026-06-30" should remain active through 2026-06-30T23:59:59.999+07:00,
+  // i.e. 2026-06-30T16:59:59.999Z. Mid-afternoon Bangkok time on the end date must
+  // still be active even though it is past 00:00 UTC of that calendar date — this is
+  // exactly the case the old UTC-midnight comparison got wrong.
+  const middayBangkokOnEndDate = new Date("2026-06-30T08:00:00.000Z"); // 15:00 Bangkok
+  assert.equal(activeNow({ active_to: "2026-06-30" }, middayBangkokOnEndDate), true);
+
+  const lastInstantOfEndDate = new Date("2026-06-30T16:59:59.999Z");
+  assert.equal(activeNow({ active_to: "2026-06-30" }, lastInstantOfEndDate), true);
+});
+
+test("activeNow: date-only active_to expires immediately after the end of that day in Asia/Bangkok", () => {
+  const oneSecondAfterEndDate = new Date("2026-06-30T17:00:00.000Z"); // 2026-07-01T00:00:00+07:00
+  assert.equal(activeNow({ active_to: "2026-06-30" }, oneSecondAfterEndDate), false);
+});
+
+test("activeNow: explicit date-time active_from/active_to keep their own offset semantics instead of Bangkok day boundaries", () => {
+  // An explicit UTC timestamp must NOT be reinterpreted as a Bangkok day boundary.
+  const item = { active_from: "2026-06-30T10:00:00Z", active_to: "2026-06-30T12:00:00Z" };
+  assert.equal(activeNow(item, new Date("2026-06-30T09:59:59Z")), false);
+  assert.equal(activeNow(item, new Date("2026-06-30T11:00:00Z")), true);
+  assert.equal(activeNow(item, new Date("2026-06-30T12:00:01Z")), false);
+});
+
+test("activeNow: an invalid date boundary fails closed (excludes the item) rather than showing it indefinitely", () => {
+  assert.equal(activeNow({ active_from: "not-a-date" }, new Date("2026-06-30T08:00:00.000Z")), false);
+  assert.equal(activeNow({ active_to: "not-a-date" }, new Date("2026-06-30T08:00:00.000Z")), false);
 });

@@ -4,8 +4,9 @@
   const DEFAULT_CONFIG = {
     version: 1,
     sections: [
-      { id: "hero", type: "hero", enabled: true, sort_order: 10, kicker: "Coldwindflow", title: "ดูแลแอร์ง่าย จองงานได้ในไม่กี่ขั้นตอน", body: "จองล้างแอร์ ติดตามงาน และรับประกาศสำคัญจาก CWF ได้ในหน้าเดียว", cta_primary: { label: "จองล้างแอร์", route: "scheduled" }, cta_secondary: { label: "ติดตามงาน", route: "tracking" }, items: [] },
+      { id: "hero", type: "hero", enabled: true, sort_order: 10, kicker: "Coldwindflow", title: "ดูแลแอร์ง่าย จองงานได้ในไม่กี่ขั้นตอน", body: "จองล้างแอร์ ติดตามงาน และรับประกาศสำคัญจาก CWF ได้ในหน้าเดียว", cta_primary: { label: "จองล้างแอร์", route: "scheduled" }, cta_secondary: { label: "ติดตามงาน", route: "tracking" }, focal_position: "center", items: [] },
       { id: "quick", type: "quick", enabled: true, sort_order: 20, title: "เมนูด่วน", body: "", items: [{ title: "จองล้างแอร์", route: "scheduled", icon: "sparkle" }, { title: "แจ้งซ่อม", action: "contact", icon: "wrench" }, { title: "ติดตามงาน", route: "tracking", icon: "pin" }, { title: "LINE", url: "https://lin.ee/fG1Oq7y", icon: "chat" }] },
+      { id: "promo_banner", type: "promo_banner", enabled: true, sort_order: 25, title: "", body: "", items: [] },
       { id: "active_job", type: "active_job", enabled: true, sort_order: 30, title: "Active job", body: "", items: [] },
       { id: "announcements", type: "announcements", enabled: true, sort_order: 40, title: "ข่าวและประกาศ CWF", body: "", items: [{ title: "ติดต่อทีม CWF", action: "contact", body: "สอบถามบริการหรือแจ้งข้อมูลเพิ่มเติมกับแอดมิน" }] },
       { id: "featured_services", type: "featured_services", enabled: true, sort_order: 50, title: "บริการแนะนำ", body: "ราคาและรายละเอียดจาก Catalog", featured_mode: "auto", featured_limit: 8, show_price: true, show_badge: true, item_ids: [], items: [] },
@@ -133,7 +134,8 @@
     const external = sectionType === "updates" || sectionType === "articles";
     const trust = sectionType === "trust";
     const quick = sectionType === "quick";
-    const targetEditable = quick || sectionType === "announcements";
+    const promo = sectionType === "promo_banner";
+    const targetEditable = quick || sectionType === "announcements" || promo;
     const targetMode = item.url ? "url" : item.action === "contact" ? "contact" : "route";
     const targetField = (() => {
       if (!targetEditable) return "";
@@ -150,10 +152,17 @@
         <h3>รายการ ${index + 1}</h3>
         <label class="switch"><input type="checkbox" data-item-enabled="${index}" ${item.enabled !== false ? "checked" : ""}> เปิดใช้งานรายการนี้</label>
         <div class="two">
-          <label>หัวข้อ<input data-item="${index}" data-prop="title" value="${esc(item.title || "")}"></label>
+          <label>หัวข้อ${promo ? " (ไม่บังคับ)" : ""}<input data-item="${index}" data-prop="title" value="${esc(item.title || "")}"></label>
           <label>ป้าย/วันที่<input data-item="${index}" data-prop="tag" value="${esc(item.tag || item.date_label || "")}"></label>
         </div>
         <label>คำอธิบาย<textarea data-item="${index}" data-prop="body">${esc(item.body || "")}</textarea></label>
+        ${promo ? `
+          <label>Alt text (คำอธิบายภาพ)<input data-item="${index}" data-prop="alt_text" value="${esc(item.alt_text || "")}"></label>
+          <label>การแสดงภาพ<select data-item="${index}" data-prop="aspect_mode">
+            <option value="contain" ${(item.aspect_mode || "contain") === "contain" ? "selected" : ""}>Contain (เห็นภาพเต็ม ไม่ครอป)</option>
+            <option value="cover" ${item.aspect_mode === "cover" ? "selected" : ""}>Cover (เต็มกรอบ อาจครอป)</option>
+          </select></label>
+        ` : ""}
         ${targetEditable ? `
           <label>Target type<select data-item-target="${index}">
             <option value="route" ${targetMode === "route" ? "selected" : ""}>Internal route</option>
@@ -209,6 +218,11 @@
         <label>Body<textarea data-item="${index}" data-prop="body">${esc(item.body || "")}</textarea></label>
         <label>Image URL<input data-item="${index}" data-prop="image_url" value="${esc(item.image_url || "")}" placeholder="https://..."></label>
         <label>Upload image<input type="file" accept="image/jpeg,image/png,image/webp" data-upload="${index}"></label>
+        <label>ตำแหน่งโฟกัสภาพ<select data-item="${index}" data-prop="focal_position">
+          <option value="top" ${item.focal_position === "top" ? "selected" : ""}>บน</option>
+          <option value="center" ${(item.focal_position || "center") === "center" ? "selected" : ""}>กลาง</option>
+          <option value="bottom" ${item.focal_position === "bottom" ? "selected" : ""}>ล่าง</option>
+        </select></label>
         ${ctaEditor(item.cta_primary, index, "cta_primary", "Primary CTA")}
         ${ctaEditor(item.cta_secondary, index, "cta_secondary", "Secondary CTA")}
         <button class="btn danger" type="button" data-remove-item="${index}">ลบรายการ</button>
@@ -219,7 +233,7 @@
   function renderEditor() {
     const section = current();
     if (!section) return;
-    const itemTypes = ["announcements", "updates", "articles", "trust", "quick"];
+    const itemTypes = ["announcements", "updates", "articles", "trust", "quick", "promo_banner"];
     $("editor").innerHTML = `
       ${field("ชื่อ Section", "title")}
       ${field("คำอธิบาย", "body", "textarea")}
@@ -228,6 +242,11 @@
         <label>Hero Image URL<input data-field="image_url" value="${esc(section.image_url || "")}"></label>
         <label>Hero Image Upload<input type="file" accept="image/jpeg,image/png,image/webp" data-upload-section="hero"></label>
         ${section.image_url ? `<button class="btn danger" type="button" data-clear-section-image="hero">Remove hero image</button>` : ""}
+        <label>ตำแหน่งโฟกัสภาพ<select data-field="focal_position">
+          <option value="top" ${section.focal_position === "top" ? "selected" : ""}>บน</option>
+          <option value="center" ${(section.focal_position || "center") === "center" ? "selected" : ""}>กลาง</option>
+          <option value="bottom" ${section.focal_position === "bottom" ? "selected" : ""}>ล่าง</option>
+        </select></label>
         <div class="two">
           <label>ปุ่มหลัก<input data-cta="cta_primary" data-prop="label" value="${esc(section.cta_primary?.label || "")}"></label>
           <label>Route ปุ่มหลัก<input data-cta="cta_primary" data-prop="route" value="${esc(section.cta_primary?.route || "")}"></label>
@@ -241,7 +260,12 @@
       ` : ""}
       ${itemTypes.includes(section.type) ? `
         <div class="toolbar"><button class="btn" type="button" id="addItem">เพิ่มรายการ</button></div>
-        ${(section.items || []).map((item, index) => itemEditor(item, index, section.type)).join("")}
+        ${section.type === "promo_banner" ? (section.items || []).map((item, index) => `
+          <div>
+            <button class="mini" type="button" data-move-item="${index}" data-dir="-1" ${index === 0 ? "disabled" : ""}>↑</button>
+            <button class="mini" type="button" data-move-item="${index}" data-dir="1" ${index === section.items.length - 1 ? "disabled" : ""}>↓</button>
+          </div>
+        ${itemEditor(item, index, section.type)}`).join("") : (section.items || []).map((item, index) => itemEditor(item, index, section.type)).join("")}
       ` : ""}
       ${section.type === "featured_services" ? featuredServicesEditor(section) : ""}
     `;
@@ -332,6 +356,11 @@
         return `<section class="hero">${slides.map((slide) => `<div ${slide.image_url ? `style="background-image:linear-gradient(rgba(7,27,56,.62),rgba(7,27,56,.62)),url('${esc(slide.image_url)}');background-size:cover;background-position:center"` : ""}><small>${esc(slide.kicker || section.kicker || "Coldwindflow")}</small><h3>${esc(slide.title || section.title || "")}</h3><p>${esc(slide.body || section.body || "")}</p></div>`).join("")}</section>`;
       }
       if (section.type === "quick") return `<section class="quick">${(section.items || []).filter((item) => item.enabled !== false).slice(0, 4).map((item) => `<div>${esc(item.title || "")}</div>`).join("")}</section>`;
+      if (section.type === "promo_banner") {
+        const banners = (section.items || []).filter((item) => item.enabled !== false && item.image_url);
+        if (!banners.length) return "";
+        return `<section class="sec"><div style="aspect-ratio:1/1;border-radius:18px;overflow:hidden;background:#eef2f7"><img src="${esc(banners[0].image_url)}" alt="${esc(banners[0].alt_text || "")}" style="width:100%;height:100%;object-fit:${banners[0].aspect_mode === "cover" ? "cover" : "contain"}"></div>${banners.length > 1 ? `<p style="text-align:center;margin-top:6px;color:#7d899c;font-size:12px">${banners.length} banners</p>` : ""}</section>`;
+      }
       if (section.type === "active_job") return `<section class="sec"><div class="sec-head"><div><b>${esc(section.title || "")}</b><br><span>Shown only when the logged-in customer has an active job</span></div></div></section>`;
       if (section.type === "featured_services") {
         const items = resolveFeaturedPreviewItems(section);
@@ -403,7 +432,8 @@
     if (event.target.id === "addItem") {
       current().items = current().items || [];
       if (current().type === "quick" && current().items.length >= 4) { setStatus("Quick จำกัด 4 รายการ", "bad"); return; }
-      current().items.push({ title: "", body: "", url: "" });
+      if (current().type === "promo_banner" && current().items.length >= 8) { setStatus("Promo banner จำกัด 8 รายการ", "bad"); return; }
+      current().items.push(current().type === "promo_banner" ? { title: "", body: "", image_url: "", alt_text: "", aspect_mode: "contain" } : { title: "", body: "", url: "" });
       render();
     }
     if (event.target.id === "addHeroSlide") {
@@ -413,6 +443,7 @@
         kicker: current().kicker || "",
         title: current().title || "",
         body: current().body || "",
+        focal_position: current().focal_position || "center",
         cta_primary: { ...(current().cta_primary || {}) },
         cta_secondary: { ...(current().cta_secondary || {}) },
       });
@@ -441,6 +472,8 @@
 
   document.addEventListener("change", (event) => {
     const target = event.target;
+    if (target.matches("select[data-item]")) { current().items[Number(target.dataset.item)][target.dataset.prop] = target.value; renderPreview(); }
+    if (target.matches("select[data-field]")) { current()[target.dataset.field] = target.value; renderPreview(); }
     if (target.matches("[data-toggle]")) {
       const section = sections().find((row) => row.id === target.dataset.toggle);
       if (section) section.enabled = target.checked;

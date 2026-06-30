@@ -71,6 +71,7 @@
         body: "จองล้างแอร์ ติดตามงาน และรับประกาศสำคัญจาก CWF ได้ในหน้าเดียว",
         cta_primary: { label: "จองล้างแอร์", route: "scheduled" },
         cta_secondary: { label: "ติดตามงาน", route: "tracking" },
+        focal_position: "center",
         items: [],
       },
       {
@@ -85,6 +86,15 @@
           { title: "ติดตามงาน", route: "tracking", icon: "pin" },
           { title: "LINE", url: "https://lin.ee/fG1Oq7y", icon: "chat" },
         ],
+      },
+      {
+        id: "promo_banner",
+        type: "promo_banner",
+        enabled: true,
+        sort_order: 25,
+        title: "",
+        body: "",
+        items: [],
       },
       {
         id: "active_job",
@@ -283,15 +293,23 @@
     `;
   }
 
+  const FOCAL_POSITIONS = new Set(["top", "center", "bottom"]);
+
+  function focalPosition(slide, section) {
+    const value = slide?.focal_position || section?.focal_position || "center";
+    return FOCAL_POSITIONS.has(value) ? value : "center";
+  }
+
   function renderHomepageHero(section) {
     if (!section) return "";
     const slides = Array.isArray(section.items) && section.items.length ? section.items : [section];
+    const hasImage = slides.some((slide) => slide.image_url);
     return `
-      <section class="homepage-hero">
+      <section class="homepage-hero${hasImage ? "" : " is-no-image"}">
         <div class="homepage-hero-slider">
           ${slides.map((slide, index) => `
             <article class="homepage-hero-slide" data-home-hero-slide="${index}">
-              ${slide.image_url ? `<div class="homepage-hero-media"><img src="${root.utils.escapeHtml(slide.image_url)}" alt="" loading="lazy"></div>` : ""}
+              ${slide.image_url ? `<div class="homepage-hero-media"><img src="${root.utils.escapeHtml(slide.image_url)}" alt="" loading="lazy" style="object-position:${focalPosition(slide, section)}"></div>` : ""}
               <div class="homepage-hero-inner">
                 ${slide.kicker || section.kicker ? `<span class="homepage-kicker">${root.utils.escapeHtml(slide.kicker || section.kicker)}</span>` : ""}
                 <h2>${root.utils.escapeHtml(slide.title || section.title || "")}</h2>
@@ -305,6 +323,34 @@
           `).join("")}
         </div>
         ${slides.length > 1 ? `<div class="homepage-hero-dots" aria-label="Homepage slides">${slides.map((_, index) => `<button type="button" class="${index === 0 ? "is-active" : ""}" data-home-hero-dot="${index}" aria-label="ไปยังสไลด์ ${index + 1}" aria-selected="${index === 0 ? "true" : "false"}"></button>`).join("")}</div>` : ""}
+      </section>
+    `;
+  }
+
+  function renderHomepagePromoBanner(section) {
+    if (!section) return "";
+    const banners = (section.items || []).filter((item) => item && item.image_url);
+    if (!banners.length) return "";
+    return `
+      <section class="homepage-promo-banner" data-home-promo-banner>
+        <div class="homepage-promo-banner-track">
+          ${banners.map((item, index) => {
+            const aspectClass = item.aspect_mode === "cover" ? "is-cover" : "is-contain";
+            const altText = root.utils.escapeHtml(item.alt_text || item.title || "");
+            const media = `<span class="homepage-promo-banner-media ${aspectClass}"><img src="${root.utils.escapeHtml(item.image_url)}" alt="${altText}" loading="lazy"></span>`;
+            if (item.url) {
+              return `<a class="homepage-promo-banner-slide" href="${root.utils.escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer" data-home-promo-slide="${index}">${media}</a>`;
+            }
+            if (item.action === "contact") {
+              return `<button type="button" class="homepage-promo-banner-slide" data-home-contact="${root.utils.escapeHtml(item.title || "ติดต่อ CWF")}" data-home-promo-slide="${index}">${media}</button>`;
+            }
+            if (item.route) {
+              return `<button type="button" class="homepage-promo-banner-slide" data-route="${root.utils.escapeHtml(item.route)}" data-home-promo-slide="${index}">${media}</button>`;
+            }
+            return `<div class="homepage-promo-banner-slide" data-home-promo-slide="${index}">${media}</div>`;
+          }).join("")}
+        </div>
+        ${banners.length > 1 ? `<div class="homepage-promo-banner-dots" aria-label="Promo banners">${banners.map((_, index) => `<button type="button" class="${index === 0 ? "is-active" : ""}" data-home-promo-dot="${index}" aria-label="ไปยังแบนเนอร์ ${index + 1}" aria-selected="${index === 0 ? "true" : "false"}"></button>`).join("")}</div>` : ""}
       </section>
     `;
   }
@@ -414,6 +460,7 @@
     if (!section) return "";
     if (section.type === "hero") return renderHomepageHero(section);
     if (section.type === "quick") return renderHomepageQuick(section);
+    if (section.type === "promo_banner") return renderHomepagePromoBanner(section);
     if (section.type === "active_job") return renderHomepageActiveJob(section);
     if (section.type === "featured_services") return renderHomepageFeaturedSection(section);
     if (["announcements", "updates", "articles"].includes(section.type)) return renderHomepageManualSection(section);
@@ -636,6 +683,7 @@
   function bindHomepage(container) {
     bindCommerceHome(container);
     bindHomepageHeroSliders(container);
+    bindHomepagePromoBannerSlider(container);
     container.querySelectorAll("[data-home-contact]").forEach((button) => {
       button.addEventListener("click", (event) => {
         event.preventDefault?.();
@@ -699,6 +747,56 @@
           if (!slide) return;
           if (typeof slider.scrollTo === "function") {
             slider.scrollTo({ left: slide.offsetLeft || index * (slider.clientWidth || 0), behavior: "smooth" });
+          } else if (typeof slide.scrollIntoView === "function") {
+            slide.scrollIntoView({ behavior: "smooth", inline: "start", block: "nearest" });
+          }
+          setActive(index);
+        });
+        dot.addEventListener("keydown", (event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault?.();
+            dot.click();
+          }
+          if (event.key === "ArrowRight" && dots[index + 1]) dots[index + 1].focus();
+          if (event.key === "ArrowLeft" && dots[index - 1]) dots[index - 1].focus();
+        });
+      });
+      update();
+    });
+  }
+
+  function bindHomepagePromoBannerSlider(container) {
+    container.querySelectorAll(".homepage-promo-banner").forEach((banner) => {
+      const track = banner.querySelector(".homepage-promo-banner-track");
+      const slides = Array.from(banner.querySelectorAll("[data-home-promo-slide]"));
+      const dots = Array.from(banner.querySelectorAll("[data-home-promo-dot]"));
+      if (!track || slides.length <= 1 || !dots.length || track.dataset.bound === "1") return;
+      track.dataset.bound = "1";
+      let raf = 0;
+      const setActive = (index) => {
+        dots.forEach((dot, dotIndex) => {
+          const active = dotIndex === index;
+          dot.classList.toggle("is-active", active);
+          dot.setAttribute("aria-selected", active ? "true" : "false");
+        });
+      };
+      const update = () => {
+        raf = 0;
+        const width = track.clientWidth || 1;
+        const index = Math.max(0, Math.min(slides.length - 1, Math.round((track.scrollLeft || 0) / width)));
+        setActive(index);
+      };
+      const onScroll = () => {
+        if (raf) return;
+        raf = requestAnimationFrame(update);
+      };
+      track.addEventListener("scroll", onScroll, { passive: true });
+      dots.forEach((dot, index) => {
+        dot.addEventListener("click", () => {
+          const slide = slides[index];
+          if (!slide) return;
+          if (typeof track.scrollTo === "function") {
+            track.scrollTo({ left: slide.offsetLeft || index * (track.clientWidth || 0), behavior: "smooth" });
           } else if (typeof slide.scrollIntoView === "function") {
             slide.scrollIntoView({ behavior: "smooth", inline: "start", block: "nearest" });
           }

@@ -11,6 +11,7 @@ const MAX_HERO_SLIDES = 5;
 const SECTION_TYPES = new Set([
   "hero",
   "quick",
+  "promo_banner",
   "active_job",
   "announcements",
   "featured_services",
@@ -19,6 +20,9 @@ const SECTION_TYPES = new Set([
   "trust",
 ]);
 const INTERNAL_ROUTES = new Set(["home", "booking", "scheduled", "urgent", "tracking", "profile", "store"]);
+const FOCAL_POSITIONS = new Set(["top", "center", "bottom"]);
+const ASPECT_MODES = new Set(["contain", "cover"]);
+const MAX_PROMO_BANNERS = 8;
 
 const DEFAULT_CONFIG = {
   version: 1,
@@ -33,6 +37,7 @@ const DEFAULT_CONFIG = {
       body: "จองล้างแอร์ ติดตามงาน และรับประกาศสำคัญจาก CWF ได้ในหน้าเดียว",
       cta_primary: { label: "จองล้างแอร์", route: "scheduled" },
       cta_secondary: { label: "ติดตามงาน", route: "tracking" },
+      focal_position: "center",
       items: [],
     },
     {
@@ -48,6 +53,15 @@ const DEFAULT_CONFIG = {
         { title: "ติดตามงาน", route: "tracking", icon: "pin" },
         { title: "LINE", url: "https://lin.ee/fG1Oq7y", icon: "chat" },
       ],
+    },
+    {
+      id: "promo_banner",
+      type: "promo_banner",
+      enabled: true,
+      sort_order: 25,
+      title: "",
+      body: "",
+      items: [],
     },
     {
       id: "active_job",
@@ -207,7 +221,15 @@ function normalizeItem(raw, sectionType, index, errors) {
   if (item.cta_secondary && typeof item.cta_secondary === "object") out.cta_secondary = normalizeCta(item.cta_secondary, errors, `${pathName}.cta_secondary`);
   if (cleanText(item.active_from, 32)) out.active_from = cleanText(item.active_from, 32);
   if (cleanText(item.active_to, 32)) out.active_to = cleanText(item.active_to, 32);
-  if (!out.title && sectionType !== "quick") errors.push(`${pathName}.title required`);
+  if (sectionType === "promo_banner") {
+    out.alt_text = cleanText(item.alt_text, 200);
+    out.aspect_mode = ASPECT_MODES.has(cleanText(item.aspect_mode, 10)) ? cleanText(item.aspect_mode, 10) : "contain";
+    if (!out.image_url) errors.push(`${pathName}.image_url required`);
+  }
+  if (sectionType === "hero") {
+    out.focal_position = FOCAL_POSITIONS.has(cleanText(item.focal_position, 10)) ? cleanText(item.focal_position, 10) : "center";
+  }
+  if (!out.title && sectionType !== "quick" && sectionType !== "promo_banner") errors.push(`${pathName}.title required`);
   validateUrlOrRoute(out, errors, pathName, {
     externalRequired: sectionType === "updates" || sectionType === "articles",
     noImage: sectionType === "trust",
@@ -223,7 +245,7 @@ function normalizeSection(raw, index, errors) {
   if (!SECTION_TYPES.has(type)) errors.push(`sections.${index}.type invalid`);
   const id = cleanText(section.id || type, 60) || type;
   const items = Array.isArray(section.items) ? section.items : [];
-  const maxItems = type === "quick" ? 4 : type === "hero" ? MAX_HERO_SLIDES : 12;
+  const maxItems = type === "quick" ? 4 : type === "hero" ? MAX_HERO_SLIDES : type === "promo_banner" ? MAX_PROMO_BANNERS : 12;
   if (items.length > maxItems) errors.push(`${id}.items too many`);
   const out = {
     id,
@@ -241,7 +263,10 @@ function normalizeSection(raw, index, errors) {
   if (cleanText(section.image_public_id, 300)) out.image_public_id = cleanText(section.image_public_id, 300);
   validateImageUrl(out.image_url, errors, `${id}.image_url`);
   validateDateRange(out, errors, id);
-  if (type === "hero" && !out.title) errors.push("hero.title required");
+  if (type === "hero") {
+    out.focal_position = FOCAL_POSITIONS.has(cleanText(section.focal_position, 10)) ? cleanText(section.focal_position, 10) : "center";
+    if (!out.title) errors.push("hero.title required");
+  }
   if (type === "featured_services") {
     const mode = cleanText(section.featured_mode, 10) === "manual" ? "manual" : "auto";
     const limit = Number(section.featured_limit);
@@ -271,12 +296,37 @@ function validateConfig(input) {
   return { ok: errors.length === 0, errors, config: normalized };
 }
 
+const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const BANGKOK_OFFSET = "+07:00";
+
+// Date-only active_from/active_to are CMS scheduling dates, not timestamps —
+// resolve them to the start/end of that calendar day in Asia/Bangkok so a
+// banner stays live through the full selected end date rather than expiring
+// at 00:00 UTC (07:00 Bangkok) on that date. Explicit date-times keep
+// whatever offset/local semantics they already carry.
+function resolveDateBoundary(raw, edge) {
+  if (!raw) return null;
+  if (DATE_ONLY_PATTERN.test(raw)) {
+    const suffix = edge === "end" ? "T23:59:59.999" : "T00:00:00.000";
+    const ts = new Date(`${raw}${suffix}${BANGKOK_OFFSET}`).getTime();
+    return Number.isNaN(ts) ? NaN : ts;
+  }
+  const ts = new Date(raw).getTime();
+  return Number.isNaN(ts) ? NaN : ts;
+}
+
 function activeNow(item, now = new Date()) {
   const from = cleanText(item.active_from || "", 32);
   const to = cleanText(item.active_to || "", 32);
   const ts = now.getTime();
-  if (from && new Date(from).getTime() > ts) return false;
-  if (to && new Date(to).getTime() < ts) return false;
+  if (from) {
+    const fromTs = resolveDateBoundary(from, "start");
+    if (Number.isNaN(fromTs) || fromTs > ts) return false;
+  }
+  if (to) {
+    const toTs = resolveDateBoundary(to, "end");
+    if (Number.isNaN(toTs) || toTs < ts) return false;
+  }
   return true;
 }
 
@@ -344,6 +394,17 @@ async function ensureDraftRow(pool) {
     [CONFIG_KEY, JSON.stringify(DEFAULT_CONFIG)]
   );
   return inserted.rows[0];
+}
+
+function hydrateDraftConfig(rawConfig) {
+  const base = rawConfig && typeof rawConfig === "object" && Array.isArray(rawConfig.sections) ? rawConfig : DEFAULT_CONFIG;
+  const existingTypes = new Set(base.sections.map((section) => section && (section.type || section.id)));
+  const missing = DEFAULT_CONFIG.sections.filter((defaultSection) => !existingTypes.has(defaultSection.type));
+  if (!missing.length) return base;
+  return {
+    version: base.version || 1,
+    sections: [...base.sections, ...missing.map((section) => JSON.parse(JSON.stringify(section)))],
+  };
 }
 
 async function loadPublished(pool) {
@@ -431,7 +492,7 @@ function createHomepageRoutes(deps = {}) {
       const row = await ensureDraftRow(pool);
       res.json({
         ok: true,
-        draft_config: row.draft_config || DEFAULT_CONFIG,
+        draft_config: hydrateDraftConfig(row.draft_config),
         published_config: row.published_config || null,
         version: row.version,
         updated_by: row.updated_by,
@@ -581,6 +642,7 @@ module.exports = {
   DEFAULT_CONFIG,
   MAX_IMAGE_BYTES,
   SECTION_TYPES,
+  activeNow,
   createHomepageRoutes,
   stripPublicConfig,
   validateConfig,
