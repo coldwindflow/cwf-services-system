@@ -234,7 +234,7 @@ test("customer homepage has no admin control, bottom nav is fixed five-tab, and 
   const sw = read("customer-app/sw.js");
   const app = read("customer-app/assets/customer-app.js");
   const manifest = read("customer-app/manifest.webmanifest");
-  const build = "20260630_homepage_final_redesign_v1";
+  const build = "20260630_homepage_social_embeds";
 
   assert.doesNotMatch(index + ui, /โหมดแอดมิน|openCms|localStorage\.getItem\('cwfHomeCmsDemo'/);
   assert.match(index, /data-route="store"[\s\S]*ร้านค้า/);
@@ -323,9 +323,10 @@ test("backend defaults contain exactly the standard homepage section types in or
     "featured_services",
     "updates",
     "articles",
+    "social",
     "trust",
   ]);
-  assert.deepEqual(DEFAULT_CONFIG.sections.map((section) => section.sort_order), [10, 20, 25, 30, 40, 50, 60, 70, 80]);
+  assert.deepEqual(DEFAULT_CONFIG.sections.map((section) => section.sort_order), [10, 20, 25, 30, 40, 50, 60, 70, 75, 80]);
 });
 
 test("homepage validation preserves hero image metadata and rejects quick sections over four items", () => {
@@ -515,7 +516,7 @@ test("backend admin customer defaults and homepage migration stay in allowed sco
   const admin = read("admin-homepage-cms.js");
   const customer = read("customer-app/modules/ui.js");
   const migration = read("migrations/20260629_homepage_cms.sql");
-  for (const type of ["hero", "quick", "promo_banner", "active_job", "announcements", "featured_services", "updates", "articles", "trust"]) {
+  for (const type of ["hero", "quick", "promo_banner", "active_job", "announcements", "featured_services", "updates", "articles", "social", "trust"]) {
     assert.match(admin, new RegExp(`type:\\s*"${type}"`));
     assert.match(customer, new RegExp(`type:\\s*"${type}"`));
   }
@@ -788,6 +789,76 @@ test("promo_banner validation requires image_url, normalizes alt_text and aspect
   });
   assert.equal(tooMany.ok, false);
   assert.ok(tooMany.errors.includes("promo_banner.items too many"));
+});
+
+test("social validation defaults platform, requires a matching-host url, and enforces an 8-item cap", () => {
+  const missingUrl = validateConfig({
+    sections: [{ id: "social", type: "social", enabled: true, sort_order: 75, items: [{ title: "No link" }] }],
+  });
+  assert.equal(missingUrl.ok, false);
+  assert.ok(missingUrl.errors.some((error) => error.includes("social.items.0.url required")));
+
+  const validYoutube = validateConfig({
+    sections: [{
+      id: "social",
+      type: "social",
+      enabled: true,
+      sort_order: 75,
+      items: [{ title: "New install demo", url: "https://youtu.be/dQw4w9WgXcQ" }],
+    }],
+  });
+  assert.equal(validYoutube.ok, true);
+  const ytItem = validYoutube.config.sections[0].items[0];
+  assert.equal(ytItem.platform, "youtube");
+  assert.equal(ytItem.url, "https://youtu.be/dQw4w9WgXcQ");
+
+  const validFacebook = validateConfig({
+    sections: [{
+      id: "social",
+      type: "social",
+      enabled: true,
+      sort_order: 75,
+      items: [{ title: "Fan page post", url: "https://www.facebook.com/share/14daV9SNRXg/", platform: "facebook" }],
+    }],
+  });
+  assert.equal(validFacebook.ok, true);
+  assert.equal(validFacebook.config.sections[0].items[0].platform, "facebook");
+
+  const mismatchedHost = validateConfig({
+    sections: [{
+      id: "social",
+      type: "social",
+      enabled: true,
+      sort_order: 75,
+      items: [{ title: "Wrong host", url: "https://www.facebook.com/share/14daV9SNRXg/", platform: "youtube" }],
+    }],
+  });
+  assert.equal(mismatchedHost.ok, false);
+  assert.ok(mismatchedHost.errors.includes("social.items.0.url must be a youtube link"));
+
+  const badPlatform = validateConfig({
+    sections: [{
+      id: "social",
+      type: "social",
+      enabled: true,
+      sort_order: 75,
+      items: [{ title: "Unknown platform falls back", url: "https://youtu.be/dQw4w9WgXcQ", platform: "tiktok" }],
+    }],
+  });
+  assert.equal(badPlatform.ok, true);
+  assert.equal(badPlatform.config.sections[0].items[0].platform, "youtube");
+
+  const tooMany = validateConfig({
+    sections: [{
+      id: "social",
+      type: "social",
+      enabled: true,
+      sort_order: 75,
+      items: Array.from({ length: 9 }, (_, i) => ({ title: `Video ${i}`, url: `https://youtu.be/abc${i}defghij` })),
+    }],
+  });
+  assert.equal(tooMany.ok, false);
+  assert.ok(tooMany.errors.includes("social.items too many"));
 });
 
 test("hero focal_position normalizes per-slide and per-section, defaulting to center for invalid values", () => {

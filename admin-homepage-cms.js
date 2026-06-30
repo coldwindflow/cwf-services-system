@@ -12,6 +12,7 @@
       { id: "featured_services", type: "featured_services", enabled: true, sort_order: 50, title: "บริการแนะนำ", body: "ราคาและรายละเอียดจาก Catalog", featured_mode: "auto", featured_limit: 8, show_price: true, show_badge: true, item_ids: [], items: [] },
       { id: "updates", type: "updates", enabled: true, sort_order: 60, title: "ภาพกิจกรรมและโพสต์", body: "", items: [] },
       { id: "articles", type: "articles", enabled: true, sort_order: 70, title: "บทความแนะนำ", body: "", items: [] },
+      { id: "social", type: "social", enabled: true, sort_order: 75, title: "ติดตามเราบนโซเชียล", body: "อัปเดตล่าสุดจาก Facebook และ YouTube ของ Coldwindflow", items: [] },
       { id: "trust", type: "trust", enabled: true, sort_order: 80, title: "มาตรฐานที่ลูกค้าวางใจ", body: "", items: [{ title: "แจ้งราคาก่อนทำ", body: "ระบบคำนวณจากข้อมูลบริการจริง" }, { title: "ช่างผ่านมาตรฐาน", body: "ทีมงานได้รับการตรวจสอบก่อนรับงาน" }, { title: "ติดตามงานได้", body: "ดูสถานะสำคัญด้วย Booking Code" }, { title: "ติดต่อแอดมินง่าย", body: "รองรับ LINE และโทรศัพท์" }] },
     ],
   };
@@ -131,7 +132,8 @@
   }
 
   function itemEditor(item, index, sectionType) {
-    const external = sectionType === "updates" || sectionType === "articles";
+    const social = sectionType === "social";
+    const external = sectionType === "updates" || sectionType === "articles" || social;
     const trust = sectionType === "trust";
     const quick = sectionType === "quick";
     const promo = sectionType === "promo_banner";
@@ -156,6 +158,12 @@
           <label>ป้าย/วันที่<input data-item="${index}" data-prop="tag" value="${esc(item.tag || item.date_label || "")}"></label>
         </div>
         <label>คำอธิบาย<textarea data-item="${index}" data-prop="body">${esc(item.body || "")}</textarea></label>
+        ${social ? `
+          <label>แพลตฟอร์ม<select data-item="${index}" data-prop="platform">
+            <option value="youtube" ${(item.platform || "youtube") === "youtube" ? "selected" : ""}>YouTube</option>
+            <option value="facebook" ${item.platform === "facebook" ? "selected" : ""}>Facebook</option>
+          </select></label>
+        ` : ""}
         ${promo ? `
           <label>Alt text (คำอธิบายภาพ)<input data-item="${index}" data-prop="alt_text" value="${esc(item.alt_text || "")}"></label>
           <label>การแสดงภาพ<select data-item="${index}" data-prop="aspect_mode">
@@ -172,8 +180,8 @@
         ` : ""}
         ${quick ? `<label>Icon<input data-item="${index}" data-prop="icon" value="${esc(item.icon || "")}" placeholder="sparkle, wrench, pin, chat"></label>` : ""}
         ${targetField}
-        ${trust || targetEditable ? "" : `<label>${external ? "External URL" : "Route / URL"}<input data-item="${index}" data-prop="${external ? "url" : "route"}" value="${esc(external ? item.url || "" : item.route || item.url || "")}"></label>`}
-        ${trust ? "" : `<label>Image URL<input data-item="${index}" data-prop="image_url" value="${esc(item.image_url || "")}"></label>`}
+        ${trust || targetEditable ? "" : `<label>${social ? `ลิงก์โพสต์/วิดีโอ (${(item.platform || "youtube") === "facebook" ? "facebook.com..." : "youtube.com... หรือ youtu.be..."})` : external ? "External URL" : "Route / URL"}<input data-item="${index}" data-prop="${external ? "url" : "route"}" value="${esc(external ? item.url || "" : item.route || item.url || "")}" placeholder="${social ? ((item.platform || "youtube") === "facebook" ? "https://www.facebook.com/.../posts/..." : "https://www.youtube.com/watch?v=...") : ""}"></label>`}
+        ${trust ? "" : `<label>${social ? "Thumbnail รูปภาพ (ไม่บังคับ — ถ้าไม่ใส่จะใช้ภาพปกอัตโนมัติของ YouTube หรือไอคอน Facebook)" : "Image URL"}<input data-item="${index}" data-prop="image_url" value="${esc(item.image_url || "")}"></label>`}
         ${trust ? "" : `<div class="two">
           <label>Active from<input data-item="${index}" data-prop="active_from" value="${esc(item.active_from || "")}" placeholder="YYYY-MM-DD"></label>
           <label>Active to<input data-item="${index}" data-prop="active_to" value="${esc(item.active_to || "")}" placeholder="YYYY-MM-DD"></label>
@@ -233,7 +241,7 @@
   function renderEditor() {
     const section = current();
     if (!section) return;
-    const itemTypes = ["announcements", "updates", "articles", "trust", "quick", "promo_banner"];
+    const itemTypes = ["announcements", "updates", "articles", "social", "trust", "quick", "promo_banner"];
     $("editor").innerHTML = `
       ${field("ชื่อ Section", "title")}
       ${field("คำอธิบาย", "body", "textarea")}
@@ -385,7 +393,7 @@
               : `<article class="card"><b>ไม่มีบริการแนะนำที่แสดงผลได้</b><p>Section นี้จะถูกซ่อนจากลูกค้าจริง</p></article>`;
         return `<section class="sec"><div class="sec-head"><div><b>${esc(section.title || "")}</b><br><span>${esc(section.body || "")}</span></div></div><div class="cards">${cards}</div></section>`;
       }
-      return `<section class="sec"><div class="sec-head"><div><b>${esc(section.title || "")}</b><br><span>${esc(section.body || "")}</span></div><span>ดูทั้งหมด</span></div><div class="cards">${(section.items || []).filter((item) => item.enabled !== false).slice(0, 3).map((item) => `<article class="card"><b>${esc(item.title || "")}</b><p>${esc(item.body || "")}</p></article>`).join("") || `<article class="card"><b>ไม่มีรายการ</b><p>เพิ่มรายการใน editor</p></article>`}</div></section>`;
+      return `<section class="sec"><div class="sec-head"><div><b>${esc(section.title || "")}</b><br><span>${esc(section.body || "")}</span></div><span>ดูทั้งหมด</span></div><div class="cards">${(section.items || []).filter((item) => item.enabled !== false).slice(0, 3).map((item) => `<article class="card">${section.type === "social" ? `<span style="display:inline-block;padding:2px 8px;border-radius:999px;background:#eef2ff;color:#3346a6;font-size:10px;margin-bottom:4px">${esc((item.platform || "youtube") === "facebook" ? "Facebook" : "YouTube")}</span><br>` : ""}<b>${esc(item.title || "")}</b><p>${esc(item.body || "")}</p></article>`).join("") || `<article class="card"><b>ไม่มีรายการ</b><p>เพิ่มรายการใน editor</p></article>`}</div></section>`;
     }).join("");
   }
 
@@ -433,7 +441,12 @@
       current().items = current().items || [];
       if (current().type === "quick" && current().items.length >= 4) { setStatus("Quick จำกัด 4 รายการ", "bad"); return; }
       if (current().type === "promo_banner" && current().items.length >= 8) { setStatus("Promo banner จำกัด 8 รายการ", "bad"); return; }
-      current().items.push(current().type === "promo_banner" ? { title: "", body: "", image_url: "", alt_text: "", aspect_mode: "contain" } : { title: "", body: "", url: "" });
+      if (current().type === "social" && current().items.length >= 8) { setStatus("Social จำกัด 8 รายการ", "bad"); return; }
+      current().items.push(
+        current().type === "promo_banner" ? { title: "", body: "", image_url: "", alt_text: "", aspect_mode: "contain" } :
+        current().type === "social" ? { title: "", body: "", url: "", platform: "youtube" } :
+        { title: "", body: "", url: "" }
+      );
       render();
     }
     if (event.target.id === "addHeroSlide") {

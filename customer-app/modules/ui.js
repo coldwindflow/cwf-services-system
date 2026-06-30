@@ -147,6 +147,15 @@
         items: [],
       },
       {
+        id: "social",
+        type: "social",
+        enabled: true,
+        sort_order: 75,
+        title: "ติดตามเราบนโซเชียล",
+        body: "อัปเดตล่าสุดจาก Facebook และ YouTube ของ Coldwindflow",
+        items: [],
+      },
+      {
         id: "trust",
         type: "trust",
         enabled: true,
@@ -434,6 +443,65 @@
     `;
   }
 
+  // Admin pastes a public post/video URL (no Graph/YouTube Data API calls);
+  // we only need the video ID client-side to build a thumbnail + nocookie
+  // embed URL. Matches watch/shorts/youtu.be/embed link shapes.
+  function youtubeVideoId(url) {
+    const text = String(url || "");
+    const patterns = [
+      /youtu\.be\/([\w-]{6,})/,
+      /[?&]v=([\w-]{6,})/,
+      /youtube\.com\/embed\/([\w-]{6,})/,
+      /youtube\.com\/shorts\/([\w-]{6,})/,
+    ];
+    for (const pattern of patterns) {
+      const match = text.match(pattern);
+      if (match) return match[1];
+    }
+    return "";
+  }
+
+  function renderHomepageSocialCard(item, index) {
+    const platform = item.platform === "facebook" ? "facebook" : "youtube";
+    const url = String(item.url || "").trim();
+    const videoId = platform === "youtube" ? youtubeVideoId(url) : "";
+    const thumb = String(item.image_url || "").trim() || (videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : "");
+    return `
+      <article class="homepage-social-card is-${platform}" data-home-social="${index}" data-platform="${platform}" data-video-id="${root.utils.escapeHtml(videoId)}" data-post-url="${root.utils.escapeHtml(url)}">
+        <button type="button" class="homepage-social-media" data-home-social-trigger aria-label="${platform === "youtube" ? "เล่นวิดีโอ" : "ดูโพสต์ Facebook"}">
+          ${thumb
+            ? `<img src="${root.utils.escapeHtml(thumb)}" alt="" loading="lazy">`
+            : `<span class="homepage-social-fallback">${root.utils.icon(platform === "facebook" ? "facebook" : "play", 30)}</span>`}
+          <span class="homepage-social-play">${root.utils.icon("play", 22)}</span>
+          <span class="homepage-social-badge">${platform === "youtube" ? "YouTube" : "Facebook"}</span>
+        </button>
+        <div class="homepage-card-body">
+          ${item.title ? `<strong>${root.utils.escapeHtml(item.title)}</strong>` : ""}
+          ${item.body ? `<small>${root.utils.escapeHtml(item.body)}</small>` : ""}
+        </div>
+      </article>
+    `;
+  }
+
+  function renderHomepageSocial(section) {
+    if (!section) return "";
+    const items = (section.items || []).slice(0, 8);
+    if (!items.length) return "";
+    return `
+      <section class="homepage-section">
+        <div class="homepage-section-head">
+          <div>
+            <h2>${root.utils.escapeHtml(section.title || "")}</h2>
+            ${section.body ? `<p>${root.utils.escapeHtml(section.body)}</p>` : ""}
+          </div>
+        </div>
+        <div class="homepage-carousel homepage-social-grid">
+          ${items.map((item, index) => renderHomepageSocialCard(item, index)).join("")}
+        </div>
+      </section>
+    `;
+  }
+
   function renderHomepageTrust(section) {
     if (!section) return "";
     return `
@@ -464,6 +532,7 @@
     if (section.type === "active_job") return renderHomepageActiveJob(section);
     if (section.type === "featured_services") return renderHomepageFeaturedSection(section);
     if (["updates", "articles"].includes(section.type)) return renderHomepageManualSection(section);
+    if (section.type === "social") return renderHomepageSocial(section);
     if (section.type === "announcements") return "";
     if (section.type === "trust") return renderHomepageTrust(section);
     return "";
@@ -712,6 +781,36 @@
           }
         }
         openContactSheet(container, { title: item.item_name || "บริการนี้" });
+      });
+    });
+    bindHomepageSocialCards(container);
+  }
+
+  // Lazy click-to-embed: cards load a static thumbnail first (real YouTube
+  // thumbnail, or a branded fallback chip for Facebook) and only fetch the
+  // YouTube/Facebook iframe once tapped, keeping the homepage's initial load
+  // light while still rendering the actual post/video inline on demand.
+  function bindHomepageSocialCards(container) {
+    container.querySelectorAll("[data-home-social-trigger]").forEach((trigger) => {
+      if (trigger.dataset.bound === "1") return;
+      trigger.dataset.bound = "1";
+      trigger.addEventListener("click", () => {
+        const card = trigger.closest("[data-home-social]");
+        if (!card) return;
+        const platform = card.getAttribute("data-platform");
+        const videoId = card.getAttribute("data-video-id") || "";
+        const postUrl = card.getAttribute("data-post-url") || "";
+        let embedSrc = "";
+        if (platform === "youtube" && videoId) {
+          embedSrc = `https://www.youtube-nocookie.com/embed/${encodeURIComponent(videoId)}?autoplay=1&rel=0`;
+        } else if (platform === "facebook" && postUrl) {
+          embedSrc = `https://www.facebook.com/plugins/post.php?href=${encodeURIComponent(postUrl)}&show_text=true&width=500`;
+        }
+        if (!embedSrc) {
+          if (postUrl) window.open(postUrl, "_blank", "noopener,noreferrer");
+          return;
+        }
+        trigger.outerHTML = `<div class="homepage-social-media is-embed"><iframe src="${root.utils.escapeHtml(embedSrc)}" loading="lazy" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen frameborder="0" scrolling="no"></iframe></div>`;
       });
     });
   }
