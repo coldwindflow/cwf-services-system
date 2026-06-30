@@ -1,6 +1,6 @@
 "use strict";
 
-const BUILD_ID = "20260630_homepage_social_embeds";
+const BUILD_ID = "20260630_homepage_polish_v1";
 const CACHE_NAME = `cwf-customer-app-v2-${BUILD_ID}`;
 const APP_SHELL = [
   `./index.html?v=${BUILD_ID}`,

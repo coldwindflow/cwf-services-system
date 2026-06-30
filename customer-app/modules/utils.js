@@ -96,6 +96,7 @@
     wrench: '<path d="M21 4a5 5 0 0 1-6.5 6.5L6 19l-3-3 8.5-8.5A5 5 0 0 1 18 1l-3 3 2 2 3-3z"/>',
     play: '<path d="M8 5l11 7-11 7V5z" fill="currentColor" stroke="none"/>',
     facebook: '<path d="M14 22v-8h3l1-4h-4V8c0-1.1.6-2 2-2h2V2h-3c-3 0-5 2-5 5v3H7v4h3v8h4z" fill="currentColor" stroke="none"/>',
+    line: '<path d="M12 2C6.48 2 2 5.69 2 10.24c0 4.08 3.55 7.5 8.35 8.15.32.07.77.21.88.49.1.25.07.65.03.91l-.14.86c-.04.25-.2 1 .87.55.6-.27.74-.34.74-.34l.16-.09c3.41-1.46 5.31-2.91 6.93-4.78C21.05 13.7 22 11.96 22 10.24 22 5.69 17.52 2 12 2z" fill="currentColor" stroke="none"/><circle cx="8.2" cy="10.2" r="1" fill="#fff" stroke="none"/><circle cx="12" cy="10.2" r="1" fill="#fff" stroke="none"/><circle cx="15.8" cy="10.2" r="1" fill="#fff" stroke="none"/>',
   };
 
   function icon(name, size) {

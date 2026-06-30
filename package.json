@@ -10,6 +10,7 @@
     "migrate:catalog-autoplay": "node scripts/run-catalog-autoplay-migration.js",
     "migrate:catalog-hot-sale-reviews": "node scripts/run-catalog-store-hot-sale-reviews-migration.js",
     "migrate:homepage-cms": "node scripts/run-homepage-cms-migration.js",
+    "migrate:homepage-article-sync": "node scripts/run-homepage-article-sync-migration.js",
     "test": "node --test test/*.test.js"
   },
   "dependencies": {

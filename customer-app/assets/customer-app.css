@@ -139,6 +139,18 @@ p { margin: 0; }
   -webkit-backdrop-filter: blur(18px) saturate(140%);
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
+/* Signature CWF hairline: gold → blue → cobalt. Recurs on hero/cards/banner
+   below so the brand reads as one deliberate system, not a stock template. */
+.app-header::after {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  background: linear-gradient(90deg, var(--yellow) 0%, var(--blue) 45%, var(--cobalt) 100%);
+  opacity: 0.85;
+  content: "";
+}
 
 .brand-lockup { display: flex; align-items: center; gap: 12px; min-width: 0; flex: 1 1 auto; }
 .brand-lockup > div:last-child { min-width: 0; }
@@ -4394,6 +4406,18 @@ body.has-contact-sheet { overflow: hidden; }
   scrollbar-width: none;
 }
 .homepage-hero-slider::-webkit-scrollbar { display: none; }
+/* Glossy premium sheen — a soft diagonal highlight plus a gold corner glow,
+   layered under the existing legibility gradient (::after, below). */
+.homepage-hero::before {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background:
+    radial-gradient(60% 70% at 100% 0%, rgba(255, 210, 59, 0.22) 0%, transparent 60%),
+    linear-gradient(115deg, rgba(255, 255, 255, 0.14) 0%, rgba(255, 255, 255, 0) 26%, rgba(255, 255, 255, 0) 100%);
+  pointer-events: none;
+  content: "";
+}
 .homepage-hero-slide {
   position: relative;
   flex: 0 0 100%;
@@ -4602,6 +4626,11 @@ body.has-contact-sheet { overflow: hidden; }
   line-height: 1.26;
   color: var(--ink);
 }
+.homepage-quick.is-line span:first-child {
+  background: linear-gradient(135deg, #06c755 0%, #04a847 100%);
+  color: #fff;
+  box-shadow: 0 3px 8px rgba(6, 199, 85, 0.28);
+}
 
 /* ─── Promo banner — CMS-managed, full-width, uncropped image ────────── */
 .homepage-promo-banner {
@@ -4609,6 +4638,17 @@ body.has-contact-sheet { overflow: hidden; }
   overflow: hidden;
   border-radius: 20px;
   box-shadow: 0 6px 16px rgba(6, 24, 47, 0.08);
+}
+/* Thin brand frame so a CMS-uploaded banner image always reads as part of
+   the CWF system, never a bare stock photo dropped onto the page. */
+.homepage-promo-banner::after {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.34), inset 0 -28px 32px -24px rgba(6, 24, 47, 0.30);
+  pointer-events: none;
+  content: "";
 }
 .homepage-promo-banner-track {
   display: flex;
@@ -4767,6 +4807,16 @@ body.has-contact-sheet { overflow: hidden; }
 .homepage-article-card:active {
   transform: scale(0.97);
   box-shadow: 0 3px 10px rgba(6, 24, 47, 0.09);
+}
+/* Signature top edge — same gold/blue/cobalt hairline as the header, echoed
+   on every editorial card so the brand reads consistently across the app. */
+.homepage-service-card::before,
+.homepage-announcement-card::before,
+.homepage-article-card::before {
+  flex: 0 0 auto;
+  height: 3px;
+  background: linear-gradient(90deg, var(--yellow) 0%, var(--blue) 45%, var(--cobalt) 100%);
+  content: "";
 }
 
 /* Featured service: ~2 cards visible at 390 px */
@@ -4956,6 +5006,12 @@ body.has-contact-sheet { overflow: hidden; }
   transition: transform 0.1s, box-shadow 0.12s;
 }
 .homepage-social-card:active { transform: scale(0.97); box-shadow: 0 3px 10px rgba(6, 24, 47, 0.09); }
+.homepage-social-card::before {
+  flex: 0 0 auto;
+  height: 3px;
+  background: linear-gradient(90deg, var(--yellow) 0%, var(--blue) 45%, var(--cobalt) 100%);
+  content: "";
+}
 
 .homepage-social-media {
   position: relative;

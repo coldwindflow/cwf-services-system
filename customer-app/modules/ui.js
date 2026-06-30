@@ -291,9 +291,10 @@
             : item.action === "contact"
               ? `href="#" data-home-contact="${root.utils.escapeHtml(item.title || "ติดต่อ CWF")}"`
               : `href="#${root.utils.escapeHtml(item.route || "home")}" data-route="${root.utils.escapeHtml(item.route || "home")}"`;
+          const iconName = item.icon || ["sparkle", "wrench", "pin", "line"][index] || "sparkle";
           return `
-            <a class="homepage-quick" ${attrs}>
-              <span>${root.utils.icon(item.icon || ["sparkle", "wrench", "pin", "chat"][index] || "sparkle", 20)}</span>
+            <a class="homepage-quick${iconName === "line" ? " is-line" : ""}" ${attrs}>
+              <span>${root.utils.icon(iconName, 20)}</span>
               <strong>${root.utils.escapeHtml(item.title || "-")}</strong>
             </a>
           `;
@@ -531,9 +532,8 @@
     if (section.type === "promo_banner") return renderHomepagePromoBanner(section);
     if (section.type === "active_job") return renderHomepageActiveJob(section);
     if (section.type === "featured_services") return renderHomepageFeaturedSection(section);
-    if (["updates", "articles"].includes(section.type)) return renderHomepageManualSection(section);
+    if (["updates", "articles", "announcements"].includes(section.type)) return renderHomepageManualSection(section);
     if (section.type === "social") return renderHomepageSocial(section);
-    if (section.type === "announcements") return "";
     if (section.type === "trust") return renderHomepageTrust(section);
     return "";
   }
