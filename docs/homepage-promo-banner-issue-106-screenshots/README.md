@@ -24,38 +24,17 @@ stand-ins for the database and Cloudinary.
   and `DEFAULT_CONFIG`, to produce an honest baseline (no fabricated/mocked
   "before" state).
 
-## Customer homepage — after (current branch)
+## Contact sheets
 
-Captured at 320px, 390px, and 480px viewport widths, each with three scroll
-positions (top: Hero + quick actions; mid: Promo Banner + Featured Services;
-bottom: Trust + bottom nav). No horizontal overflow was observed at any
-width.
-
-| File | What it shows |
-|---|---|
-| `after-320-top.png` / `after-390-top.png` / `after-480-top.png` | Compact no-image Hero (`is-no-image` variant), quick actions |
-| `after-320-mid.png` / `after-390-mid.png` / `after-480-mid.png` | CWF × DAIKIN promo banner, full image, uncropped text |
-| `after-320-bottom.png` / `after-390-bottom.png` / `after-480-bottom.png` | Trust section + bottom navigation |
-
-## Customer homepage — before / after comparison (390px)
+Individual full-resolution screenshots were composited into three JPEG
+contact sheets (kept under version control at moderate size) instead of 21
+separate PNGs. Customer-facing rows are laid out at their native mobile
+viewport width (320/390/480px) so the DAIKIN banner text and UI detail stay
+legible; the admin flow sheet is scaled to 640px-wide thumbnails since it's
+full-page admin UI captures, not pixel-level image proof.
 
 | File | What it shows |
 |---|---|
-| `before-390-top.png` | Pre-PR baseline (commit `551c7a5`): old tall gradient Hero panel, no Promo Banner section at all |
-| `after-390-top.png` | This PR: compact restrained no-image Hero |
-| `before-390-mid.png` | Pre-PR baseline: no Promo Banner section, placeholder news card instead |
-| `after-390-mid.png` | This PR: CWF × DAIKIN training banner, full and uncropped |
-| `before-390-bottom.png` / `after-390-bottom.png` | Trust + bottom nav, before vs. after the visual redesign |
-
-## Admin CMS flow (real upload handler, local-disk Cloudinary stand-in)
-
-| File | What it shows |
-|---|---|
-| `admin-01-loaded.png` | Admin Homepage CMS editor loaded |
-| `admin-02-promo-section-empty.png` | Promo Banner section, empty state |
-| `admin-03-promo-item-added.png` | Promo Banner item added before upload |
-| `admin-04-upload-success.png` | Real DAIKIN PNG uploaded via the real upload handler |
-| `admin-05-preview-with-banner.png` | Admin Preview pane showing the uploaded banner |
-| `admin-06-draft-saved.png` | Draft saved confirmation |
-| `admin-07-after-reload-persisted.png` | Page reloaded — banner persisted in Draft |
-| `admin-08-published.png` | Published confirmation, public config now serves the banner |
+| `contact-sheet-customer-320-390-480.jpg` | Customer homepage at 320/390/480px, 3 rows: top (Hero + quick actions), mid (CWF × DAIKIN promo banner, full/uncropped, + Featured Services), bottom (Trust + bottom nav). No horizontal overflow observed at any width. |
+| `contact-sheet-390-before-after.jpg` | 390px before/after comparison: BEFORE = pre-PR baseline (commit `551c7a5`, run from its own unmodified route code) showing the old tall gradient Hero and the complete absence of a Promo Banner section; AFTER = this PR's compact `is-no-image` Hero variant and the live DAIKIN promo banner. |
+| `contact-sheet-admin-flow.jpg` | Admin Promo Banner CMS flow, 8 steps: section editor (empty) → item added → real DAIKIN upload → Preview pane → Draft saved → reload-persists → Publish. |
