@@ -94,6 +94,8 @@
     user: '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/>',
     chat: '<path d="M4 5h16v11H9l-5 4V5z"/>',
     wrench: '<path d="M21 4a5 5 0 0 1-6.5 6.5L6 19l-3-3 8.5-8.5A5 5 0 0 1 18 1l-3 3 2 2 3-3z"/>',
+    play: '<path d="M8 5l11 7-11 7V5z" fill="currentColor" stroke="none"/>',
+    facebook: '<path d="M14 22v-8h3l1-4h-4V8c0-1.1.6-2 2-2h2V2h-3c-3 0-5 2-5 5v3H7v4h3v8h4z" fill="currentColor" stroke="none"/>',
   };
 
   function icon(name, size) {

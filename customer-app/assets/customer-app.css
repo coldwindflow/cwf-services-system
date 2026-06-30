@@ -4936,6 +4936,88 @@ body.has-contact-sheet { overflow: hidden; }
   font-weight: 900;
 }
 
+/* ─── Social feed (admin-pasted Facebook post / YouTube video links) ──
+   Cards load a static thumbnail first; tapping swaps in the real iframe
+   embed (no Graph/YouTube Data API calls — just the public oEmbed-style
+   iframes both platforms expose) so the homepage stays light by default. */
+.homepage-social-card {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: min(86%, 320px);
+  max-width: min(86%, 320px);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: #fff;
+  text-align: left;
+  box-shadow: 0 8px 22px rgba(6, 24, 47, 0.08);
+  scroll-snap-align: start;
+  transition: transform 0.1s, box-shadow 0.12s;
+}
+.homepage-social-card:active { transform: scale(0.97); box-shadow: 0 3px 10px rgba(6, 24, 47, 0.09); }
+
+.homepage-social-media {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  background: linear-gradient(155deg, var(--soft-blue) 0%, var(--soft-blue-2) 55%, #c9def6 100%);
+  cursor: pointer;
+  overflow: hidden;
+}
+.homepage-social-media img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.homepage-social-fallback { display: grid; place-items: center; width: 100%; height: 100%; color: var(--blue); }
+
+/* Centered play affordance — the "ลูกเล่น" interactive cue that this card expands in place */
+.homepage-social-play {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+.homepage-social-play .cwf-ico {
+  display: grid;
+  place-items: center;
+  width: 50px; height: 50px;
+  border-radius: 999px;
+  color: #fff;
+  background: rgba(6, 24, 47, 0.55);
+  box-shadow: 0 8px 20px rgba(6, 24, 47, 0.30);
+  transition: transform 0.15s;
+}
+.homepage-social-media:active .homepage-social-play .cwf-ico { transform: scale(0.92); }
+.homepage-social-card.is-youtube .homepage-social-play .cwf-ico { background: rgba(204, 28, 28, 0.80); }
+.homepage-social-card.is-facebook .homepage-social-play .cwf-ico { background: rgba(24, 60, 153, 0.80); }
+
+.homepage-social-badge {
+  position: absolute;
+  top: 9px;
+  left: 9px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(6, 24, 47, 0.55);
+  color: #fff;
+  font-size: 9.5px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+}
+
+/* Loaded embed state: real iframe replaces the thumbnail/play button */
+.homepage-social-media.is-embed {
+  aspect-ratio: auto;
+  height: 280px;
+  background: var(--navy);
+  cursor: default;
+}
+.homepage-social-media.is-embed iframe { display: block; width: 100%; height: 100%; border: 0; }
+
+.homepage-social-card .homepage-card-body strong { font-size: 12.5px; }
+
 /* ─── Trust section ─────────────────────────────────────────────────── */
 .homepage-trust-grid {
   display: grid;
