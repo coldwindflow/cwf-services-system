@@ -76,6 +76,11 @@ const DEFAULT_CONFIG = {
       sort_order: 50,
       title: "บริการแนะนำ",
       body: "ราคาและรายละเอียดดึงจาก Catalog",
+      featured_mode: "auto",
+      featured_limit: 8,
+      show_price: true,
+      show_badge: true,
+      item_ids: [],
       items: [],
     },
     {
@@ -190,6 +195,7 @@ function normalizeItem(raw, sectionType, index, errors) {
     tag: cleanText(item.tag || item.source, 40),
     date_label: cleanText(item.date_label || item.date, 40),
     sort_order: Number.isFinite(Number(item.sort_order)) ? Number(item.sort_order) : index + 1,
+    enabled: item.enabled !== false,
   };
   if (cleanText(item.icon, 30)) out.icon = cleanText(item.icon, 30);
   if (cleanText(item.route, 40)) out.route = cleanText(item.route, 40);
@@ -236,6 +242,17 @@ function normalizeSection(raw, index, errors) {
   validateImageUrl(out.image_url, errors, `${id}.image_url`);
   validateDateRange(out, errors, id);
   if (type === "hero" && !out.title) errors.push("hero.title required");
+  if (type === "featured_services") {
+    const mode = cleanText(section.featured_mode, 10) === "manual" ? "manual" : "auto";
+    const limit = Number(section.featured_limit);
+    out.featured_mode = mode;
+    out.featured_limit = Number.isFinite(limit) ? Math.max(1, Math.min(12, Math.round(limit))) : 8;
+    out.show_price = section.show_price !== false;
+    out.show_badge = section.show_badge !== false;
+    const itemIds = Array.isArray(section.item_ids) ? section.item_ids : [];
+    out.item_ids = [...new Set(itemIds.map((value) => cleanText(value, 80)).filter(Boolean))].slice(0, 12);
+    if (mode === "manual" && !out.item_ids.length) errors.push(`${id}.item_ids required for manual mode`);
+  }
   return out;
 }
 
@@ -273,7 +290,7 @@ function stripPublicConfig(config) {
       delete cleanSection.updated_by;
       delete cleanSection.image_public_id;
       cleanSection.items = (section.items || [])
-        .filter((item) => activeNow(item, now))
+        .filter((item) => item.enabled !== false && activeNow(item, now))
         .sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0))
         .map((item) => {
           const cleanItem = { ...item };

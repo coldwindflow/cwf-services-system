@@ -236,7 +236,7 @@ test("Customer App build id is consistent across shell and service worker", () =
   const sw = read("customer-app/sw.js");
   const app = read("customer-app/assets/customer-app.js");
   const manifest = read("customer-app/manifest.webmanifest");
-  const build = "20260629_customer_homepage_mobile_hotfix";
+  const build = "20260629_homepage_cms_catalog_v3";
 
   assert.match(index, new RegExp(`customer-app\\.css\\?v=${build}`));
   assert.match(index, new RegExp(`modules\\/api\\.js\\?v=${build}`));
@@ -254,7 +254,7 @@ test("Customer App build id is consistent across shell and service worker", () =
 test("store module is loaded in index.html and precached in the service worker app shell", () => {
   const index = read("customer-app/index.html");
   const sw = read("customer-app/sw.js");
-  const build = "20260629_customer_homepage_mobile_hotfix";
+  const build = "20260629_homepage_cms_catalog_v3";
 
   assert.match(index, new RegExp(`modules/store\\.js\\?v=${build}`));
   assert.match(sw, /`\.\/modules\/store\.js\?v=\$\{BUILD_ID\}`/);
@@ -441,7 +441,11 @@ test("homepage section sort_order controls DOM order", () => {
   const context = makeContext();
   const root = loadCustomerFrontend(context);
   root.auth = { displayName: () => "Customer", loadCustomer: async () => ({ logged_in: false }) };
-  root.state.setCollection("catalog", { status: "success", error: "", items: [] });
+  root.state.setCollection("catalog", {
+    status: "success",
+    error: "",
+    items: [{ item_id: 1, item_name: "Featured Item", is_featured: true, is_active: true, is_customer_visible: true }],
+  });
   root.state.setHomepage({
     status: "success",
     fallback: false,

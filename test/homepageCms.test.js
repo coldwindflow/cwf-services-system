@@ -106,6 +106,56 @@ test("homepage validation rejects invalid section, URL, date, and oversized payl
   assert.ok(oversized.errors.includes("payload too large"));
 });
 
+test("featured_services normalizes auto-mode defaults and validates manual selection", () => {
+  const auto = validateConfig({
+    sections: [{ id: "featured_services", type: "featured_services", title: "บริการแนะนำ", items: [] }],
+  });
+  assert.equal(auto.ok, true);
+  const fs1 = auto.config.sections[0];
+  assert.equal(fs1.featured_mode, "auto");
+  assert.equal(fs1.featured_limit, 8);
+  assert.equal(fs1.show_price, true);
+  assert.equal(fs1.show_badge, true);
+  assert.deepEqual(fs1.item_ids, []);
+
+  const manualNoIds = validateConfig({
+    sections: [{ id: "featured_services", type: "featured_services", title: "x", featured_mode: "manual", item_ids: [], items: [] }],
+  });
+  assert.equal(manualNoIds.ok, false);
+  assert.ok(manualNoIds.errors.some((error) => error.includes("item_ids required")));
+
+  const manual = validateConfig({
+    sections: [{
+      id: "featured_services", type: "featured_services", title: "x", featured_mode: "manual",
+      featured_limit: 99, show_price: false, show_badge: false, item_ids: ["a", "b", "a"], items: [],
+    }],
+  });
+  assert.equal(manual.ok, true);
+  const fs2 = manual.config.sections[0];
+  assert.equal(fs2.featured_mode, "manual");
+  assert.equal(fs2.featured_limit, 12);
+  assert.equal(fs2.show_price, false);
+  assert.equal(fs2.show_badge, false);
+  assert.deepEqual(fs2.item_ids, ["a", "b"]);
+});
+
+test("legacy published config without featured_services fields gets safe defaults without losing existing content", () => {
+  const legacy = validateConfig({
+    sections: [{
+      id: "featured_services", type: "featured_services", enabled: true, sort_order: 5,
+      title: "บริการเก่าของแอดมิน", body: "คำอธิบายเดิม", items: [],
+    }],
+  });
+  assert.equal(legacy.ok, true);
+  const section = legacy.config.sections[0];
+  assert.equal(section.title, "บริการเก่าของแอดมิน");
+  assert.equal(section.body, "คำอธิบายเดิม");
+  assert.equal(section.featured_mode, "auto");
+  assert.equal(section.featured_limit, 8);
+  assert.equal(section.show_price, true);
+  assert.equal(section.show_badge, true);
+});
+
 test("public homepage returns published config only and strips admin image metadata", async () => {
   const pool = createPool();
   pool.state.row.draft_config = { version: 1, sections: [{ id: "hero", type: "hero", enabled: true, sort_order: 1, title: "Draft title", items: [] }] };
@@ -184,7 +234,7 @@ test("customer homepage has no admin control, bottom nav is fixed five-tab, and 
   const sw = read("customer-app/sw.js");
   const app = read("customer-app/assets/customer-app.js");
   const manifest = read("customer-app/manifest.webmanifest");
-  const build = "20260629_customer_homepage_mobile_hotfix";
+  const build = "20260629_homepage_cms_catalog_v3";
 
   assert.doesNotMatch(index + ui, /โหมดแอดมิน|openCms|localStorage\.getItem\('cwfHomeCmsDemo'/);
   assert.match(index, /data-route="store"[\s\S]*ร้านค้า/);
@@ -615,5 +665,57 @@ test("admin hero slide editor supports add edit remove reorder upload and CTA ta
   assert.match(admin, /if \(current\(\)\.items\.length >= 5\)/);
   assert.match(admin, /delete item\[ctaName\]\.route;\s*delete item\[ctaName\]\.url;\s*delete item\[ctaName\]\.action;/);
   const previewSource = admin.slice(admin.indexOf("function renderPreview()"), admin.indexOf("function render()"));
-  assert.match(previewSource, /const slides = Array\.isArray\(section\.items\) && section\.items\.length \? section\.items : \[section\]/);
+  assert.match(previewSource, /const slides = enabledSlides\.length \? enabledSlides : \[section\]/);
+});
+
+test("admin catalog loader accepts the real direct-array /admin/catalog/items response shape", () => {
+  const admin = read("admin-homepage-cms.js");
+  assert.match(admin, /catalogItems = Array\.isArray\(data\) \? data : Array\.isArray\(data\?\.items\) \? data\.items : \[\];/);
+});
+
+test("per-item enabled toggle is normalized, persisted, and stripped from public config when disabled", () => {
+  const disabled = validateConfig({
+    sections: [{
+      id: "trust", type: "trust", enabled: true, sort_order: 80, title: "Trust",
+      items: [{ title: "Visible", enabled: true }, { title: "Hidden", enabled: false }],
+    }],
+  });
+  assert.equal(disabled.ok, true);
+  assert.equal(disabled.config.sections[0].items[0].enabled, true);
+  assert.equal(disabled.config.sections[0].items[1].enabled, false);
+
+  const legacyNoFlag = validateConfig({
+    sections: [{ id: "trust", type: "trust", enabled: true, sort_order: 80, title: "Trust", items: [{ title: "Legacy item" }] }],
+  });
+  assert.equal(legacyNoFlag.config.sections[0].items[0].enabled, true);
+});
+
+test("public homepage hides disabled items but keeps enabled ones", async () => {
+  const pool = createPool();
+  pool.state.row.published_config = {
+    version: 1,
+    sections: [{
+      id: "trust", type: "trust", enabled: true, sort_order: 80, title: "Trust",
+      items: [{ title: "Visible item", enabled: true }, { title: "Disabled item", enabled: false }],
+    }],
+  };
+  const server = await withServer(pool, (_req, _res, next) => next());
+  try {
+    const res = await fetch(`${server.base}/public/homepage`);
+    const data = await res.json();
+    const items = data.config.sections[0].items;
+    assert.deepEqual(items.map((item) => item.title), ["Visible item"]);
+  } finally {
+    await server.close();
+  }
+});
+
+test("admin per-item enable/disable toggle is wired to editor, change handler, and live preview filtering", () => {
+  const admin = read("admin-homepage-cms.js");
+  assert.match(admin, /data-item-enabled="\$\{index\}"/);
+  assert.match(admin, /target\.matches\("\[data-item-enabled\]"\)/);
+  assert.match(admin, /item\.enabled = target\.checked;/);
+  const previewSource = admin.slice(admin.indexOf("function renderPreview()"), admin.indexOf("function render()"));
+  assert.match(previewSource, /filter\(\(slide\) => slide\.enabled !== false\)/);
+  assert.match(previewSource, /filter\(\(item\) => item\.enabled !== false\)/);
 });

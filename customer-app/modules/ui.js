@@ -111,6 +111,11 @@
         sort_order: 50,
         title: "บริการแนะนำ",
         body: "ราคาและรายละเอียดดึงจาก Catalog",
+        featured_mode: "auto",
+        featured_limit: 8,
+        show_price: true,
+        show_badge: true,
+        item_ids: [],
         items: [],
       },
       {
@@ -201,18 +206,28 @@
     return root.services.catalogItemToCommerceDraft(item);
   }
 
-  function featuredCatalogItems() {
+  function featuredCatalogItems(section) {
     const rows = root.state.catalog?.items || [];
-    return rows.filter((item) => item && item.is_featured).slice(0, 8);
+    const cfg = section || {};
+    const limitRaw = Number(cfg.featured_limit);
+    const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(12, Math.round(limitRaw))) : 8;
+    if (cfg.featured_mode === "manual" && Array.isArray(cfg.item_ids) && cfg.item_ids.length) {
+      const byId = new Map(rows.map((item) => [String(item.item_id), item]));
+      return cfg.item_ids.map((id) => byId.get(String(id))).filter(Boolean).slice(0, limit);
+    }
+    return rows.filter((item) => item && item.is_featured).slice(0, limit);
   }
 
-  function renderHomepageFeaturedServices() {
+  function renderHomepageFeaturedServices(section) {
     const catalog = root.state.catalog || { status: "idle", items: [] };
     if (catalog.status === "loading" || catalog.status === "idle") {
       return `<div class="content-skeleton" aria-label="กำลังโหลดบริการแนะนำ"><span></span><span></span></div>`;
     }
     if (catalog.status === "error") return root.utils.stateBox("error", catalog.error || "โหลดบริการแนะนำไม่สำเร็จ");
-    const items = featuredCatalogItems();
+    const cfg = section || sectionByType("featured_services") || {};
+    const showPrice = cfg.show_price !== false;
+    const showBadge = cfg.show_badge !== false;
+    const items = featuredCatalogItems(cfg);
     if (!items.length) return root.utils.stateBox("", "ยังไม่มีบริการแนะนำที่เปิดแสดง");
     return `
       <div class="homepage-carousel homepage-featured-services">
@@ -228,11 +243,11 @@
                     ? `<img src="${root.utils.escapeHtml(imageUrl)}" alt="${root.utils.escapeHtml(item.item_name || "บริการ CWF")}" loading="lazy">`
                     : root.utils.icon("sparkle", 28)}
                 </div>
-                <span class="homepage-service-badge">${root.utils.escapeHtml(item.booking_mode === "bookable" ? "จองได้" : "สอบถามแอดมิน")}</span>
+                ${showBadge ? `<span class="homepage-service-badge">${root.utils.escapeHtml(item.booking_mode === "bookable" ? "จองได้" : "สอบถามแอดมิน")}</span>` : ""}
                 <div class="homepage-card-body">
                   <strong>${root.utils.escapeHtml(item.item_name || "-")}</strong>
                   <small>${root.utils.escapeHtml(item.short_description || item.item_category || "")}</small>
-                  <span>${root.utils.escapeHtml(catalogDisplayPrice(item))}${item.unit_label && catalogDisplayPrice(item) !== "สอบถามราคา" ? ` / ${root.utils.escapeHtml(item.unit_label)}` : ""}</span>
+                  ${showPrice ? `<span>${root.utils.escapeHtml(catalogDisplayPrice(item))}${item.unit_label && catalogDisplayPrice(item) !== "สอบถามราคา" ? ` / ${root.utils.escapeHtml(item.unit_label)}` : ""}</span>` : ""}
                   ${promo ? `<small class="homepage-promo-text">${root.utils.escapeHtml(item.campaign_name || item.price_label || "มีโปรโมชัน")}</small>` : ""}
                 </div>
               </button>
@@ -318,8 +333,15 @@
   }
 
   function renderHomepageFeaturedSection(section) {
+    const catalog = root.state.catalog || { status: "idle", items: [] };
+    if (catalog.status === "success" && !featuredCatalogItems(section).length) {
+      // No valid items after resolving against real Catalog data (e.g. every
+      // manually-selected item became inactive/hidden) — hide the section
+      // entirely rather than show admin-authored copy with an empty body.
+      return `<div data-home-featured-section></div>`;
+    }
     return `
-      <section class="homepage-section">
+      <section class="homepage-section" data-home-featured-section>
         <div class="homepage-section-head">
           <div>
             <h2>${root.utils.escapeHtml(section.title || "")}</h2>
@@ -327,7 +349,7 @@
           </div>
           <button type="button" class="text-link-btn" data-route="store">ดูทั้งหมด</button>
         </div>
-        <div data-homepage-featured>${renderHomepageFeaturedServices()}</div>
+        <div data-homepage-featured>${renderHomepageFeaturedServices(section)}</div>
       </section>
     `;
   }
@@ -525,7 +547,7 @@
     const tasks = [];
     if (needsAuth) tasks.push(root.auth.loadCustomer(null));
     if (needsHomepage) tasks.push(loadHomepageData());
-    if (needsCatalog) tasks.push(loadCollection("catalog", () => root.api.loadCatalogItems(), ""));
+    if (needsCatalog) tasks.push(loadCollection("catalog", () => root.api.loadCatalogItems(), "items"));
     if (needsPromotions) tasks.push(loadCollection("promotions", root.api.loadPromotions, "promotions"));
     if (needsZones) tasks.push(loadCollection("zones", root.api.loadServiceZones, "zones"));
     if (needsPricing) tasks.push(loadHomePricingData());
@@ -708,8 +730,9 @@
       account.innerHTML = renderAccountShortcut();
       root.auth?.bindAvatarFallbacks?.(account);
     }
-    const featured = container.querySelector("[data-homepage-featured]");
-    if (featured) featured.innerHTML = renderHomepageFeaturedServices();
+    const featuredSection = container.querySelector("[data-home-featured-section]");
+    const featuredCfg = sectionByType("featured_services");
+    if (featuredSection && featuredCfg) featuredSection.outerHTML = renderHomepageFeaturedSection(featuredCfg);
     const activeJob = container.querySelector("[data-home-active-job]");
     const activeSection = sectionByType("active_job");
     if (activeJob && activeSection) activeJob.outerHTML = renderHomepageActiveJob(activeSection);
