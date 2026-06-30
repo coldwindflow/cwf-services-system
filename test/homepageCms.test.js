@@ -933,3 +933,52 @@ test("customer ui.js renders promo_banner section with image-only markup, hides 
   assert.match(ui, /data-home-promo-dot/);
   assert.match(ui, /is-contain|is-cover/);
 });
+
+test("admin draft GET hydrates a legacy row missing promo_banner without touching existing content or published config", async () => {
+  const pool = createPool();
+  const legacySections = [
+    { id: "hero", type: "hero", enabled: true, sort_order: 10, title: "Legacy hero title", body: "Legacy body", focal_position: "center", items: [] },
+    { id: "quick", type: "quick", enabled: true, sort_order: 20, title: "เมนูด่วน", body: "", items: [{ title: "จองล้างแอร์", route: "scheduled", icon: "sparkle" }] },
+    { id: "trust", type: "trust", enabled: false, sort_order: 80, title: "มาตรฐานที่ลูกค้าวางใจ", body: "", items: [{ title: "แจ้งราคาก่อนทำ", body: "ระบบคำนวณจากข้อมูลบริการจริง" }] },
+  ];
+  pool.state.row.draft_config = { version: 1, sections: legacySections };
+  pool.state.row.published_config = { version: 1, sections: legacySections };
+  const server = await withServer(pool, (_req, _res, next) => next());
+  try {
+    const res = await fetch(`${server.base}/admin/homepage-cms/config`);
+    const data = await res.json();
+    assert.equal(res.status, 200);
+
+    const banner = data.draft_config.sections.find((section) => section.type === "promo_banner");
+    assert.ok(banner, "hydrated draft should include an empty promo_banner section");
+    assert.deepEqual(banner.items, []);
+
+    const hero = data.draft_config.sections.find((section) => section.type === "hero");
+    assert.equal(hero.title, "Legacy hero title");
+    assert.equal(hero.body, "Legacy body");
+    const quick = data.draft_config.sections.find((section) => section.type === "quick");
+    assert.equal(quick.items.length, 1);
+    const trust = data.draft_config.sections.find((section) => section.type === "trust");
+    assert.equal(trust.enabled, false);
+    assert.equal(trust.items[0].title, "แจ้งราคาก่อนทำ");
+
+    assert.deepEqual(data.published_config.sections.map((section) => section.type), ["hero", "quick", "trust"]);
+
+    const pubRes = await fetch(`${server.base}/public/homepage`);
+    const pubData = await pubRes.json();
+    assert.ok(!pubData.config.sections.some((section) => section.type === "promo_banner"), "publishing the hydrated section must not happen implicitly");
+  } finally {
+    await server.close();
+  }
+});
+
+test("hero renders a compact no-image variant instead of a tall blue panel when no slide has an image", () => {
+  const ui = read("customer-app/modules/ui.js");
+  assert.match(ui, /const hasImage = slides\.some\(\(slide\) => slide\.image_url\);/);
+  assert.match(ui, /class="homepage-hero\$\{hasImage \? "" : " is-no-image"\}"/);
+
+  const css = read("customer-app/assets/customer-app.css");
+  const noImageBlock = css.match(/\.homepage-hero\.is-no-image\s*\{[^}]*\}/)[0];
+  assert.match(noImageBlock, /min-height:\s*0/);
+  assert.doesNotMatch(noImageBlock, /linear-gradient/);
+});

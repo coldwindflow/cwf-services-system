@@ -4506,6 +4506,43 @@ body.has-contact-sheet { overflow: hidden; }
 .homepage-hero-dots button.is-active { width: 20px; background: #fff; }
 .homepage-hero-dots button:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
 
+/* No-image hero — compact, restrained card instead of a tall blue panel.
+   Used until Admin uploads a Hero image. */
+.homepage-hero.is-no-image {
+  min-height: 0;
+  color: var(--navy-3);
+  background: var(--soft-blue);
+  box-shadow: 0 4px 14px rgba(6, 24, 47, 0.07);
+}
+.homepage-hero.is-no-image::after { content: none; }
+.homepage-hero.is-no-image .homepage-hero-slide { min-height: 0; }
+.homepage-hero.is-no-image .homepage-hero-inner {
+  min-height: 0;
+  padding: 18px 18px 20px;
+}
+.homepage-hero.is-no-image .homepage-kicker {
+  border-color: rgba(22, 89, 224, 0.30);
+  background: rgba(22, 89, 224, 0.10);
+  color: var(--blue);
+}
+.homepage-hero.is-no-image h2 {
+  max-width: none;
+  color: var(--navy-3);
+  font-size: 20px;
+  text-shadow: none;
+}
+.homepage-hero.is-no-image p {
+  max-width: none;
+  color: var(--navy-3);
+  opacity: 0.72;
+  text-shadow: none;
+}
+.homepage-hero.is-no-image .hero-ghost-btn {
+  border-color: rgba(22, 89, 224, 0.30);
+  background: rgba(22, 89, 224, 0.08);
+  color: var(--blue);
+}
+
 /* ─── Quick actions ─────────────────────────────────────────────────── */
 .homepage-quick-grid {
   display: grid;

@@ -303,8 +303,9 @@
   function renderHomepageHero(section) {
     if (!section) return "";
     const slides = Array.isArray(section.items) && section.items.length ? section.items : [section];
+    const hasImage = slides.some((slide) => slide.image_url);
     return `
-      <section class="homepage-hero">
+      <section class="homepage-hero${hasImage ? "" : " is-no-image"}">
         <div class="homepage-hero-slider">
           ${slides.map((slide, index) => `
             <article class="homepage-hero-slide" data-home-hero-slide="${index}">

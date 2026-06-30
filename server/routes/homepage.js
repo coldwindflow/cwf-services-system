@@ -371,6 +371,17 @@ async function ensureDraftRow(pool) {
   return inserted.rows[0];
 }
 
+function hydrateDraftConfig(rawConfig) {
+  const base = rawConfig && typeof rawConfig === "object" && Array.isArray(rawConfig.sections) ? rawConfig : DEFAULT_CONFIG;
+  const existingTypes = new Set(base.sections.map((section) => section && (section.type || section.id)));
+  const missing = DEFAULT_CONFIG.sections.filter((defaultSection) => !existingTypes.has(defaultSection.type));
+  if (!missing.length) return base;
+  return {
+    version: base.version || 1,
+    sections: [...base.sections, ...missing.map((section) => JSON.parse(JSON.stringify(section)))],
+  };
+}
+
 async function loadPublished(pool) {
   const result = await pool.query(
     `SELECT published_config, version, updated_at, published_at
@@ -456,7 +467,7 @@ function createHomepageRoutes(deps = {}) {
       const row = await ensureDraftRow(pool);
       res.json({
         ok: true,
-        draft_config: row.draft_config || DEFAULT_CONFIG,
+        draft_config: hydrateDraftConfig(row.draft_config),
         published_config: row.published_config || null,
         version: row.version,
         updated_by: row.updated_by,
