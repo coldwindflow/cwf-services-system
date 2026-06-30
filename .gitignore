@@ -165,5 +165,3 @@ vite.config.ts.timestamp-*
 /README_CALENDAR_*.txt
 /README_WORK_CALENDAR_*.txt
 /README_ADMIN_WORK_READINESS_*.txt
-/.qa-server.js
-/uploads/qa-homepage/
