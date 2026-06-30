@@ -3,7 +3,7 @@
 
   const App = window.CWFCustomerAppV2;
   const BOOT_TIMEOUT_MS = 3500;
-  const BUILD_ID = "20260629_homepage_cms_catalog_v2";
+  const BUILD_ID = "20260629_homepage_cms_catalog_v3";
 
   function withTimeout(promise, timeoutMs) {
     return Promise.race([
