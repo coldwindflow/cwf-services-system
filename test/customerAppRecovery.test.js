@@ -236,7 +236,7 @@ test("Customer App build id is consistent across shell and service worker", () =
   const sw = read("customer-app/sw.js");
   const app = read("customer-app/assets/customer-app.js");
   const manifest = read("customer-app/manifest.webmanifest");
-  const build = "20260630_homepage_social_embeds";
+  const build = "20260630_homepage_live_fixes";
 
   assert.match(index, new RegExp(`customer-app\\.css\\?v=${build}`));
   assert.match(index, new RegExp(`modules\\/api\\.js\\?v=${build}`));
@@ -254,7 +254,7 @@ test("Customer App build id is consistent across shell and service worker", () =
 test("store module is loaded in index.html and precached in the service worker app shell", () => {
   const index = read("customer-app/index.html");
   const sw = read("customer-app/sw.js");
-  const build = "20260630_homepage_social_embeds";
+  const build = "20260630_homepage_live_fixes";
 
   assert.match(index, new RegExp(`modules/store\\.js\\?v=${build}`));
   assert.match(sw, /`\.\/modules\/store\.js\?v=\$\{BUILD_ID\}`/);
@@ -467,7 +467,7 @@ test("homepage section sort_order controls DOM order", () => {
   assert.ok(container.innerHTML.indexOf("Trust First") < container.innerHTML.indexOf("Featured Later"));
 });
 
-test("homepage announcement-card link targets (contact, route, external URL) render for manual sections, and the announcements section type itself is suppressed on the customer homepage", () => {
+test("homepage announcement-card link targets (contact, route, external URL) render for manual sections, including the announcements section type itself", () => {
   const context = makeContext();
   const root = loadCustomerFrontend(context);
   root.auth = { displayName: () => "Customer", loadCustomer: async () => ({ logged_in: false }) };
@@ -492,7 +492,7 @@ test("homepage announcement-card link targets (contact, route, external URL) ren
           enabled: true,
           sort_order: 20,
           title: "Announcements",
-          items: [{ title: "Should never render", action: "contact" }],
+          items: [{ title: "Should render now", action: "contact" }],
         },
         {
           id: "updates",
@@ -514,7 +514,7 @@ test("homepage announcement-card link targets (contact, route, external URL) ren
   root.ui.renderHome(container);
 
   assert.match(container.innerHTML, /class="homepage-quick" href="#" data-home-contact="Quick Contact"/);
-  assert.doesNotMatch(container.innerHTML, /Should never render/);
+  assert.match(container.innerHTML, /class="homepage-announcement-card" href="#" data-home-contact="Should render now"/);
   assert.match(container.innerHTML, /class="homepage-update-card" href="#" data-home-contact="Contact Admin"/);
   assert.doesNotMatch(container.innerHTML, /data-home-contact="Contact Admin"[^>]*data-route="home"/);
   assert.doesNotMatch(container.innerHTML, /data-route="home"[^>]*Contact Admin/);
