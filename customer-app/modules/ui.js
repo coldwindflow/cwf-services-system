@@ -463,7 +463,8 @@
     if (section.type === "promo_banner") return renderHomepagePromoBanner(section);
     if (section.type === "active_job") return renderHomepageActiveJob(section);
     if (section.type === "featured_services") return renderHomepageFeaturedSection(section);
-    if (["announcements", "updates", "articles"].includes(section.type)) return renderHomepageManualSection(section);
+    if (["updates", "articles"].includes(section.type)) return renderHomepageManualSection(section);
+    if (section.type === "announcements") return "";
     if (section.type === "trust") return renderHomepageTrust(section);
     return "";
   }

@@ -73,9 +73,11 @@ test("visual unification remains scoped to customer app routes", () => {
   assert.match(css, /\.homepage-hero/);
   assert.match(css, /\.homepage-service-card/);
   assert.match(css, /\.bottom-nav\s*\{[\s\S]*max-width:\s*480px/);
-  assert.match(css, /\.nav-item-primary::after\s*\{[\s\S]*width:\s*38px/);
-  assert.match(css, /\.nav-item-primary::after\s*\{[\s\S]*height:\s*38px/);
-  assert.match(css, /\.nav-item-primary::after\s*\{[\s\S]*background:\s*linear-gradient\(145deg,#ffd43b,#ffbd17\)/);
-  assert.match(css, /\.nav-item-primary::before\s*\{[\s\S]*background:\s*#2b2500/);
+  // Booking tile is rendered on .nav-item-primary::before's own background, in the same
+  // flex flow as the icon/label — never a ::after overlay (which could drift from or
+  // cover the label).
+  assert.doesNotMatch(css, /\.nav-item-primary::after/);
+  assert.match(css, /\.nav-item-primary::before\s*\{[\s\S]*width:\s*36px[\s\S]*height:\s*36px/);
+  assert.match(css, /\.nav-item-primary::before\s*\{[\s\S]*background:\s*var\(--ico-book\) center \/ 19px 19px no-repeat, linear-gradient\(145deg, #ffd43b, #ffbd17\)/);
   assert.doesNotMatch(css, /body\s*\{[^}]*position:\s*fixed/);
 });

@@ -234,7 +234,7 @@ test("customer homepage has no admin control, bottom nav is fixed five-tab, and 
   const sw = read("customer-app/sw.js");
   const app = read("customer-app/assets/customer-app.js");
   const manifest = read("customer-app/manifest.webmanifest");
-  const build = "20260630_homepage_promo_banner_v1";
+  const build = "20260630_homepage_final_redesign_v1";
 
   assert.doesNotMatch(index + ui, /โหมดแอดมิน|openCms|localStorage\.getItem\('cwfHomeCmsDemo'/);
   assert.match(index, /data-route="store"[\s\S]*ร้านค้า/);
@@ -249,10 +249,12 @@ test("customer homepage has no admin control, bottom nav is fixed five-tab, and 
   assert.doesNotMatch(css, /margin:\s*-28px 0 0/);
   const primaryNavBlock = css.slice(css.lastIndexOf(".nav-item-primary {"), css.lastIndexOf(".nav-item-primary {") + 220);
   assert.doesNotMatch(primaryNavBlock, /translateY\(-/);
-  assert.match(css, /width:\s*38px/);
-  assert.match(css, /height:\s*38px/);
-  assert.match(css, /background:\s*linear-gradient\(145deg,#ffd43b,#ffbd17\)/);
-  assert.match(css, /background:\s*#2b2500/);
+  // Booking item's icon tile lives entirely on .nav-item-primary::before's own background —
+  // never a ::after overlay, which is the explicitly forbidden pattern (it can drift from
+  // or cover the "จอง" label since it isn't part of the same flex flow as the icon).
+  assert.doesNotMatch(css, /\.nav-item-primary::after/);
+  assert.match(css, /width:\s*36px;\s*height:\s*36px/);
+  assert.match(css, /background:\s*var\(--ico-book\) center \/ 19px 19px no-repeat, linear-gradient\(145deg, #ffd43b, #ffbd17\)/);
   assert.match(index, new RegExp(`customer-app\\.css\\?v=${build}`));
   assert.match(sw, new RegExp(`BUILD_ID = "${build}"`));
   assert.match(app, new RegExp(`BUILD_ID = "${build}"`));
@@ -529,7 +531,10 @@ test("bottom navigation border and padding match the fixed-nav reference", () =>
   const css = read("customer-app/assets/customer-app.css");
   assert.match(css, /border-top:\s*1px solid var\(--line\)/);
   assert.match(css, /padding:\s*7px 6px calc\(7px \+ var\(--safe-b\)\)/);
-  assert.match(css, /\.bottom-nav \.nav-item-primary::after\s*\{[\s\S]*width:\s*38px[\s\S]*height:\s*38px/);
+  // Booking tile is .nav-item-primary::before's own background, in the same flex flow as
+  // the label — not a ::after overlay, which could float free of the icon/label baseline.
+  assert.doesNotMatch(css, /\.nav-item-primary::after/);
+  assert.match(css, /\.nav-item-primary::before\s*\{[\s\S]*width:\s*36px[\s\S]*height:\s*36px/);
 });
 
 test("homepage service carousel constrains card and image geometry on mobile", () => {
@@ -979,7 +984,7 @@ test("hero renders a compact no-image variant instead of a tall blue panel when 
 
   const css = read("customer-app/assets/customer-app.css");
   const noImageBlock = css.match(/\.homepage-hero\.is-no-image\s*\{[^}]*\}/)[0];
-  assert.match(noImageBlock, /min-height:\s*0/);
+  assert.match(noImageBlock, /height:\s*auto/);
   assert.doesNotMatch(noImageBlock, /linear-gradient/);
 });
 
