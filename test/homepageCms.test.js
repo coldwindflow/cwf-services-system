@@ -234,7 +234,7 @@ test("customer homepage has no admin control, bottom nav is fixed five-tab, and 
   const sw = read("customer-app/sw.js");
   const app = read("customer-app/assets/customer-app.js");
   const manifest = read("customer-app/manifest.webmanifest");
-  const build = "20260629_homepage_cms_catalog_v3";
+  const build = "20260630_homepage_promo_banner_v1";
 
   assert.doesNotMatch(index + ui, /โหมดแอดมิน|openCms|localStorage\.getItem\('cwfHomeCmsDemo'/);
   assert.match(index, /data-route="store"[\s\S]*ร้านค้า/);
@@ -249,8 +249,8 @@ test("customer homepage has no admin control, bottom nav is fixed five-tab, and 
   assert.doesNotMatch(css, /margin:\s*-28px 0 0/);
   const primaryNavBlock = css.slice(css.lastIndexOf(".nav-item-primary {"), css.lastIndexOf(".nav-item-primary {") + 220);
   assert.doesNotMatch(primaryNavBlock, /translateY\(-/);
-  assert.match(css, /width:\s*44px/);
-  assert.match(css, /height:\s*44px/);
+  assert.match(css, /width:\s*38px/);
+  assert.match(css, /height:\s*38px/);
   assert.match(css, /background:\s*linear-gradient\(145deg,#ffd43b,#ffbd17\)/);
   assert.match(css, /background:\s*#2b2500/);
   assert.match(index, new RegExp(`customer-app\\.css\\?v=${build}`));
@@ -315,6 +315,7 @@ test("backend defaults contain exactly the standard homepage section types in or
   assert.deepEqual(DEFAULT_CONFIG.sections.map((section) => section.type), [
     "hero",
     "quick",
+    "promo_banner",
     "active_job",
     "announcements",
     "featured_services",
@@ -322,7 +323,7 @@ test("backend defaults contain exactly the standard homepage section types in or
     "articles",
     "trust",
   ]);
-  assert.deepEqual(DEFAULT_CONFIG.sections.map((section) => section.sort_order), [10, 20, 30, 40, 50, 60, 70, 80]);
+  assert.deepEqual(DEFAULT_CONFIG.sections.map((section) => section.sort_order), [10, 20, 25, 30, 40, 50, 60, 70, 80]);
 });
 
 test("homepage validation preserves hero image metadata and rejects quick sections over four items", () => {
@@ -512,7 +513,7 @@ test("backend admin customer defaults and homepage migration stay in allowed sco
   const admin = read("admin-homepage-cms.js");
   const customer = read("customer-app/modules/ui.js");
   const migration = read("migrations/20260629_homepage_cms.sql");
-  for (const type of ["hero", "quick", "active_job", "announcements", "featured_services", "updates", "articles", "trust"]) {
+  for (const type of ["hero", "quick", "promo_banner", "active_job", "announcements", "featured_services", "updates", "articles", "trust"]) {
     assert.match(admin, new RegExp(`type:\\s*"${type}"`));
     assert.match(customer, new RegExp(`type:\\s*"${type}"`));
   }
@@ -528,7 +529,7 @@ test("bottom navigation border and padding match the fixed-nav reference", () =>
   const css = read("customer-app/assets/customer-app.css");
   assert.match(css, /border-top:\s*1px solid var\(--line\)/);
   assert.match(css, /padding:\s*7px 6px calc\(7px \+ var\(--safe-b\)\)/);
-  assert.match(css, /\.bottom-nav \.nav-item-primary::after\s*\{[\s\S]*width:\s*44px[\s\S]*height:\s*44px/);
+  assert.match(css, /\.bottom-nav \.nav-item-primary::after\s*\{[\s\S]*width:\s*38px[\s\S]*height:\s*38px/);
 });
 
 test("homepage service carousel constrains card and image geometry on mobile", () => {
@@ -718,4 +719,217 @@ test("admin per-item enable/disable toggle is wired to editor, change handler, a
   const previewSource = admin.slice(admin.indexOf("function renderPreview()"), admin.indexOf("function render()"));
   assert.match(previewSource, /filter\(\(slide\) => slide\.enabled !== false\)/);
   assert.match(previewSource, /filter\(\(item\) => item\.enabled !== false\)/);
+});
+
+test("promo_banner validation requires image_url, normalizes alt_text and aspect_mode, and allows a blank title", () => {
+  const missingImage = validateConfig({
+    sections: [{ id: "promo_banner", type: "promo_banner", enabled: true, sort_order: 25, items: [{ alt_text: "No image" }] }],
+  });
+  assert.equal(missingImage.ok, false);
+  assert.ok(missingImage.errors.some((error) => error.includes("image_url required")));
+
+  const valid = validateConfig({
+    sections: [{
+      id: "promo_banner",
+      type: "promo_banner",
+      enabled: true,
+      sort_order: 25,
+      items: [{
+        image_url: "https://res.cloudinary.com/demo/image/upload/cwf/homepage/daikin.png",
+        image_public_id: "cwf/homepage/daikin",
+        alt_text: "CWF x DAIKIN training banner",
+      }],
+    }],
+  });
+  assert.equal(valid.ok, true);
+  const item = valid.config.sections[0].items[0];
+  assert.equal(item.title, "");
+  assert.equal(item.alt_text, "CWF x DAIKIN training banner");
+  assert.equal(item.aspect_mode, "contain");
+  assert.equal(item.image_url, "https://res.cloudinary.com/demo/image/upload/cwf/homepage/daikin.png");
+
+  const cover = validateConfig({
+    sections: [{
+      id: "promo_banner",
+      type: "promo_banner",
+      enabled: true,
+      sort_order: 25,
+      items: [{ image_url: "https://res.cloudinary.com/demo/banner.png", aspect_mode: "cover" }],
+    }],
+  });
+  assert.equal(cover.ok, true);
+  assert.equal(cover.config.sections[0].items[0].aspect_mode, "cover");
+
+  const badAspect = validateConfig({
+    sections: [{
+      id: "promo_banner",
+      type: "promo_banner",
+      enabled: true,
+      sort_order: 25,
+      items: [{ image_url: "https://res.cloudinary.com/demo/banner.png", aspect_mode: "stretch" }],
+    }],
+  });
+  assert.equal(badAspect.ok, true);
+  assert.equal(badAspect.config.sections[0].items[0].aspect_mode, "contain");
+
+  const tooMany = validateConfig({
+    sections: [{
+      id: "promo_banner",
+      type: "promo_banner",
+      enabled: true,
+      sort_order: 25,
+      items: Array.from({ length: 9 }, (_, i) => ({ image_url: `https://res.cloudinary.com/demo/b${i}.png` })),
+    }],
+  });
+  assert.equal(tooMany.ok, false);
+  assert.ok(tooMany.errors.includes("promo_banner.items too many"));
+});
+
+test("hero focal_position normalizes per-slide and per-section, defaulting to center for invalid values", () => {
+  const valid = validateConfig({
+    sections: [{
+      id: "hero",
+      type: "hero",
+      enabled: true,
+      sort_order: 10,
+      title: "Hero",
+      focal_position: "top",
+      items: [{ title: "Slide", focal_position: "bottom" }],
+    }],
+  });
+  assert.equal(valid.ok, true);
+  assert.equal(valid.config.sections[0].focal_position, "top");
+  assert.equal(valid.config.sections[0].items[0].focal_position, "bottom");
+
+  const invalid = validateConfig({
+    sections: [{
+      id: "hero",
+      type: "hero",
+      enabled: true,
+      sort_order: 10,
+      title: "Hero",
+      focal_position: "diagonal",
+      items: [{ title: "Slide", focal_position: "sideways" }],
+    }],
+  });
+  assert.equal(invalid.ok, true);
+  assert.equal(invalid.config.sections[0].focal_position, "center");
+  assert.equal(invalid.config.sections[0].items[0].focal_position, "center");
+});
+
+test("public homepage strips promo_banner image_public_id while keeping image_url and alt_text", async () => {
+  const pool = createPool();
+  pool.state.row.published_config = {
+    version: 1,
+    sections: [{
+      id: "promo_banner",
+      type: "promo_banner",
+      enabled: true,
+      sort_order: 25,
+      items: [{
+        image_url: "https://res.cloudinary.com/demo/daikin.png",
+        image_public_id: "cwf/homepage/daikin_secret",
+        alt_text: "CWF x DAIKIN",
+        aspect_mode: "contain",
+        enabled: true,
+      }],
+    }],
+  };
+  const server = await withServer(pool, (_req, _res, next) => next());
+  try {
+    const res = await fetch(`${server.base}/public/homepage`);
+    const data = await res.json();
+    const banner = data.config.sections.find((section) => section.type === "promo_banner");
+    assert.ok(banner);
+    assert.equal(banner.items[0].image_url, "https://res.cloudinary.com/demo/daikin.png");
+    assert.equal(banner.items[0].alt_text, "CWF x DAIKIN");
+    assert.doesNotMatch(JSON.stringify(data), /daikin_secret/);
+  } finally {
+    await server.close();
+  }
+});
+
+test("promo_banner draft save, reload, and publish round-trip preserves banner order and fields", async () => {
+  const pool = createPool();
+  const allow = await withServer(pool, (req, _res, next) => { req.actor = { username: "admin", role: "admin" }; next(); });
+  try {
+    const config = {
+      version: 1,
+      sections: [{
+        id: "promo_banner",
+        type: "promo_banner",
+        enabled: true,
+        sort_order: 25,
+        items: [
+          { image_url: "https://res.cloudinary.com/demo/second.png", alt_text: "Second", sort_order: 2 },
+          { image_url: "https://res.cloudinary.com/demo/first.png", alt_text: "First", sort_order: 1 },
+        ],
+      }],
+    };
+    const saved = await fetch(`${allow.base}/admin/homepage-cms/draft`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ config }),
+    });
+    assert.equal(saved.status, 200);
+    const draftBanner = pool.state.row.draft_config.sections.find((section) => section.type === "promo_banner");
+    assert.equal(draftBanner.items[0].alt_text, "Second");
+    assert.equal(draftBanner.items[1].alt_text, "First");
+
+    const publicBefore = await fetch(`${allow.base}/public/homepage`);
+    const publicBeforeData = await publicBefore.json();
+    assert.doesNotMatch(JSON.stringify(publicBeforeData), /First|Second/);
+
+    const published = await fetch(`${allow.base}/admin/homepage-cms/publish`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ config }),
+    });
+    assert.equal(published.status, 200);
+
+    const publicAfter = await fetch(`${allow.base}/public/homepage`);
+    const publicAfterData = await publicAfter.json();
+    const publishedBanner = publicAfterData.config.sections.find((section) => section.type === "promo_banner");
+    assert.equal(publishedBanner.items[0].alt_text, "First");
+    assert.equal(publishedBanner.items[1].alt_text, "Second");
+  } finally {
+    await allow.close();
+  }
+});
+
+test("promo_banner items respect active_from/active_to date gating on the public endpoint", async () => {
+  const pool = createPool();
+  pool.state.row.published_config = {
+    version: 1,
+    sections: [{
+      id: "promo_banner",
+      type: "promo_banner",
+      enabled: true,
+      sort_order: 25,
+      items: [
+        { image_url: "https://res.cloudinary.com/demo/past.png", alt_text: "Expired", active_to: "2000-01-01" },
+        { image_url: "https://res.cloudinary.com/demo/future.png", alt_text: "Not yet", active_from: "2099-01-01" },
+        { image_url: "https://res.cloudinary.com/demo/now.png", alt_text: "Live now" },
+      ],
+    }],
+  };
+  const server = await withServer(pool, (_req, _res, next) => next());
+  try {
+    const res = await fetch(`${server.base}/public/homepage`);
+    const data = await res.json();
+    const banner = data.config.sections.find((section) => section.type === "promo_banner");
+    assert.deepEqual(banner.items.map((item) => item.alt_text), ["Live now"]);
+  } finally {
+    await server.close();
+  }
+});
+
+test("customer ui.js renders promo_banner section with image-only markup, hides when empty, and supports slider for multiple banners", () => {
+  const ui = read("customer-app/modules/ui.js");
+  assert.match(ui, /function renderHomepagePromoBanner\(section\)/);
+  assert.match(ui, /homepage-promo-banner/);
+  assert.match(ui, /if \(!banners\.length\) return "";/);
+  assert.match(ui, /homepage-promo-banner-dots/);
+  assert.match(ui, /data-home-promo-dot/);
+  assert.match(ui, /is-contain|is-cover/);
 });
