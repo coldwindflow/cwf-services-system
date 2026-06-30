@@ -4379,15 +4379,16 @@ body.has-contact-sheet { overflow: hidden; }
 /* ─── Hero ─────────────────────────────────────────────────────────── */
 .homepage-hero {
   position: relative;
-  min-height: 226px;
+  height: 196px;
   overflow: hidden;
-  border-radius: 24px;
+  border-radius: 20px;
   color: #fff;
   background: linear-gradient(155deg, #0a2a57 0%, #0d3a7a 48%, #1f5fc4 100%);
-  box-shadow: 0 14px 32px rgba(6, 24, 47, 0.20);
+  box-shadow: 0 10px 24px rgba(6, 24, 47, 0.18);
 }
 .homepage-hero-slider {
   display: flex;
+  height: 100%;
   overflow-x: auto;
   scroll-snap-type: x mandatory;
   scrollbar-width: none;
@@ -4396,7 +4397,7 @@ body.has-contact-sheet { overflow: hidden; }
 .homepage-hero-slide {
   position: relative;
   flex: 0 0 100%;
-  min-height: 226px;
+  height: 100%;
   scroll-snap-align: start;
 }
 .homepage-hero-media {
@@ -4422,10 +4423,10 @@ body.has-contact-sheet { overflow: hidden; }
   position: relative;
   z-index: 1;
   display: flex;
-  min-height: 226px;
+  height: 100%;
   flex-direction: column;
   justify-content: flex-end;
-  padding: 26px 22px 22px;
+  padding: 20px 20px 18px;
 }
 .homepage-kicker {
   align-self: flex-start;
@@ -4440,51 +4441,64 @@ body.has-contact-sheet { overflow: hidden; }
   letter-spacing: 0.05em;
 }
 .homepage-hero h2 {
-  max-width: 290px;
-  font-size: 28px;
-  font-weight: 950;
-  line-height: 1.11;
-  letter-spacing: -0.025em;
-  text-shadow: 0 2px 18px rgba(0, 9, 26, 0.55);
+  display: -webkit-box;
+  max-width: 280px;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font-size: 22px;
+  font-weight: 900;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  text-shadow: 0 2px 14px rgba(0, 9, 26, 0.5);
 }
 .homepage-hero p {
-  max-width: 280px;
-  margin-top: 8px;
+  display: -webkit-box;
+  max-width: 270px;
+  margin-top: 6px;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   color: rgba(255, 255, 255, 0.80);
-  font-size: 12.5px;
-  line-height: 1.58;
+  font-size: 12px;
+  line-height: 1.45;
 }
 .homepage-hero-actions {
-  display: grid;
-  grid-template-columns: 1.1fr 0.9fr;
-  gap: 10px;
-  margin-top: 20px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 14px;
 }
-/* Primary CTA — yellow, touch-safe 48 px */
-.hero-main-btn,
-.hero-ghost-btn {
+/* Single primary CTA — compact pill, touch-safe 40 px */
+.hero-main-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 48px;
-  padding: 12px 14px;
-  border-radius: 14px;
-  font-size: 13px;
+  min-height: 40px;
+  padding: 0 18px;
+  border-radius: 12px;
+  font-size: 12.5px;
   font-weight: 900;
   text-decoration: none;
   transition: transform 0.1s, box-shadow 0.15s;
-}
-.hero-main-btn:active, .hero-ghost-btn:active { transform: scale(0.97); }
-.hero-main-btn {
   background: var(--yellow);
   color: #1c1400;
   box-shadow: 0 6px 14px rgba(255, 185, 23, 0.26);
 }
+.hero-main-btn:active { transform: scale(0.97); }
+/* Secondary CTA — plain text link, not a second button */
 .hero-ghost-btn {
-  border: 1.5px solid rgba(255, 255, 255, 0.28);
-  background: rgba(255, 255, 255, 0.13);
-  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 0;
+  font-size: 12px;
+  font-weight: 800;
+  color: rgba(255, 255, 255, 0.86);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: rgba(255, 255, 255, 0.4);
 }
+.hero-ghost-btn:active { opacity: 0.8; }
 /* Slide dots — centred bottom, active expands to pill */
 .homepage-hero-dots {
   position: absolute;
@@ -4506,18 +4520,19 @@ body.has-contact-sheet { overflow: hidden; }
 .homepage-hero-dots button.is-active { width: 20px; background: #fff; }
 .homepage-hero-dots button:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
 
-/* No-image hero — compact, restrained card instead of a tall blue panel.
-   Used until Admin uploads a Hero image. */
+/* No-image hero — deliberately-designed compact white card, NOT a pale-blue
+   fallback box. Used until Admin uploads a Hero image. */
 .homepage-hero.is-no-image {
-  min-height: 0;
-  color: var(--navy-3);
-  background: var(--soft-blue);
-  box-shadow: 0 4px 14px rgba(6, 24, 47, 0.07);
+  height: auto;
+  color: var(--ink);
+  background: #fff;
+  border: 1px solid var(--line);
+  box-shadow: 0 4px 14px rgba(6, 24, 47, 0.05);
 }
 .homepage-hero.is-no-image::after { content: none; }
-.homepage-hero.is-no-image .homepage-hero-slide { min-height: 0; }
+.homepage-hero.is-no-image .homepage-hero-slide { height: auto; }
 .homepage-hero.is-no-image .homepage-hero-inner {
-  min-height: 0;
+  height: auto;
   padding: 18px 18px 20px;
 }
 .homepage-hero.is-no-image .homepage-kicker {
@@ -4527,20 +4542,18 @@ body.has-contact-sheet { overflow: hidden; }
 }
 .homepage-hero.is-no-image h2 {
   max-width: none;
-  color: var(--navy-3);
-  font-size: 20px;
+  color: var(--ink);
+  font-size: 19px;
   text-shadow: none;
 }
 .homepage-hero.is-no-image p {
   max-width: none;
-  color: var(--navy-3);
-  opacity: 0.72;
+  color: var(--muted);
   text-shadow: none;
 }
 .homepage-hero.is-no-image .hero-ghost-btn {
-  border-color: rgba(22, 89, 224, 0.30);
-  background: rgba(22, 89, 224, 0.08);
   color: var(--blue);
+  text-decoration-color: rgba(22, 89, 224, 0.35);
 }
 
 /* ─── Quick actions ─────────────────────────────────────────────────── */
@@ -4555,15 +4568,15 @@ body.has-contact-sheet { overflow: hidden; }
   align-items: center;
   justify-content: center;
   gap: 0;
-  min-height: 80px;
-  padding: 10px 6px 8px;
+  min-height: 72px;
+  padding: 9px 6px 7px;
   border: 1px solid var(--line);
   border-radius: 16px;
   background: #fff;
   color: var(--ink);
   text-align: center;
   text-decoration: none;
-  box-shadow: 0 2px 8px rgba(6, 24, 47, 0.05);
+  box-shadow: 0 1px 4px rgba(6, 24, 47, 0.04);
   transition: transform 0.1s, box-shadow 0.15s;
 }
 .homepage-quick:active { transform: scale(0.94); box-shadow: 0 1px 5px rgba(6, 24, 47, 0.08); }
@@ -4571,9 +4584,9 @@ body.has-contact-sheet { overflow: hidden; }
 .homepage-quick span:first-child {
   display: grid;
   place-items: center;
-  width: 36px; height: 36px;
-  margin-bottom: 7px;
-  border-radius: 12px;
+  width: 32px; height: 32px;
+  margin-bottom: 6px;
+  border-radius: 11px;
   background: var(--soft-blue);
   color: var(--blue);
   box-shadow: none;
@@ -4788,7 +4801,7 @@ body.has-contact-sheet { overflow: hidden; }
   place-items: center;
 }
 /* Fixed aspect ratios keep images consistent across widths */
-.homepage-service-card .homepage-card-image    { aspect-ratio: 3 / 2; }
+.homepage-service-card .homepage-card-image    { aspect-ratio: 4 / 3; }
 .homepage-announcement-card .homepage-card-image  { aspect-ratio: 16 / 9; }
 .homepage-update-card .homepage-card-image     { height: 140px; }
 .homepage-article-card .homepage-card-image    { aspect-ratio: 16 / 9; }
@@ -4964,12 +4977,11 @@ body.has-contact-sheet { overflow: hidden; }
 /* ─── Responsive guards ─────────────────────────────────────────────── */
 @media (max-width: 360px) {
   .homepage-screen { padding-inline: 10px; }
-  .homepage-hero, .homepage-hero-inner, .homepage-hero-slide { min-height: 210px; }
-  .homepage-hero h2 { font-size: 22px; }
-  /* Stack CTA buttons vertically on very narrow phones */
-  .homepage-hero-actions { grid-template-columns: 1fr; gap: 8px; }
-  .homepage-quick { min-height: 74px; padding-inline: 4px; }
-  .homepage-quick span:first-child { width: 32px; height: 32px; border-radius: 10px; }
+  .homepage-hero { height: 184px; }
+  .homepage-hero-slide { height: 184px; }
+  .homepage-hero h2 { font-size: 19px; }
+  .homepage-quick { min-height: 70px; padding-inline: 4px; }
+  .homepage-quick span:first-child { width: 30px; height: 30px; border-radius: 10px; }
   .homepage-quick strong { font-size: 9px; }
 }
 
@@ -5039,7 +5051,10 @@ body.has-contact-sheet { overflow: hidden; }
   border-radius: 50%;
   background: var(--blue);
 }
-/* Booking (centre) primary action — yellow chip fully inside nav */
+/* Booking (centre) primary action — yellow icon tile, same DOM/flex flow
+   as the other four items (icon above label). No pseudo-element overlay,
+   no absolute positioning, no negative margin: the tile is just the icon's
+   own background, so it can never drift from or cover the label. */
 .nav-item-primary {
   margin: 0;
   background: transparent;
@@ -5047,31 +5062,20 @@ body.has-contact-sheet { overflow: hidden; }
   border-radius: 0;
   box-shadow: none;
 }
-.bottom-nav .nav-item-primary::after {
-  position: absolute;
-  top: 4px; left: 50%;
-  z-index: 0;
-  width: 38px; height: 38px;
-  border-radius: 13px;
-  background: linear-gradient(145deg,#ffd43b,#ffbd17);
-  box-shadow: 0 4px 10px rgba(255,185,23,.20);
-  content: "";
-  transform: translateX(-50%);
+.nav-item[data-route="booking"].nav-item-primary::before {
+  -webkit-mask-image: none;
+  mask-image: none;
 }
 .nav-item-primary::before {
-  position: relative;
-  z-index: 1;
-  width: 20px; height: 20px;
-  margin-top: 4px;
-  background: #2b2500;
+  width: 36px; height: 36px;
+  border-radius: 12px;
+  background: var(--ico-book) center / 19px 19px no-repeat, linear-gradient(145deg, #ffd43b, #ffbd17);
+  box-shadow: 0 3px 9px rgba(255, 185, 23, 0.26);
   opacity: 1;
 }
 .nav-item-primary span {
-  position: relative;
-  z-index: 1;
-  margin-top: 2px;
+  margin-top: 1px;
   color: #657187;
   font-weight: 800;
 }
 .nav-item-primary.is-active span { color: var(--navy); font-weight: 900; }
-.nav-item-primary.is-active::before { color: #2b2500; }
