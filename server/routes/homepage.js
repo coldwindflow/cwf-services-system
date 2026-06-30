@@ -11,6 +11,7 @@ const MAX_HERO_SLIDES = 5;
 const SECTION_TYPES = new Set([
   "hero",
   "quick",
+  "promo_banner",
   "active_job",
   "announcements",
   "featured_services",
@@ -19,6 +20,9 @@ const SECTION_TYPES = new Set([
   "trust",
 ]);
 const INTERNAL_ROUTES = new Set(["home", "booking", "scheduled", "urgent", "tracking", "profile", "store"]);
+const FOCAL_POSITIONS = new Set(["top", "center", "bottom"]);
+const ASPECT_MODES = new Set(["contain", "cover"]);
+const MAX_PROMO_BANNERS = 8;
 
 const DEFAULT_CONFIG = {
   version: 1,
@@ -33,6 +37,7 @@ const DEFAULT_CONFIG = {
       body: "จองล้างแอร์ ติดตามงาน และรับประกาศสำคัญจาก CWF ได้ในหน้าเดียว",
       cta_primary: { label: "จองล้างแอร์", route: "scheduled" },
       cta_secondary: { label: "ติดตามงาน", route: "tracking" },
+      focal_position: "center",
       items: [],
     },
     {
@@ -48,6 +53,15 @@ const DEFAULT_CONFIG = {
         { title: "ติดตามงาน", route: "tracking", icon: "pin" },
         { title: "LINE", url: "https://lin.ee/fG1Oq7y", icon: "chat" },
       ],
+    },
+    {
+      id: "promo_banner",
+      type: "promo_banner",
+      enabled: true,
+      sort_order: 25,
+      title: "",
+      body: "",
+      items: [],
     },
     {
       id: "active_job",
@@ -207,7 +221,15 @@ function normalizeItem(raw, sectionType, index, errors) {
   if (item.cta_secondary && typeof item.cta_secondary === "object") out.cta_secondary = normalizeCta(item.cta_secondary, errors, `${pathName}.cta_secondary`);
   if (cleanText(item.active_from, 32)) out.active_from = cleanText(item.active_from, 32);
   if (cleanText(item.active_to, 32)) out.active_to = cleanText(item.active_to, 32);
-  if (!out.title && sectionType !== "quick") errors.push(`${pathName}.title required`);
+  if (sectionType === "promo_banner") {
+    out.alt_text = cleanText(item.alt_text, 200);
+    out.aspect_mode = ASPECT_MODES.has(cleanText(item.aspect_mode, 10)) ? cleanText(item.aspect_mode, 10) : "contain";
+    if (!out.image_url) errors.push(`${pathName}.image_url required`);
+  }
+  if (sectionType === "hero") {
+    out.focal_position = FOCAL_POSITIONS.has(cleanText(item.focal_position, 10)) ? cleanText(item.focal_position, 10) : "center";
+  }
+  if (!out.title && sectionType !== "quick" && sectionType !== "promo_banner") errors.push(`${pathName}.title required`);
   validateUrlOrRoute(out, errors, pathName, {
     externalRequired: sectionType === "updates" || sectionType === "articles",
     noImage: sectionType === "trust",
@@ -223,7 +245,7 @@ function normalizeSection(raw, index, errors) {
   if (!SECTION_TYPES.has(type)) errors.push(`sections.${index}.type invalid`);
   const id = cleanText(section.id || type, 60) || type;
   const items = Array.isArray(section.items) ? section.items : [];
-  const maxItems = type === "quick" ? 4 : type === "hero" ? MAX_HERO_SLIDES : 12;
+  const maxItems = type === "quick" ? 4 : type === "hero" ? MAX_HERO_SLIDES : type === "promo_banner" ? MAX_PROMO_BANNERS : 12;
   if (items.length > maxItems) errors.push(`${id}.items too many`);
   const out = {
     id,
@@ -241,7 +263,10 @@ function normalizeSection(raw, index, errors) {
   if (cleanText(section.image_public_id, 300)) out.image_public_id = cleanText(section.image_public_id, 300);
   validateImageUrl(out.image_url, errors, `${id}.image_url`);
   validateDateRange(out, errors, id);
-  if (type === "hero" && !out.title) errors.push("hero.title required");
+  if (type === "hero") {
+    out.focal_position = FOCAL_POSITIONS.has(cleanText(section.focal_position, 10)) ? cleanText(section.focal_position, 10) : "center";
+    if (!out.title) errors.push("hero.title required");
+  }
   if (type === "featured_services") {
     const mode = cleanText(section.featured_mode, 10) === "manual" ? "manual" : "auto";
     const limit = Number(section.featured_limit);
