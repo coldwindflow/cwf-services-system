@@ -17,12 +17,22 @@ const SECTION_TYPES = new Set([
   "featured_services",
   "updates",
   "articles",
+  "social",
   "trust",
 ]);
 const INTERNAL_ROUTES = new Set(["home", "booking", "scheduled", "urgent", "tracking", "profile", "store"]);
 const FOCAL_POSITIONS = new Set(["top", "center", "bottom"]);
 const ASPECT_MODES = new Set(["contain", "cover"]);
 const MAX_PROMO_BANNERS = 8;
+const MAX_SOCIAL_ITEMS = 8;
+const SOCIAL_PLATFORMS = new Set(["facebook", "youtube"]);
+// Admin pastes a public post/video URL; no Graph/YouTube Data API calls are
+// made server-side, so the only safety check we can do is confirm the URL
+// actually points at the platform the admin selected.
+const SOCIAL_HOST_PATTERNS = {
+  facebook: /(^|\.)facebook\.com$|(^|\.)fb\.watch$/,
+  youtube: /(^|\.)youtube\.com$|(^|\.)youtu\.be$/,
+};
 
 const DEFAULT_CONFIG = {
   version: 1,
@@ -113,6 +123,15 @@ const DEFAULT_CONFIG = {
       sort_order: 70,
       title: "บทความแนะนำ",
       body: "",
+      items: [],
+    },
+    {
+      id: "social",
+      type: "social",
+      enabled: true,
+      sort_order: 75,
+      title: "ติดตามเราบนโซเชียล",
+      body: "อัปเดตล่าสุดจาก Facebook และ YouTube ของ Coldwindflow",
       items: [],
     },
     {
@@ -229,11 +248,22 @@ function normalizeItem(raw, sectionType, index, errors) {
   if (sectionType === "hero") {
     out.focal_position = FOCAL_POSITIONS.has(cleanText(item.focal_position, 10)) ? cleanText(item.focal_position, 10) : "center";
   }
+  if (sectionType === "social") {
+    out.platform = SOCIAL_PLATFORMS.has(cleanText(item.platform, 10)) ? cleanText(item.platform, 10) : "youtube";
+  }
   if (!out.title && sectionType !== "quick" && sectionType !== "promo_banner") errors.push(`${pathName}.title required`);
   validateUrlOrRoute(out, errors, pathName, {
-    externalRequired: sectionType === "updates" || sectionType === "articles",
+    externalRequired: sectionType === "updates" || sectionType === "articles" || sectionType === "social",
     noImage: sectionType === "trust",
   });
+  if (sectionType === "social" && out.url) {
+    try {
+      const host = new URL(out.url).hostname.toLowerCase();
+      if (!SOCIAL_HOST_PATTERNS[out.platform].test(host)) errors.push(`${pathName}.url must be a ${out.platform} link`);
+    } catch (_) {
+      // already flagged by validateUrlOrRoute
+    }
+  }
   validateImageUrl(out.image_url, errors, `${pathName}.image_url`);
   validateDateRange(out, errors, pathName);
   return out;
@@ -245,7 +275,7 @@ function normalizeSection(raw, index, errors) {
   if (!SECTION_TYPES.has(type)) errors.push(`sections.${index}.type invalid`);
   const id = cleanText(section.id || type, 60) || type;
   const items = Array.isArray(section.items) ? section.items : [];
-  const maxItems = type === "quick" ? 4 : type === "hero" ? MAX_HERO_SLIDES : type === "promo_banner" ? MAX_PROMO_BANNERS : 12;
+  const maxItems = type === "quick" ? 4 : type === "hero" ? MAX_HERO_SLIDES : type === "promo_banner" ? MAX_PROMO_BANNERS : type === "social" ? MAX_SOCIAL_ITEMS : 12;
   if (items.length > maxItems) errors.push(`${id}.items too many`);
   const out = {
     id,
