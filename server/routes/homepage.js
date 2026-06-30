@@ -296,12 +296,37 @@ function validateConfig(input) {
   return { ok: errors.length === 0, errors, config: normalized };
 }
 
+const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const BANGKOK_OFFSET = "+07:00";
+
+// Date-only active_from/active_to are CMS scheduling dates, not timestamps —
+// resolve them to the start/end of that calendar day in Asia/Bangkok so a
+// banner stays live through the full selected end date rather than expiring
+// at 00:00 UTC (07:00 Bangkok) on that date. Explicit date-times keep
+// whatever offset/local semantics they already carry.
+function resolveDateBoundary(raw, edge) {
+  if (!raw) return null;
+  if (DATE_ONLY_PATTERN.test(raw)) {
+    const suffix = edge === "end" ? "T23:59:59.999" : "T00:00:00.000";
+    const ts = new Date(`${raw}${suffix}${BANGKOK_OFFSET}`).getTime();
+    return Number.isNaN(ts) ? NaN : ts;
+  }
+  const ts = new Date(raw).getTime();
+  return Number.isNaN(ts) ? NaN : ts;
+}
+
 function activeNow(item, now = new Date()) {
   const from = cleanText(item.active_from || "", 32);
   const to = cleanText(item.active_to || "", 32);
   const ts = now.getTime();
-  if (from && new Date(from).getTime() > ts) return false;
-  if (to && new Date(to).getTime() < ts) return false;
+  if (from) {
+    const fromTs = resolveDateBoundary(from, "start");
+    if (Number.isNaN(fromTs) || fromTs > ts) return false;
+  }
+  if (to) {
+    const toTs = resolveDateBoundary(to, "end");
+    if (Number.isNaN(toTs) || toTs < ts) return false;
+  }
   return true;
 }
 
@@ -617,6 +642,7 @@ module.exports = {
   DEFAULT_CONFIG,
   MAX_IMAGE_BYTES,
   SECTION_TYPES,
+  activeNow,
   createHomepageRoutes,
   stripPublicConfig,
   validateConfig,

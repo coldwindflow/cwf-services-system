@@ -4,7 +4,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const express = require("express");
 
-const { DEFAULT_CONFIG, createHomepageRoutes, validateConfig } = require("../server/routes/homepage");
+const { DEFAULT_CONFIG, createHomepageRoutes, validateConfig, activeNow } = require("../server/routes/homepage");
 
 const REPO_ROOT = path.resolve(__dirname, "..");
 
@@ -981,4 +981,44 @@ test("hero renders a compact no-image variant instead of a tall blue panel when 
   const noImageBlock = css.match(/\.homepage-hero\.is-no-image\s*\{[^}]*\}/)[0];
   assert.match(noImageBlock, /min-height:\s*0/);
   assert.doesNotMatch(noImageBlock, /linear-gradient/);
+});
+
+test("activeNow: date-only active_from is not yet active before the start of that day in Asia/Bangkok", () => {
+  // active_from "2026-06-30" should not begin until 2026-06-30T00:00:00+07:00,
+  // i.e. 2026-06-29T17:00:00.000Z. One second before that boundary must be inactive.
+  const justBeforeStart = new Date("2026-06-29T16:59:59.000Z");
+  assert.equal(activeNow({ active_from: "2026-06-30" }, justBeforeStart), false);
+
+  const exactStart = new Date("2026-06-29T17:00:00.000Z");
+  assert.equal(activeNow({ active_from: "2026-06-30" }, exactStart), true);
+});
+
+test("activeNow: date-only active_to stays active through the entire end date in Asia/Bangkok", () => {
+  // active_to "2026-06-30" should remain active through 2026-06-30T23:59:59.999+07:00,
+  // i.e. 2026-06-30T16:59:59.999Z. Mid-afternoon Bangkok time on the end date must
+  // still be active even though it is past 00:00 UTC of that calendar date — this is
+  // exactly the case the old UTC-midnight comparison got wrong.
+  const middayBangkokOnEndDate = new Date("2026-06-30T08:00:00.000Z"); // 15:00 Bangkok
+  assert.equal(activeNow({ active_to: "2026-06-30" }, middayBangkokOnEndDate), true);
+
+  const lastInstantOfEndDate = new Date("2026-06-30T16:59:59.999Z");
+  assert.equal(activeNow({ active_to: "2026-06-30" }, lastInstantOfEndDate), true);
+});
+
+test("activeNow: date-only active_to expires immediately after the end of that day in Asia/Bangkok", () => {
+  const oneSecondAfterEndDate = new Date("2026-06-30T17:00:00.000Z"); // 2026-07-01T00:00:00+07:00
+  assert.equal(activeNow({ active_to: "2026-06-30" }, oneSecondAfterEndDate), false);
+});
+
+test("activeNow: explicit date-time active_from/active_to keep their own offset semantics instead of Bangkok day boundaries", () => {
+  // An explicit UTC timestamp must NOT be reinterpreted as a Bangkok day boundary.
+  const item = { active_from: "2026-06-30T10:00:00Z", active_to: "2026-06-30T12:00:00Z" };
+  assert.equal(activeNow(item, new Date("2026-06-30T09:59:59Z")), false);
+  assert.equal(activeNow(item, new Date("2026-06-30T11:00:00Z")), true);
+  assert.equal(activeNow(item, new Date("2026-06-30T12:00:01Z")), false);
+});
+
+test("activeNow: an invalid date boundary fails closed (excludes the item) rather than showing it indefinitely", () => {
+  assert.equal(activeNow({ active_from: "not-a-date" }, new Date("2026-06-30T08:00:00.000Z")), false);
+  assert.equal(activeNow({ active_to: "not-a-date" }, new Date("2026-06-30T08:00:00.000Z")), false);
 });
