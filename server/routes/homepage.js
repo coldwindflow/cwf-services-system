@@ -61,7 +61,7 @@ const DEFAULT_CONFIG = {
         { title: "จองล้างแอร์", route: "scheduled", icon: "sparkle" },
         { title: "แจ้งซ่อม", action: "contact", icon: "wrench" },
         { title: "ติดตามงาน", route: "tracking", icon: "pin" },
-        { title: "LINE", url: "https://lin.ee/fG1Oq7y", icon: "chat" },
+        { title: "LINE", url: "https://lin.ee/fG1Oq7y", icon: "line" },
       ],
     },
     {

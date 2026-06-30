@@ -178,7 +178,7 @@
             <option value="url" ${targetMode === "url" ? "selected" : ""}>External URL</option>
           </select></label>
         ` : ""}
-        ${quick ? `<label>Icon<input data-item="${index}" data-prop="icon" value="${esc(item.icon || "")}" placeholder="sparkle, wrench, pin, chat"></label>` : ""}
+        ${quick ? `<label>Icon<input data-item="${index}" data-prop="icon" value="${esc(item.icon || "")}" placeholder="sparkle, wrench, pin, line, chat, bolt, shield, tag, clock, phone"></label>` : ""}
         ${targetField}
         ${trust || targetEditable ? "" : `<label>${social ? `ลิงก์โพสต์/วิดีโอ (${(item.platform || "youtube") === "facebook" ? "facebook.com..." : "youtube.com... หรือ youtu.be..."})` : external ? "External URL" : "Route / URL"}<input data-item="${index}" data-prop="${external ? "url" : "route"}" value="${esc(external ? item.url || "" : item.route || item.url || "")}" placeholder="${social ? ((item.platform || "youtube") === "facebook" ? "https://www.facebook.com/.../posts/..." : "https://www.youtube.com/watch?v=...") : ""}"></label>`}
         ${trust ? "" : `<label>${social ? "Thumbnail รูปภาพ (ไม่บังคับ — ถ้าไม่ใส่จะใช้ภาพปกอัตโนมัติของ YouTube หรือไอคอน Facebook)" : "Image URL"}<input data-item="${index}" data-prop="image_url" value="${esc(item.image_url || "")}"></label>`}
