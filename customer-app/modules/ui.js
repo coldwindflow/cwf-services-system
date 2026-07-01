@@ -471,30 +471,34 @@
     return "";
   }
 
+  // Facebook Page URL → full-width embedded Page Plugin timeline. Rendered as
+  // its own block (never a narrow carousel card) so the cover, page name and
+  // posts are not clipped. adapt_container_width lets the plugin fit the frame.
+  function renderHomepageFbTimeline(item) {
+    const url = String(item.url || "").trim();
+    const encodedUrl = encodeURIComponent(url);
+    const src = `https://www.facebook.com/plugins/page.php?href=${encodedUrl}&tabs=timeline&width=500&height=560&small_header=false&adapt_container_width=true&hide_cover=false&show_facepile=true`;
+    return `
+      <article class="homepage-fb-timeline">
+        ${item.title || item.body ? `
+          <div class="homepage-fb-timeline-head">
+            <span class="homepage-fb-badge">${root.utils.icon("facebook", 14)} Facebook</span>
+            ${item.title ? `<strong>${root.utils.escapeHtml(item.title)}</strong>` : ""}
+            ${item.body ? `<small>${root.utils.escapeHtml(item.body)}</small>` : ""}
+          </div>` : ""}
+        <div class="homepage-fb-timeline-frame">
+          <iframe src="${src}" loading="lazy" scrolling="no" frameborder="0" allowfullscreen="true"
+            allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share"></iframe>
+        </div>
+        <a class="homepage-fb-timeline-cta" href="${root.utils.escapeHtml(url)}" target="_blank" rel="noopener noreferrer">เปิดเพจ Facebook</a>
+      </article>
+    `;
+  }
+
   function renderHomepageSocialCard(item, index) {
     const platform = item.platform === "facebook" ? "facebook" : "youtube";
     const url = String(item.url || "").trim();
     const videoId = platform === "youtube" ? youtubeVideoId(url) : "";
-    const isFbPage = platform === "facebook" && url && facebookIsPage(url);
-
-    // Facebook Page URL → embed Page Plugin timeline directly (no click needed)
-    if (isFbPage) {
-      const encodedUrl = encodeURIComponent(url);
-      return `
-        <article class="homepage-social-card is-facebook is-fb-timeline">
-          <div class="homepage-social-fb-page">
-            <iframe
-              src="https://www.facebook.com/plugins/page.php?href=${encodedUrl}&tabs=timeline&width=340&height=600&small_header=true&adapt_container_width=true&hide_cover=false&show_facepile=false"
-              loading="lazy" scrolling="yes" frameborder="0" allowfullscreen="true"
-              allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share"
-              style="border:none;overflow:hidden;width:100%;height:600px">
-            </iframe>
-          </div>
-          ${item.title ? `<div class="homepage-card-body"><strong>${root.utils.escapeHtml(item.title)}</strong>${item.body ? `<small>${root.utils.escapeHtml(item.body)}</small>` : ""}</div>` : ""}
-        </article>
-      `;
-    }
-
     const thumb = String(item.image_url || "").trim() || (videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : "");
     return `
       <article class="homepage-social-card is-${platform}" data-home-social="${index}" data-platform="${platform}" data-video-id="${root.utils.escapeHtml(videoId)}" data-post-url="${root.utils.escapeHtml(url)}">
@@ -517,7 +521,18 @@
     if (!section) return "";
     const items = (section.items || []).slice(0, 8);
     if (!items.length) return "";
+    // Facebook Page timelines are full-width blocks; YouTube videos and single
+    // Facebook posts stay as thumbnails in the horizontal carousel.
+    const isPageItem = (it) => it && it.platform === "facebook" && it.url && facebookIsPage(String(it.url).trim());
+    const pageItems = items.filter(isPageItem);
+    const cardItems = items.filter((it) => !isPageItem(it));
     const viewAllLabelSocial = section.view_all_label || (section.view_all_route ? "ดูทั้งหมด" : "");
+    const carousel = cardItems.length
+      ? `<div class="homepage-carousel homepage-social-grid">${cardItems.map((item, index) => renderHomepageSocialCard(item, index)).join("")}</div>`
+      : "";
+    const timelines = pageItems.length
+      ? `<div class="homepage-fb-timeline-stack">${pageItems.map((item) => renderHomepageFbTimeline(item)).join("")}</div>`
+      : "";
     return `
       <section class="homepage-section">
         <div class="homepage-section-head">
@@ -527,9 +542,8 @@
           </div>
           ${viewAllLabelSocial && section.view_all_route ? `<button type="button" class="text-link-btn" data-route="${root.utils.escapeHtml(section.view_all_route)}">${root.utils.escapeHtml(viewAllLabelSocial)}</button>` : ""}
         </div>
-        <div class="homepage-carousel homepage-social-grid">
-          ${items.map((item, index) => renderHomepageSocialCard(item, index)).join("")}
-        </div>
+        ${carousel}
+        ${timelines}
       </section>
     `;
   }
