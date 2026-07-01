@@ -4,6 +4,9 @@
   const root = window.CWFCustomerAppV2 = window.CWFCustomerAppV2 || {};
 
   let filterState = { search: "", category: "", acType: "", washVariant: "", btu: "", queueToday: false, sort: "recommended" };
+  // Advanced filters (everything except the always-visible search box) collapse
+  // into a togglable panel so the store list is not buried under filter rows.
+  let filtersOpen = false;
   let detailLoadSeq = 0;
   let reviewsRequestSeq = 0;
   let eligibilityRequestSeq = 0;
@@ -560,6 +563,28 @@
     return `<div class="store-grid" data-store-grid>${filtered.map(renderCard).join("")}</div>`;
   }
 
+  // How many advanced filters are currently narrowing the list (search box is
+  // excluded — it stays visible). Drives the badge on the collapsed toggle so
+  // customers can tell filters are active without expanding the panel.
+  function activeFilterCount() {
+    let n = 0;
+    if (filterState.category) n += 1;
+    if (filterState.acType) n += 1;
+    if (filterState.washVariant) n += 1;
+    if (filterState.btu) n += 1;
+    if (filterState.queueToday) n += 1;
+    if (filterState.sort && filterState.sort !== "recommended") n += 1;
+    return n;
+  }
+
+  function refreshFilterCount(container) {
+    const badge = container.querySelector("[data-store-filter-count]");
+    if (!badge) return;
+    const n = activeFilterCount();
+    badge.textContent = String(n);
+    badge.hidden = n === 0;
+  }
+
   function renderBody() {
     const bucket = root.state.catalog || { status: "idle", items: [], error: "" };
     if (bucket.status === "idle" || bucket.status === "loading") {
@@ -576,32 +601,43 @@
       return root.utils.stateBox("", "ยังไม่มีรายการที่เปิดให้ลูกค้าดูในขณะนี้ กรุณาติดต่อแอดมินเพื่อสอบถามบริการ");
     }
     const categories = categoriesFromItems(items);
+    const activeCount = activeFilterCount();
     return `
       <div class="store-filters">
-        <input type="search" class="store-search-input" data-store-search placeholder="ค้นหาชื่อสินค้า/บริการ" aria-label="ค้นหาสินค้า" value="${root.utils.escapeHtml(filterState.search)}">
-        <select class="store-category-select" data-store-category aria-label="หมวดหมู่">
-          <option value="">ทั้งหมด</option>
-          ${categories.map((cat) => `<option value="${root.utils.escapeHtml(cat)}"${filterState.category === cat ? " selected" : ""}>${root.utils.escapeHtml(cat)}</option>`).join("")}
-        </select>
-        <select class="store-actype-select" data-store-actype aria-label="ชนิดแอร์">
-          <option value="">ชนิดแอร์ทั้งหมด</option>
-          ${FILTER_AC_TYPES.map((opt) => `<option value="${opt.value}"${filterState.acType === opt.value ? " selected" : ""}>${root.utils.escapeHtml(opt.label)}</option>`).join("")}
-        </select>
-        <select class="store-wash-select" data-store-wash aria-label="วิธีล้าง">
-          <option value="">วิธีล้างทั้งหมด</option>
-          ${FILTER_WASH_VARIANTS.map((opt) => `<option value="${opt.value}"${filterState.washVariant === opt.value ? " selected" : ""}>${root.utils.escapeHtml(opt.label)}</option>`).join("")}
-        </select>
-        <select class="store-btu-select" data-store-btu aria-label="ขนาด BTU">
-          <option value="">BTU ทั้งหมด</option>
-          ${FILTER_BTU_OPTIONS.map((btu) => `<option value="${btu}"${String(filterState.btu) === String(btu) ? " selected" : ""}>${btu.toLocaleString("th-TH")} BTU</option>`).join("")}
-        </select>
-        <label class="store-queue-today-chip">
-          <input type="checkbox" data-store-queue-today${filterState.queueToday ? " checked" : ""}>
-          <span>มีคิววันนี้</span>
-        </label>
-        <select class="store-sort-select" data-store-sort aria-label="เรียงตาม">
-          ${SORT_OPTIONS.map((opt) => `<option value="${opt.value}"${filterState.sort === opt.value ? " selected" : ""}>${root.utils.escapeHtml(opt.label)}</option>`).join("")}
-        </select>
+        <div class="store-filter-head">
+          <input type="search" class="store-search-input" data-store-search placeholder="ค้นหาชื่อสินค้า/บริการ" aria-label="ค้นหาสินค้า" value="${root.utils.escapeHtml(filterState.search)}">
+          <button type="button" class="store-filter-toggle${filtersOpen ? " is-open" : ""}" data-store-filter-toggle aria-expanded="${filtersOpen ? "true" : "false"}" aria-controls="store-filter-panel">
+            <span class="store-filter-toggle-icon" aria-hidden="true"></span>
+            <span>ตัวกรอง</span>
+            <span class="store-filter-count" data-store-filter-count${activeCount ? "" : " hidden"}>${activeCount}</span>
+            <span class="store-filter-caret" aria-hidden="true"></span>
+          </button>
+        </div>
+        <div class="store-filter-panel" id="store-filter-panel" data-store-filter-panel${filtersOpen ? "" : " hidden"}>
+          <select class="store-category-select" data-store-category aria-label="หมวดหมู่">
+            <option value="">ทั้งหมด</option>
+            ${categories.map((cat) => `<option value="${root.utils.escapeHtml(cat)}"${filterState.category === cat ? " selected" : ""}>${root.utils.escapeHtml(cat)}</option>`).join("")}
+          </select>
+          <select class="store-actype-select" data-store-actype aria-label="ชนิดแอร์">
+            <option value="">ชนิดแอร์ทั้งหมด</option>
+            ${FILTER_AC_TYPES.map((opt) => `<option value="${opt.value}"${filterState.acType === opt.value ? " selected" : ""}>${root.utils.escapeHtml(opt.label)}</option>`).join("")}
+          </select>
+          <select class="store-wash-select" data-store-wash aria-label="วิธีล้าง">
+            <option value="">วิธีล้างทั้งหมด</option>
+            ${FILTER_WASH_VARIANTS.map((opt) => `<option value="${opt.value}"${filterState.washVariant === opt.value ? " selected" : ""}>${root.utils.escapeHtml(opt.label)}</option>`).join("")}
+          </select>
+          <select class="store-btu-select" data-store-btu aria-label="ขนาด BTU">
+            <option value="">BTU ทั้งหมด</option>
+            ${FILTER_BTU_OPTIONS.map((btu) => `<option value="${btu}"${String(filterState.btu) === String(btu) ? " selected" : ""}>${btu.toLocaleString("th-TH")} BTU</option>`).join("")}
+          </select>
+          <label class="store-queue-today-chip">
+            <input type="checkbox" data-store-queue-today${filterState.queueToday ? " checked" : ""}>
+            <span>มีคิววันนี้</span>
+          </label>
+          <select class="store-sort-select" data-store-sort aria-label="เรียงตาม">
+            ${SORT_OPTIONS.map((opt) => `<option value="${opt.value}"${filterState.sort === opt.value ? " selected" : ""}>${root.utils.escapeHtml(opt.label)}</option>`).join("")}
+          </select>
+        </div>
       </div>
       <div data-store-grid-mount>${renderGrid(items)}</div>
     `;
@@ -774,9 +810,20 @@
     if (!mount) return;
     mount.innerHTML = renderGrid(root.state.catalog.items || []);
     bindGridActions(container);
+    refreshFilterCount(container);
   }
 
   function bindBody(container) {
+    const filterToggle = container.querySelector("[data-store-filter-toggle]");
+    const filterPanel = container.querySelector("[data-store-filter-panel]");
+    if (filterToggle && filterPanel) {
+      filterToggle.addEventListener("click", () => {
+        filtersOpen = !filtersOpen;
+        filterPanel.hidden = !filtersOpen;
+        filterToggle.classList.toggle("is-open", filtersOpen);
+        filterToggle.setAttribute("aria-expanded", filtersOpen ? "true" : "false");
+      });
+    }
     const search = container.querySelector("[data-store-search]");
     if (search) {
       search.addEventListener("input", () => {
@@ -1608,6 +1655,7 @@
   const store = {
     render(container) {
       filterState = { search: "", category: "", acType: "", washVariant: "", btu: "", queueToday: false, sort: "recommended" };
+      filtersOpen = false;
       track("cwf_store_view", {});
       container.innerHTML = `
         <section class="screen store-screen">
