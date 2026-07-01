@@ -16,6 +16,13 @@
       { id: "trust", type: "trust", enabled: true, sort_order: 80, title: "มาตรฐานที่ลูกค้าวางใจ", body: "", items: [{ title: "แจ้งราคาก่อนทำ", body: "ระบบคำนวณจากข้อมูลบริการจริง" }, { title: "ช่างผ่านมาตรฐาน", body: "ทีมงานได้รับการตรวจสอบก่อนรับงาน" }, { title: "ติดตามงานได้", body: "ดูสถานะสำคัญด้วย Booking Code" }, { title: "ติดต่อแอดมินง่าย", body: "รองรับ LINE และโทรศัพท์" }] },
     ],
   };
+
+  const TYPE_ICONS = {
+    hero: "🏠", quick: "⚡", promo_banner: "🎨",
+    active_job: "🔧", announcements: "📣", featured_services: "⭐",
+    updates: "📸", articles: "📝", social: "📱", trust: "🛡️",
+  };
+
   let config = clone(DEFAULT_CONFIG);
   let selected = "hero";
   let catalogItems = null;
@@ -38,7 +45,7 @@
     next.sections = next.sections.filter((section) => standard.some((std) => std.type === section.type));
     return next;
   }
-  function setStatus(text, kind) { $("status").textContent = text; $("status").className = `status ${kind || ""}`; }
+  function setStatus(text, kind) { $("status").textContent = text; $("status").className = `status-chip ${kind || ""}`; }
   function sections() { return config.sections.sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0)); }
   function current() { return sections().find((section) => section.id === selected) || sections()[0]; }
 
@@ -113,24 +120,50 @@
     render();
   }
 
+  /* ── section list ── */
   function renderSectionList() {
-    $("sectionList").innerHTML = sections().map((section, index, list) => `
-      <div class="section-row">
-        <div><button class="mini" data-move="${section.id}" data-dir="-1" ${index === 0 ? "disabled" : ""}>↑</button><button class="mini" data-move="${section.id}" data-dir="1" ${index === list.length - 1 ? "disabled" : ""}>↓</button></div>
-        <div><b>${esc(section.title || section.type)}</b><small>${esc(section.type)}</small></div>
-        <label class="switch"><input type="checkbox" data-toggle="${section.id}" ${section.enabled !== false ? "checked" : ""}> เปิด</label>
-        <button class="mini" data-edit="${section.id}">แก้</button>
+    const list = sections();
+    $("sectionList").innerHTML = list.map((section, index) => `
+      <div class="sec-row ${section.id === selected ? "is-active" : ""} ${section.enabled !== false ? "" : "is-disabled"}">
+        <div class="sec-row-body" data-edit="${section.id}">
+          <div class="sec-icon">${TYPE_ICONS[section.type] || "📄"}</div>
+          <div class="sec-info">
+            <div class="sec-name">${esc(section.title || section.type)}</div>
+            <div class="sec-type">${section.type}</div>
+          </div>
+        </div>
+        <div class="sec-controls">
+          <button class="mini" data-move="${section.id}" data-dir="-1" ${index === 0 ? "disabled" : ""}>↑</button>
+          <button class="mini" data-move="${section.id}" data-dir="1" ${index === list.length - 1 ? "disabled" : ""}>↓</button>
+          <label class="tog"><input type="checkbox" data-toggle="${section.id}" ${section.enabled !== false ? "checked" : ""}><span></span></label>
+        </div>
       </div>
     `).join("");
-    $("sectionPicker").innerHTML = sections().map((section) => `<option value="${esc(section.id)}">${esc(section.title || section.type)}</option>`).join("");
+    $("sectionPicker").innerHTML = list.map((section) => `<option value="${esc(section.id)}">${esc(section.title || section.type)}</option>`).join("");
     $("sectionPicker").value = selected;
   }
 
-  function field(label, prop, type) {
+  /* ── editor header ── */
+  function renderEditorHeader() {
+    const section = current();
+    if (!section) { $("editorHeader").innerHTML = ""; return; }
+    $("editorHeader").innerHTML = `
+      <div class="editor-hd">
+        <div class="editor-hd-icon">${TYPE_ICONS[section.type] || "📄"}</div>
+        <div>
+          <div class="editor-hd-title">${esc(section.title || section.type)}</div>
+          <div class="editor-hd-sub">${section.type} · ${section.enabled !== false ? "เปิดใช้งานอยู่" : "ปิดอยู่"}</div>
+        </div>
+      </div>
+    `;
+  }
+
+  /* ── field helpers ── */
+  function field(lbl, prop, type) {
     const section = current();
     const value = section[prop] || "";
-    if (type === "textarea") return `<label>${label}<textarea data-field="${prop}">${esc(value)}</textarea></label>`;
-    return `<label>${label}<input data-field="${prop}" value="${esc(value)}"></label>`;
+    if (type === "textarea") return `<label class="field">${lbl}<textarea class="fi" data-field="${prop}">${esc(value)}</textarea></label>`;
+    return `<label class="field">${lbl}<input class="fi" data-field="${prop}" value="${esc(value)}"></label>`;
   }
 
   function itemEditor(item, index, sectionType) {
@@ -144,52 +177,45 @@
     const targetField = (() => {
       if (!targetEditable) return "";
       if (targetMode === "contact") return "";
-      if (targetMode === "url") {
-        return `<label>External URL<input data-item="${index}" data-prop="url" value="${esc(item.url || "")}" placeholder="https://..."></label>`;
-      }
-      return `<label>Internal route<select data-item="${index}" data-prop="route">
-        ${ROUTE_OPTIONS.map((route) => `<option value="${route}" ${String(item.route || "home") === route ? "selected" : ""}>${route}</option>`).join("")}
-      </select></label>`;
+      if (targetMode === "url") return `<label class="field">External URL<input class="fi" data-item="${index}" data-prop="url" value="${esc(item.url || "")}" placeholder="https://..."></label>`;
+      return `<label class="field">Internal route<select class="fi" data-item="${index}" data-prop="route">${ROUTE_OPTIONS.map((r) => `<option value="${r}" ${String(item.route || "home") === r ? "selected" : ""}>${r}</option>`).join("")}</select></label>`;
     })();
     return `
-      <div class="item">
-        <h3>รายการ ${index + 1}</h3>
-        <label class="switch"><input type="checkbox" data-item-enabled="${index}" ${item.enabled !== false ? "checked" : ""}> เปิดใช้งานรายการนี้</label>
-        <div class="two">
-          <label>หัวข้อ${promo ? " (ไม่บังคับ)" : ""}<input data-item="${index}" data-prop="title" value="${esc(item.title || "")}"></label>
-          <label>ป้าย/วันที่<input data-item="${index}" data-prop="tag" value="${esc(item.tag || item.date_label || "")}"></label>
+      <div class="item-card">
+        <div class="item-card-head">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span class="item-num">${index + 1}</span>
+            <span style="font-weight:900;font-size:13px">รายการ ${index + 1}</span>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <label class="switch"><input type="checkbox" data-item-enabled="${index}" ${item.enabled !== false ? "checked" : ""}> เปิด</label>
+            <button class="btn btn-danger btn-sm" type="button" data-remove-item="${index}">ลบ</button>
+          </div>
         </div>
-        <label>คำอธิบาย<textarea data-item="${index}" data-prop="body">${esc(item.body || "")}</textarea></label>
-        ${social ? `
-          <label>แพลตฟอร์ม<select data-item="${index}" data-prop="platform">
-            <option value="youtube" ${(item.platform || "youtube") === "youtube" ? "selected" : ""}>YouTube</option>
-            <option value="facebook" ${item.platform === "facebook" ? "selected" : ""}>Facebook</option>
-          </select></label>
-        ` : ""}
-        ${promo ? `
-          <label>Alt text (คำอธิบายภาพ)<input data-item="${index}" data-prop="alt_text" value="${esc(item.alt_text || "")}"></label>
-          <label>การแสดงภาพ<select data-item="${index}" data-prop="aspect_mode">
-            <option value="contain" ${(item.aspect_mode || "contain") === "contain" ? "selected" : ""}>Contain (เห็นภาพเต็ม ไม่ครอป)</option>
-            <option value="cover" ${item.aspect_mode === "cover" ? "selected" : ""}>Cover (เต็มกรอบ อาจครอป)</option>
-          </select></label>
-        ` : ""}
-        ${targetEditable ? `
-          <label>Target type<select data-item-target="${index}">
-            <option value="route" ${targetMode === "route" ? "selected" : ""}>Internal route</option>
-            <option value="contact" ${targetMode === "contact" ? "selected" : ""}>Contact admin</option>
-            <option value="url" ${targetMode === "url" ? "selected" : ""}>External URL</option>
-          </select></label>
-        ` : ""}
-        ${quick ? `<label>Icon<input data-item="${index}" data-prop="icon" value="${esc(item.icon || "")}" placeholder="sparkle, wrench, pin, line, chat, bolt, shield, tag, clock, phone"></label>` : ""}
-        ${targetField}
-        ${trust || targetEditable ? "" : `<label>${social ? `ลิงก์โพสต์/วิดีโอ (${(item.platform || "youtube") === "facebook" ? "facebook.com..." : "youtube.com... หรือ youtu.be..."})` : external ? "External URL" : "Route / URL"}<input data-item="${index}" data-prop="${external ? "url" : "route"}" value="${esc(external ? item.url || "" : item.route || item.url || "")}" placeholder="${social ? ((item.platform || "youtube") === "facebook" ? "https://www.facebook.com/.../posts/..." : "https://www.youtube.com/watch?v=...") : ""}"></label>`}
-        ${trust ? "" : `<label>${social ? "Thumbnail รูปภาพ (ไม่บังคับ — ถ้าไม่ใส่จะใช้ภาพปกอัตโนมัติของ YouTube หรือไอคอน Facebook)" : "Image URL"}<input data-item="${index}" data-prop="image_url" value="${esc(item.image_url || "")}"></label>`}
-        ${trust ? "" : `<div class="two">
-          <label>Active from<input data-item="${index}" data-prop="active_from" value="${esc(item.active_from || "")}" placeholder="YYYY-MM-DD"></label>
-          <label>Active to<input data-item="${index}" data-prop="active_to" value="${esc(item.active_to || "")}" placeholder="YYYY-MM-DD"></label>
+        <div class="item-card-body">
+          <div class="two">
+            <label class="field">หัวข้อ${promo ? " (ไม่บังคับ)" : ""}<input class="fi" data-item="${index}" data-prop="title" value="${esc(item.title || "")}"></label>
+            <label class="field">ป้าย/วันที่<input class="fi" data-item="${index}" data-prop="tag" value="${esc(item.tag || item.date_label || "")}"></label>
+          </div>
+          <label class="field">คำอธิบาย<textarea class="fi" data-item="${index}" data-prop="body">${esc(item.body || "")}</textarea></label>
+          ${social ? `<label class="field">แพลตฟอร์ม<select class="fi" data-item="${index}" data-prop="platform"><option value="youtube" ${(item.platform || "youtube") === "youtube" ? "selected" : ""}>YouTube</option><option value="facebook" ${item.platform === "facebook" ? "selected" : ""}>Facebook</option></select></label>` : ""}
+          ${promo ? `
+            <label class="field">Alt text<input class="fi" data-item="${index}" data-prop="alt_text" value="${esc(item.alt_text || "")}"></label>
+            <label class="field">การแสดงภาพ<select class="fi" data-item="${index}" data-prop="aspect_mode"><option value="contain" ${(item.aspect_mode || "contain") === "contain" ? "selected" : ""}>Contain (เห็นเต็ม)</option><option value="cover" ${item.aspect_mode === "cover" ? "selected" : ""}>Cover (เต็มกรอบ)</option></select></label>
+          ` : ""}
+          ${targetEditable ? `<label class="field">Target type<select class="fi" data-item-target="${index}"><option value="route" ${targetMode === "route" ? "selected" : ""}>Internal route</option><option value="contact" ${targetMode === "contact" ? "selected" : ""}>Contact admin</option><option value="url" ${targetMode === "url" ? "selected" : ""}>External URL</option></select></label>` : ""}
+          ${quick ? `<label class="field">Icon<input class="fi" data-item="${index}" data-prop="icon" value="${esc(item.icon || "")}" placeholder="sparkle, wrench, pin, chat, bolt, shield, tag, clock, phone"></label>` : ""}
+          ${targetField}
+          ${trust || targetEditable ? "" : `<label class="field">${social ? `ลิงก์โพสต์/วิดีโอ` : external ? "External URL" : "Route / URL"}<input class="fi" data-item="${index}" data-prop="${external ? "url" : "route"}" value="${esc(external ? item.url || "" : item.route || item.url || "")}" placeholder="${social ? ((item.platform || "youtube") === "facebook" ? "https://www.facebook.com/..." : "https://www.youtube.com/watch?v=...") : ""}"></label>`}
+          ${trust ? "" : `<label class="field">${social ? "Thumbnail (ไม่บังคับ)" : "Image URL"}<input class="fi" data-item="${index}" data-prop="image_url" value="${esc(item.image_url || "")}"></label>`}
+          ${trust ? "" : `
+            <div class="two">
+              <label class="field">Active from<input class="fi" data-item="${index}" data-prop="active_from" value="${esc(item.active_from || "")}" placeholder="YYYY-MM-DD"></label>
+              <label class="field">Active to<input class="fi" data-item="${index}" data-prop="active_to" value="${esc(item.active_to || "")}" placeholder="YYYY-MM-DD"></label>
+            </div>
+            <label class="field">อัปโหลดรูป<input class="fi" type="file" accept="image/jpeg,image/png,image/webp" data-upload="${index}"></label>
+          `}
         </div>
-        <label>อัปโหลดรูป<input type="file" accept="image/jpeg,image/png,image/webp" data-upload="${index}"></label>`}
-        <button class="btn danger" type="button" data-remove-item="${index}">ลบรายการ</button>
       </div>
     `;
   }
@@ -198,17 +224,12 @@
     const value = cta || {};
     const mode = value.url ? "url" : "route";
     const targetField = mode === "url"
-      ? `<label>${label} URL<input data-hero-cta="${itemIndex}" data-cta-name="${ctaName}" data-prop="url" value="${esc(value.url || "")}" placeholder="https://..."></label>`
-      : `<label>${label} route<select data-hero-cta="${itemIndex}" data-cta-name="${ctaName}" data-prop="route">
-          ${ROUTE_OPTIONS.map((route) => `<option value="${route}" ${String(value.route || "home") === route ? "selected" : ""}>${route}</option>`).join("")}
-        </select></label>`;
+      ? `<label class="field">${label} URL<input class="fi" data-hero-cta="${itemIndex}" data-cta-name="${ctaName}" data-prop="url" value="${esc(value.url || "")}" placeholder="https://..."></label>`
+      : `<label class="field">${label} route<select class="fi" data-hero-cta="${itemIndex}" data-cta-name="${ctaName}" data-prop="route">${ROUTE_OPTIONS.map((r) => `<option value="${r}" ${String(value.route || "home") === r ? "selected" : ""}>${r}</option>`).join("")}</select></label>`;
     return `
       <div class="two">
-        <label>${label}<input data-hero-cta="${itemIndex}" data-cta-name="${ctaName}" data-prop="label" value="${esc(value.label || "")}"></label>
-        <label>${label} target<select data-hero-cta-target="${itemIndex}" data-cta-name="${ctaName}">
-          <option value="route" ${mode === "route" ? "selected" : ""}>Internal route</option>
-          <option value="url" ${mode === "url" ? "selected" : ""}>External URL</option>
-        </select></label>
+        <label class="field">${label}<input class="fi" data-hero-cta="${itemIndex}" data-cta-name="${ctaName}" data-prop="label" value="${esc(value.label || "")}"></label>
+        <label class="field">${label} target<select class="fi" data-hero-cta-target="${itemIndex}" data-cta-name="${ctaName}"><option value="route" ${mode === "route" ? "selected" : ""}>Internal route</option><option value="url" ${mode === "url" ? "selected" : ""}>External URL</option></select></label>
       </div>
       ${targetField}
     `;
@@ -216,26 +237,31 @@
 
   function heroSlideEditor(item, index, total) {
     return `
-      <div class="item">
-        <h3>Hero slide ${index + 1}</h3>
-        <label class="switch"><input type="checkbox" data-item-enabled="${index}" ${item.enabled !== false ? "checked" : ""}> เปิดใช้งานสไลด์นี้</label>
-        <div>
-          <button class="mini" type="button" data-move-item="${index}" data-dir="-1" ${index === 0 ? "disabled" : ""}>↑</button>
-          <button class="mini" type="button" data-move-item="${index}" data-dir="1" ${index === total - 1 ? "disabled" : ""}>↓</button>
+      <div class="item-card">
+        <div class="item-card-head">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span class="item-num">${index + 1}</span>
+            <span style="font-weight:900;font-size:13px">Slide ${index + 1}</span>
+            <button class="mini" type="button" data-move-item="${index}" data-dir="-1" ${index === 0 ? "disabled" : ""}>↑</button>
+            <button class="mini" type="button" data-move-item="${index}" data-dir="1" ${index === total - 1 ? "disabled" : ""}>↓</button>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <label class="switch"><input type="checkbox" data-item-enabled="${index}" ${item.enabled !== false ? "checked" : ""}> เปิด</label>
+            <button class="btn btn-danger btn-sm" type="button" data-remove-item="${index}">ลบ</button>
+          </div>
         </div>
-        <label>Kicker<input data-item="${index}" data-prop="kicker" value="${esc(item.kicker || "")}"></label>
-        <label>Title<input data-item="${index}" data-prop="title" value="${esc(item.title || "")}"></label>
-        <label>Body<textarea data-item="${index}" data-prop="body">${esc(item.body || "")}</textarea></label>
-        <label>Image URL<input data-item="${index}" data-prop="image_url" value="${esc(item.image_url || "")}" placeholder="https://..."></label>
-        <label>Upload image<input type="file" accept="image/jpeg,image/png,image/webp" data-upload="${index}"></label>
-        <label>ตำแหน่งโฟกัสภาพ<select data-item="${index}" data-prop="focal_position">
-          <option value="top" ${item.focal_position === "top" ? "selected" : ""}>บน</option>
-          <option value="center" ${(item.focal_position || "center") === "center" ? "selected" : ""}>กลาง</option>
-          <option value="bottom" ${item.focal_position === "bottom" ? "selected" : ""}>ล่าง</option>
-        </select></label>
-        ${ctaEditor(item.cta_primary, index, "cta_primary", "Primary CTA")}
-        ${ctaEditor(item.cta_secondary, index, "cta_secondary", "Secondary CTA")}
-        <button class="btn danger" type="button" data-remove-item="${index}">ลบรายการ</button>
+        <div class="item-card-body">
+          <div class="two">
+            <label class="field">Kicker<input class="fi" data-item="${index}" data-prop="kicker" value="${esc(item.kicker || "")}"></label>
+            <label class="field">ตำแหน่งโฟกัส<select class="fi" data-item="${index}" data-prop="focal_position"><option value="top" ${item.focal_position === "top" ? "selected" : ""}>บน</option><option value="center" ${(item.focal_position || "center") === "center" ? "selected" : ""}>กลาง</option><option value="bottom" ${item.focal_position === "bottom" ? "selected" : ""}>ล่าง</option></select></label>
+          </div>
+          <label class="field">Title<input class="fi" data-item="${index}" data-prop="title" value="${esc(item.title || "")}"></label>
+          <label class="field">Body<textarea class="fi" data-item="${index}" data-prop="body">${esc(item.body || "")}</textarea></label>
+          <label class="field">Image URL<input class="fi" data-item="${index}" data-prop="image_url" value="${esc(item.image_url || "")}" placeholder="https://..."></label>
+          <label class="field">Upload image<input class="fi" type="file" accept="image/jpeg,image/png,image/webp" data-upload="${index}"></label>
+          ${ctaEditor(item.cta_primary, index, "cta_primary", "ปุ่มหลัก")}
+          ${ctaEditor(item.cta_secondary, index, "cta_secondary", "ปุ่มรอง")}
+        </div>
       </div>
     `;
   }
@@ -271,11 +297,8 @@
 
   function formatSyncedAt(value) {
     if (!value) return "ยังไม่เคยซิงค์";
-    try {
-      return new Date(value).toLocaleString("th-TH", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
-    } catch (_) {
-      return "ยังไม่เคยซิงค์";
-    }
+    try { return new Date(value).toLocaleString("th-TH", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }); }
+    catch (_) { return "ยังไม่เคยซิงค์"; }
   }
 
   function articlesAutoSyncEditor(section) {
@@ -285,17 +308,22 @@
     const statusText = articleSyncStatusLoading
       ? "กำลังตรวจสอบสถานะ..."
       : status
-        ? (status.error ? "ตรวจสอบสถานะไม่สำเร็จ" : `ซิงค์ล่าสุด: ${formatSyncedAt(status.last_synced_at)} · มีบทความ ${status.count} รายการ`)
+        ? (status.error ? "⚠️ ตรวจสอบสถานะไม่สำเร็จ" : `✅ ซิงค์ล่าสุด: ${formatSyncedAt(status.last_synced_at)} · มีบทความ ${status.count} รายการ`)
         : "";
+    const hasData = status && !status.error && status.count > 0;
     return `
-      <div class="item" style="border-style:dashed">
-        <h3>ดึงบทความอัตโนมัติจากเว็บไซต์</h3>
-        <label class="switch"><input type="checkbox" data-auto-sync ${section.auto_sync ? "checked" : ""}> เปิดดึงบทความอัตโนมัติ (sync เป็นระยะ)</label>
-        <label>URL เว็บไซต์ต้นทาง<input data-field="source_url" value="${esc(section.source_url || "")}" placeholder="https://www.cwf-air.com"></label>
-        <label>Seed URL สำรอง (ใช้เมื่อ API ของเว็บไม่พร้อม ใส่ลิงก์บทความทีละบรรทัด)<textarea data-seed-urls>${esc(seedUrlsText)}</textarea></label>
-        <div class="toolbar"><button class="btn" type="button" id="syncArticlesNow">ซิงค์ตอนนี้</button></div>
-        ${statusText ? `<p style="color:#7d899c;font-size:13px">${esc(statusText)}</p>` : ""}
-        ${section.auto_sync ? `<p style="color:#7d899c;font-size:12px">เปิดใช้งานแล้ว ระบบจะดึงบทความให้อัตโนมัติเป็นระยะ รายการที่เพิ่มด้วยมือด้านบนจะไม่ถูกใช้แสดงผลจริงขณะเปิดโหมดนี้</p>` : ""}
+      <div class="ep">
+        <div class="ep-head">🔄 ดึงบทความอัตโนมัติจากเว็บไซต์</div>
+        <div class="ep-body">
+          <label class="switch"><input type="checkbox" data-auto-sync ${section.auto_sync ? "checked" : ""}> <span>เปิดดึงบทความอัตโนมัติ (sync เป็นระยะ)</span></label>
+          <label class="field">URL เว็บไซต์ต้นทาง<input class="fi" data-field="source_url" value="${esc(section.source_url || "")}" placeholder="https://www.cwf-air.com"></label>
+          <label class="field">Seed URL สำรอง (ใส่ลิงก์บทความทีละบรรทัด)<textarea class="fi" data-seed-urls>${esc(seedUrlsText)}</textarea></label>
+          <div class="toolbar">
+            <button class="btn btn-ghost" type="button" id="syncArticlesNow">🔄 ซิงค์ตอนนี้</button>
+          </div>
+          ${statusText ? `<div class="sync-info ${hasData ? "has-data" : ""}">${esc(statusText)}</div>` : ""}
+          ${section.auto_sync ? `<p style="font-size:12px;color:var(--muted);line-height:1.55">เปิดใช้งานแล้ว — ระบบจะดึงบทความให้อัตโนมัติเป็นระยะ รายการที่เพิ่มด้วยมือด้านล่างจะไม่ถูกใช้แสดงผลจริงขณะเปิดโหมดนี้</p>` : ""}
+        </div>
       </div>
     `;
   }
@@ -304,42 +332,79 @@
     const section = current();
     if (!section) return;
     const itemTypes = ["announcements", "updates", "articles", "social", "trust", "quick", "promo_banner"];
-    $("editor").innerHTML = `
-      ${field("ชื่อ Section", "title")}
-      ${field("คำอธิบาย", "body", "textarea")}
-      ${section.type === "hero" ? `
-        ${field("Kicker", "kicker")}
-        <label>Hero Image URL<input data-field="image_url" value="${esc(section.image_url || "")}"></label>
-        <label>Hero Image Upload<input type="file" accept="image/jpeg,image/png,image/webp" data-upload-section="hero"></label>
-        ${section.image_url ? `<button class="btn danger" type="button" data-clear-section-image="hero">Remove hero image</button>` : ""}
-        <label>ตำแหน่งโฟกัสภาพ<select data-field="focal_position">
-          <option value="top" ${section.focal_position === "top" ? "selected" : ""}>บน</option>
-          <option value="center" ${(section.focal_position || "center") === "center" ? "selected" : ""}>กลาง</option>
-          <option value="bottom" ${section.focal_position === "bottom" ? "selected" : ""}>ล่าง</option>
-        </select></label>
-        <div class="two">
-          <label>ปุ่มหลัก<input data-cta="cta_primary" data-prop="label" value="${esc(section.cta_primary?.label || "")}"></label>
-          <label>Route ปุ่มหลัก<input data-cta="cta_primary" data-prop="route" value="${esc(section.cta_primary?.route || "")}"></label>
+
+    let content = `
+      <div class="ep">
+        <div class="ep-head">ข้อมูลทั่วไป</div>
+        <div class="ep-body">
+          ${field("ชื่อ Section", "title")}
+          ${field("คำอธิบาย", "body", "textarea")}
         </div>
-        <div class="two">
-          <label>ปุ่มรอง<input data-cta="cta_secondary" data-prop="label" value="${esc(section.cta_secondary?.label || "")}"></label>
-          <label>Route ปุ่มรอง<input data-cta="cta_secondary" data-prop="route" value="${esc(section.cta_secondary?.route || "")}"></label>
-        </div>
-        <div class="toolbar"><button class="btn" type="button" id="addHeroSlide">Add hero slide</button></div>
-        ${(section.items || []).map((item, index) => heroSlideEditor(item, index, section.items.length)).join("")}
-      ` : ""}
-      ${section.type === "articles" ? articlesAutoSyncEditor(section) : ""}
-      ${itemTypes.includes(section.type) && !(section.type === "articles" && section.auto_sync) ? `
-        <div class="toolbar"><button class="btn" type="button" id="addItem">เพิ่มรายการ</button></div>
-        ${section.type === "promo_banner" ? (section.items || []).map((item, index) => `
-          <div>
-            <button class="mini" type="button" data-move-item="${index}" data-dir="-1" ${index === 0 ? "disabled" : ""}>↑</button>
-            <button class="mini" type="button" data-move-item="${index}" data-dir="1" ${index === section.items.length - 1 ? "disabled" : ""}>↓</button>
-          </div>
-        ${itemEditor(item, index, section.type)}`).join("") : (section.items || []).map((item, index) => itemEditor(item, index, section.type)).join("")}
-      ` : ""}
-      ${section.type === "featured_services" ? featuredServicesEditor(section) : ""}
+      </div>
     `;
+
+    if (section.type === "hero") {
+      content += `
+        <div class="ep">
+          <div class="ep-head">Hero Image &amp; Focal</div>
+          <div class="ep-body">
+            <label class="field">Hero Image URL<input class="fi" data-field="image_url" value="${esc(section.image_url || "")}" placeholder="https://..."></label>
+            <label class="field">อัปโหลดรูป Hero<input class="fi" type="file" accept="image/jpeg,image/png,image/webp" data-upload-section="hero"></label>
+            ${section.image_url ? `<button class="btn btn-danger btn-sm" type="button" data-clear-section-image="hero">ลบรูป Hero</button>` : ""}
+            <label class="field">Kicker<input class="fi" data-field="kicker" value="${esc(section.kicker || "")}"></label>
+            <label class="field">ตำแหน่งโฟกัสภาพ<select class="fi" data-field="focal_position"><option value="top" ${section.focal_position === "top" ? "selected" : ""}>บน</option><option value="center" ${(section.focal_position || "center") === "center" ? "selected" : ""}>กลาง</option><option value="bottom" ${section.focal_position === "bottom" ? "selected" : ""}>ล่าง</option></select></label>
+          </div>
+        </div>
+        <div class="ep">
+          <div class="ep-head">CTA ปุ่มหลัก / ปุ่มรอง (ใช้เมื่อไม่มี Slides)</div>
+          <div class="ep-body">
+            <div class="two">
+              <label class="field">ปุ่มหลัก<input class="fi" data-cta="cta_primary" data-prop="label" value="${esc(section.cta_primary?.label || "")}"></label>
+              <label class="field">Route ปุ่มหลัก<input class="fi" data-cta="cta_primary" data-prop="route" value="${esc(section.cta_primary?.route || "")}"></label>
+            </div>
+            <div class="two">
+              <label class="field">ปุ่มรอง<input class="fi" data-cta="cta_secondary" data-prop="label" value="${esc(section.cta_secondary?.label || "")}"></label>
+              <label class="field">Route ปุ่มรอง<input class="fi" data-cta="cta_secondary" data-prop="route" value="${esc(section.cta_secondary?.route || "")}"></label>
+            </div>
+          </div>
+        </div>
+        <div class="ep">
+          <div class="ep-head">Hero Slides <div class="toolbar" style="display:inline-flex;margin-left:10px"><button class="btn btn-ghost btn-sm" type="button" id="addHeroSlide">+ เพิ่ม Slide</button></div></div>
+          <div class="ep-body">
+            ${(section.items || []).map((item, index) => heroSlideEditor(item, index, section.items.length)).join("") || `<p style="color:var(--muted);font-size:13px">ยังไม่มี Slide — จะใช้ข้อมูล Section หลัก</p>`}
+          </div>
+        </div>
+      `;
+    }
+
+    if (section.type === "articles") {
+      content += articlesAutoSyncEditor(section);
+    }
+
+    if (section.type === "featured_services") {
+      content += `<div class="ep"><div class="ep-head">บริการแนะนำ</div><div class="ep-body">${featuredServicesEditor(section)}</div></div>`;
+    }
+
+    if (itemTypes.includes(section.type) && !(section.type === "articles" && section.auto_sync)) {
+      const moveControls = (index, len) => section.type === "promo_banner" ? `
+        <button class="mini" type="button" data-move-item="${index}" data-dir="-1" ${index === 0 ? "disabled" : ""}>↑</button>
+        <button class="mini" type="button" data-move-item="${index}" data-dir="1" ${index === len - 1 ? "disabled" : ""}>↓</button>
+      ` : "";
+      const items = (section.items || []);
+      content += `
+        <div class="ep">
+          <div class="ep-head">
+            รายการ (${items.length})
+            <button class="btn btn-ghost btn-sm" type="button" id="addItem">+ เพิ่มรายการ</button>
+          </div>
+          <div class="ep-body">
+            ${items.length ? items.map((item, index) => (moveControls(index, items.length) ? `<div class="toolbar" style="margin-bottom:4px">${moveControls(index, items.length)}</div>` : "") + itemEditor(item, index, section.type)).join("") : `<p style="color:var(--muted);font-size:13px">ยังไม่มีรายการ</p>`}
+          </div>
+        </div>
+      `;
+    }
+
+    $("editor").innerHTML = content;
   }
 
   function featuredServicesEditor(section) {
@@ -349,52 +414,46 @@
     let manualBlock = "";
     if (mode === "manual") {
       if (catalogLoadFailed) {
-        manualBlock = `<p>โหลดรายการ Catalog ไม่สำเร็จ</p><button class="btn" type="button" id="retryCatalog">ลองใหม่</button>`;
+        manualBlock = `<p style="color:var(--muted)">โหลดรายการ Catalog ไม่สำเร็จ</p><button class="btn btn-ghost btn-sm" type="button" id="retryCatalog">ลองใหม่</button>`;
       } else if (!catalogItems) {
-        manualBlock = `<p>กำลังโหลดรายการ Catalog...</p>`;
+        manualBlock = `<p style="color:var(--muted)">กำลังโหลดรายการ Catalog...</p>`;
       } else {
         const byId = new Map(catalogItems.map((item) => [String(item.item_id), item]));
         const selectedRows = itemIds.map((id) => byId.get(id)).filter(Boolean);
         const unselectedRows = catalogItems.filter((item) => !itemIds.includes(String(item.item_id)));
-        const inactiveNote = (item) => (catalogIsSelectable(item) ? "" : ` <small style="color:#b42318">(ปิดใช้งาน/ไม่แสดงลูกค้า — จะไม่แสดงจริง)</small>`);
+        const inactiveNote = (item) => (catalogIsSelectable(item) ? "" : ` <small style="color:#b42318">(ปิดอยู่)</small>`);
         manualBlock = `
-          <p style="margin:8px 0 4px;font-weight:600">รายการที่เลือก (ลำดับ = ลำดับที่แสดงจริง)</p>
-          <div class="editor" style="max-height:240px;overflow:auto;border:1px solid #dce4ef;border-radius:11px;padding:8px">
+          <p style="font-size:12px;font-weight:900;color:var(--muted)">รายการที่เลือก (ลำดับ = ลำดับที่แสดงจริง)</p>
+          <div style="max-height:220px;overflow:auto;border:1.5px solid var(--line);border-radius:10px;padding:8px;display:grid;gap:6px">
             ${selectedRows.length ? selectedRows.map((item, index) => `
-              <div class="section-row">
-                <div>
+              <div class="sec-row">
+                <div style="display:flex;gap:4px">
                   <button class="mini" type="button" data-move-featured-item="${esc(item.item_id)}" data-dir="-1" ${index === 0 ? "disabled" : ""}>↑</button>
                   <button class="mini" type="button" data-move-featured-item="${esc(item.item_id)}" data-dir="1" ${index === selectedRows.length - 1 ? "disabled" : ""}>↓</button>
                 </div>
-                <div><b>${esc(item.item_name || item.item_id)}</b>${inactiveNote(item)}</div>
-                <label class="switch"><input type="checkbox" data-featured-item="${esc(item.item_id)}" checked> แสดงผล</label>
+                <div style="flex:1;font-weight:900;font-size:13px">${esc(item.item_name || item.item_id)}${inactiveNote(item)}</div>
+                <label class="switch"><input type="checkbox" data-featured-item="${esc(item.item_id)}" checked> แสดง</label>
               </div>
-            `).join("") : "<p>ยังไม่ได้เลือกรายการ</p>"}
+            `).join("") : "<p style='color:var(--muted);font-size:13px'>ยังไม่ได้เลือก</p>"}
           </div>
-          <p style="margin:10px 0 4px;font-weight:600">รายการที่ยังไม่เลือก</p>
-          <div class="editor" style="max-height:240px;overflow:auto;border:1px solid #dce4ef;border-radius:11px;padding:8px">
+          <p style="font-size:12px;font-weight:900;color:var(--muted);margin-top:6px">รายการที่ยังไม่เลือก</p>
+          <div style="max-height:220px;overflow:auto;border:1.5px solid var(--line);border-radius:10px;padding:8px;display:grid;gap:6px">
             ${unselectedRows.length ? unselectedRows.map((item) => {
               const selectable = catalogIsSelectable(item);
-              return `
-                <label class="switch" style="justify-content:flex-start">
-                  <input type="checkbox" data-featured-item="${esc(item.item_id)}" ${selectable ? "" : "disabled"}>
-                  ${esc(item.item_name || item.item_id)}${inactiveNote(item)}
-                </label>
-              `;
-            }).join("") : "<p>ไม่มีรายการเพิ่มเติม</p>"}
+              return `<label class="switch" style="justify-content:flex-start"><input type="checkbox" data-featured-item="${esc(item.item_id)}" ${selectable ? "" : "disabled"}> ${esc(item.item_name || item.item_id)}${inactiveNote(item)}</label>`;
+            }).join("") : "<p style='color:var(--muted);font-size:13px'>ไม่มีรายการเพิ่มเติม</p>"}
           </div>
         `;
       }
     }
     return `
-      <label>แหล่งข้อมูลบริการแนะนำ<select data-featured-mode>
-        <option value="auto" ${mode === "auto" ? "selected" : ""}>ดึงจาก Catalog อัตโนมัติ (is_featured)</option>
-        <option value="manual" ${mode === "manual" ? "selected" : ""}>เลือกรายการเอง</option>
-      </select></label>
-      <label>จำนวนรายการสูงสุด<input type="number" min="1" max="12" data-featured-limit value="${esc(section.featured_limit || 8)}"></label>
-      <label class="switch"><input type="checkbox" data-featured-bool="show_price" ${section.show_price !== false ? "checked" : ""}> แสดงราคา</label>
-      <label class="switch"><input type="checkbox" data-featured-bool="show_badge" ${section.show_badge !== false ? "checked" : ""}> แสดง Badge สถานะจอง</label>
-      ${mode === "manual" ? `<label>เลือกและจัดลำดับบริการที่ต้องการแสดง${manualBlock}</label>` : ""}
+      <label class="field">แหล่งข้อมูล<select class="fi" data-featured-mode><option value="auto" ${mode === "auto" ? "selected" : ""}>ดึงจาก Catalog อัตโนมัติ (is_featured)</option><option value="manual" ${mode === "manual" ? "selected" : ""}>เลือกรายการเอง</option></select></label>
+      <label class="field">จำนวนสูงสุด<input class="fi" type="number" min="1" max="12" data-featured-limit value="${esc(section.featured_limit || 8)}"></label>
+      <div style="display:flex;gap:14px;flex-wrap:wrap">
+        <label class="switch"><input type="checkbox" data-featured-bool="show_price" ${section.show_price !== false ? "checked" : ""}> แสดงราคา</label>
+        <label class="switch"><input type="checkbox" data-featured-bool="show_badge" ${section.show_badge !== false ? "checked" : ""}> แสดง Badge</label>
+      </div>
+      ${mode === "manual" ? manualBlock : ""}
     `;
   }
 
@@ -419,53 +478,45 @@
     setStatus("อัปโหลดรูปแล้ว", "ok");
   }
 
+  /* ── preview ── */
   function renderPreview() {
-    $("preview").innerHTML = sections().filter((section) => section.enabled !== false).map((section) => {
+    $("preview").innerHTML = sections().filter((s) => s.enabled !== false).map((section) => {
       if (section.type === "hero") {
         const enabledSlides = (section.items || []).filter((slide) => slide.enabled !== false);
         const slides = enabledSlides.length ? enabledSlides : [section];
-        return `<section class="hero">${slides.map((slide) => `<div ${slide.image_url ? `style="background-image:linear-gradient(rgba(7,27,56,.62),rgba(7,27,56,.62)),url('${esc(slide.image_url)}');background-size:cover;background-position:center"` : ""}><small>${esc(slide.kicker || section.kicker || "Coldwindflow")}</small><h3>${esc(slide.title || section.title || "")}</h3><p>${esc(slide.body || section.body || "")}</p></div>`).join("")}</section>`;
+        return `<section class="p-hero">${slides.map((slide) => `<div ${slide.image_url ? `style="background-image:linear-gradient(rgba(7,27,56,.62),rgba(7,27,56,.62)),url('${esc(slide.image_url)}');background-size:cover;background-position:${slide.focal_position||"center"}"` : ""}><small>${esc(slide.kicker || section.kicker || "Coldwindflow")}</small><h3>${esc(slide.title || section.title || "")}</h3><p>${esc(slide.body || section.body || "")}</p></div>`).join("")}</section>`;
       }
-      if (section.type === "quick") return `<section class="quick">${(section.items || []).filter((item) => item.enabled !== false).slice(0, 4).map((item) => `<div>${esc(item.title || "")}</div>`).join("")}</section>`;
+      if (section.type === "quick") return `<section class="p-quick">${(section.items || []).filter((i) => i.enabled !== false).slice(0, 4).map((i) => `<div>${esc(i.title || "")}</div>`).join("")}</section>`;
       if (section.type === "promo_banner") {
-        const banners = (section.items || []).filter((item) => item.enabled !== false && item.image_url);
+        const banners = (section.items || []).filter((i) => i.enabled !== false && i.image_url);
         if (!banners.length) return "";
-        return `<section class="sec"><div style="aspect-ratio:1/1;border-radius:18px;overflow:hidden;background:#eef2f7"><img src="${esc(banners[0].image_url)}" alt="${esc(banners[0].alt_text || "")}" style="width:100%;height:100%;object-fit:${banners[0].aspect_mode === "cover" ? "cover" : "contain"}"></div>${banners.length > 1 ? `<p style="text-align:center;margin-top:6px;color:#7d899c;font-size:12px">${banners.length} banners</p>` : ""}</section>`;
+        return `<section class="p-sec"><div style="aspect-ratio:1/1;border-radius:16px;overflow:hidden;background:#eef2f7"><img src="${esc(banners[0].image_url)}" alt="${esc(banners[0].alt_text || "")}" style="width:100%;height:100%;object-fit:${banners[0].aspect_mode === "cover" ? "cover" : "contain"}"></div>${banners.length > 1 ? `<p style="text-align:center;margin-top:5px;color:var(--muted);font-size:11px">${banners.length} banners</p>` : ""}</section>`;
       }
-      if (section.type === "active_job") return `<section class="sec"><div class="sec-head"><div><b>${esc(section.title || "")}</b><br><span>Shown only when the logged-in customer has an active job</span></div></div></section>`;
+      if (section.type === "active_job") return `<section class="p-sec"><div class="p-sec-head"><b>${esc(section.title || "")}</b><span style="color:var(--muted);font-size:10px">Shown only when logged-in customer has an active job</span></div></section>`;
       if (section.type === "featured_services") {
         const items = resolveFeaturedPreviewItems(section);
         const showPrice = section.show_price !== false;
         const showBadge = section.show_badge !== false;
-        const priceText = (item) => {
-          const value = Number(item.display_price ?? item.active_price ?? item.base_price);
-          return Number.isFinite(value) && value > 0 ? `${value.toLocaleString("th-TH")} บาท` : "สอบถามราคา";
-        };
+        const priceText = (item) => { const v = Number(item.display_price ?? item.active_price ?? item.base_price); return Number.isFinite(v) && v > 0 ? `${v.toLocaleString("th-TH")} บาท` : "สอบถามราคา"; };
         const cards = items.length
-          ? items.map((item) => `
-              <article class="card">
-                <b>${esc(item.item_name || item.item_id)}</b>
-                ${showBadge ? `<p><span style="display:inline-block;padding:2px 8px;border-radius:999px;background:#eef2ff;color:#3346a6;font-size:11px">${item.booking_mode === "bookable" ? "จองได้" : "สอบถามแอดมิน"}</span></p>` : ""}
-                ${showPrice ? `<p>${esc(priceText(item))}</p>` : ""}
-              </article>
-            `).join("")
-          : catalogLoadFailed
-            ? `<article class="card"><b>โหลด Catalog ไม่สำเร็จ</b><p>กดลองใหม่ในตัวแก้ไข</p></article>`
-            : !catalogItems
-              ? `<article class="card"><b>กำลังโหลด Catalog...</b></article>`
-              : `<article class="card"><b>ไม่มีบริการแนะนำที่แสดงผลได้</b><p>Section นี้จะถูกซ่อนจากลูกค้าจริง</p></article>`;
-        return `<section class="sec"><div class="sec-head"><div><b>${esc(section.title || "")}</b><br><span>${esc(section.body || "")}</span></div></div><div class="cards">${cards}</div></section>`;
+          ? items.map((item) => `<article class="p-card"><b>${esc(item.item_name || item.item_id)}</b>${showBadge ? `<p><span style="display:inline-block;padding:2px 7px;border-radius:999px;background:#eef2ff;color:#3346a6;font-size:10px">${item.booking_mode === "bookable" ? "จองได้" : "สอบถาม"}</span></p>` : ""}${showPrice ? `<p>${esc(priceText(item))}</p>` : ""}</article>`).join("")
+          : catalogLoadFailed ? `<article class="p-card"><b>โหลด Catalog ไม่สำเร็จ</b></article>`
+          : !catalogItems ? `<article class="p-card"><b>กำลังโหลด...</b></article>`
+          : `<article class="p-card"><b>ไม่มีบริการแนะนำ</b><p>Section นี้จะถูกซ่อน</p></article>`;
+        return `<section class="p-sec"><div class="p-sec-head"><b>${esc(section.title || "")}</b></div><div class="p-cards">${cards}</div></section>`;
       }
-      return `<section class="sec"><div class="sec-head"><div><b>${esc(section.title || "")}</b><br><span>${esc(section.body || "")}</span></div><span>ดูทั้งหมด</span></div><div class="cards">${(section.items || []).filter((item) => item.enabled !== false).slice(0, 3).map((item) => `<article class="card">${section.type === "social" ? `<span style="display:inline-block;padding:2px 8px;border-radius:999px;background:#eef2ff;color:#3346a6;font-size:10px;margin-bottom:4px">${esc((item.platform || "youtube") === "facebook" ? "Facebook" : "YouTube")}</span><br>` : ""}<b>${esc(item.title || "")}</b><p>${esc(item.body || "")}</p></article>`).join("") || `<article class="card"><b>ไม่มีรายการ</b><p>เพิ่มรายการใน editor</p></article>`}</div></section>`;
+      return `<section class="p-sec"><div class="p-sec-head"><b>${esc(section.title || "")}</b><span>ดูทั้งหมด</span></div><div class="p-cards">${(section.items || []).filter((i) => i.enabled !== false).slice(0, 3).map((i) => `<article class="p-card">${section.type === "social" ? `<span style="display:inline-block;padding:2px 7px;border-radius:999px;background:#eef2ff;color:#3346a6;font-size:10px;margin-bottom:3px">${esc((i.platform || "youtube") === "facebook" ? "Facebook" : "YouTube")}</span><br>` : ""}<b>${esc(i.title || "")}</b><p>${esc(i.body || "")}</p></article>`).join("") || `<article class="p-card"><b>ไม่มีรายการ</b><p>เพิ่มรายการใน editor</p></article>`}</div></section>`;
     }).join("");
   }
 
   function render() {
     renderSectionList();
+    renderEditorHeader();
     renderEditor();
     renderPreview();
   }
 
+  /* ── event handlers ── */
   document.addEventListener("click", (event) => {
     const moveBtn = event.target.closest("[data-move]");
     if (moveBtn) move(moveBtn.dataset.move, Number(moveBtn.dataset.dir));
@@ -480,7 +531,7 @@
       const next = index + Number(moveItem.dataset.dir);
       if (section.items && next >= 0 && next < section.items.length) {
         [section.items[index], section.items[next]] = [section.items[next], section.items[index]];
-        section.items.forEach((item, itemIndex) => { item.sort_order = itemIndex + 1; });
+        section.items.forEach((item, i) => { item.sort_order = i + 1; });
         render();
       }
     }
@@ -493,11 +544,7 @@
       const id = moveFeatured.dataset.moveFeaturedItem;
       const index = ids.indexOf(id);
       const next = index + Number(moveFeatured.dataset.dir);
-      if (index >= 0 && next >= 0 && next < ids.length) {
-        [ids[index], ids[next]] = [ids[next], ids[index]];
-        section.item_ids = ids;
-        render();
-      }
+      if (index >= 0 && next >= 0 && next < ids.length) { [ids[index], ids[next]] = [ids[next], ids[index]]; section.item_ids = ids; render(); }
     }
     if (event.target.id === "retryCatalog") retryLoadCatalogItems();
     if (event.target.id === "syncArticlesNow") syncArticlesNow().catch((error) => setStatus(error.message, "bad"));
@@ -516,14 +563,7 @@
     if (event.target.id === "addHeroSlide") {
       current().items = current().items || [];
       if (current().items.length >= 5) { setStatus("Hero จำกัด 5 slides", "bad"); return; }
-      current().items.push({
-        kicker: current().kicker || "",
-        title: current().title || "",
-        body: current().body || "",
-        focal_position: current().focal_position || "center",
-        cta_primary: { ...(current().cta_primary || {}) },
-        cta_secondary: { ...(current().cta_secondary || {}) },
-      });
+      current().items.push({ kicker: current().kicker || "", title: current().title || "", body: current().body || "", focal_position: current().focal_position || "center", cta_primary: { ...(current().cta_primary || {}) }, cta_secondary: { ...(current().cta_secondary || {}) } });
       render();
     }
   });
@@ -544,7 +584,7 @@
     }
     if (target.matches("[data-item]")) section.items[Number(target.dataset.item)][target.dataset.prop] = target.value;
     if (target.matches("[data-featured-limit]")) section.featured_limit = Math.max(1, Math.min(12, Number(target.value) || 8));
-    if (target.matches("[data-seed-urls]")) section.seed_urls = target.value.split("\n").map((line) => line.trim()).filter(Boolean).slice(0, 8);
+    if (target.matches("[data-seed-urls]")) section.seed_urls = target.value.split("\n").map((l) => l.trim()).filter(Boolean).slice(0, 8);
     renderPreview();
   });
 
@@ -552,11 +592,7 @@
     const target = event.target;
     if (target.matches("select[data-item]")) { current().items[Number(target.dataset.item)][target.dataset.prop] = target.value; renderPreview(); }
     if (target.matches("select[data-field]")) { current()[target.dataset.field] = target.value; renderPreview(); }
-    if (target.matches("[data-toggle]")) {
-      const section = sections().find((row) => row.id === target.dataset.toggle);
-      if (section) section.enabled = target.checked;
-      renderPreview();
-    }
+    if (target.matches("[data-toggle]")) { const s = sections().find((row) => row.id === target.dataset.toggle); if (s) s.enabled = target.checked; renderPreview(); }
     if (target.id === "sectionPicker") { selected = target.value; render(); }
     if (target.matches("[data-upload]")) uploadImage(target, Number(target.dataset.upload)).catch((error) => setStatus(error.message, "bad"));
     if (target.matches("[data-upload-section]")) uploadImage(target, target.dataset.uploadSection).catch((error) => setStatus(error.message, "bad"));
@@ -567,25 +603,15 @@
       const section = current();
       section.item_ids = Array.isArray(section.item_ids) ? section.item_ids : [];
       const id = target.dataset.featuredItem;
-      if (target.checked) {
-        if (!section.item_ids.includes(id)) section.item_ids.push(id);
-      } else {
-        section.item_ids = section.item_ids.filter((value) => value !== id);
-      }
+      if (target.checked) { if (!section.item_ids.includes(id)) section.item_ids.push(id); }
+      else { section.item_ids = section.item_ids.filter((v) => v !== id); }
       render();
     }
-    if (target.matches("[data-item-enabled]")) {
-      const item = current().items[Number(target.dataset.itemEnabled)];
-      if (!item) return;
-      item.enabled = target.checked;
-      renderPreview();
-    }
+    if (target.matches("[data-item-enabled]")) { const item = current().items[Number(target.dataset.itemEnabled)]; if (item) { item.enabled = target.checked; renderPreview(); } }
     if (target.matches("[data-item-target]")) {
       const item = current().items[Number(target.dataset.itemTarget)];
       if (!item) return;
-      delete item.route;
-      delete item.url;
-      delete item.action;
+      delete item.route; delete item.url; delete item.action;
       if (target.value === "contact") item.action = "contact";
       if (target.value === "route") item.route = "home";
       if (target.value === "url") item.url = "";
@@ -596,9 +622,7 @@
       if (!item) return;
       const ctaName = target.dataset.ctaName;
       item[ctaName] = item[ctaName] || {};
-      delete item[ctaName].route;
-      delete item[ctaName].url;
-      delete item[ctaName].action;
+      delete item[ctaName].route; delete item[ctaName].url; delete item[ctaName].action;
       if (target.value === "route") item[ctaName].route = "home";
       if (target.value === "url") item[ctaName].url = "";
       render();
