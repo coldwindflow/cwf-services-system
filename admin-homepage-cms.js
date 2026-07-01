@@ -613,7 +613,7 @@
 
   document.addEventListener("change", (event) => {
     const target = event.target;
-    if (target.matches("select[data-item]")) { current().items[Number(target.dataset.item)][target.dataset.prop] = target.value; renderPreview(); }
+    if (target.matches("select[data-item]")) { current().items[Number(target.dataset.item)][target.dataset.prop] = target.value; if (target.dataset.prop === "platform") render(); else renderPreview(); }
     if (target.matches("select[data-field]")) { current()[target.dataset.field] = target.value; renderPreview(); }
     if (target.matches("[data-toggle]")) { const s = sections().find((row) => row.id === target.dataset.toggle); if (s) s.enabled = target.checked; renderPreview(); }
     if (target.id === "sectionPicker") { selected = target.value; render(); }
