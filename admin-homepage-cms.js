@@ -25,6 +25,7 @@
 
   let config = clone(DEFAULT_CONFIG);
   let selected = "hero";
+  let activeTab = "sections";
   let catalogItems = null;
   let catalogLoadFailed = false;
   let articleSyncStatus = null;
@@ -516,12 +517,22 @@
     renderPreview();
   }
 
+  function switchTab(name) {
+    activeTab = name;
+    document.querySelectorAll(".cms-tab").forEach((btn) => btn.classList.toggle("active", btn.dataset.tab === name));
+    document.querySelectorAll("[data-panel]").forEach((panel) => panel.classList.toggle("tab-active", panel.dataset.panel === name));
+  }
+
   /* ── event handlers ── */
   document.addEventListener("click", (event) => {
     const moveBtn = event.target.closest("[data-move]");
     if (moveBtn) move(moveBtn.dataset.move, Number(moveBtn.dataset.dir));
     const edit = event.target.closest("[data-edit]");
-    if (edit) { selected = edit.dataset.edit; render(); }
+    if (edit) {
+      selected = edit.dataset.edit;
+      render();
+      if (window.innerWidth <= 880) switchTab("editor");
+    }
     const remove = event.target.closest("[data-remove-item]");
     if (remove) { current().items.splice(Number(remove.dataset.removeItem), 1); render(); }
     const moveItem = event.target.closest("[data-move-item]");
@@ -632,5 +643,11 @@
   $("saveDraft").addEventListener("click", () => saveDraft().catch((error) => setStatus(error.message, "bad")));
   $("publish").addEventListener("click", () => publish().catch((error) => setStatus(error.message, "bad")));
   $("reload").addEventListener("click", () => load().catch((error) => setStatus(error.message, "bad")));
+  $("cmsTabs").addEventListener("click", (event) => {
+    const tab = event.target.closest(".cms-tab");
+    if (tab) switchTab(tab.dataset.tab);
+  });
+  $("backToSections").addEventListener("click", () => switchTab("sections"));
+  switchTab("sections");
   load().catch((error) => { config = clone(DEFAULT_CONFIG); render(); setStatus(error.message, "bad"); });
 })();
