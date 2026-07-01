@@ -12902,6 +12902,49 @@ await pool.query(`CREATE INDEX IF NOT EXISTS idx_income_tech_overrides_enabled O
       CHECK (position = ANY (ARRAY['junior'::text,'senior'::text,'lead'::text,'founder_ceo'::text]))
     `);
 
+    // Homepage CMS tables (created here so a fresh deploy needs no manual migration step)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS public.homepage_cms_configs (
+        config_key TEXT PRIMARY KEY,
+        draft_config JSONB NOT NULL DEFAULT '{}'::jsonb,
+        published_config JSONB,
+        version INTEGER NOT NULL DEFAULT 1,
+        updated_by TEXT,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        published_at TIMESTAMPTZ
+      )
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS public.homepage_cms_media (
+        media_id BIGSERIAL PRIMARY KEY,
+        image_public_id TEXT NOT NULL UNIQUE,
+        image_url TEXT NOT NULL,
+        original_name TEXT,
+        mime_type TEXT,
+        file_size BIGINT,
+        uploaded_by TEXT,
+        uploaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        deleted_by TEXT,
+        deleted_at TIMESTAMPTZ
+      )
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_homepage_cms_media_active ON public.homepage_cms_media(image_public_id) WHERE deleted_at IS NULL`);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS public.homepage_synced_articles (
+        id BIGSERIAL PRIMARY KEY,
+        source_url TEXT NOT NULL,
+        external_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        summary TEXT,
+        image_url TEXT,
+        link TEXT NOT NULL,
+        published_at TIMESTAMPTZ,
+        synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE (source_url, external_id)
+      )
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_homepage_synced_articles_source ON public.homepage_synced_articles(source_url, published_at DESC NULLS LAST)`);
+
     // ✅ Seed Super Admin Accounts (Whitelist-based)
     // NOTE: ห้ามใช้ role=super_admin เพราะ DB มี constraint users_role_check
     // Super Admin จะตัดสินจาก isSuperAdmin(username) เท่านั้น
