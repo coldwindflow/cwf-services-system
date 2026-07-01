@@ -5135,10 +5135,62 @@ body.has-contact-sheet { overflow: hidden; }
 
 .homepage-social-card .homepage-card-body strong { font-size: 12.5px; }
 
-/* Facebook Page Timeline embed card */
-.homepage-social-card.is-fb-timeline:active { transform: none; }
-.homepage-social-fb-page { overflow: hidden; width: 100%; }
-.homepage-social-fb-page iframe { display: block; width: 100%; border: 0; }
+/* ─── Facebook Page Timeline (full-width block, not a carousel card) ──────
+   Rendered below any video/post carousel. The embedded Page Plugin adapts to
+   this frame's width so the cover, page name and posts are never clipped. */
+.homepage-fb-timeline-stack { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; }
+.homepage-fb-timeline {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 8px 22px rgba(6, 24, 47, 0.08);
+}
+.homepage-fb-timeline-head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px 10px;
+}
+.homepage-fb-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  align-self: flex-start;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(24, 60, 153, 0.10);
+  color: #1c3d99;
+  font-size: 10.5px;
+  font-weight: 800;
+}
+.homepage-fb-timeline-head strong { font-size: 14px; font-weight: 900; color: var(--ink); }
+.homepage-fb-timeline-head small { color: var(--muted); font-size: 11.5px; line-height: 1.4; }
+.homepage-fb-timeline-frame {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  overflow: hidden;
+  background: #f0f2f5;
+}
+.homepage-fb-timeline-frame iframe {
+  display: block;
+  width: 100%;
+  max-width: 500px;
+  height: 560px;
+  border: 0;
+}
+.homepage-fb-timeline-cta {
+  display: block;
+  padding: 12px 14px;
+  border-top: 1px solid var(--line);
+  color: var(--blue);
+  font-size: 12.5px;
+  font-weight: 800;
+  text-align: center;
+  text-decoration: none;
+}
+.homepage-fb-timeline-cta:active { background: var(--soft-blue); }
 
 /* ─── Trust section ─────────────────────────────────────────────────── */
 .homepage-trust-grid {
