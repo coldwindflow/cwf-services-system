@@ -441,12 +441,13 @@
     return rounded % 1 === 0 ? String(rounded) : rounded.toFixed(1);
   }
 
-  // No approved reviews yet: display-only 5-star default (never written to
-  // DB, never a fabricated average/count). Once a real approved review
-  // exists, this switches to the real average/count below.
+  // No approved reviews yet: render an honest empty state — five outline
+  // (unfilled) stars plus a "ยังไม่มีรีวิว" label, never a fabricated full-star
+  // score or average. Once a real approved review exists, this switches to the
+  // real average/count below.
   function renderRatingBadge(item) {
     const { value, count, hasReviews } = realRatingInfo(item);
-    const full = hasReviews ? Math.floor(value) : 5;
+    const full = hasReviews ? Math.floor(value) : 0;
     const hasHalf = hasReviews && full < 5 && value - full >= 0.5;
     const stars = Array.from({ length: 5 }, (_, i) => {
       const filled = i < full;
@@ -456,9 +457,12 @@
     }).join("");
     const id = String(item.item_id || "");
     const valueLabel = hasReviews ? `<span class="store-rating-value">${formatRatingAverage(value)}</span>` : "";
-    const countLabel = hasReviews ? `<span class="store-rating-count">(${count})</span>` : "";
+    const countLabel = hasReviews
+      ? `<span class="store-rating-count">(${count})</span>`
+      : `<span class="store-rating-empty">ยังไม่มีรีวิว</span>`;
+    const title = hasReviews ? "ดูรีวิวจากลูกค้า" : "ยังไม่มีรีวิว — เป็นคนแรกที่รีวิว";
     return `
-      <button type="button" class="store-rating-badge" data-store-rating="${root.utils.escapeHtml(id)}" title="ดูรีวิวจากลูกค้า">
+      <button type="button" class="store-rating-badge" data-store-rating="${root.utils.escapeHtml(id)}" title="${title}">
         <span class="store-rating-label">รีวิว</span>
         <span class="store-rating-stars">${stars}</span>
         ${valueLabel}${countLabel}

@@ -236,7 +236,7 @@ test("Customer App build id is consistent across shell and service worker", () =
   const sw = read("customer-app/sw.js");
   const app = read("customer-app/assets/customer-app.js");
   const manifest = read("customer-app/manifest.webmanifest");
-  const build = "20260701_home_effects_v1";
+  const build = "20260701_store_rating_v1";
 
   assert.match(index, new RegExp(`customer-app\\.css\\?v=${build}`));
   assert.match(index, new RegExp(`modules\\/api\\.js\\?v=${build}`));
@@ -254,7 +254,7 @@ test("Customer App build id is consistent across shell and service worker", () =
 test("store module is loaded in index.html and precached in the service worker app shell", () => {
   const index = read("customer-app/index.html");
   const sw = read("customer-app/sw.js");
-  const build = "20260701_home_effects_v1";
+  const build = "20260701_store_rating_v1";
 
   assert.match(index, new RegExp(`modules/store\\.js\\?v=${build}`));
   assert.match(sw, /`\.\/modules\/store\.js\?v=\$\{BUILD_ID\}`/);
@@ -1231,14 +1231,16 @@ test("store card shows the CWF featured ribbon only for featured items, and an h
   assert.equal((body.innerHTML.match(/store-rating-badge/g) || []).length, 2);
   assert.equal((body.innerHTML.match(/store-rating-label">รีวิว/g) || []).length, 2);
   assert.doesNotMatch(body.innerHTML, /มาตรฐาน CWF/);
-  // neither item has real reviews yet, so both must render the default
-  // display-only 5-filled-star badge with no value/count label.
-  assert.equal((body.innerHTML.match(/store-rating-star is-filled/g) || []).length, 10);
+  // neither item has real reviews yet, so both must render the honest empty
+  // state: five outline stars (no filled) plus a "ยังไม่มีรีวิว" label — never
+  // a fabricated full-star score or a value/count.
+  assert.equal((body.innerHTML.match(/store-rating-star is-filled/g) || []).length, 0);
+  assert.equal((body.innerHTML.match(/store-rating-empty">ยังไม่มีรีวิว<\/span>/g) || []).length, 2);
   assert.doesNotMatch(body.innerHTML, /store-rating-count/);
   assert.doesNotMatch(body.innerHTML, /store-rating-value/);
 });
 
-test("rating badge renders real rating_average/review_count with half stars and a visible count, but falls back to the default 5-star badge when there is no real data", async () => {
+test("rating badge renders real rating_average/review_count with half stars and a visible count, but shows an honest empty state when there is no real data", async () => {
   const context = makeContext();
   const root = loadCustomerFrontend(context);
   root.api.loadCatalogItems = async () => [
@@ -1254,9 +1256,10 @@ test("rating badge renders real rating_average/review_count with half stars and 
   assert.match(body.innerHTML, /store-rating-star is-half/);
   assert.match(body.innerHTML, /store-rating-value">4\.5<\/span>/);
   assert.match(body.innerHTML, /store-rating-count">\(12\)<\/span>/);
-  // item 1 (real data) contributes 4 filled stars + 1 half; item 2 (no
-  // reviews yet) contributes 5 filled stars from the default badge.
-  assert.equal((body.innerHTML.match(/store-rating-star is-filled/g) || []).length, 9);
+  // item 1 (real data) contributes 4 filled stars + 1 half; item 2 (no reviews
+  // yet) contributes 0 filled stars and a "ยังไม่มีรีวิว" label instead.
+  assert.equal((body.innerHTML.match(/store-rating-star is-filled/g) || []).length, 4);
+  assert.match(body.innerHTML, /store-rating-empty">ยังไม่มีรีวิว<\/span>/);
 });
 
 test("rating badge star fill logic only shows a half star once the fractional part reaches 0.5; below that it rounds down to full/empty stars only", async () => {
@@ -1277,7 +1280,7 @@ test("rating badge star fill logic only shows a half star once the fractional pa
   assert.equal((body.innerHTML.match(/store-rating-star is-filled/g) || []).length, 4);
 });
 
-test("rating badge ignores legacy rating_value and fails safe to the default 5-star badge on invalid/null rating_average or review_count", async () => {
+test("rating badge ignores legacy rating_value and fails safe to the honest empty state on invalid/null rating_average or review_count", async () => {
   const context = makeContext();
   const root = loadCustomerFrontend(context);
   root.api.loadCatalogItems = async () => [
@@ -1294,9 +1297,11 @@ test("rating badge ignores legacy rating_value and fails safe to the default 5-s
   await new Promise((resolve) => setTimeout(resolve, 0));
 
   const body = container.querySelector("[data-store-body]");
-  // every item must fail safe to the default 5-filled-star badge -- never a fabricated average/count
+  // every item must fail safe to the honest empty state -- outline stars + a
+  // "ยังไม่มีรีวิว" label, never a fabricated full-star score or average/count
   assert.equal((body.innerHTML.match(/store-rating-badge/g) || []).length, 5);
-  assert.equal((body.innerHTML.match(/store-rating-star is-filled/g) || []).length, 25);
+  assert.equal((body.innerHTML.match(/store-rating-star is-filled/g) || []).length, 0);
+  assert.equal((body.innerHTML.match(/store-rating-empty">ยังไม่มีรีวิว<\/span>/g) || []).length, 5);
   assert.doesNotMatch(body.innerHTML, /store-rating-star is-half/);
   assert.doesNotMatch(body.innerHTML, /store-rating-value/);
   assert.doesNotMatch(body.innerHTML, /store-rating-count/);
