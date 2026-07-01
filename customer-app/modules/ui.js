@@ -448,6 +448,13 @@
 
   // Admin pastes a public post/video URL (no Graph/YouTube Data API calls);
   // we only need the video ID client-side to build a thumbnail + nocookie
+  // Returns true if the Facebook URL is a Page/profile (not a specific post/video/photo).
+  // Page URLs → embed Facebook Page Plugin timeline. Post URLs → open in new tab.
+  function facebookIsPage(url) {
+    const postIndicators = ["/posts/", "/videos/", "/photo", "/reel/", "/watch/", "story_fbid", "fbid=", "/permalink/"];
+    return !postIndicators.some((p) => url.includes(p));
+  }
+
   // embed URL. Matches watch/shorts/youtu.be/embed link shapes.
   function youtubeVideoId(url) {
     const text = String(url || "");
@@ -468,6 +475,26 @@
     const platform = item.platform === "facebook" ? "facebook" : "youtube";
     const url = String(item.url || "").trim();
     const videoId = platform === "youtube" ? youtubeVideoId(url) : "";
+    const isFbPage = platform === "facebook" && url && facebookIsPage(url);
+
+    // Facebook Page URL → embed Page Plugin timeline directly (no click needed)
+    if (isFbPage) {
+      const encodedUrl = encodeURIComponent(url);
+      return `
+        <article class="homepage-social-card is-facebook is-fb-timeline">
+          <div class="homepage-social-fb-page">
+            <iframe
+              src="https://www.facebook.com/plugins/page.php?href=${encodedUrl}&tabs=timeline&width=340&height=600&small_header=true&adapt_container_width=true&hide_cover=false&show_facepile=false"
+              loading="lazy" scrolling="yes" frameborder="0" allowfullscreen="true"
+              allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share"
+              style="border:none;overflow:hidden;width:100%;height:600px">
+            </iframe>
+          </div>
+          ${item.title ? `<div class="homepage-card-body"><strong>${root.utils.escapeHtml(item.title)}</strong>${item.body ? `<small>${root.utils.escapeHtml(item.body)}</small>` : ""}</div>` : ""}
+        </article>
+      `;
+    }
+
     const thumb = String(item.image_url || "").trim() || (videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : "");
     return `
       <article class="homepage-social-card is-${platform}" data-home-social="${index}" data-platform="${platform}" data-video-id="${root.utils.escapeHtml(videoId)}" data-post-url="${root.utils.escapeHtml(url)}">

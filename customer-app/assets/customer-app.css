@@ -5074,6 +5074,11 @@ body.has-contact-sheet { overflow: hidden; }
 
 .homepage-social-card .homepage-card-body strong { font-size: 12.5px; }
 
+/* Facebook Page Timeline embed card */
+.homepage-social-card.is-fb-timeline:active { transform: none; }
+.homepage-social-fb-page { overflow: hidden; width: 100%; }
+.homepage-social-fb-page iframe { display: block; width: 100%; border: 0; }
+
 /* ─── Trust section ─────────────────────────────────────────────────── */
 .homepage-trust-grid {
   display: grid;
