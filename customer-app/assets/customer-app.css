@@ -4388,6 +4388,52 @@ body.has-contact-sheet { overflow: hidden; }
   padding: 12px 14px 14px;
 }
 
+/* ─── Entrance choreography ("ลูกเล่น") ─────────────────────────────────
+   Each top-level block starts slightly lowered + transparent and reveals as it
+   scrolls into view (JS adds .is-revealed via IntersectionObserver). The hero
+   reveals immediately on load. Respects reduced-motion. */
+.homepage-screen > .homepage-hero,
+.homepage-screen > .homepage-quick-grid,
+.homepage-screen > .homepage-promo-banner,
+.homepage-screen > .homepage-section {
+  opacity: 0;
+  transform: translateY(16px);
+  transition: opacity 0.55s cubic-bezier(0.22, 0.61, 0.36, 1),
+              transform 0.55s cubic-bezier(0.22, 0.61, 0.36, 1);
+  will-change: opacity, transform;
+}
+.homepage-screen > .is-revealed {
+  opacity: 1;
+  transform: none;
+}
+/* Stagger the quick-action tiles and any carousel cards as their row reveals */
+.homepage-quick-grid.is-revealed .homepage-quick,
+.homepage-carousel.is-revealed > * {
+  animation: cwfHomeRise 0.5s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+.homepage-quick-grid.is-revealed .homepage-quick:nth-child(2) { animation-delay: 0.06s; }
+.homepage-quick-grid.is-revealed .homepage-quick:nth-child(3) { animation-delay: 0.12s; }
+.homepage-quick-grid.is-revealed .homepage-quick:nth-child(4) { animation-delay: 0.18s; }
+.homepage-carousel.is-revealed > *:nth-child(2) { animation-delay: 0.07s; }
+.homepage-carousel.is-revealed > *:nth-child(3) { animation-delay: 0.14s; }
+.homepage-carousel.is-revealed > *:nth-child(4) { animation-delay: 0.21s; }
+@keyframes cwfHomeRise {
+  from { opacity: 0; transform: translateY(14px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .homepage-screen > .homepage-hero,
+  .homepage-screen > .homepage-quick-grid,
+  .homepage-screen > .homepage-promo-banner,
+  .homepage-screen > .homepage-section {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+  .homepage-quick-grid.is-revealed .homepage-quick,
+  .homepage-carousel.is-revealed > * { animation: none; }
+}
+
 /* ─── Hero ─────────────────────────────────────────────────────────── */
 .homepage-hero {
   position: relative;
@@ -4510,19 +4556,25 @@ body.has-contact-sheet { overflow: hidden; }
   box-shadow: 0 8px 18px rgba(255, 185, 23, 0.32);
 }
 .hero-main-btn:active { transform: scale(0.97); }
-/* Secondary CTA — plain text link, not a second button */
+/* Secondary CTA — glassy outlined pill so it's clearly tappable over imagery */
 .hero-ghost-btn {
   display: inline-flex;
   align-items: center;
-  padding: 4px 0;
-  font-size: 12px;
+  justify-content: center;
+  min-height: 40px;
+  padding: 0 16px;
+  border: 1.5px solid rgba(255, 255, 255, 0.55);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  font-size: 12.5px;
   font-weight: 800;
-  color: rgba(255, 255, 255, 0.86);
-  text-decoration: underline;
-  text-underline-offset: 3px;
-  text-decoration-color: rgba(255, 255, 255, 0.4);
+  color: #fff;
+  text-decoration: none;
+  transition: transform 0.1s, background 0.15s, border-color 0.15s;
 }
-.hero-ghost-btn:active { opacity: 0.8; }
+.hero-ghost-btn:active { transform: scale(0.97); background: rgba(255, 255, 255, 0.22); }
 /* Slide dots — centred bottom, active expands to pill */
 .homepage-hero-dots {
   position: absolute;
@@ -4666,7 +4718,7 @@ body.has-contact-sheet { overflow: hidden; }
 .homepage-promo-banner-media {
   display: block;
   width: 100%;
-  aspect-ratio: 1 / 1;
+  aspect-ratio: 16 / 9;
   background: var(--soft-blue-2);
 }
 .homepage-promo-banner-media img {
@@ -4674,8 +4726,15 @@ body.has-contact-sheet { overflow: hidden; }
   height: 100%;
   display: block;
 }
-.homepage-promo-banner-media.is-contain img { object-fit: contain; }
+/* "Cover" crops to the banner shape. "Contain" shows the whole image — let it
+   size to its own height (capped) so square/portrait uploads aren't letterboxed
+   into a tiny strip, while still never dominating the screen. */
 .homepage-promo-banner-media.is-cover img { object-fit: cover; }
+.homepage-promo-banner-media.is-contain {
+  aspect-ratio: auto;
+  max-height: 340px;
+}
+.homepage-promo-banner-media.is-contain img { height: auto; max-height: 340px; object-fit: contain; }
 .homepage-promo-banner-dots {
   position: absolute;
   z-index: 2;

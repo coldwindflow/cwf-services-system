@@ -783,6 +783,7 @@
 
   function bindHomepage(container) {
     bindCommerceHome(container);
+    bindHomepageReveal(container);
     bindHomepageHeroSliders(container);
     bindHomepagePromoBannerSlider(container);
     container.querySelectorAll("[data-home-contact]").forEach((button) => {
@@ -821,6 +822,71 @@
   // thumbnail, or a branded fallback chip for Facebook) and only fetch the
   // YouTube/Facebook iframe once tapped, keeping the homepage's initial load
   // light while still rendering the actual post/video inline on demand.
+  // Scroll-reveal choreography: top-level blocks (and inner carousels) fade/rise
+  // into view once. Hero reveals instantly; the rest reveal as they scroll in.
+  // Degrades gracefully to "everything visible" if IntersectionObserver is absent.
+  function bindHomepageReveal(container) {
+    const screen = container.querySelector(".homepage-screen");
+    if (!screen) return;
+    const blocks = Array.from(screen.children).filter((el) =>
+      el.classList &&
+      (el.classList.contains("homepage-hero") ||
+        el.classList.contains("homepage-quick-grid") ||
+        el.classList.contains("homepage-promo-banner") ||
+        el.classList.contains("homepage-section")));
+    const carousels = Array.from(container.querySelectorAll(".homepage-quick-grid, .homepage-carousel"));
+    const targets = Array.from(new Set([...blocks, ...carousels]));
+    if (!targets.length) return;
+
+    const reveal = (el) => el.classList.add("is-revealed");
+    // Hero first-paint: reveal immediately so the top of the page isn't blank.
+    blocks.filter((el) => el.classList.contains("homepage-hero")).forEach(reveal);
+
+    if (typeof IntersectionObserver !== "function") {
+      targets.forEach(reveal);
+      return;
+    }
+    const observer = new IntersectionObserver((entries, obs) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          reveal(entry.target);
+          obs.unobserve(entry.target);
+        }
+      });
+    }, { rootMargin: "0px 0px -8% 0px", threshold: 0.12 });
+    targets.forEach((el) => {
+      if (el.classList.contains("is-revealed")) return;
+      observer.observe(el);
+    });
+    // Safety net: if anything is still hidden shortly after paint (e.g. tall
+    // viewport where lower sections never trigger), reveal them.
+    setTimeout(() => targets.forEach(reveal), 1400);
+  }
+
+  // Gentle auto-advance for a slider: steps to the next slide on an interval and
+  // pauses while the user is touching/scrolling it. Loops back to the start.
+  function autoAdvanceSlider(sliderEl, slideCount, intervalMs) {
+    if (!sliderEl || slideCount <= 1) return;
+    let timer = 0;
+    let paused = false;
+    const step = () => {
+      if (paused) return;
+      const width = sliderEl.clientWidth || 1;
+      const index = Math.round((sliderEl.scrollLeft || 0) / width);
+      const next = (index + 1) % slideCount;
+      if (typeof sliderEl.scrollTo === "function") {
+        sliderEl.scrollTo({ left: next * width, behavior: "smooth" });
+      }
+    };
+    const start = () => { stop(); timer = setInterval(step, intervalMs); };
+    const stop = () => { if (timer) { clearInterval(timer); timer = 0; } };
+    ["touchstart", "pointerdown"].forEach((ev) =>
+      sliderEl.addEventListener(ev, () => { paused = true; stop(); }, { passive: true }));
+    ["touchend", "pointerup", "mouseleave"].forEach((ev) =>
+      sliderEl.addEventListener(ev, () => { paused = false; start(); }, { passive: true }));
+    start();
+  }
+
   function bindHomepageSocialCards(container) {
     container.querySelectorAll("[data-home-social-trigger]").forEach((trigger) => {
       if (trigger.dataset.bound === "1") return;
@@ -895,6 +961,7 @@
         });
       });
       update();
+      autoAdvanceSlider(slider, slides.length, 5200);
     });
   }
 
@@ -945,6 +1012,7 @@
         });
       });
       update();
+      autoAdvanceSlider(track, slides.length, 5600);
     });
   }
 
