@@ -2943,6 +2943,18 @@ body {
   height: 14px;
   border-radius: 999px;
   background: #e8eef7;
+  /* Shimmer sweep so loading states feel alive rather than a frozen gray bar */
+  background-image: linear-gradient(100deg, #e8eef7 30%, #f5f9ff 48%, #dfe9f8 52%, #e8eef7 70%);
+  background-size: 220% 100%;
+  animation: cwfSkeletonShimmer 1.5s ease-in-out infinite;
+}
+@keyframes cwfSkeletonShimmer {
+  from { background-position: 220% 0; }
+  to { background-position: -120% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .account-skeleton span,
+  .content-skeleton span { animation: none; }
 }
 .account-skeleton span:first-child,
 .content-skeleton span:first-child { width: 68%; }
@@ -4436,6 +4448,10 @@ body.has-contact-sheet { overflow: hidden; }
   .homepage-carousel.is-revealed > * { animation: none; }
 }
 
+/* Per-page header banner (store / booking / tracking) reuses the hero markup.
+   On non-home screens it needs its own spacing below. */
+.page-header-banner { margin-bottom: 14px; }
+
 /* ─── Hero ─────────────────────────────────────────────────────────── */
 .homepage-hero {
   position: relative;
@@ -4680,10 +4696,16 @@ body.has-contact-sheet { overflow: hidden; }
   line-height: 1.26;
   color: var(--ink);
 }
+/* LINE uses the real LINE app badge (self-coloured SVG), so the chip itself is
+   transparent and the badge fills it — no doubled green square. */
 .homepage-quick.is-line span:first-child {
-  background: linear-gradient(135deg, #06c755 0%, #04a847 100%);
-  color: #fff;
-  box-shadow: 0 3px 8px rgba(6, 199, 85, 0.28);
+  background: transparent;
+  box-shadow: none;
+}
+.homepage-quick.is-line span:first-child svg {
+  width: 30px; height: 30px;
+  border-radius: 8px;
+  box-shadow: 0 3px 8px rgba(6, 199, 85, 0.30);
 }
 
 /* ─── Promo banner — CMS-managed, full-width, uncropped image ────────── */
@@ -4931,7 +4953,19 @@ body.has-contact-sheet { overflow: hidden; }
 .homepage-update-card .homepage-card-image     { height: 140px; }
 .homepage-article-card .homepage-card-image    { aspect-ratio: 16 / 9; }
 
-.homepage-card-image img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.homepage-card-image img { display: block; width: 100%; height: 100%; object-fit: cover; transition: transform 0.4s cubic-bezier(0.22, 0.61, 0.36, 1); }
+/* Gentle image zoom on tap — a premium micro-interaction that reads as "alive" */
+.homepage-card-link:active .homepage-card-image img,
+.homepage-update-card:active .homepage-card-image img,
+.homepage-article-card:active .homepage-card-image img,
+.homepage-announcement-card:active .homepage-card-image img { transform: scale(1.06); }
+@media (prefers-reduced-motion: reduce) {
+  .homepage-card-image img { transition: none; }
+  .homepage-card-link:active .homepage-card-image img,
+  .homepage-update-card:active .homepage-card-image img,
+  .homepage-article-card:active .homepage-card-image img,
+  .homepage-announcement-card:active .homepage-card-image img { transform: none; }
+}
 .homepage-hero-media img { display: block; width: 100%; height: 100%; object-fit: cover; }
 
 /* ─── Card inner layout ─────────────────────────────────────────────── */
@@ -5173,11 +5207,14 @@ body.has-contact-sheet { overflow: hidden; }
   overflow: hidden;
   background: #f0f2f5;
 }
+/* width/height are set inline by bindHomepageFbTimelines to match the real
+   container width (the plugin renders at exactly its `width` param). These are
+   just pre-JS defaults so the frame reserves space without a layout jump. */
 .homepage-fb-timeline-frame iframe {
   display: block;
   width: 100%;
   max-width: 500px;
-  height: 560px;
+  height: 640px;
   border: 0;
 }
 .homepage-fb-timeline-cta {

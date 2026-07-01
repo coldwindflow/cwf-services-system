@@ -22,6 +22,8 @@ const SECTION_TYPES = new Set([
   "trust",
 ]);
 const INTERNAL_ROUTES = new Set(["home", "booking", "scheduled", "urgent", "tracking", "profile", "store"]);
+// Per-page header banners the admin manages independently of the homepage hero.
+const PAGE_HEADER_KEYS = ["store", "booking", "tracking"];
 const FOCAL_POSITIONS = new Set(["top", "center", "bottom"]);
 const ASPECT_MODES = new Set(["contain", "cover"]);
 const MAX_PROMO_BANNERS = 8;
@@ -344,6 +346,31 @@ function normalizeSection(raw, index, errors) {
   return out;
 }
 
+// Per-page header banners (store/booking/tracking) reuse the hero slide shape:
+// each is an auto-sliding, optionally-clickable image banner the admin manages
+// in the CMS, independent of the homepage hero.
+function normalizePageHeaders(raw, errors) {
+  const src = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+  const out = {};
+  for (const key of PAGE_HEADER_KEYS) {
+    const header = src[key];
+    if (!header || typeof header !== "object") continue;
+    const rawItems = Array.isArray(header.items) ? header.items : [];
+    if (rawItems.length > MAX_HERO_SLIDES) errors.push(`page_headers.${key}.items too many`);
+    const items = rawItems.slice(0, MAX_HERO_SLIDES).map((item, index) =>
+      normalizeItem(item, "hero", index, errors));
+    out[key] = {
+      enabled: header.enabled !== false,
+      kicker: cleanText(header.kicker, 60),
+      title: cleanText(header.title, 120),
+      body: cleanText(header.body, 260),
+      focal_position: FOCAL_POSITIONS.has(cleanText(header.focal_position, 10)) ? cleanText(header.focal_position, 10) : "center",
+      items,
+    };
+  }
+  return out;
+}
+
 function validateConfig(input) {
   const errors = [];
   if (!input || typeof input !== "object" || Array.isArray(input)) errors.push("payload must be object");
@@ -355,6 +382,7 @@ function validateConfig(input) {
     version: 1,
     sections: sections.map((section, index) => normalizeSection(section, index, errors))
       .sort((a, b) => a.sort_order - b.sort_order),
+    page_headers: normalizePageHeaders(input?.page_headers, errors),
   };
   return { ok: errors.length === 0, errors, config: normalized };
 }
@@ -413,7 +441,29 @@ function stripPublicConfig(config) {
         });
       return cleanSection;
     });
-  return { version: 1, sections };
+  // Carry per-page headers to the public config, stripping admin metadata and
+  // dropping disabled/expired slides (and headers with no live slide).
+  const rawHeaders = config?.page_headers && typeof config.page_headers === "object" ? config.page_headers : {};
+  const page_headers = {};
+  for (const key of Object.keys(rawHeaders)) {
+    const header = rawHeaders[key];
+    if (!header || typeof header !== "object" || header.enabled === false) continue;
+    const items = (header.items || [])
+      .filter((item) => item.enabled !== false && activeNow(item, now))
+      .sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0))
+      .map((item) => {
+        const cleanItem = { ...item };
+        delete cleanItem.image_public_id;
+        delete cleanItem.updated_by;
+        return cleanItem;
+      });
+    if (!items.length) continue;
+    const cleanHeader = { ...header, items };
+    delete cleanHeader.image_public_id;
+    delete cleanHeader.updated_by;
+    page_headers[key] = cleanHeader;
+  }
+  return { version: 1, sections, page_headers };
 }
 
 async function hydrateAutoSyncArticles(pool, publicConfig) {

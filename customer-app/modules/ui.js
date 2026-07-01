@@ -337,6 +337,29 @@
     `;
   }
 
+  // Per-page header banner (store / booking / tracking). Admin-managed in the
+  // CMS, independent of the homepage hero, but reuses the hero markup so it
+  // auto-slides and its slides are clickable. Returns "" when unset/empty.
+  function renderPageHeader(pageKey) {
+    const cfg = (homepageConfig().page_headers || {})[pageKey];
+    if (!cfg || cfg.enabled === false) return "";
+    const slides = (cfg.items || []).filter((s) => s && s.enabled !== false && s.image_url);
+    if (!slides.length) return "";
+    return `<div class="page-header-banner">${renderHomepageHero({
+      type: "hero",
+      kicker: cfg.kicker,
+      title: cfg.title,
+      body: cfg.body,
+      focal_position: cfg.focal_position,
+      items: slides,
+    })}</div>`;
+  }
+
+  function bindPageHeader(container) {
+    if (!container) return;
+    bindHomepageHeroSliders(container);
+  }
+
   function renderHomepagePromoBanner(section) {
     if (!section) return "";
     const banners = (section.items || []).filter((item) => item && item.image_url);
@@ -471,13 +494,14 @@
     return "";
   }
 
-  // Facebook Page URL → full-width embedded Page Plugin timeline. Rendered as
-  // its own block (never a narrow carousel card) so the cover, page name and
-  // posts are not clipped. adapt_container_width lets the plugin fit the frame.
+  // Facebook Page URL → full-width embedded Page Plugin timeline, rendered as
+  // its own block (never a narrow carousel card). The iframe src is set in JS
+  // (bindHomepageFbTimelines) with the plugin `width` matched to the real
+  // container width — the iframe embed ignores adapt_container_width, so a
+  // hard-coded width would render wider than the frame and clip the cover, page
+  // name and posts. The "เปิดเพจ Facebook" link is the graceful no-JS fallback.
   function renderHomepageFbTimeline(item) {
     const url = String(item.url || "").trim();
-    const encodedUrl = encodeURIComponent(url);
-    const src = `https://www.facebook.com/plugins/page.php?href=${encodedUrl}&tabs=timeline&width=500&height=560&small_header=false&adapt_container_width=true&hide_cover=false&show_facepile=true`;
     return `
       <article class="homepage-fb-timeline">
         ${item.title || item.body ? `
@@ -486,8 +510,8 @@
             ${item.title ? `<strong>${root.utils.escapeHtml(item.title)}</strong>` : ""}
             ${item.body ? `<small>${root.utils.escapeHtml(item.body)}</small>` : ""}
           </div>` : ""}
-        <div class="homepage-fb-timeline-frame">
-          <iframe src="${src}" loading="lazy" scrolling="no" frameborder="0" allowfullscreen="true"
+        <div class="homepage-fb-timeline-frame" data-fb-timeline-frame>
+          <iframe title="Facebook" data-fb-href="${root.utils.escapeHtml(url)}" loading="lazy" scrolling="no" frameborder="0" allowfullscreen="true"
             allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share"></iframe>
         </div>
         <a class="homepage-fb-timeline-cta" href="${root.utils.escapeHtml(url)}" target="_blank" rel="noopener noreferrer">เปิดเพจ Facebook</a>
@@ -737,7 +761,7 @@
         <h2 id="contact-sheet-title">${root.utils.escapeHtml(title)}</h2>
         <p>บริการนี้ยังไม่เปิดจองอัตโนมัติในแอป กรุณาติดต่อแอดมินเพื่อสอบถามอาการ ประเมินราคา และนัดหมายให้เหมาะกับหน้างาน</p>
         <div class="contact-sheet-actions">
-          <a class="primary-btn" href="https://line.me/R/ti/p/@cwfair" target="_blank" rel="noopener noreferrer">แชท LINE @cwfair</a>
+          <a class="primary-btn" href="https://lin.ee/fG1Oq7y" target="_blank" rel="noopener noreferrer">แชท LINE @cwfair</a>
           <a class="secondary-btn" href="tel:0988777321">โทร 098-877-7321</a>
         </div>
       </section>
@@ -830,6 +854,40 @@
       });
     });
     bindHomepageSocialCards(container);
+    bindHomepageFbTimelines(container);
+  }
+
+  // Size each Facebook Page Plugin to its real container width so its cover,
+  // page name and posts are never clipped. The iframe embed renders at exactly
+  // the plugin `width` param (it ignores adapt_container_width), so we measure
+  // the frame and build the src to match, clamped to Facebook's 180–500 range.
+  // Re-fits on viewport resize/rotation (debounced) and only reloads on change.
+  function bindHomepageFbTimelines(container) {
+    const frames = Array.from(container.querySelectorAll("[data-fb-timeline-frame]"));
+    if (!frames.length) return;
+    const HEIGHT = 640;
+    const fit = (frame) => {
+      const iframe = frame.querySelector("iframe");
+      if (!iframe) return;
+      const href = iframe.getAttribute("data-fb-href");
+      if (!href) return;
+      const width = Math.max(180, Math.min(500, Math.round(frame.clientWidth || 340)));
+      if (iframe.getAttribute("data-fb-width") === String(width)) return;
+      iframe.setAttribute("data-fb-width", String(width));
+      iframe.style.width = width + "px";
+      iframe.style.height = HEIGHT + "px";
+      iframe.src = `https://www.facebook.com/plugins/page.php?href=${encodeURIComponent(href)}` +
+        `&tabs=timeline&width=${width}&height=${HEIGHT}&small_header=false&adapt_container_width=true&hide_cover=false&show_facepile=true`;
+    };
+    frames.forEach(fit);
+    if (container.dataset.fbResizeBound !== "1") {
+      container.dataset.fbResizeBound = "1";
+      let raf = 0;
+      window.addEventListener("resize", () => {
+        if (raf) return;
+        raf = requestAnimationFrame(() => { raf = 0; frames.forEach(fit); });
+      }, { passive: true });
+    }
   }
 
   // Lazy click-to-embed: cards load a static thumbnail first (real YouTube
@@ -1088,6 +1146,8 @@
     patchHomeData,
     updateAccountChrome,
     openContactSheet,
+    pageHeaderHtml: renderPageHeader,
+    bindPageHeader,
 
     renderHome(container) {
       const sectionsHtml = homepageSections().map(renderHomepageSection).filter(Boolean).join("");
@@ -1105,6 +1165,7 @@
     renderBookingMode(container) {
       container.innerHTML = `
         <section class="screen">
+          ${renderPageHeader("booking")}
           <div class="hero booking-hero">
             <div class="hero-badge">จองบริการ</div>
             <h2>จองล้างแอร์ล่วงหน้า</h2>
@@ -1134,6 +1195,7 @@
           </section>
         </section>
       `;
+      bindPageHeader(container);
     },
 
     supportButtons() {

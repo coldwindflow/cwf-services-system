@@ -4,7 +4,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const express = require("express");
 
-const { DEFAULT_CONFIG, createHomepageRoutes, validateConfig, activeNow } = require("../server/routes/homepage");
+const { DEFAULT_CONFIG, createHomepageRoutes, validateConfig, activeNow, stripPublicConfig } = require("../server/routes/homepage");
 
 const REPO_ROOT = path.resolve(__dirname, "..");
 
@@ -278,7 +278,7 @@ test("customer homepage has no admin control, bottom nav is fixed five-tab, and 
   const sw = read("customer-app/sw.js");
   const app = read("customer-app/assets/customer-app.js");
   const manifest = read("customer-app/manifest.webmanifest");
-  const build = "20260701_fb_timeline_v1";
+  const build = "20260701_page_headers_v1";
 
   assert.doesNotMatch(index + ui, /โหมดแอดมิน|openCms|localStorage\.getItem\('cwfHomeCmsDemo'/);
   assert.match(index, /data-route="store"[\s\S]*ร้านค้า/);
@@ -903,6 +903,39 @@ test("social validation defaults platform, requires a matching-host url, and enf
   });
   assert.equal(tooMany.ok, false);
   assert.ok(tooMany.errors.includes("social.items too many"));
+});
+
+test("per-page headers (store/booking/tracking) normalize as hero-like banners and are stripped/filtered for the public config", () => {
+  const result = validateConfig({
+    sections: [{ id: "hero", type: "hero", enabled: true, sort_order: 10, title: "Hero", items: [] }],
+    page_headers: {
+      store: {
+        enabled: true, kicker: "ร้านค้า", title: "โปรร้านค้า", body: "ลดราคา", focal_position: "bottom",
+        items: [
+          { title: "สไลด์ 1", image_url: "https://res.cloudinary.com/demo/a.jpg", image_public_id: "cwf/a", route: "store", enabled: true },
+          { title: "สไลด์ 2", image_url: "https://res.cloudinary.com/demo/b.jpg", enabled: false },
+        ],
+      },
+      tracking: { enabled: false, title: "ปิดอยู่", items: [{ title: "x", image_url: "https://res.cloudinary.com/demo/t.jpg" }] },
+      bogus: { enabled: true, items: [] },
+    },
+  });
+  assert.equal(result.ok, true, JSON.stringify(result.errors));
+  const ph = result.config.page_headers;
+  // Only the three known page keys are kept; unknown keys are dropped.
+  assert.deepEqual(Object.keys(ph).sort(), ["store", "tracking"].sort());
+  assert.equal(ph.store.focal_position, "bottom");
+  assert.equal(ph.store.items.length, 2);
+  assert.equal(ph.store.items[0].image_public_id, "cwf/a");
+
+  // Public config: admin image_public_id stripped, disabled slide and disabled
+  // header dropped, so tracking (enabled:false) disappears entirely.
+  const pub = stripPublicConfig(result.config);
+  assert.ok(pub.page_headers, "public config must carry page_headers");
+  assert.deepEqual(Object.keys(pub.page_headers), ["store"]);
+  assert.equal(pub.page_headers.store.items.length, 1);
+  assert.equal(pub.page_headers.store.items[0].image_public_id, undefined);
+  assert.equal(pub.page_headers.store.items[0].route, "store");
 });
 
 test("updates items are savable with only an image/caption (no URL required); articles still require a URL", () => {
