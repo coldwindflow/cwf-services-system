@@ -96,7 +96,10 @@
     wrench: '<path d="M21 4a5 5 0 0 1-6.5 6.5L6 19l-3-3 8.5-8.5A5 5 0 0 1 18 1l-3 3 2 2 3-3z"/>',
     play: '<path d="M8 5l11 7-11 7V5z" fill="currentColor" stroke="none"/>',
     facebook: '<path d="M14 22v-8h3l1-4h-4V8c0-1.1.6-2 2-2h2V2h-3c-3 0-5 2-5 5v3H7v4h3v8h4z" fill="currentColor" stroke="none"/>',
-    line: '<path d="M12 2C6.48 2 2 5.69 2 10.24c0 4.08 3.55 7.5 8.35 8.15.32.07.77.21.88.49.1.25.07.65.03.91l-.14.86c-.04.25-.2 1 .87.55.6-.27.74-.34.74-.34l.16-.09c3.41-1.46 5.31-2.91 6.93-4.78C21.05 13.7 22 11.96 22 10.24 22 5.69 17.52 2 12 2z" fill="currentColor" stroke="none"/><circle cx="8.2" cy="10.2" r="1" fill="#fff" stroke="none"/><circle cx="12" cy="10.2" r="1" fill="#fff" stroke="none"/><circle cx="15.8" cy="10.2" r="1" fill="#fff" stroke="none"/>',
+    // Real LINE app mark: green rounded-square badge + white speech balloon +
+    // "LINE" wordmark. Self-coloured (not currentColor) so it reads as the
+    // official logo wherever it appears.
+    line: '<rect x="1" y="1" width="22" height="22" rx="6.5" fill="#06C755" stroke="none"/><path d="M12 5.4c-4.2 0-7.6 2.72-7.6 6.07 0 3 2.7 5.51 6.35 5.99.25.05.58.16.66.37.07.19.05.48.02.66 0 0-.09.53-.11.65-.03.19-.15.75.66.41.81-.34 4.35-2.56 5.94-4.39.98-1.08 1.68-2.32 1.68-3.69 0-3.35-3.4-6.07-7.6-6.07z" fill="#fff" stroke="none"/><text x="12" y="12.4" fill="#06C755" font-family="Arial,Helvetica,sans-serif" font-size="4.1" font-weight="700" letter-spacing="0.1" text-anchor="middle" dominant-baseline="middle" stroke="none">LINE</text>',
   };
 
   function icon(name, size) {

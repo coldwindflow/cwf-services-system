@@ -738,7 +738,7 @@
         <h2 id="contact-sheet-title">${root.utils.escapeHtml(title)}</h2>
         <p>บริการนี้ยังไม่เปิดจองอัตโนมัติในแอป กรุณาติดต่อแอดมินเพื่อสอบถามอาการ ประเมินราคา และนัดหมายให้เหมาะกับหน้างาน</p>
         <div class="contact-sheet-actions">
-          <a class="primary-btn" href="https://line.me/R/ti/p/@cwfair" target="_blank" rel="noopener noreferrer">แชท LINE @cwfair</a>
+          <a class="primary-btn" href="https://lin.ee/fG1Oq7y" target="_blank" rel="noopener noreferrer">แชท LINE @cwfair</a>
           <a class="secondary-btn" href="tel:0988777321">โทร 098-877-7321</a>
         </div>
       </section>

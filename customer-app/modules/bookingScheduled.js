@@ -942,7 +942,7 @@
       <div class="page booking-wizard-page">
         <div class="page-toolbar">
           <button type="button" class="text-btn" data-route="home">← หน้าแรก</button>
-          <a class="text-btn" href="https://line.me/R/ti/p/@cwfair" target="_blank" rel="noopener noreferrer">ติดต่อแอดมิน</a>
+          <a class="text-btn" href="https://lin.ee/fG1Oq7y" target="_blank" rel="noopener noreferrer">ติดต่อแอดมิน</a>
         </div>
         <section class="booking-wizard-intro">
           <span class="section-kicker">จองล้างแอร์ล่วงหน้า</span>
