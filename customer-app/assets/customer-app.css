@@ -3854,6 +3854,8 @@ body.has-contact-sheet { overflow: hidden; }
 .store-rating-label { color: #92660a; margin-right: 1px; }
 .store-rating-value { color: #92660a; font-weight: 700; margin-left: 2px; }
 .store-rating-count { color: #92660a; font-weight: 500; margin-left: 1px; }
+/* Honest "no reviews yet" label shown beside outline stars for un-reviewed items */
+.store-rating-empty { color: #92660a; font-weight: 500; margin-left: 2px; opacity: 0.85; }
 
 .store-booking-count {
   font-size: 10.5px;
