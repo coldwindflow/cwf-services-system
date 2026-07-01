@@ -255,7 +255,9 @@ function normalizeItem(raw, sectionType, index, errors) {
   }
   if (!out.title && sectionType !== "quick" && sectionType !== "promo_banner") errors.push(`${pathName}.title required`);
   validateUrlOrRoute(out, errors, pathName, {
-    externalRequired: sectionType === "updates" || sectionType === "articles" || sectionType === "social",
+    // updates = activity photos/posts: an image + caption is enough, no link required.
+    // articles/social inherently link out, so those still require a URL.
+    externalRequired: sectionType === "articles" || sectionType === "social",
     noImage: sectionType === "trust",
   });
   if (sectionType === "social" && out.url) {

@@ -278,7 +278,7 @@ test("customer homepage has no admin control, bottom nav is fixed five-tab, and 
   const sw = read("customer-app/sw.js");
   const app = read("customer-app/assets/customer-app.js");
   const manifest = read("customer-app/manifest.webmanifest");
-  const build = "20260630_homepage_polish_v1";
+  const build = "20260701_home_effects_v1";
 
   assert.doesNotMatch(index + ui, /โหมดแอดมิน|openCms|localStorage\.getItem\('cwfHomeCmsDemo'/);
   assert.match(index, /data-route="store"[\s\S]*ร้านค้า/);
@@ -903,6 +903,37 @@ test("social validation defaults platform, requires a matching-host url, and enf
   });
   assert.equal(tooMany.ok, false);
   assert.ok(tooMany.errors.includes("social.items too many"));
+});
+
+test("updates items are savable with only an image/caption (no URL required); articles still require a URL", () => {
+  // Activity-photo post: image + caption, no link. Must validate OK so admins
+  // can publish work photos without inventing a URL.
+  const updatesPhotoOnly = validateConfig({
+    sections: [{
+      id: "updates",
+      type: "updates",
+      enabled: true,
+      sort_order: 60,
+      title: "ภาพกิจกรรมและโพสต์",
+      items: [{ title: "ล้างแอร์คอนโด 3 เครื่อง", body: "งานเสร็จไว", image_url: "https://res.cloudinary.com/demo/work.jpg" }],
+    }],
+  });
+  assert.equal(updatesPhotoOnly.ok, true, JSON.stringify(updatesPhotoOnly.errors));
+  assert.equal(updatesPhotoOnly.config.sections[0].items[0].url, undefined);
+
+  // Articles inherently link out — an item without a URL must still be rejected.
+  const articleNoUrl = validateConfig({
+    sections: [{
+      id: "articles",
+      type: "articles",
+      enabled: true,
+      sort_order: 65,
+      title: "บทความแนะนำ",
+      items: [{ title: "วิธีดูแลแอร์" }],
+    }],
+  });
+  assert.equal(articleNoUrl.ok, false);
+  assert.ok(articleNoUrl.errors.some((error) => error.includes("articles.items.0.url required")));
 });
 
 test("hero focal_position normalizes per-slide and per-section, defaulting to center for invalid values", () => {
