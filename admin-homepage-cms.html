@@ -233,21 +233,34 @@
       .cms-layout{flex-direction:column;height:auto}
       .cms-tabs{display:flex}
 
-      /* hide all panels, show only active tab */
-      .cms-nav,.cms-editor,.cms-preview{display:none;width:auto}
-      .cms-nav.tab-active,.cms-editor.tab-active,.cms-preview.tab-active{display:flex;flex-direction:column}
-      .cms-nav.tab-active{padding:12px;gap:6px;overflow-y:visible;border-right:none;border-bottom:1px solid var(--line)}
+      /* hide all panels; show only the active tab — explicit width:100% beats base width:252px */
+      .cms-nav,.cms-editor,.cms-preview{display:none}
+      .cms-nav.tab-active,.cms-editor.tab-active,.cms-preview.tab-active{
+        display:flex;flex-direction:column;width:100%;
+      }
+      .cms-nav.tab-active{padding:12px;gap:8px;overflow-y:visible;border-right:none;border-bottom:1px solid var(--line)}
       .cms-editor.tab-active{padding:12px;overflow-y:visible;border:none;gap:12px}
       .cms-preview.tab-active{border-left:none;border-top:1px solid var(--line);align-items:center}
 
-      /* bigger section rows for touch */
-      .sec-row{min-height:58px;border-radius:14px;padding:10px 12px;border:1.5px solid var(--line);background:#fff;box-shadow:0 1px 4px rgba(13,45,88,.06)}
+      /* section row: 2-line card layout so full name is always visible */
+      .sec-row{
+        flex-wrap:wrap;row-gap:8px;
+        border-radius:14px;padding:12px;
+        border:1.5px solid var(--line);background:#fff;
+        box-shadow:0 1px 4px rgba(13,45,88,.06);
+      }
       .sec-row.is-active{border-color:rgba(20,99,255,.4);background:var(--blue-soft);box-shadow:0 2px 8px rgba(20,99,255,.12)}
+      /* line 1: icon + full section name (takes whole row) */
+      .sec-row-body{flex:0 0 100%;gap:12px}
+      /* line 2: controls indented to align under the name */
+      .sec-controls{flex:0 0 auto;margin-left:52px;gap:10px}
+      /* name: allow wrap, no truncation */
+      .sec-name{white-space:normal;overflow:visible;text-overflow:unset;font-size:14px;line-height:1.4}
+      .sec-type{font-size:11px;margin-top:2px}
       .sec-icon{width:40px;height:40px;font-size:18px;border-radius:11px}
-      .sec-name{font-size:14px}
-      .mini{width:34px;height:34px;font-size:14px;border-radius:9px}
-      .tog span{width:42px;height:24px;border-radius:12px}
-      .tog span::after{width:18px;height:18px;border-radius:9px;top:3px;left:3px}
+      .mini{width:36px;height:36px;font-size:15px;border-radius:9px}
+      .tog span{width:44px;height:26px;border-radius:13px}
+      .tog span::after{width:20px;height:20px;border-radius:10px;top:3px;left:3px}
       .tog input:checked+span::after{transform:translateX(18px)}
       .two{grid-template-columns:1fr}
       .topbar-brand{font-size:14px}
@@ -310,6 +323,6 @@
   </div>
 
   <select id="sectionPicker" style="display:none"></select>
-  <script src="/admin-homepage-cms.js?v=20260701_mobile_tabs"></script>
+  <script src="/admin-homepage-cms.js?v=20260701_fix2"></script>
 </body>
 </html>
