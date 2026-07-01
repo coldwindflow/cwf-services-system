@@ -768,7 +768,7 @@ test("admin per-item enable/disable toggle is wired to editor, change handler, a
   assert.match(admin, /item\.enabled = target\.checked;/);
   const previewSource = admin.slice(admin.indexOf("function renderPreview()"), admin.indexOf("function render()"));
   assert.match(previewSource, /filter\(\(slide\) => slide\.enabled !== false\)/);
-  assert.match(previewSource, /filter\(\(item\) => item\.enabled !== false\)/);
+  assert.match(previewSource, /filter\(\(i\) => i\.enabled !== false\)/);
 });
 
 test("promo_banner validation requires image_url, normalizes alt_text and aspect_mode, and allows a blank title", () => {

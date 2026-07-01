@@ -2,12 +2,12 @@
 
 const crypto = require("crypto");
 const express = require("express");
-const { validateCatalogImageFile } = require("../lib/cloudinaryImageUpload");
+const { ALLOWED_MIME_TYPES, detectImageSignature } = require("../lib/cloudinaryImageUpload");
 const articleSync = require("../services/articleSync");
 
 const CONFIG_KEY = "customer_homepage_v1";
 const MAX_JSON_BYTES = 120 * 1024;
-const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const MAX_HERO_SLIDES = 5;
 const SECTION_TYPES = new Set([
   "hero",
@@ -293,6 +293,9 @@ function normalizeSection(raw, index, errors) {
   };
   if (cleanText(section.image_url, 700)) out.image_url = cleanText(section.image_url, 700);
   if (cleanText(section.image_public_id, 300)) out.image_public_id = cleanText(section.image_public_id, 300);
+  if (cleanText(section.view_all_label, 60)) out.view_all_label = cleanText(section.view_all_label, 60);
+  const _viewAllRoute = cleanText(section.view_all_route, 40);
+  if (_viewAllRoute && INTERNAL_ROUTES.has(_viewAllRoute)) out.view_all_route = _viewAllRoute;
   validateImageUrl(out.image_url, errors, `${id}.image_url`);
   validateDateRange(out, errors, id);
   if (type === "hero") {
@@ -638,8 +641,12 @@ function createHomepageRoutes(deps = {}) {
     try {
       const file = req.file;
       if (!file) return res.status(400).json({ error: "กรุณาเลือกไฟล์ภาพ" });
-      const validation = validateCatalogImageFile(file);
-      if (!validation.ok) return res.status(400).json({ error: validation.error });
+      if (!file.buffer || !file.buffer.length) return res.status(400).json({ error: "ไม่พบไฟล์รูปภาพ" });
+      if ((file.size || file.buffer.length) > MAX_IMAGE_BYTES) return res.status(400).json({ error: "ไฟล์รูปภาพใหญ่เกิน 10MB" });
+      const declaredMime = String(file.mimetype || "").toLowerCase();
+      if (!ALLOWED_MIME_TYPES.has(declaredMime)) return res.status(400).json({ error: "รองรับเฉพาะไฟล์ JPEG, PNG หรือ WEBP" });
+      const actualMime = detectImageSignature(file.buffer);
+      if (!actualMime || actualMime !== declaredMime) return res.status(400).json({ error: "ไฟล์รูปภาพไม่ถูกต้องหรือเสียหาย" });
       if (!cloudinaryUploadBuffer) return res.status(503).json({ error: "CLOUDINARY_NOT_CONFIGURED" });
       const publicId = `homepage_${Date.now()}_${crypto.randomUUID().slice(0, 8)}`;
       const uploaded = await cloudinaryUploadBuffer({

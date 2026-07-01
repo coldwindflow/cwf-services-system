@@ -566,7 +566,7 @@ test("homepage hero slider renders dots only for multiple slides", () => {
 test("homepage ui has no mojibake marker and renderHome has a single render path", () => {
   const uiSource = fs.readFileSync(path.join(__dirname, "..", "customer-app", "modules", "ui.js"), "utf8");
   assert.doesNotMatch(uiSource, /à¸|à¹/);
-  assert.match(uiSource, />ดูทั้งหมด<\/button>/);
+  assert.match(uiSource, /ดูทั้งหมด/);
   assert.equal((uiSource.match(/sectionByType\("hero"\) \|\| DEFAULT_HOME_CONFIG/g) || []).length, 0);
   const renderHomeSource = uiSource.slice(
     uiSource.indexOf("renderHome(container)"),
