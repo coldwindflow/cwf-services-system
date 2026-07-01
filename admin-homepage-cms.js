@@ -86,7 +86,10 @@
   async function requestJson(url, options) {
     const response = await fetch(url, { credentials: "include", headers: options?.body ? { "Content-Type": "application/json" } : undefined, ...options });
     const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+    if (!response.ok) {
+      const detail = Array.isArray(data.details) && data.details.length ? data.details.slice(0, 3).join(" · ") : null;
+      throw new Error(detail || data.error || `HTTP ${response.status}`);
+    }
     return data;
   }
 

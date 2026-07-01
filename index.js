@@ -1166,7 +1166,7 @@ if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 8 * 1024 * 1024 }, // 8MB
+  limits: { fileSize: 12 * 1024 * 1024 }, // 12MB
 });
 
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));

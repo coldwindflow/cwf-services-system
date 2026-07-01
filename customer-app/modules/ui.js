@@ -403,7 +403,7 @@
             <h2>${root.utils.escapeHtml(section.title || "")}</h2>
             ${section.body ? `<p>${root.utils.escapeHtml(section.body)}</p>` : ""}
           </div>
-          <button type="button" class="text-link-btn" data-route="store">ดูทั้งหมด</button>
+          <button type="button" class="text-link-btn" data-route="${section.view_all_route || "store"}">${root.utils.escapeHtml(section.view_all_label || "ดูทั้งหมด")}</button>
         </div>
         <div data-homepage-featured>${renderHomepageFeaturedServices(section)}</div>
       </section>
@@ -413,6 +413,7 @@
   function renderHomepageManualSection(section) {
     const items = (section.items || []).slice(0, 8);
     if (!items.length) return "";
+    const viewAllLabel = section.view_all_label || (section.view_all_route ? "ดูทั้งหมด" : "");
     return `
       <section class="homepage-section">
         <div class="homepage-section-head">
@@ -420,6 +421,7 @@
             <h2>${root.utils.escapeHtml(section.title || "")}</h2>
             ${section.body ? `<p>${root.utils.escapeHtml(section.body)}</p>` : ""}
           </div>
+          ${viewAllLabel && section.view_all_route ? `<button type="button" class="text-link-btn" data-route="${root.utils.escapeHtml(section.view_all_route)}">${root.utils.escapeHtml(viewAllLabel)}</button>` : ""}
         </div>
         <div class="homepage-carousel">
           ${items.map((item) => {
@@ -488,6 +490,7 @@
     if (!section) return "";
     const items = (section.items || []).slice(0, 8);
     if (!items.length) return "";
+    const viewAllLabelSocial = section.view_all_label || (section.view_all_route ? "ดูทั้งหมด" : "");
     return `
       <section class="homepage-section">
         <div class="homepage-section-head">
@@ -495,6 +498,7 @@
             <h2>${root.utils.escapeHtml(section.title || "")}</h2>
             ${section.body ? `<p>${root.utils.escapeHtml(section.body)}</p>` : ""}
           </div>
+          ${viewAllLabelSocial && section.view_all_route ? `<button type="button" class="text-link-btn" data-route="${root.utils.escapeHtml(section.view_all_route)}">${root.utils.escapeHtml(viewAllLabelSocial)}</button>` : ""}
         </div>
         <div class="homepage-carousel homepage-social-grid">
           ${items.map((item, index) => renderHomepageSocialCard(item, index)).join("")}
@@ -804,7 +808,9 @@
         if (platform === "youtube" && videoId) {
           embedSrc = `https://www.youtube-nocookie.com/embed/${encodeURIComponent(videoId)}?autoplay=1&rel=0`;
         } else if (platform === "facebook" && postUrl) {
-          embedSrc = `https://www.facebook.com/plugins/post.php?href=${encodeURIComponent(postUrl)}&show_text=true&width=500`;
+          // Facebook iframe embeds are blocked by most mobile browsers — open directly
+          window.open(postUrl, "_blank", "noopener,noreferrer");
+          return;
         }
         if (!embedSrc) {
           if (postUrl) window.open(postUrl, "_blank", "noopener,noreferrer");
