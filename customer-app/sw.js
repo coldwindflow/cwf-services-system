@@ -1,6 +1,6 @@
 "use strict";
 
-const BUILD_ID = "20260701_fb_timeline_v1";
+const BUILD_ID = "20260701_home_fx_v2";
 const CACHE_NAME = `cwf-customer-app-v2-${BUILD_ID}`;
 const APP_SHELL = [
   `./index.html?v=${BUILD_ID}`,
