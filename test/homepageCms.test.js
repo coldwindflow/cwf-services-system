@@ -278,7 +278,7 @@ test("customer homepage has no admin control, bottom nav is fixed five-tab, and 
   const sw = read("customer-app/sw.js");
   const app = read("customer-app/assets/customer-app.js");
   const manifest = read("customer-app/manifest.webmanifest");
-  const build = "20260701_page_headers_v1";
+  const build = "20260701_pageheader_v1";
 
   assert.doesNotMatch(index + ui, /โหมดแอดมิน|openCms|localStorage\.getItem\('cwfHomeCmsDemo'/);
   assert.match(index, /data-route="store"[\s\S]*ร้านค้า/);
@@ -297,8 +297,8 @@ test("customer homepage has no admin control, bottom nav is fixed five-tab, and 
   // never a ::after overlay, which is the explicitly forbidden pattern (it can drift from
   // or cover the "จอง" label since it isn't part of the same flex flow as the icon).
   assert.doesNotMatch(css, /\.nav-item-primary::after/);
-  assert.match(css, /width:\s*36px;\s*height:\s*36px/);
-  assert.match(css, /background:\s*var\(--ico-book\) center \/ 19px 19px no-repeat, linear-gradient\(145deg, #ffd43b, #ffbd17\)/);
+  assert.match(css, /width:\s*52px;\s*height:\s*52px/);
+  assert.match(css, /background:\s*var\(--ico-book\) center \/ 24px 24px no-repeat, linear-gradient\(145deg, #ffd43b, #ffbd17\)/);
   assert.match(index, new RegExp(`customer-app\\.css\\?v=${build}`));
   assert.match(sw, new RegExp(`BUILD_ID = "${build}"`));
   assert.match(app, new RegExp(`BUILD_ID = "${build}"`));
@@ -579,7 +579,7 @@ test("bottom navigation border and padding match the fixed-nav reference", () =>
   // Booking tile is .nav-item-primary::before's own background, in the same flex flow as
   // the label — not a ::after overlay, which could float free of the icon/label baseline.
   assert.doesNotMatch(css, /\.nav-item-primary::after/);
-  assert.match(css, /\.nav-item-primary::before\s*\{[\s\S]*width:\s*36px[\s\S]*height:\s*36px/);
+  assert.match(css, /\.nav-item-primary::before\s*\{[\s\S]*width:\s*52px[\s\S]*height:\s*52px/);
 });
 
 test("homepage service carousel constrains card and image geometry on mobile", () => {

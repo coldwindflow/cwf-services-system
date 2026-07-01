@@ -5313,6 +5313,8 @@ body.has-contact-sheet { overflow: hidden; }
   background: rgba(255,255,255,.97);
   border-top: 1px solid var(--line);
   box-shadow: 0 -10px 30px rgba(7,27,56,.10);
+  /* Let the floating round booking button show its full circle above the bar */
+  overflow: visible;
 }
 .nav-item {
   position: relative;
@@ -5375,11 +5377,32 @@ body.has-contact-sheet { overflow: hidden; }
   mask-image: none;
 }
 .nav-item-primary::before {
-  width: 36px; height: 36px;
-  border-radius: 12px;
-  background: var(--ico-book) center / 19px 19px no-repeat, linear-gradient(145deg, #ffd43b, #ffbd17);
-  box-shadow: 0 3px 9px rgba(255, 185, 23, 0.26);
+  width: 52px; height: 52px;
+  border-radius: 50%;
+  /* Float the round booking button above the bar. Kept as the icon's own
+     background (no ::after overlay) so it never drifts from / covers the label. */
+  margin-top: -22px;
+  background: var(--ico-book) center / 24px 24px no-repeat, linear-gradient(145deg, #ffd43b, #ffbd17);
+  /* Full white seat ring + full blue accent ring (harmonising the CWF blue and
+     yellow into one unit), a glossy top and darker bottom edge for depth, and a
+     soft drop shadow. The bar's overflow is visible so the whole circle shows. */
+  box-shadow:
+    0 0 0 4px #fff,
+    0 0 0 6px rgba(20, 99, 255, 0.92),
+    inset 0 2px 0 rgba(255, 255, 255, 0.60),
+    inset 0 -3px 0 rgba(168, 108, 0, 0.32),
+    0 10px 18px -5px rgba(255, 160, 8, 0.52);
   opacity: 1;
+}
+.nav-item-primary:active::before {
+  transform: translateY(1px) scale(0.97);
+  box-shadow:
+    0 0 0 4px #fff,
+    0 0 0 5.5px rgba(20, 99, 255, 0.85),
+    inset 0 1px 0 rgba(255, 255, 255, 0.50),
+    inset 0 -1px 0 rgba(168, 108, 0, 0.30),
+    0 5px 10px -5px rgba(255, 160, 8, 0.45),
+    0 3px 7px -3px rgba(255, 160, 8, 0.40);
 }
 .nav-item-primary span {
   margin-top: 1px;

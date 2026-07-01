@@ -77,7 +77,7 @@ test("visual unification remains scoped to customer app routes", () => {
   // flex flow as the icon/label — never a ::after overlay (which could drift from or
   // cover the label).
   assert.doesNotMatch(css, /\.nav-item-primary::after/);
-  assert.match(css, /\.nav-item-primary::before\s*\{[\s\S]*width:\s*36px[\s\S]*height:\s*36px/);
-  assert.match(css, /\.nav-item-primary::before\s*\{[\s\S]*background:\s*var\(--ico-book\) center \/ 19px 19px no-repeat, linear-gradient\(145deg, #ffd43b, #ffbd17\)/);
+  assert.match(css, /\.nav-item-primary::before\s*\{[\s\S]*width:\s*52px[\s\S]*height:\s*52px/);
+  assert.match(css, /\.nav-item-primary::before\s*\{[\s\S]*background:\s*var\(--ico-book\) center \/ 24px 24px no-repeat, linear-gradient\(145deg, #ffd43b, #ffbd17\)/);
   assert.doesNotMatch(css, /body\s*\{[^}]*position:\s*fixed/);
 });

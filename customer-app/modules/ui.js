@@ -339,8 +339,17 @@
 
   // Per-page header banner (store / booking / tracking). Admin-managed in the
   // CMS, independent of the homepage hero, but reuses the hero markup so it
-  // auto-slides and its slides are clickable. Returns "" when unset/empty.
-  function renderPageHeader(pageKey) {
+  // auto-slides and its slides are clickable.
+  //
+  // pageHeaderHtml() only emits a mount point: the actual banner is filled in by
+  // bindPageHeader() once the homepage config is available. This is what makes
+  // the header reliable on every entry point — deep links, tab switches, or a
+  // slow first load — instead of only when the customer opened Home first.
+  function pageHeaderHtml(pageKey) {
+    return `<div class="page-header-mount" data-page-header="${root.utils.escapeHtml(pageKey)}"></div>`;
+  }
+
+  function renderPageHeaderInner(pageKey) {
     const cfg = (homepageConfig().page_headers || {})[pageKey];
     if (!cfg || cfg.enabled === false) return "";
     const slides = (cfg.items || []).filter((s) => s && s.enabled !== false && s.image_url);
@@ -357,7 +366,25 @@
 
   function bindPageHeader(container) {
     if (!container) return;
-    bindHomepageHeroSliders(container);
+    const mounts = Array.from(container.querySelectorAll("[data-page-header]"));
+    if (!mounts.length) return;
+    const fill = () => {
+      mounts.forEach((mount) => {
+        if (!mount.isConnected) return;
+        const html = renderPageHeaderInner(mount.getAttribute("data-page-header"));
+        if (html) {
+          if (mount.dataset.filled !== "1") { mount.innerHTML = html; mount.dataset.filled = "1"; bindHomepageHeroSliders(mount); }
+        } else if (mount.innerHTML) {
+          mount.innerHTML = "";
+          mount.dataset.filled = "";
+        }
+      });
+    };
+    fill();
+    // Config not ready yet → fetch it, then fill the banner in when it arrives.
+    if (root.state.homepage?.status !== "success") {
+      loadHomepageData().then(fill).catch(() => {});
+    }
   }
 
   function renderHomepagePromoBanner(section) {
@@ -1146,7 +1173,7 @@
     patchHomeData,
     updateAccountChrome,
     openContactSheet,
-    pageHeaderHtml: renderPageHeader,
+    pageHeaderHtml,
     bindPageHeader,
 
     renderHome(container) {
@@ -1165,7 +1192,7 @@
     renderBookingMode(container) {
       container.innerHTML = `
         <section class="screen">
-          ${renderPageHeader("booking")}
+          ${pageHeaderHtml("booking")}
           <div class="hero booking-hero">
             <div class="hero-badge">จองบริการ</div>
             <h2>จองล้างแอร์ล่วงหน้า</h2>
