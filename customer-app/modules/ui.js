@@ -337,6 +337,29 @@
     `;
   }
 
+  // Per-page header banner (store / booking / tracking). Admin-managed in the
+  // CMS, independent of the homepage hero, but reuses the hero markup so it
+  // auto-slides and its slides are clickable. Returns "" when unset/empty.
+  function renderPageHeader(pageKey) {
+    const cfg = (homepageConfig().page_headers || {})[pageKey];
+    if (!cfg || cfg.enabled === false) return "";
+    const slides = (cfg.items || []).filter((s) => s && s.enabled !== false && s.image_url);
+    if (!slides.length) return "";
+    return `<div class="page-header-banner">${renderHomepageHero({
+      type: "hero",
+      kicker: cfg.kicker,
+      title: cfg.title,
+      body: cfg.body,
+      focal_position: cfg.focal_position,
+      items: slides,
+    })}</div>`;
+  }
+
+  function bindPageHeader(container) {
+    if (!container) return;
+    bindHomepageHeroSliders(container);
+  }
+
   function renderHomepagePromoBanner(section) {
     if (!section) return "";
     const banners = (section.items || []).filter((item) => item && item.image_url);
@@ -1123,6 +1146,8 @@
     patchHomeData,
     updateAccountChrome,
     openContactSheet,
+    pageHeaderHtml: renderPageHeader,
+    bindPageHeader,
 
     renderHome(container) {
       const sectionsHtml = homepageSections().map(renderHomepageSection).filter(Boolean).join("");
@@ -1140,6 +1165,7 @@
     renderBookingMode(container) {
       container.innerHTML = `
         <section class="screen">
+          ${renderPageHeader("booking")}
           <div class="hero booking-hero">
             <div class="hero-badge">จองบริการ</div>
             <h2>จองล้างแอร์ล่วงหน้า</h2>
@@ -1169,6 +1195,7 @@
           </section>
         </section>
       `;
+      bindPageHeader(container);
     },
 
     supportButtons() {

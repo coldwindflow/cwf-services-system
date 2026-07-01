@@ -1273,6 +1273,7 @@
       const code = root.state.draft.tracking.trackingCode || "";
       container.innerHTML = `
         <section class="screen">
+          ${root.ui?.pageHeaderHtml ? root.ui.pageHeaderHtml("tracking") : ""}
           <div class="hero tracking-hero">
             <div class="hero-badge">Live job status</div>
             <h2>ติดตามงาน</h2>
@@ -1300,6 +1301,7 @@
           </section>
         </section>
       `;
+      root.ui?.bindPageHeader?.(container);
       container.querySelector("[data-action='track-read']").addEventListener("click", () => lookup(container));
       container.querySelector("#tracking-code").addEventListener("change", (event) => {
         root.state.updateDraft("tracking", { trackingCode: event.target.value });

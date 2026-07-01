@@ -31,6 +31,9 @@
   let articleSyncStatus = null;
   let articleSyncStatusLoading = false;
   const ROUTE_OPTIONS = ["home", "store", "scheduled", "urgent", "tracking", "profile"];
+  // Per-page header banners: [key, nav label, icon]. Managed separately from
+  // homepage sections but reuse the hero slide editor for their slides.
+  const PAGE_HEADER_META = [["store", "Head: ร้านค้า", "🛍️"], ["booking", "Head: จองคิว", "📅"], ["tracking", "Head: ติดตามงาน", "📍"]];
 
   const $ = (id) => document.getElementById(id);
   const esc = (value) => String(value == null ? "" : value).replace(/[&<>"']/g, (s) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[s]));
@@ -44,11 +47,32 @@
       if (!existingTypes.has(section.type)) next.sections.push(section);
     });
     next.sections = next.sections.filter((section) => standard.some((std) => std.type === section.type));
+    const rawHeaders = next.page_headers && typeof next.page_headers === "object" ? next.page_headers : {};
+    next.page_headers = {};
+    PAGE_HEADER_META.forEach(([key]) => {
+      const header = rawHeaders[key] && typeof rawHeaders[key] === "object" ? rawHeaders[key] : {};
+      next.page_headers[key] = {
+        enabled: header.enabled !== false,
+        kicker: header.kicker || "",
+        title: header.title || "",
+        body: header.body || "",
+        focal_position: header.focal_position || "center",
+        items: Array.isArray(header.items) ? header.items : [],
+      };
+    });
     return next;
   }
   function setStatus(text, kind) { $("status").textContent = text; $("status").className = `status-chip ${kind || ""}`; }
   function sections() { return config.sections.sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0)); }
-  function current() { return sections().find((section) => section.id === selected) || sections()[0]; }
+  function headKey() { return typeof selected === "string" && selected.startsWith("head:") ? selected.slice(5) : null; }
+  function currentHead() { const key = headKey(); return key && config.page_headers ? config.page_headers[key] || null : null; }
+  // current() resolves to the selected page-header object when a "head:*" entry
+  // is active, so the shared hero handlers (fields, slides, upload) operate on it.
+  function current() {
+    const head = currentHead();
+    if (head) return head;
+    return sections().find((section) => section.id === selected) || sections()[0];
+  }
 
   async function ensureCatalogItems() {
     if (catalogItems || catalogLoadFailed) return;
@@ -143,12 +167,47 @@
         </div>
       </div>
     `).join("");
-    $("sectionPicker").innerHTML = list.map((section) => `<option value="${esc(section.id)}">${esc(section.title || section.type)}</option>`).join("");
+    const headers = config.page_headers || {};
+    const headerRows = PAGE_HEADER_META.map(([key, label, icon]) => {
+      const header = headers[key] || {};
+      const rowId = `head:${key}`;
+      return `
+      <div class="sec-row ${rowId === selected ? "is-active" : ""} ${header.enabled !== false ? "" : "is-disabled"}">
+        <div class="sec-row-body" data-edit="${rowId}">
+          <div class="sec-icon">${icon}</div>
+          <div class="sec-info">
+            <div class="sec-name">${esc(label)}</div>
+            <div class="sec-type">page header · ${(header.items || []).length} slide</div>
+          </div>
+        </div>
+        <div class="sec-controls">
+          <label class="tog"><input type="checkbox" data-head-toggle="${key}" ${header.enabled !== false ? "checked" : ""}><span></span></label>
+        </div>
+      </div>`;
+    }).join("");
+    $("sectionList").innerHTML += `<div class="nav-hd" style="margin-top:8px">แบนเนอร์หัวหน้า (แยกแต่ละหน้า)</div>${headerRows}`;
+    $("sectionPicker").innerHTML = list.map((section) => `<option value="${esc(section.id)}">${esc(section.title || section.type)}</option>`).join("")
+      + PAGE_HEADER_META.map(([key, label]) => `<option value="head:${key}">${esc(label)}</option>`).join("");
     $("sectionPicker").value = selected;
   }
 
   /* ── editor header ── */
   function renderEditorHeader() {
+    const key = headKey();
+    if (key) {
+      const meta = PAGE_HEADER_META.find(([k]) => k === key) || [key, key, "📄"];
+      const header = currentHead() || {};
+      $("editorHeader").innerHTML = `
+        <div class="editor-hd">
+          <div class="editor-hd-icon">${meta[2]}</div>
+          <div>
+            <div class="editor-hd-title">${esc(meta[1])}</div>
+            <div class="editor-hd-sub">page header · ${header.enabled !== false ? "เปิดใช้งานอยู่" : "ปิดอยู่"}</div>
+          </div>
+        </div>
+      `;
+      return;
+    }
     const section = current();
     if (!section) { $("editorHeader").innerHTML = ""; return; }
     $("editorHeader").innerHTML = `
@@ -341,7 +400,32 @@
     `;
   }
 
+  function renderHeadEditor() {
+    const header = currentHead();
+    if (!header) { $("editor").innerHTML = ""; return; }
+    const slides = header.items || [];
+    $("editor").innerHTML = `
+      <div class="ep">
+        <div class="ep-head">ข้อมูลแบนเนอร์หัวหน้า</div>
+        <div class="ep-body">
+          <p style="font-size:12px;color:var(--muted);line-height:1.5">แบนเนอร์นี้จะแสดงบนหัวของหน้านี้เท่านั้น เพิ่มรูปได้หลายสไลด์ (เลื่อนอัตโนมัติ) และกำหนดปุ่ม/ลิงก์ให้แต่ละสไลด์ได้</p>
+          ${field("Kicker (ป้ายเล็กบนสุด)", "kicker")}
+          ${field("หัวข้อ", "title")}
+          ${field("คำอธิบาย", "body", "textarea")}
+          <label class="field">ตำแหน่งโฟกัสภาพ<select class="fi" data-field="focal_position"><option value="top" ${header.focal_position === "top" ? "selected" : ""}>บน</option><option value="center" ${(header.focal_position || "center") === "center" ? "selected" : ""}>กลาง</option><option value="bottom" ${header.focal_position === "bottom" ? "selected" : ""}>ล่าง</option></select></label>
+        </div>
+      </div>
+      <div class="ep">
+        <div class="ep-head">สไลด์รูปภาพ (${slides.length}/5)<div class="toolbar" style="display:inline-flex;margin-left:10px"><button class="btn btn-ghost btn-sm" type="button" id="addHeroSlide">+ เพิ่มสไลด์</button></div></div>
+        <div class="ep-body">
+          ${slides.length ? slides.map((item, index) => heroSlideEditor(item, index, slides.length)).join("") : `<p style="color:var(--muted);font-size:13px">ยังไม่มีสไลด์ — กด "เพิ่มสไลด์" แล้วอัปโหลดรูป</p>`}
+        </div>
+      </div>
+    `;
+  }
+
   function renderEditor() {
+    if (headKey()) { renderHeadEditor(); return; }
     const section = current();
     if (!section) return;
     const itemTypes = ["announcements", "updates", "articles", "social", "trust", "quick", "promo_banner"];
@@ -616,6 +700,7 @@
     if (target.matches("select[data-item]")) { current().items[Number(target.dataset.item)][target.dataset.prop] = target.value; if (target.dataset.prop === "platform") render(); else renderPreview(); }
     if (target.matches("select[data-field]")) { current()[target.dataset.field] = target.value; renderPreview(); }
     if (target.matches("[data-toggle]")) { const s = sections().find((row) => row.id === target.dataset.toggle); if (s) s.enabled = target.checked; renderPreview(); }
+    if (target.matches("[data-head-toggle]")) { const h = (config.page_headers || {})[target.dataset.headToggle]; if (h) h.enabled = target.checked; renderSectionList(); }
     if (target.id === "sectionPicker") { selected = target.value; render(); }
     if (target.matches("[data-upload]")) uploadImage(target, Number(target.dataset.upload)).catch((error) => setStatus(error.message, "bad"));
     if (target.matches("[data-upload-section]")) uploadImage(target, target.dataset.uploadSection).catch((error) => setStatus(error.message, "bad"));

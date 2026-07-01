@@ -4448,6 +4448,10 @@ body.has-contact-sheet { overflow: hidden; }
   .homepage-carousel.is-revealed > * { animation: none; }
 }
 
+/* Per-page header banner (store / booking / tracking) reuses the hero markup.
+   On non-home screens it needs its own spacing below. */
+.page-header-banner { margin-bottom: 14px; }
+
 /* ─── Hero ─────────────────────────────────────────────────────────── */
 .homepage-hero {
   position: relative;

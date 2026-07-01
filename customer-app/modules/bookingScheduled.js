@@ -944,6 +944,7 @@
           <button type="button" class="text-btn" data-route="home">← หน้าแรก</button>
           <a class="text-btn" href="https://lin.ee/fG1Oq7y" target="_blank" rel="noopener noreferrer">ติดต่อแอดมิน</a>
         </div>
+        ${root.ui?.pageHeaderHtml ? root.ui.pageHeaderHtml("booking") : ""}
         <section class="booking-wizard-intro">
           <span class="section-kicker">จองล้างแอร์ล่วงหน้า</span>
           <h1>จองล้างแอร์</h1>
@@ -956,6 +957,7 @@
       </div>
     `;
     bind(container);
+    root.ui?.bindPageHeader?.(container);
     ensureSameDayRefresh(container);
   }
 

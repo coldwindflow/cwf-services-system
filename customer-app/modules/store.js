@@ -1611,6 +1611,7 @@
       track("cwf_store_view", {});
       container.innerHTML = `
         <section class="screen store-screen">
+          ${root.ui?.pageHeaderHtml ? root.ui.pageHeaderHtml("store") : ""}
           <div class="store-compact-header">
             <span class="store-compact-badge">ร้านค้า CWF</span>
             <h2>เลือกบริการและอุปกรณ์</h2>
@@ -1619,6 +1620,7 @@
           <div data-contact-sheet-mount></div>
         </section>
       `;
+      root.ui?.bindPageHeader?.(container);
       bindBody(container);
       ensureLoaded(container);
     },
