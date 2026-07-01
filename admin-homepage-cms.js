@@ -167,7 +167,14 @@
     return `<label class="field">${lbl}<input class="fi" data-field="${prop}" value="${esc(value)}"></label>`;
   }
 
-  function itemEditor(item, index, sectionType) {
+  function selectField(lbl, prop, options) {
+    const section = current();
+    const value = section[prop] || "";
+    const opts = options.map(([v, l]) => `<option value="${esc(v)}" ${value === v ? "selected" : ""}>${esc(l)}</option>`).join("");
+    return `<label class="field">${lbl}<select class="fi" data-field="${prop}">${opts}</select></label>`;
+  }
+
+  function itemEditor(item, index, sectionType, total) {
     const social = sectionType === "social";
     const external = sectionType === "updates" || sectionType === "articles" || social;
     const trust = sectionType === "trust";
@@ -187,6 +194,8 @@
           <div style="display:flex;align-items:center;gap:8px">
             <span class="item-num">${index + 1}</span>
             <span style="font-weight:900;font-size:13px">รายการ ${index + 1}</span>
+            <button class="mini" type="button" data-move-item="${index}" data-dir="-1" ${index === 0 ? "disabled" : ""}>↑</button>
+            <button class="mini" type="button" data-move-item="${index}" data-dir="1" ${index === total - 1 ? "disabled" : ""}>↓</button>
           </div>
           <div style="display:flex;gap:8px;align-items:center">
             <label class="switch"><input type="checkbox" data-item-enabled="${index}" ${item.enabled !== false ? "checked" : ""}> เปิด</label>
@@ -333,6 +342,7 @@
     const section = current();
     if (!section) return;
     const itemTypes = ["announcements", "updates", "articles", "social", "trust", "quick", "promo_banner"];
+    const hasViewAll = ["announcements", "updates", "articles", "social", "trust", "featured_services"].includes(section.type);
 
     let content = `
       <div class="ep">
@@ -340,6 +350,7 @@
         <div class="ep-body">
           ${field("ชื่อ Section", "title")}
           ${field("คำอธิบาย", "body", "textarea")}
+          ${hasViewAll ? `<div class="two">${field("ข้อความปุ่ม ดูทั้งหมด", "view_all_label")}${selectField("Route ปุ่ม ดูทั้งหมด", "view_all_route", [["", "ไม่แสดงปุ่ม"], ...ROUTE_OPTIONS.map((r) => [r, r])])}</div>` : ""}
         </div>
       </div>
     `;
@@ -387,10 +398,6 @@
     }
 
     if (itemTypes.includes(section.type) && !(section.type === "articles" && section.auto_sync)) {
-      const moveControls = (index, len) => section.type === "promo_banner" ? `
-        <button class="mini" type="button" data-move-item="${index}" data-dir="-1" ${index === 0 ? "disabled" : ""}>↑</button>
-        <button class="mini" type="button" data-move-item="${index}" data-dir="1" ${index === len - 1 ? "disabled" : ""}>↓</button>
-      ` : "";
       const items = (section.items || []);
       content += `
         <div class="ep">
@@ -399,7 +406,7 @@
             <button class="btn btn-ghost btn-sm" type="button" id="addItem">+ เพิ่มรายการ</button>
           </div>
           <div class="ep-body">
-            ${items.length ? items.map((item, index) => (moveControls(index, items.length) ? `<div class="toolbar" style="margin-bottom:4px">${moveControls(index, items.length)}</div>` : "") + itemEditor(item, index, section.type)).join("") : `<p style="color:var(--muted);font-size:13px">ยังไม่มีรายการ</p>`}
+            ${items.length ? items.map((item, index) => itemEditor(item, index, section.type, items.length)).join("") : `<p style="color:var(--muted);font-size:13px">ยังไม่มีรายการ</p>`}
           </div>
         </div>
       `;
@@ -504,9 +511,11 @@
           : catalogLoadFailed ? `<article class="p-card"><b>โหลด Catalog ไม่สำเร็จ</b></article>`
           : !catalogItems ? `<article class="p-card"><b>กำลังโหลด...</b></article>`
           : `<article class="p-card"><b>ไม่มีบริการแนะนำ</b><p>Section นี้จะถูกซ่อน</p></article>`;
-        return `<section class="p-sec"><div class="p-sec-head"><b>${esc(section.title || "")}</b></div><div class="p-cards">${cards}</div></section>`;
+        const fsViewAll = section.view_all_label || (section.view_all_route ? "ดูทั้งหมด" : "");
+        return `<section class="p-sec"><div class="p-sec-head"><b>${esc(section.title || "")}</b>${fsViewAll ? `<span>${esc(fsViewAll)}</span>` : ""}</div><div class="p-cards">${cards}</div></section>`;
       }
-      return `<section class="p-sec"><div class="p-sec-head"><b>${esc(section.title || "")}</b><span>ดูทั้งหมด</span></div><div class="p-cards">${(section.items || []).filter((i) => i.enabled !== false).slice(0, 3).map((i) => `<article class="p-card">${section.type === "social" ? `<span style="display:inline-block;padding:2px 7px;border-radius:999px;background:#eef2ff;color:#3346a6;font-size:10px;margin-bottom:3px">${esc((i.platform || "youtube") === "facebook" ? "Facebook" : "YouTube")}</span><br>` : ""}<b>${esc(i.title || "")}</b><p>${esc(i.body || "")}</p></article>`).join("") || `<article class="p-card"><b>ไม่มีรายการ</b><p>เพิ่มรายการใน editor</p></article>`}</div></section>`;
+      const viewAll = section.view_all_label || (section.view_all_route ? "ดูทั้งหมด" : "");
+      return `<section class="p-sec"><div class="p-sec-head"><b>${esc(section.title || "")}</b>${viewAll ? `<span>${esc(viewAll)}</span>` : ""}</div><div class="p-cards">${(section.items || []).filter((i) => i.enabled !== false).slice(0, 3).map((i) => `<article class="p-card">${section.type === "social" ? `<span style="display:inline-block;padding:2px 7px;border-radius:999px;background:#eef2ff;color:#3346a6;font-size:10px;margin-bottom:3px">${esc((i.platform || "youtube") === "facebook" ? "Facebook" : "YouTube")}</span><br>` : ""}<b>${esc(i.title || "")}</b><p>${esc(i.body || "")}</p></article>`).join("") || `<article class="p-card"><b>ไม่มีรายการ</b><p>เพิ่มรายการใน editor</p></article>`}</div></section>`;
     }).join("");
   }
 
