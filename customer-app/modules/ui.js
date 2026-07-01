@@ -237,6 +237,42 @@
     return rows.filter((item) => item && item.is_featured).slice(0, limit);
   }
 
+  // One compact featured card: image, name, price, book button — nothing else.
+  // The old card also carried a two-line description and a promo line, which
+  // made the homepage section very tall; customers asked for just the essentials
+  // shown as small cards.
+  function renderFeaturedMiniCard(item, showPrice, showBadge) {
+    const id = root.utils.escapeHtml(item.item_id);
+    const imageUrl = firstCatalogImage(item);
+    const bookable = item.booking_mode === "bookable";
+    const price = catalogDisplayPrice(item);
+    return `
+      <article class="homepage-service-card">
+        <button type="button" class="homepage-card-link" data-home-featured-detail="${id}">
+          <div class="homepage-card-image">
+            ${imageUrl
+              ? `<img src="${root.utils.escapeHtml(imageUrl)}" alt="${root.utils.escapeHtml(item.item_name || "บริการ CWF")}" loading="lazy">`
+              : root.utils.icon("sparkle", 28)}
+            ${showBadge ? `<span class="homepage-service-badge">${bookable ? "จองได้" : "สอบถาม"}</span>` : ""}
+          </div>
+          <div class="homepage-card-body">
+            <strong>${root.utils.escapeHtml(item.item_name || "-")}</strong>
+            ${showPrice ? `<span>${root.utils.escapeHtml(price)}${item.unit_label && price !== "สอบถามราคา" ? ` / ${root.utils.escapeHtml(item.unit_label)}` : ""}</span>` : ""}
+          </div>
+        </button>
+        <button type="button" class="${bookable ? "primary-btn" : "secondary-btn"} homepage-service-action" data-home-featured-action="${id}">
+          ${bookable ? "จอง" : "สอบถาม"}
+        </button>
+      </article>
+    `;
+  }
+
+  // Featured services render as a compact 2×2 grid of four small cards. When
+  // more than four featured items exist they are split into "pages" of four
+  // that auto-rotate (cross-fade + staggered rise-in), so customers can read
+  // one set before the next slides in — see bindHomepageFeaturedRotator.
+  const FEATURED_PAGE_SIZE = 4;
+
   function renderHomepageFeaturedServices(section) {
     const catalog = root.state.catalog || { status: "idle", items: [] };
     if (catalog.status === "loading" || catalog.status === "idle") {
@@ -248,34 +284,21 @@
     const showBadge = cfg.show_badge !== false;
     const items = featuredCatalogItems(cfg);
     if (!items.length) return root.utils.stateBox("", "ยังไม่มีบริการแนะนำที่เปิดแสดง");
+    const pages = [];
+    for (let i = 0; i < items.length; i += FEATURED_PAGE_SIZE) {
+      pages.push(items.slice(i, i + FEATURED_PAGE_SIZE));
+    }
+    const multi = pages.length > 1;
     return `
-      <div class="homepage-carousel homepage-featured-services">
-        ${items.map((item) => {
-          const id = root.utils.escapeHtml(item.item_id);
-          const imageUrl = firstCatalogImage(item);
-          const promo = item.has_active_promotion || item.has_promo;
-          return `
-            <article class="homepage-service-card">
-              <button type="button" class="homepage-card-link" data-home-featured-detail="${id}">
-                <div class="homepage-card-image">
-                  ${imageUrl
-                    ? `<img src="${root.utils.escapeHtml(imageUrl)}" alt="${root.utils.escapeHtml(item.item_name || "บริการ CWF")}" loading="lazy">`
-                    : root.utils.icon("sparkle", 28)}
-                </div>
-                ${showBadge ? `<span class="homepage-service-badge">${root.utils.escapeHtml(item.booking_mode === "bookable" ? "จองได้" : "สอบถามแอดมิน")}</span>` : ""}
-                <div class="homepage-card-body">
-                  <strong>${root.utils.escapeHtml(item.item_name || "-")}</strong>
-                  <small>${root.utils.escapeHtml(item.short_description || item.item_category || "")}</small>
-                  ${showPrice ? `<span>${root.utils.escapeHtml(catalogDisplayPrice(item))}${item.unit_label && catalogDisplayPrice(item) !== "สอบถามราคา" ? ` / ${root.utils.escapeHtml(item.unit_label)}` : ""}</span>` : ""}
-                  ${promo ? `<small class="homepage-promo-text">${root.utils.escapeHtml(item.campaign_name || item.price_label || "มีโปรโมชัน")}</small>` : ""}
-                </div>
-              </button>
-              <button type="button" class="${item.booking_mode === "bookable" ? "primary-btn" : "secondary-btn"} homepage-service-action" data-home-featured-action="${id}">
-                ${item.booking_mode === "bookable" ? "จองคิว" : "สอบถามแอดมิน"}
-              </button>
-            </article>
-          `;
-        }).join("")}
+      <div class="homepage-featured-rotator" data-featured-rotator>
+        <div class="homepage-featured-pages">
+          ${pages.map((pageItems, p) => `
+            <div class="homepage-featured-page${p === 0 ? " is-active" : ""}" data-featured-page aria-hidden="${p === 0 ? "false" : "true"}">
+              ${pageItems.map((item) => renderFeaturedMiniCard(item, showPrice, showBadge)).join("")}
+            </div>
+          `).join("")}
+        </div>
+        ${multi ? `<div class="homepage-featured-dots" role="tablist" aria-label="ชุดบริการแนะนำ">${pages.map((_, p) => `<button type="button" class="${p === 0 ? "is-active" : ""}" data-featured-dot="${p}" aria-label="ชุดบริการที่ ${p + 1}" aria-selected="${p === 0 ? "true" : "false"}"></button>`).join("")}</div>` : ""}
       </div>
     `;
   }
@@ -882,6 +905,49 @@
     });
     bindHomepageSocialCards(container);
     bindHomepageFbTimelines(container);
+    bindHomepageFeaturedRotator(container);
+  }
+
+  // Auto-rotate the pages of four featured cards. All pages stay in the DOM
+  // (so their book/detail buttons keep the handlers bound above) — only the
+  // active page is opaque and interactive; the rest fade out and turn off
+  // pointer events. Advances on a slow, readable interval, pauses while the
+  // customer is touching the section, and lets the dots jump directly.
+  function bindHomepageFeaturedRotator(container) {
+    container.querySelectorAll("[data-featured-rotator]").forEach((rotator) => {
+      if (rotator.dataset.bound === "1") return;
+      rotator.dataset.bound = "1";
+      const pages = Array.from(rotator.querySelectorAll("[data-featured-page]"));
+      const dots = Array.from(rotator.querySelectorAll("[data-featured-dot]"));
+      if (pages.length <= 1) return;
+      let index = 0;
+      let timer = 0;
+      let paused = false;
+      const setActive = (next) => {
+        index = (next % pages.length + pages.length) % pages.length;
+        pages.forEach((page, i) => {
+          const active = i === index;
+          page.classList.toggle("is-active", active);
+          page.setAttribute("aria-hidden", active ? "false" : "true");
+        });
+        dots.forEach((dot, i) => {
+          const active = i === index;
+          dot.classList.toggle("is-active", active);
+          dot.setAttribute("aria-selected", active ? "true" : "false");
+        });
+      };
+      const stop = () => { if (timer) { clearInterval(timer); timer = 0; } };
+      const start = () => { stop(); timer = setInterval(() => { if (!paused) setActive(index + 1); }, 4200); };
+      dots.forEach((dot, i) => {
+        dot.addEventListener("click", () => { setActive(i); start(); });
+      });
+      ["touchstart", "pointerdown"].forEach((ev) =>
+        rotator.addEventListener(ev, () => { paused = true; }, { passive: true }));
+      ["touchend", "pointerup", "mouseleave"].forEach((ev) =>
+        rotator.addEventListener(ev, () => { paused = false; }, { passive: true }));
+      setActive(0);
+      start();
+    });
   }
 
   // Size each Facebook Page Plugin to its real container width so its cover,
