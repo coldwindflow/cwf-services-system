@@ -785,7 +785,7 @@ function serializeCatalogRow(row) {
     images,
     short_description: row.short_description || null,
     highlights: Array.isArray(row.highlights) ? row.highlights : [],
-    booking_mode: row.booking_mode === "bookable" ? "bookable" : "contact_admin",
+    booking_mode: BOOKING_MODES.has(row.booking_mode) ? row.booking_mode : "contact_admin",
     // Needed on the list endpoint so the Store card's "book" button can build a
     // real booking draft without a follow-up detail fetch. booking_service_key is
     // intentionally omitted here: the frontend never uses it for booking, only
