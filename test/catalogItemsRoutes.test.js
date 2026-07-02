@@ -2265,6 +2265,22 @@ test("public GET /catalog/items suppresses booking_ac_type/booking_btu/booking_w
   });
 });
 
+test("public GET /catalog/items preserves booking_mode 'purchase' (must not collapse to contact_admin)", async () => {
+  // Regression: the read serializer used to map anything != 'bookable' to
+  // 'contact_admin', silently downgrading a saved 'purchase' product so the
+  // customer app showed the admin-contact CTA instead of the buy button.
+  const items = sampleItems();
+  items[0].booking_mode = "purchase";
+  const pool = makePool(items, [], { marketplaceReady: true });
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const list = await (await fetch(`${base}/catalog/items?customer=1`)).json();
+    assert.equal(list.find((x) => x.item_id === 1).booking_mode, "purchase");
+    const detail = await (await fetch(`${base}/catalog/items/1`)).json();
+    assert.equal(detail.booking_mode, "purchase");
+  });
+});
+
 test("public GET /catalog/items/:itemId puts the Primary image first even when it is not sort_order 0", async () => {
   const items = sampleItems();
   const pool = makePool(items, [], { marketplaceReady: true });
