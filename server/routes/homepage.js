@@ -388,6 +388,23 @@ function normalizePageHeaders(raw, errors) {
   return out;
 }
 
+// Admin-configurable brand theme: up to three hex colors the customer app maps
+// onto its CSS variables (primary/accent/highlight). Invalid values are flagged
+// and dropped; an absent theme means "use the app's default palette".
+const THEME_KEYS = ["primary", "accent", "highlight"];
+const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
+function normalizeTheme(raw, errors) {
+  const src = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+  const out = {};
+  for (const key of THEME_KEYS) {
+    const value = cleanText(src[key], 7);
+    if (!value) continue;
+    if (!HEX_COLOR.test(value)) { errors.push(`theme.${key} must be a 6-digit hex color`); continue; }
+    out[key] = value.toLowerCase();
+  }
+  return out;
+}
+
 function validateConfig(input) {
   const errors = [];
   if (!input || typeof input !== "object" || Array.isArray(input)) errors.push("payload must be object");
@@ -413,6 +430,7 @@ function validateConfig(input) {
     version: 1,
     sections: normalizedSections.sort((a, b) => a.sort_order - b.sort_order),
     page_headers: normalizePageHeaders(input?.page_headers, errors),
+    theme: normalizeTheme(input?.theme, errors),
   };
   return { ok: errors.length === 0, errors, config: normalized };
 }
@@ -493,7 +511,8 @@ function stripPublicConfig(config) {
     delete cleanHeader.updated_by;
     page_headers[key] = cleanHeader;
   }
-  return { version: 1, sections, page_headers };
+  const theme = config?.theme && typeof config.theme === "object" && !Array.isArray(config.theme) ? config.theme : {};
+  return { version: 1, sections, page_headers, theme };
 }
 
 async function hydrateAutoSyncArticles(pool, publicConfig) {

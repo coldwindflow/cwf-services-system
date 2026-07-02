@@ -278,7 +278,7 @@ test("customer homepage has no admin control, bottom nav is fixed five-tab, and 
   const sw = read("customer-app/sw.js");
   const app = read("customer-app/assets/customer-app.js");
   const manifest = read("customer-app/manifest.webmanifest");
-  const build = "20260702_featured6_v1";
+  const build = "20260702_theme_v1";
 
   assert.doesNotMatch(index + ui, /โหมดแอดมิน|openCms|localStorage\.getItem\('cwfHomeCmsDemo'/);
   assert.match(index, /data-route="store"[\s\S]*ร้านค้า/);
@@ -1023,6 +1023,31 @@ test("testimonials and faq are valid section types: star rating is clamped 1-5, 
   // A testimonial without a reviewer name (title) is rejected like other items.
   const noName = validateConfig({ sections: [{ id: "t", type: "testimonials", title: "x", items: [{ rating: 5, body: "no name" }] }] });
   assert.equal(noName.ok, false);
+});
+
+test("brand theme colors validate as hex, drop invalid/empty, and carry to the public config", () => {
+  const ok = validateConfig({
+    sections: [{ id: "hero", type: "hero", title: "H", items: [] }],
+    theme: { primary: "#0F9D76", accent: "#33c39a", highlight: "", bogus: "#fff" },
+  });
+  assert.equal(ok.ok, true, JSON.stringify(ok.errors));
+  // Valid colors are lower-cased; empty highlight and unknown keys are dropped.
+  assert.deepEqual(ok.config.theme, { primary: "#0f9d76", accent: "#33c39a" });
+  const pub = stripPublicConfig(ok.config);
+  assert.deepEqual(pub.theme, { primary: "#0f9d76", accent: "#33c39a" });
+
+  // A malformed hex is rejected.
+  const bad = validateConfig({
+    sections: [{ id: "hero", type: "hero", title: "H", items: [] }],
+    theme: { primary: "blue" },
+  });
+  assert.equal(bad.ok, false);
+  assert.ok(bad.errors.some((e) => e.includes("theme.primary")));
+
+  // No theme = empty object (app uses default palette), still present in public config.
+  const none = validateConfig({ sections: [{ id: "hero", type: "hero", title: "H", items: [] }] });
+  assert.deepEqual(none.config.theme, {});
+  assert.deepEqual(stripPublicConfig(none.config).theme, {});
 });
 
 test("updates items are savable with only an image/caption (no URL required); articles still require a URL", () => {
