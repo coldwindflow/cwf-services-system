@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Admin • คำสั่งซื้อและการชำระเงิน</title>
+  <link rel="stylesheet" href="/style.css"/>
+  <link rel="stylesheet" href="/admin-orders.css?v=20260702_orders_v1"/>
+</head>
+<body>
+  <div class="topbar">
+    <div><b>🧾 คำสั่งซื้อและการชำระเงิน (Admin)</b></div>
+  </div>
+
+  <div class="container">
+    <div class="card ao-summary" id="orders_summary">
+      <div class="ao-stat"><span class="ao-stat-num" data-sum-total>–</span><span class="ao-stat-label">ทั้งหมด</span></div>
+      <div class="ao-stat"><span class="ao-stat-num ao-paid" data-sum-paid>–</span><span class="ao-stat-label">จ่ายแล้ว</span></div>
+      <div class="ao-stat"><span class="ao-stat-num ao-processing" data-sum-processing>–</span><span class="ao-stat-label">รอชำระ</span></div>
+      <div class="ao-stat"><span class="ao-stat-num ao-failed" data-sum-failed>–</span><span class="ao-stat-label">ไม่สำเร็จ</span></div>
+      <div class="ao-stat"><span class="ao-stat-num ao-revenue" data-sum-revenue>–</span><span class="ao-stat-label">ยอดจ่ายแล้ว (บาท)</span></div>
+    </div>
+
+    <div class="card ao-toolbar" style="margin-top:12px">
+      <div class="ao-toolbar-row">
+        <div>
+          <b>รายการคำสั่งซื้อ</b>
+          <div class="muted2 mini">ข้อมูลจริงจาก /admin/orders · แสดง 200 รายการล่าสุด</div>
+        </div>
+        <button id="btnReloadOrders" class="secondary btn-small" type="button">รีเฟรช</button>
+      </div>
+      <div class="ao-toolbar-row">
+        <input id="orders_search" class="ao-search" placeholder="ค้นหาเลขคำสั่งซื้อ / ชื่อ / เบอร์โทร">
+        <select id="orders_filter_status" class="ao-filter">
+          <option value="">ทุกสถานะ</option>
+          <option value="paid">จ่ายแล้ว</option>
+          <option value="payment_processing">รอชำระ (พร้อมเพย์)</option>
+          <option value="pending_payment">ยังไม่ชำระ</option>
+          <option value="payment_failed">ไม่สำเร็จ</option>
+        </select>
+        <select id="orders_filter_method" class="ao-filter">
+          <option value="">ทุกช่องทาง</option>
+          <option value="promptpay">พร้อมเพย์</option>
+          <option value="card">บัตร</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:12px">
+      <div id="orders_list" class="ao-card-list">กำลังโหลดคำสั่งซื้อ...</div>
+    </div>
+  </div>
+
+  <script src="/admin-v2-common.js?v=20260622_admin_menu_catalog_entry"></script>
+  <script src="/admin-orders.js?v=20260702_orders_v1"></script>
+</body>
+</html>
