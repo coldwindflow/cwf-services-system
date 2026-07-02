@@ -114,6 +114,14 @@
       return requestJson("/public/homepage/active-job", { cache: "no-store" });
     },
 
+    async createOrder(payload) {
+      return requestJson("/public/orders", { method: "POST", body: payload || {} });
+    },
+
+    async getOrder(code) {
+      return requestJson(`/public/orders/${encodeURIComponent(code)}`, { cache: "no-store" });
+    },
+
     async loadCatalogItems(query) {
       return requestJson("/catalog/items", { query: { customer: 1, ...(query || {}) }, cache: "no-store" });
     },

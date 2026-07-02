@@ -44,6 +44,7 @@ const createTechnicianDirectoryRoutes = require("./server/routes/users/technicia
 const createCatalogItemRoutes = require("./server/routes/catalog/items");
 const createCatalogReviewRoutes = require("./server/routes/catalog/reviews");
 const { createHomepageRoutes, CONFIG_KEY: HOMEPAGE_CONFIG_KEY } = require("./server/routes/homepage");
+const { createCustomerOrdersRoutes } = require("./server/routes/customerOrders");
 const articleSync = require("./server/services/articleSync");
 const createServiceZoneRoutes = require("./server/routes/serviceZones");
 const createPageRoutes = require("./server/routes/pages");
@@ -13235,6 +13236,7 @@ app.use(createCatalogItemRoutes({
 }));
 app.use(createCatalogReviewRoutes({ pool, requireCustomerJwt, requireAdminSession }));
 app.use(createHomepageRoutes({ pool, requireAdminSession, requireCustomerJwt, upload, cloudinaryUploadBuffer, cloudinaryDestroyPublicId }));
+app.use(createCustomerOrdersRoutes({ pool, requireAdminSession }));
 
 
 app.post("/catalog/items", requireAdminSession, async (req, res) => {
