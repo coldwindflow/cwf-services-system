@@ -68,7 +68,10 @@ const CATALOG_MARKETPLACE_FIELDS = [
 // migration and needs its own independent schema-readiness gate.
 const CATALOG_HOT_FIELDS = ["is_hot"];
 
-const BOOKING_MODES = new Set(["bookable", "contact_admin"]);
+// "purchase" = a physical product the customer can buy (e.g. an AC unit),
+// validated like "contact_admin" (no booking ac_type/btu required) — the buy
+// flow collects quantity + delivery/install options at checkout instead.
+const BOOKING_MODES = new Set(["bookable", "contact_admin", "purchase"]);
 
 // Allowed values must match the Customer App's canonical lists exactly
 // (customer-app/modules/services.js: acTypes/btuOptions/washVariants) so a
@@ -135,7 +138,7 @@ function validateMarketplaceFields(merged) {
 
   const bookingMode = String(merged.booking_mode || "contact_admin").trim() || "contact_admin";
   if (!BOOKING_MODES.has(bookingMode)) {
-    errors.push("booking_mode ต้องเป็น 'bookable' หรือ 'contact_admin' เท่านั้น");
+    errors.push("booking_mode ต้องเป็น 'bookable', 'contact_admin' หรือ 'purchase' เท่านั้น");
   }
 
   const shortDescResult = parseOptionalText(merged.short_description, "คำอธิบายสั้น", 300);

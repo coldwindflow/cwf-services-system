@@ -10,7 +10,7 @@ let galleryUploading = false;
 let galleryUploadQueue = [];
 let galleryPickNotice = "";
 let deleteModalItemId = null;
-const BOOKING_MODES = ["bookable", "contact_admin"];
+const BOOKING_MODES = ["bookable", "contact_admin", "purchase"];
 // Must mirror the backend's MAX_CATALOG_IMAGES_PER_ITEM (server/routes/catalog/items.js)
 const MAX_GALLERY_IMAGES = 4;
 
@@ -129,6 +129,7 @@ function ensureCatalogModal() {
             <select id="cm_booking_mode">
               <option value="contact_admin">ติดต่อแอดมิน (ไม่จองออนไลน์)</option>
               <option value="bookable">จองออนไลน์ได้</option>
+              <option value="purchase">สินค้า (ขายออนไลน์)</option>
             </select>
           </div>
           <div id="cm_booking_fields" style="display:none;">
@@ -979,7 +980,7 @@ function catalogItemCard(item) {
         <span class="asc-badge ${active ? "asc-badge-active" : "asc-badge-inactive"}">${active ? "เปิดใช้งาน" : "ปิดใช้งาน"}</span>
         ${visible ? `<span class="asc-badge asc-badge-visible">แสดงลูกค้า</span>` : ""}
         ${hasPromo ? `<span class="asc-badge asc-badge-promo">${escapeHtml(item.campaign_name || "โปรโมชัน")}</span>` : ""}
-        ${item.booking_mode === "bookable" ? `<span class="asc-badge asc-badge-bookable">จองออนไลน์ได้</span>` : `<span class="asc-badge asc-badge-contact">ติดต่อแอดมิน</span>`}
+        ${item.booking_mode === "bookable" ? `<span class="asc-badge asc-badge-bookable">จองออนไลน์ได้</span>` : item.booking_mode === "purchase" ? `<span class="asc-badge asc-badge-purchase">สินค้า (ขาย)</span>` : `<span class="asc-badge asc-badge-contact">ติดต่อแอดมิน</span>`}
         ${item.is_featured ? `<span class="asc-badge asc-badge-featured">แนะนำ</span>` : ""}
         ${item.is_hot ? `<span class="asc-badge asc-badge-hot">HOT</span>` : ""}
       </div>

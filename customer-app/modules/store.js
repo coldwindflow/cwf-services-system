@@ -82,6 +82,12 @@
     return item.booking_mode === "bookable";
   }
 
+  // Physical product the customer can buy (e.g. an AC unit) — gets a "ซื้อ"
+  // button that opens the purchase sheet (quantity + delivery/install options).
+  function isPurchase(item) {
+    return item.booking_mode === "purchase";
+  }
+
   function btuRangeLabel(item) {
     const min = Number(item.btu_min);
     const max = Number(item.btu_max);
@@ -518,6 +524,8 @@
     if (isBookable(item)) {
       if (item.has_queue_today === true) badges.push(`<span class="store-badge store-badge-queue-today">มีคิววันนี้</span>`);
       else badges.push(`<span class="store-badge store-badge-bookable">จองได้</span>`);
+    } else if (isPurchase(item)) {
+      badges.push(`<span class="store-badge store-badge-buy">สินค้าพร้อมส่ง</span>`);
     } else badges.push(`<span class="store-badge store-badge-contact">ติดต่อแอดมิน</span>`);
     return badges.length ? `<div class="store-card-badges">${badges.join("")}</div>` : "";
   }
@@ -551,7 +559,9 @@
         <div class="store-card-actions">
           ${bookable
             ? `<button class="primary-btn" type="button" data-store-book="${root.utils.escapeHtml(id)}">จองคิว</button>`
-            : `<button class="secondary-btn" type="button" data-store-contact="${root.utils.escapeHtml(id)}" data-store-contact-name="${root.utils.escapeHtml(name)}">สอบถามแอดมิน</button>`}
+            : isPurchase(item)
+              ? `<button class="primary-btn" type="button" data-store-buy="${root.utils.escapeHtml(id)}">ซื้อ</button>`
+              : `<button class="secondary-btn" type="button" data-store-contact="${root.utils.escapeHtml(id)}" data-store-contact-name="${root.utils.escapeHtml(name)}">สอบถามแอดมิน</button>`}
         </div>
       </article>
     `;
@@ -760,12 +770,12 @@
     container.querySelectorAll("[data-store-item]").forEach((card) => {
       const id = card.getAttribute("data-store-item");
       card.addEventListener("click", (event) => {
-        if (event.target.closest("[data-store-book], [data-store-contact]")) return;
+        if (event.target.closest("[data-store-book], [data-store-contact], [data-store-buy]")) return;
         goToDetail(id);
       });
       card.addEventListener("keydown", (event) => {
         if (event.key !== "Enter" && event.key !== " ") return;
-        if (event.target.closest("[data-store-book], [data-store-contact]")) return;
+        if (event.target.closest("[data-store-book], [data-store-contact], [data-store-buy]")) return;
         event.preventDefault();
         goToDetail(id);
       });
@@ -783,6 +793,14 @@
         }
         trackItemEvent("cwf_store_begin_booking", item, { source: "store_list" });
         root.utils.routeTo("scheduled");
+      });
+    });
+    container.querySelectorAll("[data-store-buy]").forEach((button) => {
+      button.addEventListener("click", (event) => {
+        event.stopPropagation && event.stopPropagation();
+        const id = button.getAttribute("data-store-buy");
+        const item = (root.state.catalog.items || []).find((it) => String(it.item_id) === String(id));
+        if (item) openPurchaseSheet(container, item);
       });
     });
     container.querySelectorAll("[data-store-contact]").forEach((button) => {
@@ -1434,7 +1452,9 @@
     const showCompare = canonicalAcType(item) === "wall" && canonicalJobCategory(item) === "wash";
     const ctaButton = bookable
       ? `<button class="primary-btn" type="button" data-store-detail-book="1">จองคิว</button>`
-      : `<button class="primary-btn" type="button" data-store-detail-contact="1">สอบถามแอดมิน</button>`;
+      : isPurchase(item)
+        ? `<button class="primary-btn" type="button" data-store-detail-buy="1">ซื้อสินค้า</button>`
+        : `<button class="primary-btn" type="button" data-store-detail-contact="1">สอบถามแอดมิน</button>`;
 
     return `
       <button class="store-detail-back" type="button" data-store-detail-back>${root.utils.icon("pin", 16)}กลับไปหน้าร้านค้า</button>
@@ -1554,6 +1574,12 @@
         root.ui.openContactSheet(container, { title: item?.item_name || "รายการนี้" });
       });
     });
+    container.querySelectorAll("[data-store-detail-buy]").forEach((buyButton) => {
+      buyButton.addEventListener("click", () => {
+        const item = root.state.storeDetail?.data;
+        if (item) openPurchaseSheet(container, item);
+      });
+    });
     container.querySelectorAll("[data-store-rating]").forEach((button) => {
       button.addEventListener("click", () => {
         const section = container.querySelector("[data-store-reviews-section]");
@@ -1650,6 +1676,108 @@
       root.state.setStoreDetail({ status: "error", itemId, data: null, error: message });
     }
     patchDetailBody(container);
+  }
+
+  // ── Purchase (buy) flow for product-mode items ──────────────────────
+  // Collects quantity + delivery/install options + contact, then shows an
+  // order summary. Online payment (Omise) and persisted orders land in later
+  // phases; for now the request is confirmed and handed to the admin.
+  const esc = (value) => root.utils.escapeHtml(value == null ? "" : value);
+
+  function purchaseSheetHtml(item) {
+    const name = item.item_name || "สินค้า";
+    const unitPrice = effectiveSalePrice(item);
+    const priceStr = unitPrice === null ? "สอบถามราคา" : root.utils.formatBaht(unitPrice);
+    return `
+      <div class="contact-sheet-backdrop" data-purchase-close></div>
+      <section class="contact-sheet purchase-sheet" role="dialog" aria-modal="true" aria-labelledby="purchase-sheet-title">
+        <button class="contact-sheet-close" type="button" data-purchase-close aria-label="ปิด">×</button>
+        <span class="section-kicker">สั่งซื้อสินค้า</span>
+        <h2 id="purchase-sheet-title">${esc(name)}</h2>
+        <div class="purchase-row"><span>ราคา/ชิ้น</span><strong>${esc(priceStr)}</strong></div>
+        <div class="purchase-row purchase-qty">
+          <span>จำนวน</span>
+          <div class="qty-stepper">
+            <button type="button" class="qty-btn" data-qty-dec aria-label="ลดจำนวน">−</button>
+            <span class="qty-val" data-qty-val>1</span>
+            <button type="button" class="qty-btn" data-qty-inc aria-label="เพิ่มจำนวน">+</button>
+          </div>
+        </div>
+        <fieldset class="purchase-opt">
+          <legend>การรับสินค้า</legend>
+          <label class="purchase-choice"><input type="radio" name="cwf-delivery" value="pickup" checked><span>รับเองที่ร้าน</span></label>
+          <label class="purchase-choice"><input type="radio" name="cwf-delivery" value="ship"><span>จัดส่งถึงบ้าน <small>(ค่าส่งแอดมินแจ้ง)</small></span></label>
+        </fieldset>
+        <fieldset class="purchase-opt">
+          <legend>การติดตั้ง</legend>
+          <label class="purchase-choice"><input type="radio" name="cwf-install" value="none" checked><span>ไม่ติดตั้ง (รับเครื่องอย่างเดียว)</span></label>
+          <label class="purchase-choice"><input type="radio" name="cwf-install" value="cwf"><span>ติดตั้งโดยช่าง CWF <small>(ค่าติดตั้งแอดมินแจ้ง)</small></span></label>
+        </fieldset>
+        <div class="purchase-fields">
+          <input class="purchase-input" type="text" data-buy-name placeholder="ชื่อผู้สั่งซื้อ *">
+          <input class="purchase-input" type="tel" inputmode="tel" data-buy-phone placeholder="เบอร์โทร *">
+          <textarea class="purchase-input" data-buy-address placeholder="ที่อยู่จัดส่ง (ถ้าเลือกจัดส่ง)"></textarea>
+        </div>
+        <p class="purchase-error" data-buy-error hidden>กรุณากรอกชื่อและเบอร์โทร</p>
+        <div class="purchase-total"><span>ยอดสินค้า</span><strong data-buy-total>${esc(priceStr)}</strong></div>
+        <p class="purchase-note">* ค่าติดตั้ง/ค่าจัดส่ง แอดมินจะยืนยันอีกครั้ง · ระบบชำระเงินออนไลน์กำลังจะเปิดเร็ว ๆ นี้</p>
+        <button class="primary-btn" type="button" data-buy-submit>ยืนยันสั่งซื้อ</button>
+      </section>
+    `;
+  }
+
+  function purchaseConfirmHtml(item, o) {
+    const deliveryLabel = o.delivery === "ship" ? "จัดส่งถึงบ้าน" : "รับเองที่ร้าน";
+    const installLabel = o.install === "cwf" ? "ติดตั้งโดยช่าง CWF" : "ไม่ติดตั้ง";
+    return `
+      <button class="contact-sheet-close" type="button" data-purchase-close aria-label="ปิด">×</button>
+      <span class="section-kicker">รับคำสั่งซื้อแล้ว</span>
+      <h2>ขอบคุณสำหรับการสั่งซื้อ 🎉</h2>
+      <div class="purchase-summary">
+        <div><span>สินค้า</span><strong>${esc(item.item_name || "")} × ${o.qty}</strong></div>
+        <div><span>การรับสินค้า</span><strong>${deliveryLabel}</strong></div>
+        <div><span>การติดตั้ง</span><strong>${installLabel}</strong></div>
+        <div><span>ผู้สั่งซื้อ</span><strong>${esc(o.name)} · ${esc(o.phone)}</strong></div>
+      </div>
+      <p>แอดมินจะติดต่อกลับเพื่อยืนยันค่าติดตั้ง/ค่าส่ง และช่องทางชำระเงิน (ระบบชำระเงินออนไลน์กำลังจะเปิดใช้เร็ว ๆ นี้)</p>
+      <div class="contact-sheet-actions">
+        <a class="primary-btn" href="https://lin.ee/fG1Oq7y" target="_blank" rel="noopener noreferrer">แจ้งแอดมินทาง LINE</a>
+      </div>
+    `;
+  }
+
+  function openPurchaseSheet(container, item) {
+    let mount = container.querySelector("[data-contact-sheet-mount]");
+    if (!mount) { mount = document.createElement("div"); mount.setAttribute("data-contact-sheet-mount", ""); container.appendChild(mount); }
+    mount.innerHTML = purchaseSheetHtml(item);
+    document.body.classList.add("has-contact-sheet");
+    trackItemEvent("cwf_store_purchase_open", item, { source: "store" });
+    const unitPrice = effectiveSalePrice(item);
+    let qty = 1;
+    const close = () => { mount.innerHTML = ""; document.body.classList.remove("has-contact-sheet"); };
+    const bindClose = () => mount.querySelectorAll("[data-purchase-close]").forEach((b) => b.addEventListener("click", close, { once: true }));
+    const qtyVal = mount.querySelector("[data-qty-val]");
+    const totalEl = mount.querySelector("[data-buy-total]");
+    const syncTotal = () => {
+      if (qtyVal) qtyVal.textContent = String(qty);
+      if (totalEl) totalEl.textContent = unitPrice === null ? "สอบถามราคา" : root.utils.formatBaht(unitPrice * qty);
+    };
+    bindClose();
+    mount.querySelector("[data-qty-dec]")?.addEventListener("click", () => { qty = Math.max(1, qty - 1); syncTotal(); });
+    mount.querySelector("[data-qty-inc]")?.addEventListener("click", () => { qty = Math.min(99, qty + 1); syncTotal(); });
+    mount.querySelector("[data-buy-submit]")?.addEventListener("click", () => {
+      const name = (mount.querySelector("[data-buy-name]")?.value || "").trim();
+      const phone = (mount.querySelector("[data-buy-phone]")?.value || "").trim();
+      const errorEl = mount.querySelector("[data-buy-error]");
+      if (!name || !phone) { if (errorEl) errorEl.hidden = false; return; }
+      const delivery = mount.querySelector("input[name='cwf-delivery']:checked")?.value || "pickup";
+      const install = mount.querySelector("input[name='cwf-install']:checked")?.value || "none";
+      trackItemEvent("cwf_store_purchase_request", item, { qty, delivery, install });
+      const sheet = mount.querySelector(".purchase-sheet");
+      if (sheet) sheet.innerHTML = purchaseConfirmHtml(item, { qty, delivery, install, name, phone });
+      bindClose();
+    });
+    requestAnimationFrame(() => mount.querySelector(".contact-sheet-close")?.focus());
   }
 
   const store = {
