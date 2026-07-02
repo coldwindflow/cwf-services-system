@@ -938,6 +938,37 @@ test("per-page headers (store/booking/tracking) normalize as hero-like banners a
   assert.equal(pub.page_headers.store.items[0].route, "store");
 });
 
+test("section-level active_from/active_to are persisted and gate the whole section in the public config", () => {
+  const result = validateConfig({
+    sections: [
+      { id: "hero", type: "hero", title: "หน้าหลัก", items: [] },
+      // A seasonal promo block scheduled for a past window — should be dropped.
+      { id: "promo_banner", type: "promo_banner", title: "โปรสงกรานต์", active_from: "2026-04-01", active_to: "2026-04-30", items: [{ image_url: "https://res.cloudinary.com/demo/songkran.jpg", alt_text: "โปร" }] },
+      // A trust block scheduled to start in the future — should also be dropped now.
+      { id: "trust", type: "trust", title: "เร็วๆ นี้", active_from: "2026-12-01", items: [{ title: "x", body: "y" }] },
+    ],
+  });
+  assert.equal(result.ok, true, JSON.stringify(result.errors));
+  // Dates survive normalization (draft/admin config keeps them).
+  const promo = result.config.sections.find((s) => s.id === "promo_banner");
+  assert.equal(promo.active_from, "2026-04-01");
+  assert.equal(promo.active_to, "2026-04-30");
+
+  // Public config in July 2026: the expired promo and the not-yet-started trust
+  // block are both gated out; only the always-on hero remains.
+  const pub = stripPublicConfig(result.config);
+  assert.ok(activeNow(result.config.sections[0], new Date("2026-07-02T05:00:00Z")));
+  const ids = pub.sections.map((s) => s.id);
+  assert.deepEqual(ids, ["hero"]);
+
+  // An invalid range (from after to) is rejected at validation time.
+  const bad = validateConfig({
+    sections: [{ id: "trust", type: "trust", title: "x", active_from: "2026-05-10", active_to: "2026-05-01", items: [{ title: "a", body: "b" }] }],
+  });
+  assert.equal(bad.ok, false);
+  assert.ok(bad.errors.some((e) => e.includes("active range invalid")));
+});
+
 test("updates items are savable with only an image/caption (no URL required); articles still require a URL", () => {
   // Activity-photo post: image + caption, no link. Must validate OK so admins
   // can publish work photos without inventing a URL.
