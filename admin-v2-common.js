@@ -486,6 +486,7 @@ function injectAdminMenu(){
             <div class="cwf-link" data-href="/admin-review-v2.html">✅ อนุมัติงาน/รีวิว <small>Approvals</small></div>
             <div class="cwf-link" data-href="/admin-promotions-v2.html">🏷️ โปรโมชั่น/ราคา <small>Promotions</small></div>
             <div class="cwf-link" data-href="/admin-store-catalog.html">🗂️ รายการบริการในร้านค้า <small>Store Catalog</small></div>
+            <div class="cwf-link" data-href="/admin-orders.html">🧾 คำสั่งซื้อ/การชำระเงิน <small>Orders &amp; Payment</small></div>
             <div class="cwf-link" data-href="/admin-job-view-v2.html">🔎 ดูงาน <small>Job View</small></div>
           </div>
         </div>
