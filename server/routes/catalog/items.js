@@ -221,13 +221,37 @@ function validateMarketplaceFields(merged) {
   };
 }
 
+// A short, safe Thai hint appended to the generic save error on the admin-only
+// catalog routes, so a failure is diagnosable without server-log access.
+function dbErrorHint(error) {
+  const code = error && error.code;
+  if (code === "23514") return " (ค่าบางช่องไม่ตรงกับที่ระบบอนุญาต เช่น หมวดหมู่/โหมดการขาย)";
+  if (code === "23505") return " (ข้อมูลซ้ำกับที่มีอยู่)";
+  if (code === "23502") return " (มีช่องจำเป็นที่ยังไม่ได้กรอก)";
+  if (code === "42P01" || code === "42703") return " (ฐานข้อมูลยังไม่อัปเดต — รอระบบอัปเดต schema แล้วลองใหม่)";
+  return code ? ` (รหัส ${code})` : "";
+}
+
+function normalizeItemCategory(rawCategory, bookingMode) {
+  const value = String(rawCategory == null ? "" : rawCategory).trim().toLowerCase();
+  if (value === "service" || value === "product") return value;
+  if (String(bookingMode || "").trim() === "purchase") return "product";
+  if (/สินค้า|product|อุปกรณ์/i.test(String(rawCategory || ""))) return "product";
+  return "service";
+}
+
 function validateMergedCatalogItem(merged) {
   const errors = [];
 
   const item_name = String(merged.item_name || "").trim();
   if (!item_name) errors.push("กรุณากรอกชื่อรายการ");
 
-  const item_category = String(merged.item_category || "").trim();
+  // catalog_items.item_category is constrained to 'service'/'product' in the DB
+  // and is not shown to customers. The admin "หมวดหมู่" field is free text, so a
+  // value like "สินค้า" would violate the CHECK and fail the whole insert.
+  // Coerce to a valid token: a product-mode item (or product-ish text) is a
+  // 'product', everything else a 'service'.
+  const item_category = normalizeItemCategory(merged.item_category, merged.booking_mode);
   const unit_label = String(merged.unit_label || "").trim();
   const job_category = String(merged.job_category || "").trim();
   const ac_type = String(merged.ac_type || "").trim();
@@ -1225,7 +1249,7 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
     } catch (e) {
       await client.query("ROLLBACK").catch(() => {});
       console.error(e);
-      res.status(500).json({ error: "เพิ่มรายการไม่สำเร็จ" });
+      res.status(500).json({ error: `เพิ่มรายการไม่สำเร็จ${dbErrorHint(e)}` });
     } finally {
       client.release();
     }
@@ -1365,7 +1389,7 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
     } catch (e) {
       await client.query("ROLLBACK").catch(() => {});
       console.error(e);
-      res.status(500).json({ error: "แก้ไขรายการไม่สำเร็จ" });
+      res.status(500).json({ error: `แก้ไขรายการไม่สำเร็จ${dbErrorHint(e)}` });
     } finally {
       client.release();
     }
@@ -1855,6 +1879,9 @@ module.exports.serializeAdminCatalogRow = serializeAdminCatalogRow;
 module.exports.serializeCatalogImage = serializeCatalogImage;
 module.exports.validatePricingInput = validatePricingInput;
 module.exports.validateMarketplaceFields = validateMarketplaceFields;
+module.exports.validateMergedCatalogItem = validateMergedCatalogItem;
+module.exports.normalizeItemCategory = normalizeItemCategory;
+module.exports.dbErrorHint = dbErrorHint;
 module.exports.buildCatalogSelect = buildCatalogSelect;
 module.exports.MAX_CATALOG_IMAGES_PER_ITEM = MAX_CATALOG_IMAGES_PER_ITEM;
 module.exports.validateHotField = validateHotField;

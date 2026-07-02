@@ -3053,3 +3053,44 @@ test("has_queue_today reuses one cached eligibility check across multiple items 
     assert.equal(matrixQueries.length, 1);
   });
 });
+
+// ---------- item_category coercion + DB error hints ----------
+// The DB constrains catalog_items.item_category to 'service'/'product', so the
+// server coerces the admin's value before insert instead of letting a stray
+// label (e.g. Thai "สินค้า") violate the CHECK and fail the whole save.
+
+test("normalizeItemCategory passes through canonical tokens", () => {
+  assert.equal(createCatalogItemRoutes.normalizeItemCategory("service"), "service");
+  assert.equal(createCatalogItemRoutes.normalizeItemCategory("product"), "product");
+  assert.equal(createCatalogItemRoutes.normalizeItemCategory("  PRODUCT  "), "product");
+});
+
+test("normalizeItemCategory treats a purchase-mode item as a product", () => {
+  assert.equal(createCatalogItemRoutes.normalizeItemCategory("", "purchase"), "product");
+  assert.equal(createCatalogItemRoutes.normalizeItemCategory("อะไรก็ได้", "purchase"), "product");
+});
+
+test("normalizeItemCategory maps product-ish free text to 'product', else 'service'", () => {
+  assert.equal(createCatalogItemRoutes.normalizeItemCategory("สินค้า"), "product");
+  assert.equal(createCatalogItemRoutes.normalizeItemCategory("อุปกรณ์"), "product");
+  assert.equal(createCatalogItemRoutes.normalizeItemCategory("ล้างแอร์"), "service");
+  assert.equal(createCatalogItemRoutes.normalizeItemCategory(""), "service");
+  assert.equal(createCatalogItemRoutes.normalizeItemCategory(null), "service");
+});
+
+test("validateMergedCatalogItem never emits an item_category outside the DB CHECK set", () => {
+  for (const raw of ["สินค้า", "ล้างแอร์", "", "service", "product", "random"]) {
+    const result = createCatalogItemRoutes.validateMergedCatalogItem({
+      item_name: "x", item_category: raw, is_active: true, is_customer_visible: true,
+    });
+    assert.equal(result.ok, true, `expected ok for category=${raw}`);
+    assert.ok(["service", "product"].includes(result.value.item_category), `bad token for ${raw}: ${result.value.item_category}`);
+  }
+});
+
+test("dbErrorHint maps a CHECK-constraint violation to a Thai hint and is silent for unknown errors", () => {
+  assert.match(createCatalogItemRoutes.dbErrorHint({ code: "23514" }), /หมวดหมู่|โหมดการขาย/);
+  assert.match(createCatalogItemRoutes.dbErrorHint({ code: "42P01" }), /schema/);
+  assert.equal(createCatalogItemRoutes.dbErrorHint({}), "");
+  assert.equal(createCatalogItemRoutes.dbErrorHint(null), "");
+});
