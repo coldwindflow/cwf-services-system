@@ -89,6 +89,7 @@
         items: Array.isArray(header.items) ? header.items : [],
       };
     });
+    next.theme = next.theme && typeof next.theme === "object" && !Array.isArray(next.theme) ? next.theme : {};
     return next;
   }
   function setStatus(text, kind) { $("status").textContent = text; $("status").className = `status-chip ${kind || ""}`; }
@@ -277,14 +278,37 @@
         </div>
       </div>`;
     }).join("");
-    $("sectionList").innerHTML += `<div class="nav-hd" style="margin-top:8px">แบนเนอร์หัวหน้า (แยกแต่ละหน้า)</div>${headerRows}`;
+    const themeRow = `
+      <div class="sec-row ${selected === "theme" ? "is-active" : ""}">
+        <div class="sec-row-body" data-edit="theme">
+          <div class="sec-icon">🎨</div>
+          <div class="sec-info">
+            <div class="sec-name">ธีม / สีแบรนด์</div>
+            <div class="sec-type">สีทั้งแอป</div>
+          </div>
+        </div>
+      </div>`;
+    $("sectionList").innerHTML += `<div class="nav-hd" style="margin-top:8px">แบนเนอร์หัวหน้า (แยกแต่ละหน้า)</div>${headerRows}`
+      + `<div class="nav-hd" style="margin-top:8px">รูปลักษณ์</div>${themeRow}`;
     $("sectionPicker").innerHTML = list.map((section) => `<option value="${esc(section.id)}">${esc(section.title || section.type)}</option>`).join("")
-      + PAGE_HEADER_META.map(([key, label]) => `<option value="head:${key}">${esc(label)}</option>`).join("");
+      + PAGE_HEADER_META.map(([key, label]) => `<option value="head:${key}">${esc(label)}</option>`).join("")
+      + `<option value="theme">ธีม / สีแบรนด์</option>`;
     $("sectionPicker").value = selected;
   }
 
   /* ── editor header ── */
   function renderEditorHeader() {
+    if (selected === "theme") {
+      $("editorHeader").innerHTML = `
+        <div class="editor-hd">
+          <div class="editor-hd-icon">🎨</div>
+          <div>
+            <div class="editor-hd-title">ธีม / สีแบรนด์</div>
+            <div class="editor-hd-sub">เปลี่ยนสีของทั้งแอปลูกค้า</div>
+          </div>
+        </div>`;
+      return;
+    }
     const key = headKey();
     if (key) {
       const meta = PAGE_HEADER_META.find(([k]) => k === key) || [key, key, "📄"];
@@ -554,7 +578,59 @@
     `;
   }
 
+  const THEME_PRESETS = [
+    { label: "CWF น้ำเงิน (ค่าเริ่มต้น)", primary: "#1659e0", accent: "#3d8bff", highlight: "#ffd23b" },
+    { label: "เขียวมินต์", primary: "#0f9d76", accent: "#33c39a", highlight: "#ffd23b" },
+    { label: "ม่วงพรีเมียม", primary: "#5b3bd4", accent: "#8a6cff", highlight: "#ffcf3b" },
+    { label: "ส้มพลังงาน", primary: "#e0562a", accent: "#ff8a3d", highlight: "#ffd23b" },
+    { label: "ชมพูสดใส", primary: "#d6296e", accent: "#ff5c9a", highlight: "#ffd23b" },
+    { label: "เทาเข้มหรู", primary: "#2b3a55", accent: "#5a6b8c", highlight: "#f4b740" },
+  ];
+  function themeColorRow(key, label, hint) {
+    const value = (config.theme || {})[key] || "";
+    return `
+      <label class="field">${esc(label)}
+        <div style="display:flex;gap:10px;align-items:center">
+          <input type="color" data-theme-color="${key}" value="${esc(value || "#1659e0")}" style="width:52px;height:40px;padding:2px;border-radius:10px;border:1.5px solid var(--line);background:#fff;cursor:pointer">
+          <input class="fi" data-theme-hex="${key}" value="${esc(value)}" placeholder="ค่าเริ่มต้น (เว้นว่าง)" style="flex:1" maxlength="7">
+        </div>
+        <span style="font-size:11px;color:var(--muted)">${esc(hint)}</span>
+      </label>`;
+  }
+  function renderThemeEditor() {
+    const theme = config.theme || {};
+    $("editor").innerHTML = `
+      <div class="ep">
+        <div class="ep-head">สีแบรนด์ (มีผลทั้งแอปลูกค้า)</div>
+        <div class="ep-body">
+          <p style="font-size:12.5px;color:var(--muted);line-height:1.6;margin:0 0 6px">เว้นว่างทุกช่อง = ใช้สีเริ่มต้นของ CWF · ระบบจะสร้างเฉดอ่อนให้อัตโนมัติจากสีหลัก</p>
+          ${themeColorRow("primary", "สีหลัก (ปุ่ม/ลิงก์/ไฮไลต์)", "ใช้กับปุ่มจอง ลิงก์ และองค์ประกอบหลัก")}
+          ${themeColorRow("accent", "สีเสริม (ไล่เฉด/ไอคอน)", "ใช้ไล่โทนกับสีหลัก เว้นว่าง = สร้างจากสีหลัก")}
+          ${themeColorRow("highlight", "สีเน้น (ปุ่มจองวงกลม/ป้าย)", "สีเหลืองปุ่มจองลอยและ kicker")}
+          <div class="toolbar" style="margin-top:8px">
+            <button class="btn btn-ghost btn-sm" type="button" id="resetTheme">↺ กลับค่าเริ่มต้น</button>
+          </div>
+        </div>
+      </div>
+      <div class="ep">
+        <div class="ep-head">ธีมสำเร็จรูป</div>
+        <div class="ep-body">
+          <div style="display:flex;flex-wrap:wrap;gap:8px">
+            ${THEME_PRESETS.map((p, i) => `
+              <button class="btn btn-ghost btn-sm" type="button" data-theme-preset="${i}" style="display:flex;align-items:center;gap:8px">
+                <span style="display:inline-flex;gap:2px">
+                  <span style="width:14px;height:14px;border-radius:4px;background:${p.primary}"></span>
+                  <span style="width:14px;height:14px;border-radius:4px;background:${p.accent}"></span>
+                  <span style="width:14px;height:14px;border-radius:4px;background:${p.highlight}"></span>
+                </span>${esc(p.label)}
+              </button>`).join("")}
+          </div>
+        </div>
+      </div>`;
+  }
+
   function renderEditor() {
+    if (selected === "theme") { renderThemeEditor(); return; }
     if (headKey()) { renderHeadEditor(); return; }
     const section = current();
     if (!section) return;
@@ -758,6 +834,13 @@
   /* ── event handlers ── */
   document.addEventListener("click", (event) => {
     if (event.target.id === "addSectionBtn") { const el = $("newSectionType"); if (el) addSection(el.value); return; }
+    const preset = event.target.closest("[data-theme-preset]");
+    if (preset) {
+      const p = THEME_PRESETS[Number(preset.dataset.themePreset)];
+      if (p) { config.theme = { primary: p.primary, accent: p.accent, highlight: p.highlight }; render(); setStatus(`ใช้ธีม: ${p.label}`, "ok"); }
+      return;
+    }
+    if (event.target.id === "resetTheme") { config.theme = {}; render(); setStatus("กลับไปใช้สีเริ่มต้น", "ok"); return; }
     const dupSection = event.target.closest("[data-duplicate-section]");
     if (dupSection) { duplicateSection(dupSection.dataset.duplicateSection); return; }
     const delSection = event.target.closest("[data-delete-section]");
@@ -822,6 +905,25 @@
 
   document.addEventListener("input", (event) => {
     const target = event.target;
+    // Theme color fields live outside any section — handle first and bail.
+    if (target.matches("[data-theme-color]") || target.matches("[data-theme-hex]")) {
+      const key = target.dataset.themeColor || target.dataset.themeHex;
+      config.theme = config.theme || {};
+      const raw = String(target.value || "").trim().toLowerCase();
+      if (target.matches("[data-theme-color]")) {
+        config.theme[key] = raw; // native color input is always #rrggbb
+        const hex = document.querySelector(`[data-theme-hex="${key}"]`);
+        if (hex) hex.value = raw;
+      } else if (!raw) {
+        delete config.theme[key];
+      } else if (/^#[0-9a-fA-F]{6}$/.test(raw)) {
+        config.theme[key] = raw;
+        const picker = document.querySelector(`[data-theme-color="${key}"]`);
+        if (picker) picker.value = raw;
+      }
+      renderPreview();
+      return;
+    }
     const section = current();
     if (target.matches("[data-field]")) section[target.dataset.field] = target.value;
     if (target.matches("[data-cta]")) { section[target.dataset.cta] = section[target.dataset.cta] || {}; section[target.dataset.cta][target.dataset.prop] = target.value; }

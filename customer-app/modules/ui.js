@@ -779,18 +779,68 @@
     }
   }
 
+  // ── Admin-configurable brand theme ──────────────────────────────────
+  // The admin can set primary / accent / highlight colors in the CMS. We map
+  // them onto the app's CSS custom properties (and derive soft tints), so the
+  // whole customer app recolors app-wide. Absent/invalid values fall back to
+  // the stylesheet defaults.
+  const THEME_HEX = /^#[0-9a-fA-F]{6}$/;
+  function themeHexToRgb(hex) {
+    const n = parseInt(hex.slice(1), 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  }
+  function themeRgbToHex(r, g, b) {
+    return "#" + [r, g, b].map((x) => Math.max(0, Math.min(255, Math.round(x))).toString(16).padStart(2, "0")).join("");
+  }
+  function themeMixWhite(hex, whiteAmount) {
+    const [r, g, b] = themeHexToRgb(hex);
+    const w = whiteAmount;
+    return themeRgbToHex(r + (255 - r) * w, g + (255 - g) * w, b + (255 - b) * w);
+  }
+  function applyHomepageTheme(config) {
+    if (typeof document === "undefined" || !document.documentElement) return;
+    const rootEl = document.documentElement;
+    const theme = (config && config.theme && typeof config.theme === "object") ? config.theme : {};
+    const clean = (value) => (typeof value === "string" && THEME_HEX.test(value.trim()) ? value.trim().toLowerCase() : null);
+    const primary = clean(theme.primary);
+    const accent = clean(theme.accent);
+    const highlight = clean(theme.highlight);
+    // Clear previous overrides first so reverting to defaults works.
+    ["--blue", "--blue-2", "--accent", "--cobalt", "--yellow", "--yellow-2", "--soft-blue", "--soft-blue-2"]
+      .forEach((prop) => rootEl.style.removeProperty(prop));
+    if (primary) {
+      rootEl.style.setProperty("--blue", primary);
+      rootEl.style.setProperty("--accent", primary);
+      rootEl.style.setProperty("--soft-blue", themeMixWhite(primary, 0.90));
+      rootEl.style.setProperty("--soft-blue-2", themeMixWhite(primary, 0.82));
+      rootEl.style.setProperty("--blue-2", accent || themeMixWhite(primary, 0.18));
+      rootEl.style.setProperty("--cobalt", accent || themeMixWhite(primary, 0.30));
+    } else if (accent) {
+      rootEl.style.setProperty("--blue-2", accent);
+      rootEl.style.setProperty("--cobalt", accent);
+      rootEl.style.setProperty("--accent", accent);
+    }
+    if (highlight) {
+      rootEl.style.setProperty("--yellow", highlight);
+      rootEl.style.setProperty("--yellow-2", themeMixWhite(highlight, 0.35));
+    }
+  }
+
   async function loadHomepageData() {
     if (root.state.homepage?.status !== "idle") return;
     root.state.setHomepage({ status: "loading", error: "" });
     try {
       const data = await root.api.loadHomepage();
+      const config = data?.config || DEFAULT_HOME_CONFIG;
+      applyHomepageTheme(config);
       root.state.setHomepage({
         status: "success",
-        config: data?.config || DEFAULT_HOME_CONFIG,
+        config,
         fallback: Boolean(data?.fallback),
         error: "",
       });
     } catch (error) {
+      applyHomepageTheme(DEFAULT_HOME_CONFIG);
       root.state.setHomepage({
         status: "error",
         config: DEFAULT_HOME_CONFIG,
