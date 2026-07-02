@@ -441,10 +441,11 @@
   function renderHomepageActiveJob(section) {
     const bucket = root.state.homeActiveJob || { status: "idle", data: null };
     const job = bucket.data;
-    if (!job || bucket.status !== "success") return `<div data-home-active-job></div>`;
+    const sid = root.utils.escapeHtml(section.id || "active_job");
+    if (!job || bucket.status !== "success") return `<div data-home-active-job data-section-id="${sid}"></div>`;
     const dateLabel = job.appointment_datetime ? root.utils.formatDateTime(job.appointment_datetime) : "";
     return `
-      <section class="homepage-section homepage-active-job" data-home-active-job>
+      <section class="homepage-section homepage-active-job" data-home-active-job data-section-id="${sid}">
         <div class="homepage-section-head">
           <div>
             <h2>${root.utils.escapeHtml(section.title || "")}</h2>
@@ -467,10 +468,10 @@
       // No valid items after resolving against real Catalog data (e.g. every
       // manually-selected item became inactive/hidden) — hide the section
       // entirely rather than show admin-authored copy with an empty body.
-      return `<div data-home-featured-section></div>`;
+      return `<div data-home-featured-section data-section-id="${root.utils.escapeHtml(section.id || "featured_services")}"></div>`;
     }
     return `
-      <section class="homepage-section" data-home-featured-section>
+      <section class="homepage-section" data-home-featured-section data-section-id="${root.utils.escapeHtml(section.id || "featured_services")}">
         <div class="homepage-section-head">
           <div>
             <h2>${root.utils.escapeHtml(section.title || "")}</h2>
@@ -1194,12 +1195,19 @@
       account.innerHTML = renderAccountShortcut();
       root.auth?.bindAvatarFallbacks?.(account);
     }
-    const featuredSection = container.querySelector("[data-home-featured-section]");
-    const featuredCfg = sectionByType("featured_services");
-    if (featuredSection && featuredCfg) featuredSection.outerHTML = renderHomepageFeaturedSection(featuredCfg);
-    const activeJob = container.querySelector("[data-home-active-job]");
-    const activeSection = sectionByType("active_job");
-    if (activeJob && activeSection) activeJob.outerHTML = renderHomepageActiveJob(activeSection);
+    // Re-render each featured/active-job mount from its own section config (by
+    // id), so duplicated sections of these types all refresh — not just the
+    // first one — once catalog/active-job data arrives.
+    const sectionById = (id, type) =>
+      homepageSections().find((section) => section.id === id) || sectionByType(type);
+    container.querySelectorAll("[data-home-featured-section]").forEach((mount) => {
+      const cfg = sectionById(mount.getAttribute("data-section-id"), "featured_services");
+      if (cfg) mount.outerHTML = renderHomepageFeaturedSection(cfg);
+    });
+    container.querySelectorAll("[data-home-active-job]").forEach((mount) => {
+      const cfg = sectionById(mount.getAttribute("data-section-id"), "active_job");
+      if (cfg) mount.outerHTML = renderHomepageActiveJob(cfg);
+    });
     container.querySelectorAll("[data-quick-price]").forEach((mount) => {
       const card = root.services.quickServices.find((item) => item.id === mount.getAttribute("data-quick-price"));
       if (card) mount.innerHTML = renderQuickPrice(card);
