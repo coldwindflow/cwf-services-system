@@ -26403,6 +26403,26 @@ const HOST = "0.0.0.0";
 const CERT_KEY_PATH = process.env.HTTPS_KEY_PATH || "./cert/192.168.1.105+2-key.pem";
 const CERT_CRT_PATH = process.env.HTTPS_CERT_PATH || "./cert/192.168.1.105+2.pem";
 
+// Auto-apply the additive store buy-flow migrations on boot so no manual CLI
+// step is needed — deploying/restarting the app is enough. Each migration is
+// idempotent, advisory-locked, additive-only (no drop/delete/rewrite of
+// existing data) and self-verified; any failure is logged and never blocks
+// serving (the affected routes already return 503 until the schema exists) and
+// is retried on the next boot.
+function ensureStoreBuyMigrationsApplied() {
+  try {
+    const { runAll } = require("./scripts/run-store-buy-migrations");
+    Promise.resolve(runAll())
+      .then((code) => {
+        if (code === 0) console.log("✅ store buy-flow migrations ensured");
+        else console.error("⚠️ store buy-flow migrations not fully applied (will retry next boot)");
+      })
+      .catch((e) => console.error("⚠️ store buy-flow migration error:", e && e.message));
+  } catch (e) {
+    console.error("⚠️ store buy-flow migration bootstrap skipped:", e && e.message);
+  }
+}
+
 function startServer() {
   try {
     if (fs.existsSync(CERT_KEY_PATH) && fs.existsSync(CERT_CRT_PATH)) {
@@ -26416,6 +26436,7 @@ function startServer() {
         console.log(`🔒 Local: https://localhost:${PORT}`);
         startUrgentFinalizerRunner();
         startArticleSyncRunner();
+        ensureStoreBuyMigrationsApplied();
       });
       return;
     }
@@ -26427,6 +26448,7 @@ function startServer() {
     console.log(`🌐 HTTP CWF Server running at http://localhost:${PORT}`);
     startUrgentFinalizerRunner();
     startArticleSyncRunner();
+    ensureStoreBuyMigrationsApplied();
   });
 }
 
