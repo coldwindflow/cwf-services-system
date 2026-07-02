@@ -369,8 +369,23 @@ test("gallery delete and set-primary actions ask for confirmation only on delete
 });
 
 test("admin-store-catalog.html script and stylesheet references share a consistent cache-bust build id", () => {
-  assert.match(catalogHtmlSource, /admin-store-catalog\.css\?v=20260702_buy_v1/);
-  assert.match(catalogHtmlSource, /admin-store-catalog\.js\?v=20260702_buy_v1/);
+  assert.match(catalogHtmlSource, /admin-store-catalog\.css\?v=20260702_cat_v2/);
+  assert.match(catalogHtmlSource, /admin-store-catalog\.js\?v=20260702_cat_v2/);
+});
+
+test("the item_category field is a service/product dropdown, not free text", () => {
+  // The DB constrains catalog_items.item_category to exactly service/product,
+  // so the admin field must be a select — a free-text value like "สินค้า"
+  // would violate the CHECK and fail the insert.
+  const selectMatch = catalogJsSource.match(/<select id="cm_item_category">[\s\S]*?<\/select>/);
+  assert.ok(selectMatch, "cm_item_category should be a <select>");
+  assert.match(selectMatch[0], /value="service"[^>]*>บริการ/);
+  assert.match(selectMatch[0], /value="product"[^>]*>สินค้า/);
+  assert.doesNotMatch(catalogJsSource, /<input id="cm_item_category"/);
+});
+
+test("resetCatalogModalFields defaults the category select to 'service'", () => {
+  assert.match(catalogJsSource, /el\("cm_item_category"\)\.value = "service";/);
 });
 
 test("admin-store-catalog.css defines gallery grid and badge styles for the marketplace UI", () => {

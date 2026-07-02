@@ -68,7 +68,12 @@ function ensureCatalogModal() {
           <div class="asc-section-title">1) ข้อมูลหลัก</div>
           <div class="asc-field"><label>ชื่อรายการ *</label><input id="cm_item_name" placeholder="เช่น ล้างแอร์ผนัง"></div>
           <div class="asc-grid2">
-            <div class="asc-field"><label>หมวดหมู่ *</label><input id="cm_item_category" placeholder="เช่น ล้างแอร์"></div>
+            <div class="asc-field"><label>ประเภท *</label>
+              <select id="cm_item_category">
+                <option value="service">บริการ</option>
+                <option value="product">สินค้า</option>
+              </select>
+            </div>
             <div class="asc-field"><label>หน่วย *</label><input id="cm_unit_label" placeholder="เช่น เครื่อง, งาน"></div>
           </div>
         </div>
@@ -296,7 +301,7 @@ function onCatalogImageDeleteClick() {
 
 function resetCatalogModalFields() {
   el("cm_item_name").value = "";
-  el("cm_item_category").value = "";
+  el("cm_item_category").value = "service";
   el("cm_unit_label").value = "";
   el("cm_job_category").value = "";
   el("cm_ac_type").value = "";
