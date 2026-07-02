@@ -438,6 +438,11 @@
           ${field("ชื่อ Section", "title")}
           ${field("คำอธิบาย", "body", "textarea")}
           ${hasViewAll ? `<div class="two">${field("ข้อความปุ่ม ดูทั้งหมด", "view_all_label")}${selectField("Route ปุ่ม ดูทั้งหมด", "view_all_route", [["", "ไม่แสดงปุ่ม"], ...ROUTE_OPTIONS.map((r) => [r, r])])}</div>` : ""}
+          <div class="two">
+            <label class="field">แสดงตั้งแต่วันที่ (ไม่บังคับ)<input class="fi" data-field="active_from" value="${esc(section.active_from || "")}" placeholder="YYYY-MM-DD"></label>
+            <label class="field">แสดงถึงวันที่ (ไม่บังคับ)<input class="fi" data-field="active_to" value="${esc(section.active_to || "")}" placeholder="YYYY-MM-DD"></label>
+          </div>
+          <p style="font-size:12px;color:var(--muted);line-height:1.5">เว้นว่าง = แสดงตลอด · ตั้งช่วงวันเพื่อให้ทั้ง Section แสดงเฉพาะช่วงเวลานั้น (เช่น โปรเทศกาล)</p>
         </div>
       </div>
     `;

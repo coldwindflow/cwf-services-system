@@ -300,6 +300,12 @@ function normalizeSection(raw, index, errors) {
   if (cleanText(section.view_all_label, 60)) out.view_all_label = cleanText(section.view_all_label, 60);
   const _viewAllRoute = cleanText(section.view_all_route, 40);
   if (_viewAllRoute && INTERNAL_ROUTES.has(_viewAllRoute)) out.view_all_route = _viewAllRoute;
+  // Section-level scheduling: an admin can set a date window so a whole section
+  // (e.g. a seasonal promo block) shows only between active_from and active_to.
+  // stripPublicConfig already gates sections through activeNow(); persisting the
+  // dates here is what makes that window take effect.
+  if (cleanText(section.active_from, 32)) out.active_from = cleanText(section.active_from, 32);
+  if (cleanText(section.active_to, 32)) out.active_to = cleanText(section.active_to, 32);
   validateImageUrl(out.image_url, errors, `${id}.image_url`);
   validateDateRange(out, errors, id);
   if (type === "hero") {
