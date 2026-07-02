@@ -9,7 +9,7 @@
       { id: "promo_banner", type: "promo_banner", enabled: true, sort_order: 25, title: "", body: "", items: [] },
       { id: "active_job", type: "active_job", enabled: true, sort_order: 30, title: "Active job", body: "", items: [] },
       { id: "announcements", type: "announcements", enabled: true, sort_order: 40, title: "ข่าวและประกาศ CWF", body: "", items: [{ title: "ติดต่อทีม CWF", action: "contact", body: "สอบถามบริการหรือแจ้งข้อมูลเพิ่มเติมกับแอดมิน" }] },
-      { id: "featured_services", type: "featured_services", enabled: true, sort_order: 50, title: "บริการแนะนำ", body: "ราคาและรายละเอียดจาก Catalog", featured_mode: "auto", featured_limit: 4, show_price: true, show_badge: true, item_ids: [], items: [] },
+      { id: "featured_services", type: "featured_services", enabled: true, sort_order: 50, title: "บริการแนะนำ", body: "ราคาและรายละเอียดจาก Catalog", featured_mode: "auto", featured_limit: 6, show_price: true, show_badge: true, item_ids: [], items: [] },
       { id: "updates", type: "updates", enabled: true, sort_order: 60, title: "ภาพกิจกรรมและโพสต์", body: "", items: [] },
       { id: "articles", type: "articles", enabled: true, sort_order: 70, title: "บทความแนะนำ", body: "", items: [] },
       { id: "social", type: "social", enabled: true, sort_order: 75, title: "ติดตามเราบนโซเชียล", body: "อัปเดตล่าสุดจาก Facebook และ YouTube ของ Coldwindflow", items: [] },
@@ -21,12 +21,26 @@
     hero: "🏠", quick: "⚡", promo_banner: "🎨",
     active_job: "🔧", announcements: "📣", featured_services: "⭐",
     updates: "📸", articles: "📝", social: "📱", trust: "🛡️",
+    testimonials: "💬", faq: "❓",
   };
   // Thai labels for the "add section" picker.
   const SECTION_TYPE_LABELS = {
     hero: "Hero แบนเนอร์หลัก", quick: "เมนูด่วน", promo_banner: "แบนเนอร์โปรโมชัน",
     active_job: "งานที่กำลังทำ", announcements: "ข่าว/ประกาศ", featured_services: "บริการแนะนำ",
     updates: "ภาพกิจกรรม/โพสต์", articles: "บทความ", social: "โซเชียล", trust: "จุดเด่น/ความน่าเชื่อถือ",
+    testimonials: "รีวิวลูกค้า", faq: "คำถามที่พบบ่อย (FAQ)",
+  };
+  // Starter templates for section types not in the default homepage layout, so
+  // "add section" seeds them with useful example content.
+  const EXTRA_SECTION_TEMPLATES = {
+    testimonials: { title: "ลูกค้าพูดถึงเรา", body: "", items: [
+      { title: "คุณเอ", tag: "ลูกค้าคอนโด", rating: 5, body: "ช่างสุภาพ ทำงานสะอาด ประทับใจมากครับ" },
+      { title: "คุณบี", tag: "ลูกค้าบ้าน", rating: 5, body: "จองง่าย ตรงเวลา ราคาชัดเจน แนะนำเลย" },
+    ] },
+    faq: { title: "คำถามที่พบบ่อย", body: "", items: [
+      { title: "ล้างแอร์ใช้เวลานานไหม?", body: "โดยทั่วไปประมาณ 45–90 นาทีต่อเครื่อง ขึ้นกับชนิดและความสกปรก" },
+      { title: "มีรับประกันงานหรือไม่?", body: "รับประกันงานบริการ 7 วันหลังให้บริการ" },
+    ] },
   };
 
   let config = clone(DEFAULT_CONFIG);
@@ -98,7 +112,11 @@
   function addSection(type) {
     if (!SECTION_TYPE_LABELS[type]) return;
     if (config.sections.length >= MAX_SECTIONS) { setStatus(`จำกัดสูงสุด ${MAX_SECTIONS} Section`, "bad"); return; }
-    const template = clone(DEFAULT_CONFIG.sections.find((s) => s.type === type) || { type, title: "", items: [] });
+    const template = clone(
+      DEFAULT_CONFIG.sections.find((s) => s.type === type)
+      || EXTRA_SECTION_TEMPLATES[type]
+      || { type, title: "", items: [] });
+    template.type = type;
     template.id = uniqueSectionId(type);
     template.enabled = true;
     template.sort_order = Math.max(0, ...config.sections.map((s) => Number(s.sort_order || 0))) + 10;
@@ -328,6 +346,40 @@
       if (targetMode === "url") return `<label class="field">External URL<input class="fi" data-item="${index}" data-prop="url" value="${esc(item.url || "")}" placeholder="https://..."></label>`;
       return `<label class="field">Internal route<select class="fi" data-item="${index}" data-prop="route">${ROUTE_OPTIONS.map((r) => `<option value="${r}" ${String(item.route || "home") === r ? "selected" : ""}>${r}</option>`).join("")}</select></label>`;
     })();
+    // Shared card head (number, move, enable, delete) reused by the focused
+    // testimonials / FAQ editors below.
+    const itemHead = `
+      <div class="item-card-head">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span class="item-num">${index + 1}</span>
+          <span style="font-weight:900;font-size:13px">${sectionType === "faq" ? "คำถาม" : sectionType === "testimonials" ? "รีวิว" : "รายการ"} ${index + 1}</span>
+          <button class="mini" type="button" data-move-item="${index}" data-dir="-1" ${index === 0 ? "disabled" : ""}>↑</button>
+          <button class="mini" type="button" data-move-item="${index}" data-dir="1" ${index === total - 1 ? "disabled" : ""}>↓</button>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <label class="switch"><input type="checkbox" data-item-enabled="${index}" ${item.enabled !== false ? "checked" : ""}> เปิด</label>
+          <button class="btn btn-danger btn-sm" type="button" data-remove-item="${index}">ลบ</button>
+        </div>
+      </div>`;
+    if (sectionType === "faq") {
+      return `<div class="item-card">${itemHead}<div class="item-card-body">
+        <label class="field">คำถาม<input class="fi" data-item="${index}" data-prop="title" value="${esc(item.title || "")}"></label>
+        <label class="field">คำตอบ<textarea class="fi" data-item="${index}" data-prop="body">${esc(item.body || "")}</textarea></label>
+      </div></div>`;
+    }
+    if (sectionType === "testimonials") {
+      const rating = Number(item.rating || 5);
+      return `<div class="item-card">${itemHead}<div class="item-card-body">
+        <div class="two">
+          <label class="field">ชื่อผู้รีวิว<input class="fi" data-item="${index}" data-prop="title" value="${esc(item.title || "")}"></label>
+          <label class="field">บทบาท/สถานที่ (ไม่บังคับ)<input class="fi" data-item="${index}" data-prop="tag" value="${esc(item.tag || "")}"></label>
+        </div>
+        <label class="field">คะแนนดาว<select class="fi" data-item="${index}" data-prop="rating">${[5, 4, 3, 2, 1].map((n) => `<option value="${n}" ${rating === n ? "selected" : ""}>${"★".repeat(n)} (${n})</option>`).join("")}</select></label>
+        <label class="field">ข้อความรีวิว<textarea class="fi" data-item="${index}" data-prop="body">${esc(item.body || "")}</textarea></label>
+        <label class="field">รูปโปรไฟล์ (ไม่บังคับ)<input class="fi" data-item="${index}" data-prop="image_url" value="${esc(item.image_url || "")}"></label>
+        <label class="field">อัปโหลดรูป<input class="fi" type="file" accept="image/jpeg,image/png,image/webp" data-upload="${index}"></label>
+      </div></div>`;
+    }
     return `
       <div class="item-card">
         <div class="item-card-head">
@@ -506,7 +558,7 @@
     if (headKey()) { renderHeadEditor(); return; }
     const section = current();
     if (!section) return;
-    const itemTypes = ["announcements", "updates", "articles", "social", "trust", "quick", "promo_banner"];
+    const itemTypes = ["announcements", "updates", "articles", "social", "trust", "quick", "promo_banner", "testimonials", "faq"];
     const hasViewAll = ["announcements", "updates", "articles", "social", "trust", "featured_services"].includes(section.type);
 
     let content = `
@@ -626,7 +678,7 @@
     }
     return `
       <label class="field">แหล่งข้อมูล<select class="fi" data-featured-mode><option value="auto" ${mode === "auto" ? "selected" : ""}>ดึงจาก Catalog อัตโนมัติ (is_featured)</option><option value="manual" ${mode === "manual" ? "selected" : ""}>เลือกรายการเอง</option></select></label>
-      <label class="field">จำนวนสูงสุด<input class="fi" type="number" min="1" max="12" data-featured-limit value="${esc(section.featured_limit || 4)}"></label>
+      <label class="field">จำนวนสูงสุด<input class="fi" type="number" min="1" max="12" data-featured-limit value="${esc(section.featured_limit || 6)}"></label>
       <div style="display:flex;gap:14px;flex-wrap:wrap">
         <label class="switch"><input type="checkbox" data-featured-bool="show_price" ${section.show_price !== false ? "checked" : ""}> แสดงราคา</label>
         <label class="switch"><input type="checkbox" data-featured-bool="show_badge" ${section.show_badge !== false ? "checked" : ""}> แสดง Badge</label>
@@ -783,7 +835,7 @@
       if (target.dataset.prop === "url") { delete item[ctaName].route; delete item[ctaName].action; }
     }
     if (target.matches("[data-item]")) section.items[Number(target.dataset.item)][target.dataset.prop] = target.value;
-    if (target.matches("[data-featured-limit]")) section.featured_limit = Math.max(1, Math.min(12, Number(target.value) || 4));
+    if (target.matches("[data-featured-limit]")) section.featured_limit = Math.max(1, Math.min(12, Number(target.value) || 6));
     if (target.matches("[data-seed-urls]")) section.seed_urls = target.value.split("\n").map((l) => l.trim()).filter(Boolean).slice(0, 8);
     renderPreview();
   });

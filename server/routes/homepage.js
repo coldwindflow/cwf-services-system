@@ -20,6 +20,8 @@ const SECTION_TYPES = new Set([
   "articles",
   "social",
   "trust",
+  "testimonials",
+  "faq",
 ]);
 const INTERNAL_ROUTES = new Set(["home", "booking", "scheduled", "urgent", "tracking", "profile", "store"]);
 // Per-page header banners the admin manages independently of the homepage hero.
@@ -108,7 +110,7 @@ const DEFAULT_CONFIG = {
       title: "บริการแนะนำ",
       body: "ราคาและรายละเอียดดึงจาก Catalog",
       featured_mode: "auto",
-      featured_limit: 4,
+      featured_limit: 6,
       show_price: true,
       show_badge: true,
       item_ids: [],
@@ -258,6 +260,12 @@ function normalizeItem(raw, sectionType, index, errors) {
   if (sectionType === "social") {
     out.platform = SOCIAL_PLATFORMS.has(cleanText(item.platform, 10)) ? cleanText(item.platform, 10) : "youtube";
   }
+  if (sectionType === "testimonials") {
+    // title = reviewer name, body = review text, tag = role/place (optional),
+    // image_url = optional avatar. rating is the only new field (1–5 stars).
+    const rating = Number(item.rating);
+    out.rating = Number.isFinite(rating) ? Math.max(1, Math.min(5, Math.round(rating))) : 5;
+  }
   if (!out.title && sectionType !== "quick" && sectionType !== "promo_banner") errors.push(`${pathName}.title required`);
   validateUrlOrRoute(out, errors, pathName, {
     // updates = activity photos/posts: an image + caption is enough, no link required.
@@ -319,7 +327,7 @@ function normalizeSection(raw, index, errors) {
     const mode = cleanText(section.featured_mode, 10) === "manual" ? "manual" : "auto";
     const limit = Number(section.featured_limit);
     out.featured_mode = mode;
-    out.featured_limit = Number.isFinite(limit) ? Math.max(1, Math.min(12, Math.round(limit))) : 4;
+    out.featured_limit = Number.isFinite(limit) ? Math.max(1, Math.min(12, Math.round(limit))) : 6;
     out.show_price = section.show_price !== false;
     out.show_badge = section.show_badge !== false;
     const itemIds = Array.isArray(section.item_ids) ? section.item_ids : [];
