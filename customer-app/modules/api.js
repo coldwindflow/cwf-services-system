@@ -122,6 +122,14 @@
       return requestJson(`/public/orders/${encodeURIComponent(code)}`, { cache: "no-store" });
     },
 
+    async getPaymentConfig() {
+      return requestJson("/public/payment-config", { cache: "no-store" });
+    },
+
+    async payOrder(code, payload) {
+      return requestJson(`/public/orders/${encodeURIComponent(code)}/pay`, { method: "POST", body: payload || {} });
+    },
+
     async loadCatalogItems(query) {
       return requestJson("/catalog/items", { query: { customer: 1, ...(query || {}) }, cache: "no-store" });
     },

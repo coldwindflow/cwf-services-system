@@ -9,9 +9,14 @@
 // booking, pricing, payout, or accounting logic.
 
 const express = require("express");
+const { createOmiseClient, chargeToOrderStatus, promptPayQrUri } = require("../services/omise");
 
 const DELIVERY_METHODS = new Set(["pickup", "ship"]);
 const INSTALL_OPTIONS = new Set(["none", "cwf"]);
+const PAYMENT_METHODS = new Set(["card", "promptpay"]);
+// An order can only START a payment from one of these states (a fresh order, or
+// one whose previous attempt failed). This blocks paying twice for one order.
+const PAYABLE_STATUSES = new Set(["pending_payment", "payment_failed"]);
 const MAX_ITEMS = 20;
 const MAX_QTY = 99;
 
@@ -106,6 +111,8 @@ function isSchemaError(error) {
 
 function createCustomerOrdersRoutes(deps = {}) {
   const { pool, requireAdminSession } = deps;
+  // Injectable so tests can drive a fake Omise; defaults to an env-keyed client.
+  const omise = deps.omiseClient || createOmiseClient({ env: deps.env || process.env });
   const router = express.Router();
   const adminGuard = typeof requireAdminSession === "function" ? requireAdminSession : (_req, _res, next) => next();
 
@@ -153,6 +160,131 @@ function createCustomerOrdersRoutes(deps = {}) {
       if (isSchemaError(error)) return res.status(503).json({ error: "ORDERS_SCHEMA_NOT_READY" });
       console.error("[orders/get] failed", error);
       return res.status(500).json({ error: "โหลดคำสั่งซื้อไม่สำเร็จ" });
+    }
+  });
+
+  // Public: what the customer app needs to render the payment step. Exposes the
+  // PUBLIC key only (safe to ship to the browser) — never the secret key.
+  router.get("/public/payment-config", (_req, res) => {
+    const enabled = omise.isConfigured();
+    return res.json({
+      enabled,
+      provider: "omise",
+      public_key: enabled ? omise.getPublicKey() : "",
+      test_mode: enabled ? omise.isTestMode() : false,
+      methods: ["promptpay", "card"],
+    });
+  });
+
+  // Pay for an order. The amount is ALWAYS the server-stored subtotal — the
+  // client cannot influence how much is charged. Card: pass a one-time token
+  // from Omise.js (card data never reaches us). PromptPay: we return a QR to
+  // scan; the actual payment is confirmed later by the Omise webhook.
+  router.post("/public/orders/:code/pay", async (req, res) => {
+    if (!omise.isConfigured()) return res.status(503).json({ error: "PAYMENT_NOT_CONFIGURED" });
+    const code = cleanText(req.params.code, 40);
+    if (!code) return res.status(400).json({ error: "order code required" });
+    const method = cleanText(req.body && req.body.method, 20);
+    if (!PAYMENT_METHODS.has(method)) return res.status(400).json({ error: "payment method invalid" });
+    const token = cleanText(req.body && req.body.token, 200);
+    if (method === "card" && !token) return res.status(400).json({ error: "card token required" });
+
+    let order;
+    try {
+      const found = await pool.query(
+        `SELECT order_code, subtotal, status FROM public.customer_orders WHERE order_code=$1 LIMIT 1`,
+        [code]
+      );
+      if (!found.rows.length) return res.status(404).json({ error: "ไม่พบคำสั่งซื้อนี้" });
+      order = found.rows[0];
+    } catch (error) {
+      if (isSchemaError(error)) return res.status(503).json({ error: "ORDERS_SCHEMA_NOT_READY" });
+      console.error("[orders/pay:lookup] failed", error);
+      return res.status(500).json({ error: "เริ่มการชำระเงินไม่สำเร็จ" });
+    }
+
+    if (!PAYABLE_STATUSES.has(order.status)) {
+      // Already paid or a payment is already in progress — tell the client so it
+      // can just poll the order status instead of charging again.
+      return res.status(409).json({ error: "ORDER_NOT_PAYABLE", status: order.status });
+    }
+    const amount = Number(order.subtotal) || 0;
+    if (amount <= 0) return res.status(400).json({ error: "ยอดชำระไม่ถูกต้อง" });
+
+    let charge;
+    try {
+      const metadata = { order_code: code };
+      charge = method === "card"
+        ? await omise.createCardCharge({ amount, token, metadata })
+        : await omise.createPromptPayCharge({ amount, metadata });
+    } catch (error) {
+      console.error("[orders/pay:charge] failed", error && error.code);
+      return res.status(502).json({ error: "ชำระเงินไม่สำเร็จ กรุณาลองใหม่", code: error && error.code });
+    }
+
+    const mapped = chargeToOrderStatus(charge);
+    try {
+      const updated = await pool.query(
+        `UPDATE public.customer_orders
+            SET payment_provider='omise', payment_method=$2, payment_charge_id=$3,
+                payment_status=$4, status=$5,
+                paid_at = CASE WHEN $5='paid' THEN now() ELSE paid_at END,
+                updated_at = now()
+          WHERE order_code=$1
+          RETURNING order_code, customer_name, customer_phone, delivery_method, install_option, address, items, subtotal, status, created_at`,
+        [code, method, charge.id || null, (charge && charge.status) || null, mapped]
+      );
+      return res.json({
+        ok: true,
+        order: publicOrder(updated.rows[0]),
+        payment: {
+          method,
+          status: mapped,
+          charge_id: charge.id || null,
+          // PromptPay only: the QR the customer scans in their banking app.
+          qr_uri: method === "promptpay" ? promptPayQrUri(charge) : null,
+          // The client should poll GET /public/orders/:code until status leaves
+          // 'payment_processing' (PromptPay) — card resolves synchronously.
+          requires_polling: mapped === "payment_processing",
+        },
+      });
+    } catch (error) {
+      if (isSchemaError(error)) return res.status(503).json({ error: "ORDERS_SCHEMA_NOT_READY" });
+      console.error("[orders/pay:update] failed", error);
+      return res.status(500).json({ error: "บันทึกผลการชำระเงินไม่สำเร็จ" });
+    }
+  });
+
+  // Omise webhook. Omise webhooks are NOT signed, so we never trust the payload:
+  // we take the charge id from it, re-fetch the charge from Omise (source of
+  // truth), then update the matching order. Idempotent — replays are no-ops.
+  // Always answer 200 so Omise stops retrying a delivered event.
+  router.post("/webhooks/omise", async (req, res) => {
+    try {
+      const event = req.body && typeof req.body === "object" ? req.body : {};
+      const data = event.data && typeof event.data === "object" ? event.data : {};
+      // The event data object may be the charge, or (for source events) carry it.
+      const chargeId = cleanText(data.object === "charge" ? data.id : (data.charge || ""), 80);
+      if (!chargeId || !omise.isConfigured()) return res.json({ ok: true, ignored: true });
+
+      const charge = await omise.retrieveCharge(chargeId).catch(() => null);
+      if (!charge || !charge.id) return res.json({ ok: true, ignored: true });
+      const mapped = chargeToOrderStatus(charge);
+
+      await pool.query(
+        `UPDATE public.customer_orders
+            SET payment_status=$2, status=$3,
+                paid_at = CASE WHEN $3='paid' AND paid_at IS NULL THEN now() ELSE paid_at END,
+                updated_at = now()
+          WHERE payment_charge_id=$1`,
+        [charge.id, charge.status || null, mapped]
+      );
+      return res.json({ ok: true });
+    } catch (error) {
+      if (isSchemaError(error)) return res.json({ ok: true, ignored: true });
+      console.error("[orders/webhook] failed", error);
+      // Still 200: a 500 makes Omise retry a payload we can't process anyway.
+      return res.json({ ok: false });
     }
   });
 

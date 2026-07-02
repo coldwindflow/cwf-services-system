@@ -1720,9 +1720,88 @@
         </div>
         <p class="purchase-error" data-buy-error hidden>กรุณากรอกชื่อและเบอร์โทร</p>
         <div class="purchase-total"><span>ยอดสินค้า</span><strong data-buy-total>${esc(priceStr)}</strong></div>
-        <p class="purchase-note">* ค่าติดตั้ง/ค่าจัดส่ง แอดมินจะยืนยันอีกครั้ง · ระบบชำระเงินออนไลน์กำลังจะเปิดเร็ว ๆ นี้</p>
-        <button class="primary-btn" type="button" data-buy-submit>ยืนยันสั่งซื้อ</button>
+        <p class="purchase-note">* ค่าติดตั้ง/ค่าจัดส่ง แอดมินจะยืนยันอีกครั้งหลังชำระค่าสินค้า</p>
+        <button class="primary-btn" type="button" data-buy-submit>ไปหน้าชำระเงิน</button>
       </section>
+    `;
+  }
+
+  // ---- Online payment (Omise: PromptPay + card) ----------------------------
+
+  let paymentConfigCache = null;
+  async function loadPaymentConfig() {
+    if (paymentConfigCache) return paymentConfigCache;
+    paymentConfigCache = await root.api.getPaymentConfig();
+    return paymentConfigCache;
+  }
+
+  // Load Omise.js once, on demand (only when the customer picks the card tab).
+  // The script is fetched from Omise's CDN by the browser, not our server.
+  let omiseJsPromise = null;
+  function ensureOmiseJs(publicKey) {
+    if (window.Omise) { window.Omise.setPublicKey(publicKey); return Promise.resolve(window.Omise); }
+    if (!omiseJsPromise) {
+      omiseJsPromise = new Promise((resolve, reject) => {
+        const s = document.createElement("script");
+        s.src = "https://cdn.omise.co/omise.js";
+        s.async = true;
+        s.onload = () => { if (window.Omise) resolve(window.Omise); else reject(new Error("omise.js unavailable")); };
+        s.onerror = () => reject(new Error("omise.js failed to load"));
+        document.head.appendChild(s);
+      });
+    }
+    return omiseJsPromise.then((Omise) => { Omise.setPublicKey(publicKey); return Omise; });
+  }
+
+  function paymentStepHtml(item, o) {
+    const totalStr = root.utils.formatBaht(o.amount);
+    return `
+      <button class="contact-sheet-close" type="button" data-purchase-close aria-label="ปิด">×</button>
+      <span class="section-kicker">ชำระเงิน</span>
+      <h2>ชำระค่าสินค้า</h2>
+      <div class="purchase-total"><span>ยอดชำระ</span><strong>${esc(totalStr)}</strong></div>
+      <div class="pay-methods" role="tablist">
+        <button class="pay-method-btn is-active" type="button" data-pay-method="promptpay" role="tab">พร้อมเพย์ (PromptPay)</button>
+        <button class="pay-method-btn" type="button" data-pay-method="card" role="tab">บัตรเครดิต/เดบิต</button>
+      </div>
+      <div class="pay-body" data-pay-body></div>
+      <p class="purchase-error" data-pay-error hidden></p>
+      <p class="purchase-note">ชำระเงินอย่างปลอดภัยผ่าน Omise · ข้อมูลบัตรไม่ถูกเก็บบนเซิร์ฟเวอร์ของเรา</p>
+    `;
+  }
+
+  function promptPayBodyHtml() {
+    return `<button class="primary-btn" type="button" data-pp-start>สร้าง QR พร้อมเพย์</button>`;
+  }
+
+  function cardBodyHtml() {
+    return `
+      <div class="pay-card-form">
+        <input class="purchase-input" data-card-number inputmode="numeric" autocomplete="cc-number" placeholder="หมายเลขบัตร">
+        <div class="pay-card-row">
+          <input class="purchase-input" data-card-exp inputmode="numeric" autocomplete="cc-exp" placeholder="เดือน/ปี (MM/YY)">
+          <input class="purchase-input" data-card-cvc inputmode="numeric" autocomplete="cc-csc" placeholder="CVC">
+        </div>
+        <input class="purchase-input" data-card-name autocomplete="cc-name" placeholder="ชื่อบนบัตร">
+      </div>
+      <button class="primary-btn" type="button" data-card-pay>ชำระด้วยบัตร</button>
+    `;
+  }
+
+  function paidConfirmHtml(item, o) {
+    return `
+      <button class="contact-sheet-close" type="button" data-purchase-close aria-label="ปิด">×</button>
+      <span class="section-kicker">ชำระเงินสำเร็จ</span>
+      <h2>ชำระเงินสำเร็จ 🎉</h2>
+      <div class="purchase-summary">
+        ${o.orderCode ? `<div><span>เลขคำสั่งซื้อ</span><strong>${esc(o.orderCode)}</strong></div>` : ""}
+        <div><span>สินค้า</span><strong>${esc(item.item_name || "")} × ${o.qty}</strong></div>
+        <div><span>ยอดชำระ</span><strong>${esc(root.utils.formatBaht(o.amount))}</strong></div>
+      </div>
+      <p>แอดมินจะติดต่อกลับเพื่อยืนยันการจัดส่ง/ติดตั้ง และค่าใช้จ่ายเพิ่มเติม (ถ้ามี)</p>
+      <div class="contact-sheet-actions">
+        <a class="primary-btn" href="https://lin.ee/fG1Oq7y" target="_blank" rel="noopener noreferrer">แจ้งแอดมินทาง LINE</a>
+      </div>
     `;
   }
 
@@ -1741,7 +1820,7 @@
         <div><span>ผู้สั่งซื้อ</span><strong>${esc(o.name)} · ${esc(o.phone)}</strong></div>
       </div>
       ${o.orderCode ? `<p class="purchase-note">บันทึกเลขคำสั่งซื้อไว้เพื่อสอบถามสถานะได้ที่แอดมิน</p>` : ""}
-      <p>แอดมินจะติดต่อกลับเพื่อยืนยันค่าติดตั้ง/ค่าส่ง และช่องทางชำระเงิน (ระบบชำระเงินออนไลน์กำลังจะเปิดใช้เร็ว ๆ นี้)</p>
+      <p>แอดมินจะติดต่อกลับเพื่อยืนยันค่าติดตั้ง/ค่าส่ง และแจ้งช่องทางชำระเงิน</p>
       <div class="contact-sheet-actions">
         <a class="primary-btn" href="https://lin.ee/fG1Oq7y" target="_blank" rel="noopener noreferrer">แจ้งแอดมินทาง LINE</a>
       </div>
@@ -1756,8 +1835,119 @@
     trackItemEvent("cwf_store_purchase_open", item, { source: "store" });
     const unitPrice = effectiveSalePrice(item);
     let qty = 1;
-    const close = () => { mount.innerHTML = ""; document.body.classList.remove("has-contact-sheet"); };
+    let pollTimer = null;
+    const close = () => {
+      if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+      mount.innerHTML = "";
+      document.body.classList.remove("has-contact-sheet");
+    };
     const bindClose = () => mount.querySelectorAll("[data-purchase-close]").forEach((b) => b.addEventListener("click", close, { once: true }));
+
+    // Poll an order until its payment resolves (PromptPay confirms via webhook,
+    // so the QR screen watches the server). Stops on paid/failed or timeout.
+    const startPolling = (code, onResolved) => {
+      let attempts = 0;
+      if (pollTimer) clearInterval(pollTimer);
+      pollTimer = setInterval(async () => {
+        attempts += 1;
+        if (attempts > 60) { clearInterval(pollTimer); pollTimer = null; return; } // ~3 min
+        let status = "";
+        try { const r = await root.api.getOrder(code); status = r?.order?.status || ""; } catch (_) { return; }
+        if (status === "paid" || status === "payment_failed") {
+          clearInterval(pollTimer); pollTimer = null; onResolved(status);
+        }
+      }, 3000);
+    };
+
+    // The payment step: choose PromptPay (QR + poll) or card (Omise.js token).
+    const renderPaymentStep = (o, config) => {
+      const sheet = mount.querySelector(".purchase-sheet");
+      if (!sheet) return;
+      sheet.innerHTML = paymentStepHtml(item, o);
+      bindClose();
+      const body = sheet.querySelector("[data-pay-body]");
+      const errEl = sheet.querySelector("[data-pay-error]");
+      const showError = (msg) => { if (errEl) { errEl.textContent = msg; errEl.hidden = false; } };
+      const clearError = () => { if (errEl) errEl.hidden = true; };
+      const goPaid = () => {
+        if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+        sheet.innerHTML = paidConfirmHtml(item, o);
+        bindClose();
+        trackItemEvent("cwf_store_purchase_paid", item, { method: o.lastMethod, amount: o.amount });
+      };
+
+      const renderMethod = (method) => {
+        clearError();
+        o.lastMethod = method;
+        sheet.querySelectorAll("[data-pay-method]").forEach((b) => b.classList.toggle("is-active", b.getAttribute("data-pay-method") === method));
+        if (!body) return;
+        body.innerHTML = method === "card" ? cardBodyHtml() : promptPayBodyHtml();
+        if (method === "promptpay") {
+          body.querySelector("[data-pp-start]")?.addEventListener("click", async () => {
+            clearError();
+            const btn = body.querySelector("[data-pp-start]");
+            if (btn) { btn.disabled = true; btn.textContent = "กำลังสร้าง QR..."; }
+            try {
+              const res = await root.api.payOrder(o.order.order_code, { method: "promptpay" });
+              const qr = res?.payment?.qr_uri;
+              if (!qr) throw new Error("no qr");
+              body.innerHTML = `
+                <div class="pay-qr">
+                  <img class="pay-qr-img" src="${esc(qr)}" alt="PromptPay QR" width="220" height="220">
+                  <p class="pay-qr-hint">สแกน QR นี้ด้วยแอปธนาคารเพื่อชำระ ${esc(root.utils.formatBaht(o.amount))}</p>
+                  <p class="pay-qr-wait" data-pp-wait>กำลังรอการชำระเงิน...</p>
+                </div>`;
+              startPolling(o.order.order_code, (status) => {
+                if (status === "paid") goPaid();
+                else { const w = body.querySelector("[data-pp-wait]"); if (w) w.textContent = "การชำระเงินไม่สำเร็จ กรุณาลองใหม่"; }
+              });
+            } catch (_) {
+              showError("สร้าง QR ไม่สำเร็จ กรุณาลองใหม่");
+              if (btn) { btn.disabled = false; btn.textContent = "สร้าง QR พร้อมเพย์"; }
+            }
+          });
+        } else {
+          body.querySelector("[data-card-pay]")?.addEventListener("click", async () => {
+            clearError();
+            const number = (body.querySelector("[data-card-number]")?.value || "").replace(/\s+/g, "");
+            const exp = (body.querySelector("[data-card-exp]")?.value || "").trim();
+            const cvc = (body.querySelector("[data-card-cvc]")?.value || "").trim();
+            const holder = (body.querySelector("[data-card-name]")?.value || "").trim();
+            const m = exp.match(/^(\d{1,2})\s*\/\s*(\d{2,4})$/);
+            if (!number || !m || !cvc) { showError("กรุณากรอกข้อมูลบัตรให้ครบถ้วน"); return; }
+            const btn = body.querySelector("[data-card-pay]");
+            if (btn) { btn.disabled = true; btn.textContent = "กำลังชำระเงิน..."; }
+            const reset = () => { if (btn) { btn.disabled = false; btn.textContent = "ชำระด้วยบัตร"; } };
+            try {
+              const Omise = await ensureOmiseJs(config.public_key);
+              const token = await new Promise((resolve, reject) => {
+                Omise.createToken("card", {
+                  name: holder || o.name,
+                  number,
+                  expiration_month: m[1],
+                  expiration_year: m[2].length === 2 ? `20${m[2]}` : m[2],
+                  security_code: cvc,
+                }, (statusCode, response) => {
+                  if (statusCode === 200 && response && response.id) resolve(response.id);
+                  else reject(new Error((response && response.message) || "tokenize failed"));
+                });
+              });
+              const res = await root.api.payOrder(o.order.order_code, { method: "card", token });
+              if (res?.order?.status === "paid") goPaid();
+              else { showError("การชำระเงินไม่สำเร็จ กรุณาตรวจสอบบัตรแล้วลองใหม่"); reset(); }
+            } catch (err) {
+              showError(err && err.message ? "ชำระเงินไม่สำเร็จ: " + err.message : "ชำระเงินไม่สำเร็จ กรุณาลองใหม่");
+              reset();
+            }
+          });
+        }
+      };
+
+      sheet.querySelectorAll("[data-pay-method]").forEach((b) =>
+        b.addEventListener("click", () => renderMethod(b.getAttribute("data-pay-method")))
+      );
+      renderMethod("promptpay");
+    };
     const qtyVal = mount.querySelector("[data-qty-val]");
     const totalEl = mount.querySelector("[data-buy-total]");
     const syncTotal = () => {
@@ -1779,8 +1969,8 @@
       const address = (mount.querySelector("[data-buy-address]")?.value || "").trim();
       trackItemEvent("cwf_store_purchase_request", item, { qty, delivery, install });
       submitBtn.disabled = true;
-      submitBtn.textContent = "กำลังส่งคำสั่งซื้อ...";
-      let orderCode = "";
+      submitBtn.textContent = "กำลังสร้างคำสั่งซื้อ...";
+      let order = null;
       try {
         const res = await root.api.createOrder({
           customer_name: name,
@@ -1790,13 +1980,24 @@
           address,
           items: [{ item_id: item.item_id, name: item.item_name, qty, unit_price: unitPrice || 0 }],
         });
-        orderCode = res?.order?.order_code || "";
+        order = res?.order || null;
       } catch (_error) {
-        // Order couldn't be saved (offline / schema not ready) — still confirm
-        // with the LINE hand-off so the sale isn't lost.
+        // Order couldn't be saved (offline / schema not ready) — fall through to
+        // the LINE hand-off below so the sale isn't lost.
       }
       const sheet = mount.querySelector(".purchase-sheet");
-      if (sheet) sheet.innerHTML = purchaseConfirmHtml(item, { qty, delivery, install, name, phone, orderCode });
+      const amount = Number(order?.subtotal) || (unitPrice || 0) * qty;
+      // Try online payment; gracefully fall back to the LINE hand-off when the
+      // order didn't save or payment isn't configured on the server.
+      let config = null;
+      if (order && order.order_code) {
+        try { config = await loadPaymentConfig(); } catch (_) { config = null; }
+      }
+      if (order && order.order_code && config && config.enabled) {
+        renderPaymentStep({ order, qty, delivery, install, name, phone, amount }, config);
+        return;
+      }
+      if (sheet) sheet.innerHTML = purchaseConfirmHtml(item, { qty, delivery, install, name, phone, orderCode: order?.order_code || "" });
       bindClose();
     });
     requestAnimationFrame(() => mount.querySelector(".contact-sheet-close")?.focus());
