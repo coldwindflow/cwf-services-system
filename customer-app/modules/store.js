@@ -1734,11 +1734,13 @@
       <span class="section-kicker">รับคำสั่งซื้อแล้ว</span>
       <h2>ขอบคุณสำหรับการสั่งซื้อ 🎉</h2>
       <div class="purchase-summary">
+        ${o.orderCode ? `<div><span>เลขคำสั่งซื้อ</span><strong>${esc(o.orderCode)}</strong></div>` : ""}
         <div><span>สินค้า</span><strong>${esc(item.item_name || "")} × ${o.qty}</strong></div>
         <div><span>การรับสินค้า</span><strong>${deliveryLabel}</strong></div>
         <div><span>การติดตั้ง</span><strong>${installLabel}</strong></div>
         <div><span>ผู้สั่งซื้อ</span><strong>${esc(o.name)} · ${esc(o.phone)}</strong></div>
       </div>
+      ${o.orderCode ? `<p class="purchase-note">บันทึกเลขคำสั่งซื้อไว้เพื่อสอบถามสถานะได้ที่แอดมิน</p>` : ""}
       <p>แอดมินจะติดต่อกลับเพื่อยืนยันค่าติดตั้ง/ค่าส่ง และช่องทางชำระเงิน (ระบบชำระเงินออนไลน์กำลังจะเปิดใช้เร็ว ๆ นี้)</p>
       <div class="contact-sheet-actions">
         <a class="primary-btn" href="https://lin.ee/fG1Oq7y" target="_blank" rel="noopener noreferrer">แจ้งแอดมินทาง LINE</a>
@@ -1765,16 +1767,36 @@
     bindClose();
     mount.querySelector("[data-qty-dec]")?.addEventListener("click", () => { qty = Math.max(1, qty - 1); syncTotal(); });
     mount.querySelector("[data-qty-inc]")?.addEventListener("click", () => { qty = Math.min(99, qty + 1); syncTotal(); });
-    mount.querySelector("[data-buy-submit]")?.addEventListener("click", () => {
+    const submitBtn = mount.querySelector("[data-buy-submit]");
+    submitBtn?.addEventListener("click", async () => {
       const name = (mount.querySelector("[data-buy-name]")?.value || "").trim();
       const phone = (mount.querySelector("[data-buy-phone]")?.value || "").trim();
       const errorEl = mount.querySelector("[data-buy-error]");
       if (!name || !phone) { if (errorEl) errorEl.hidden = false; return; }
+      if (errorEl) errorEl.hidden = true;
       const delivery = mount.querySelector("input[name='cwf-delivery']:checked")?.value || "pickup";
       const install = mount.querySelector("input[name='cwf-install']:checked")?.value || "none";
+      const address = (mount.querySelector("[data-buy-address]")?.value || "").trim();
       trackItemEvent("cwf_store_purchase_request", item, { qty, delivery, install });
+      submitBtn.disabled = true;
+      submitBtn.textContent = "กำลังส่งคำสั่งซื้อ...";
+      let orderCode = "";
+      try {
+        const res = await root.api.createOrder({
+          customer_name: name,
+          customer_phone: phone,
+          delivery_method: delivery,
+          install_option: install,
+          address,
+          items: [{ item_id: item.item_id, name: item.item_name, qty, unit_price: unitPrice || 0 }],
+        });
+        orderCode = res?.order?.order_code || "";
+      } catch (_error) {
+        // Order couldn't be saved (offline / schema not ready) — still confirm
+        // with the LINE hand-off so the sale isn't lost.
+      }
       const sheet = mount.querySelector(".purchase-sheet");
-      if (sheet) sheet.innerHTML = purchaseConfirmHtml(item, { qty, delivery, install, name, phone });
+      if (sheet) sheet.innerHTML = purchaseConfirmHtml(item, { qty, delivery, install, name, phone, orderCode });
       bindClose();
     });
     requestAnimationFrame(() => mount.querySelector(".contact-sheet-close")?.focus());
