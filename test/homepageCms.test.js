@@ -278,7 +278,7 @@ test("customer homepage has no admin control, bottom nav is fixed five-tab, and 
   const sw = read("customer-app/sw.js");
   const app = read("customer-app/assets/customer-app.js");
   const manifest = read("customer-app/manifest.webmanifest");
-  const build = "20260701_featured4_v1";
+  const build = "20260702_sections_v1";
 
   assert.doesNotMatch(index + ui, /โหมดแอดมิน|openCms|localStorage\.getItem\('cwfHomeCmsDemo'/);
   assert.match(index, /data-route="store"[\s\S]*ร้านค้า/);
@@ -967,6 +967,32 @@ test("section-level active_from/active_to are persisted and gate the whole secti
   });
   assert.equal(bad.ok, false);
   assert.ok(bad.errors.some((e) => e.includes("active range invalid")));
+});
+
+test("admins can add/duplicate sections: extra sections of a type are kept with unique ids, and the total is capped", () => {
+  // Two promo_banner sections (a duplicate) — both survive, ids de-duplicated.
+  const dup = validateConfig({
+    sections: [
+      { id: "hero", type: "hero", title: "H", sort_order: 10, items: [] },
+      { id: "promo_banner", type: "promo_banner", title: "โปร A", sort_order: 20, items: [{ image_url: "https://res.cloudinary.com/demo/a.jpg", alt_text: "a" }] },
+      { id: "promo_banner", type: "promo_banner", title: "โปร B", sort_order: 30, items: [{ image_url: "https://res.cloudinary.com/demo/b.jpg", alt_text: "b" }] },
+    ],
+  });
+  assert.equal(dup.ok, true, JSON.stringify(dup.errors));
+  const promos = dup.config.sections.filter((s) => s.type === "promo_banner");
+  assert.equal(promos.length, 2);
+  assert.equal(new Set(promos.map((s) => s.id)).size, 2, "duplicate section ids must be made unique");
+  assert.ok(promos.some((s) => s.id === "promo_banner") && promos.some((s) => s.id === "promo_banner-2"));
+  // Both survive stripPublicConfig and render order follows sort_order.
+  const pub = stripPublicConfig(dup.config);
+  assert.deepEqual(pub.sections.map((s) => s.id), ["hero", "promo_banner", "promo_banner-2"]);
+
+  // More than the section cap is rejected.
+  const many = validateConfig({
+    sections: Array.from({ length: 25 }, (_, i) => ({ id: `trust-${i}`, type: "trust", title: "x", items: [{ title: "a", body: "b" }] })),
+  });
+  assert.equal(many.ok, false);
+  assert.ok(many.errors.some((e) => e.includes("sections too many")));
 });
 
 test("updates items are savable with only an image/caption (no URL required); articles still require a URL", () => {

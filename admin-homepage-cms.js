@@ -22,6 +22,12 @@
     active_job: "🔧", announcements: "📣", featured_services: "⭐",
     updates: "📸", articles: "📝", social: "📱", trust: "🛡️",
   };
+  // Thai labels for the "add section" picker.
+  const SECTION_TYPE_LABELS = {
+    hero: "Hero แบนเนอร์หลัก", quick: "เมนูด่วน", promo_banner: "แบนเนอร์โปรโมชัน",
+    active_job: "งานที่กำลังทำ", announcements: "ข่าว/ประกาศ", featured_services: "บริการแนะนำ",
+    updates: "ภาพกิจกรรม/โพสต์", articles: "บทความ", social: "โซเชียล", trust: "จุดเด่น/ความน่าเชื่อถือ",
+  };
 
   let config = clone(DEFAULT_CONFIG);
   let selected = "hero";
@@ -40,13 +46,22 @@
   function clone(value) { return JSON.parse(JSON.stringify(value)); }
   function standardSections() { return clone(DEFAULT_CONFIG).sections; }
   function normalizeAdminConfig(value) {
-    const next = value && Array.isArray(value.sections) ? clone(value) : clone(DEFAULT_CONFIG);
-    const standard = standardSections();
-    const existingTypes = new Set(next.sections.map((section) => section.type));
-    standard.forEach((section) => {
-      if (!existingTypes.has(section.type)) next.sections.push(section);
+    const next = value && Array.isArray(value.sections) && value.sections.length ? clone(value) : clone(DEFAULT_CONFIG);
+    const validTypes = new Set(standardSections().map((std) => std.type));
+    // Respect exactly what was saved (so admin add/duplicate/delete stick) —
+    // only drop sections of unknown types, and fall back to defaults if empty.
+    next.sections = next.sections.filter((section) => section && validTypes.has(section.type));
+    if (!next.sections.length) next.sections = standardSections();
+    // Ensure ids are unique so per-id lookups (edit/move/duplicate/delete) are
+    // unambiguous even if an imported config had collisions.
+    const seen = new Set();
+    next.sections.forEach((section) => {
+      let id = section.id || section.type;
+      let n = 2;
+      while (seen.has(id)) id = `${section.type}-${n++}`;
+      section.id = id;
+      seen.add(id);
     });
-    next.sections = next.sections.filter((section) => standard.some((std) => std.type === section.type));
     const rawHeaders = next.page_headers && typeof next.page_headers === "object" ? next.page_headers : {};
     next.page_headers = {};
     PAGE_HEADER_META.forEach(([key]) => {
@@ -64,6 +79,65 @@
   }
   function setStatus(text, kind) { $("status").textContent = text; $("status").className = `status-chip ${kind || ""}`; }
   function sections() { return config.sections.sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0)); }
+
+  const MAX_SECTIONS = 24;
+  // A fresh id for a new/duplicated section: the type itself when free, else
+  // type-2, type-3, ... so per-id lookups stay unambiguous.
+  function uniqueSectionId(type) {
+    const ids = new Set(config.sections.map((s) => s.id));
+    if (!ids.has(type)) return type;
+    let n = 2;
+    while (ids.has(`${type}-${n}`)) n += 1;
+    return `${type}-${n}`;
+  }
+  // Re-space sort_order to clean multiples of 10 in current visual order, so
+  // inserts/duplicates land predictably and the move buttons keep working.
+  function renumberSections() {
+    sections().forEach((section, index) => { section.sort_order = (index + 1) * 10; });
+  }
+  function addSection(type) {
+    if (!SECTION_TYPE_LABELS[type]) return;
+    if (config.sections.length >= MAX_SECTIONS) { setStatus(`จำกัดสูงสุด ${MAX_SECTIONS} Section`, "bad"); return; }
+    const template = clone(DEFAULT_CONFIG.sections.find((s) => s.type === type) || { type, title: "", items: [] });
+    template.id = uniqueSectionId(type);
+    template.enabled = true;
+    template.sort_order = Math.max(0, ...config.sections.map((s) => Number(s.sort_order || 0))) + 10;
+    config.sections.push(template);
+    renumberSections();
+    selected = template.id;
+    render();
+    setStatus(`เพิ่ม Section: ${SECTION_TYPE_LABELS[type]}`, "ok");
+  }
+  function duplicateSection(id) {
+    const src = config.sections.find((s) => s.id === id);
+    if (!src) return;
+    if (config.sections.length >= MAX_SECTIONS) { setStatus(`จำกัดสูงสุด ${MAX_SECTIONS} Section`, "bad"); return; }
+    const copy = clone(src);
+    copy.id = uniqueSectionId(src.type);
+    if (src.title) copy.title = `${src.title} (สำเนา)`;
+    copy.sort_order = Number(src.sort_order || 0) + 1;
+    config.sections.push(copy);
+    renumberSections();
+    selected = copy.id;
+    render();
+    setStatus("ทำซ้ำ Section แล้ว", "ok");
+  }
+  function deleteSection(id) {
+    if (config.sections.length <= 1) { setStatus("ต้องมีอย่างน้อย 1 Section", "bad"); return; }
+    const idx = config.sections.findIndex((s) => s.id === id);
+    if (idx === -1) return;
+    config.sections.splice(idx, 1);
+    if (selected === id) selected = config.sections[Math.max(0, idx - 1)].id;
+    renumberSections();
+    render();
+    setStatus("ลบ Section แล้ว", "ok");
+  }
+  function populateSectionTypePicker() {
+    const el = $("newSectionType");
+    if (!el) return;
+    el.innerHTML = Object.keys(SECTION_TYPE_LABELS).map((type) =>
+      `<option value="${type}">${TYPE_ICONS[type] || "📄"} ${esc(SECTION_TYPE_LABELS[type])}</option>`).join("");
+  }
   function headKey() { return typeof selected === "string" && selected.startsWith("head:") ? selected.slice(5) : null; }
   function currentHead() { const key = headKey(); return key && config.page_headers ? config.page_headers[key] || null : null; }
   // current() resolves to the selected page-header object when a "head:*" entry
@@ -213,9 +287,13 @@
     $("editorHeader").innerHTML = `
       <div class="editor-hd">
         <div class="editor-hd-icon">${TYPE_ICONS[section.type] || "📄"}</div>
-        <div>
+        <div style="flex:1;min-width:0">
           <div class="editor-hd-title">${esc(section.title || section.type)}</div>
           <div class="editor-hd-sub">${section.type} · ${section.enabled !== false ? "เปิดใช้งานอยู่" : "ปิดอยู่"}</div>
+        </div>
+        <div class="toolbar">
+          <button class="btn btn-ghost btn-sm" type="button" data-duplicate-section="${esc(section.id)}">⧉ ทำซ้ำ</button>
+          <button class="btn btn-danger btn-sm" type="button" data-delete-section="${esc(section.id)}">🗑 ลบ Section</button>
         </div>
       </div>
     `;
@@ -612,6 +690,7 @@
   }
 
   function render() {
+    populateSectionTypePicker();
     renderSectionList();
     renderEditorHeader();
     renderEditor();
@@ -626,6 +705,15 @@
 
   /* ── event handlers ── */
   document.addEventListener("click", (event) => {
+    if (event.target.id === "addSectionBtn") { const el = $("newSectionType"); if (el) addSection(el.value); return; }
+    const dupSection = event.target.closest("[data-duplicate-section]");
+    if (dupSection) { duplicateSection(dupSection.dataset.duplicateSection); return; }
+    const delSection = event.target.closest("[data-delete-section]");
+    if (delSection) {
+      const sec = config.sections.find((s) => s.id === delSection.dataset.deleteSection);
+      if (sec && window.confirm(`ลบ Section "${sec.title || sec.type}" ?`)) deleteSection(sec.id);
+      return;
+    }
     const moveBtn = event.target.closest("[data-move]");
     if (moveBtn) move(moveBtn.dataset.move, Number(moveBtn.dataset.dir));
     const edit = event.target.closest("[data-edit]");

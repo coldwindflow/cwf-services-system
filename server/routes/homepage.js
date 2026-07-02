@@ -29,6 +29,9 @@ const ASPECT_MODES = new Set(["contain", "cover"]);
 const MAX_PROMO_BANNERS = 8;
 const MAX_SOCIAL_ITEMS = 8;
 const MAX_SEED_URLS = 8;
+// Upper bound on total homepage sections. Higher than the original fixed set of
+// ten so admins can add and duplicate sections, while still bounding growth.
+const MAX_SECTIONS = 24;
 const SOCIAL_PLATFORMS = new Set(["facebook", "youtube"]);
 // Admin pastes a public post/video URL; no Graph/YouTube Data API calls are
 // made server-side, so the only safety check we can do is confirm the URL
@@ -383,11 +386,24 @@ function validateConfig(input) {
   if (jsonSize(input) > MAX_JSON_BYTES) errors.push("payload too large");
   const sections = Array.isArray(input?.sections) ? input.sections : [];
   if (!sections.length) errors.push("sections required");
-  if (sections.length > 10) errors.push("sections too many");
+  // Admins can add/duplicate sections, so allow more than the original fixed
+  // set while still bounding payload growth.
+  if (sections.length > MAX_SECTIONS) errors.push("sections too many");
+  const normalizedSections = sections.map((section, index) => normalizeSection(section, index, errors));
+  // Defensive id uniqueness: duplicated sections must not share an id, or the
+  // customer/admin lookups (sectionByType, move/toggle/edit by id) would target
+  // the wrong instance. Suffix any collision in input order before sorting.
+  const seenIds = new Set();
+  for (const section of normalizedSections) {
+    let uid = section.id;
+    let n = 2;
+    while (seenIds.has(uid)) uid = `${section.id}-${n++}`;
+    section.id = uid;
+    seenIds.add(uid);
+  }
   const normalized = {
     version: 1,
-    sections: sections.map((section, index) => normalizeSection(section, index, errors))
-      .sort((a, b) => a.sort_order - b.sort_order),
+    sections: normalizedSections.sort((a, b) => a.sort_order - b.sort_order),
     page_headers: normalizePageHeaders(input?.page_headers, errors),
   };
   return { ok: errors.length === 0, errors, config: normalized };
