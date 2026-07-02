@@ -20,6 +20,8 @@ const SECTION_TYPES = new Set([
   "articles",
   "social",
   "trust",
+  "testimonials",
+  "faq",
 ]);
 const INTERNAL_ROUTES = new Set(["home", "booking", "scheduled", "urgent", "tracking", "profile", "store"]);
 // Per-page header banners the admin manages independently of the homepage hero.
@@ -257,6 +259,12 @@ function normalizeItem(raw, sectionType, index, errors) {
   }
   if (sectionType === "social") {
     out.platform = SOCIAL_PLATFORMS.has(cleanText(item.platform, 10)) ? cleanText(item.platform, 10) : "youtube";
+  }
+  if (sectionType === "testimonials") {
+    // title = reviewer name, body = review text, tag = role/place (optional),
+    // image_url = optional avatar. rating is the only new field (1–5 stars).
+    const rating = Number(item.rating);
+    out.rating = Number.isFinite(rating) ? Math.max(1, Math.min(5, Math.round(rating))) : 5;
   }
   if (!out.title && sectionType !== "quick" && sectionType !== "promo_banner") errors.push(`${pathName}.title required`);
   validateUrlOrRoute(out, errors, pathName, {

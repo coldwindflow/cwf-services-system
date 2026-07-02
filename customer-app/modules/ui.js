@@ -645,6 +645,72 @@
     `;
   }
 
+  function renderStars(rating) {
+    const r = Math.max(0, Math.min(5, Math.round(Number(rating) || 0)));
+    return `<span class="homepage-stars" role="img" aria-label="ให้คะแนน ${r} จาก 5 ดาว">${"★".repeat(r)}${"☆".repeat(5 - r)}</span>`;
+  }
+
+  // Customer testimonials — reviewer name (title), review text (body), optional
+  // role/place (tag) and avatar (image_url), plus a 1–5 star rating.
+  function renderHomepageTestimonials(section) {
+    if (!section) return "";
+    const items = (section.items || []).filter((item) => item && item.enabled !== false && item.title);
+    if (!items.length) return "";
+    return `
+      <section class="homepage-section">
+        <div class="homepage-section-head">
+          <div>
+            <h2>${root.utils.escapeHtml(section.title || "")}</h2>
+            ${section.body ? `<p>${root.utils.escapeHtml(section.body)}</p>` : ""}
+          </div>
+        </div>
+        <div class="homepage-carousel homepage-testimonials">
+          ${items.map((item) => `
+            <article class="homepage-testimonial-card">
+              ${renderStars(item.rating)}
+              ${item.body ? `<p class="homepage-testimonial-text">${root.utils.escapeHtml(item.body)}</p>` : ""}
+              <div class="homepage-testimonial-author">
+                ${item.image_url
+                  ? `<img class="homepage-testimonial-avatar" src="${root.utils.escapeHtml(item.image_url)}" alt="" loading="lazy">`
+                  : `<span class="homepage-testimonial-avatar is-initial" aria-hidden="true">${root.utils.escapeHtml((item.title || "?").trim().charAt(0) || "?")}</span>`}
+                <div class="homepage-testimonial-meta">
+                  <strong>${root.utils.escapeHtml(item.title || "")}</strong>
+                  ${item.tag ? `<small>${root.utils.escapeHtml(item.tag)}</small>` : ""}
+                </div>
+              </div>
+            </article>
+          `).join("")}
+        </div>
+      </section>
+    `;
+  }
+
+  // FAQ accordion — native <details>/<summary> so it expands with no JS and
+  // stays keyboard-accessible. title = question, body = answer.
+  function renderHomepageFaq(section) {
+    if (!section) return "";
+    const items = (section.items || []).filter((item) => item && item.enabled !== false && item.title);
+    if (!items.length) return "";
+    return `
+      <section class="homepage-section">
+        <div class="homepage-section-head">
+          <div>
+            <h2>${root.utils.escapeHtml(section.title || "")}</h2>
+            ${section.body ? `<p>${root.utils.escapeHtml(section.body)}</p>` : ""}
+          </div>
+        </div>
+        <div class="homepage-faq">
+          ${items.map((item) => `
+            <details class="homepage-faq-item">
+              <summary><span>${root.utils.escapeHtml(item.title || "")}</span><span class="homepage-faq-chevron" aria-hidden="true"></span></summary>
+              ${item.body ? `<div class="homepage-faq-answer">${root.utils.escapeHtml(item.body)}</div>` : ""}
+            </details>
+          `).join("")}
+        </div>
+      </section>
+    `;
+  }
+
   function renderHomepageSection(section) {
     if (!section) return "";
     if (section.type === "hero") return renderHomepageHero(section);
@@ -655,6 +721,8 @@
     if (["updates", "articles", "announcements"].includes(section.type)) return renderHomepageManualSection(section);
     if (section.type === "social") return renderHomepageSocial(section);
     if (section.type === "trust") return renderHomepageTrust(section);
+    if (section.type === "testimonials") return renderHomepageTestimonials(section);
+    if (section.type === "faq") return renderHomepageFaq(section);
     return "";
   }
 

@@ -278,7 +278,7 @@ test("customer homepage has no admin control, bottom nav is fixed five-tab, and 
   const sw = read("customer-app/sw.js");
   const app = read("customer-app/assets/customer-app.js");
   const manifest = read("customer-app/manifest.webmanifest");
-  const build = "20260702_sections_v1";
+  const build = "20260702_reviews_faq_v1";
 
   assert.doesNotMatch(index + ui, /โหมดแอดมิน|openCms|localStorage\.getItem\('cwfHomeCmsDemo'/);
   assert.match(index, /data-route="store"[\s\S]*ร้านค้า/);
@@ -993,6 +993,36 @@ test("admins can add/duplicate sections: extra sections of a type are kept with 
   });
   assert.equal(many.ok, false);
   assert.ok(many.errors.some((e) => e.includes("sections too many")));
+});
+
+test("testimonials and faq are valid section types: star rating is clamped 1-5, faq Q/A persist and gate publicly", () => {
+  const result = validateConfig({
+    sections: [
+      { id: "hero", type: "hero", title: "H", sort_order: 10, items: [] },
+      { id: "testimonials", type: "testimonials", title: "รีวิวลูกค้า", sort_order: 20, items: [
+        { title: "คุณเอ", tag: "คอนโด", rating: 9, body: "ดีมาก" }, // over max → 5
+        { title: "คุณบี", rating: 0, body: "โอเค" },                 // under min → 1
+        { title: "คุณซี", body: "ไม่ได้ให้ดาว" },                    // missing → default 5
+      ] },
+      { id: "faq", type: "faq", title: "คำถามที่พบบ่อย", sort_order: 30, items: [
+        { title: "ล้างแอร์นานไหม?", body: "ประมาณ 45–90 นาทีต่อเครื่อง" },
+      ] },
+    ],
+  });
+  assert.equal(result.ok, true, JSON.stringify(result.errors));
+  const testimonials = result.config.sections.find((s) => s.type === "testimonials");
+  assert.deepEqual(testimonials.items.map((i) => i.rating), [5, 1, 5]);
+  const faq = result.config.sections.find((s) => s.type === "faq");
+  assert.equal(faq.items[0].title, "ล้างแอร์นานไหม?");
+  assert.equal(faq.items[0].body, "ประมาณ 45–90 นาทีต่อเครื่อง");
+  // Both new section types survive into the public config.
+  const pub = stripPublicConfig(result.config);
+  assert.deepEqual(pub.sections.map((s) => s.type), ["hero", "testimonials", "faq"]);
+  assert.equal(pub.sections.find((s) => s.type === "testimonials").items[0].rating, 5);
+
+  // A testimonial without a reviewer name (title) is rejected like other items.
+  const noName = validateConfig({ sections: [{ id: "t", type: "testimonials", title: "x", items: [{ rating: 5, body: "no name" }] }] });
+  assert.equal(noName.ok, false);
 });
 
 test("updates items are savable with only an image/caption (no URL required); articles still require a URL", () => {
