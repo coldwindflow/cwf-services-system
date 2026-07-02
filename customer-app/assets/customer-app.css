@@ -3547,6 +3547,25 @@ textarea.purchase-input { min-height: 66px; resize: vertical; }
 .purchase-summary strong { color: var(--ink); text-align: right; }
 .store-badge-buy { background: #fff3d6; color: #92600a; }
 
+/* ---- Online payment step (Omise: PromptPay + card) ---- */
+.pay-methods { display: flex; gap: 8px; margin: 14px 0 12px; }
+.pay-method-btn {
+  flex: 1; padding: 10px 8px; border-radius: 12px;
+  border: 2px solid var(--line); background: #fff; color: var(--muted);
+  font-size: 13px; font-weight: 800; cursor: pointer; transition: all .15s;
+}
+.pay-method-btn.is-active { border-color: var(--blue); color: var(--blue); background: var(--soft-blue); }
+.pay-body { min-height: 56px; }
+.pay-card-form { display: grid; gap: 8px; margin-bottom: 10px; }
+.pay-card-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.pay-qr { text-align: center; padding: 8px 0; }
+.pay-qr-img {
+  width: 220px; max-width: 100%; height: auto; margin: 0 auto 8px;
+  border-radius: 12px; border: 2px solid var(--line); background: #fff;
+}
+.pay-qr-hint { font-size: 13px; font-weight: 700; color: var(--ink); margin: 4px 0; }
+.pay-qr-wait { font-size: 12.5px; color: var(--muted); }
+
 .commerce-category-card.is-contact-only small {
   color: var(--warning);
   background: var(--soft-yellow);
