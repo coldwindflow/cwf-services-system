@@ -9,7 +9,7 @@
       { id: "promo_banner", type: "promo_banner", enabled: true, sort_order: 25, title: "", body: "", items: [] },
       { id: "active_job", type: "active_job", enabled: true, sort_order: 30, title: "Active job", body: "", items: [] },
       { id: "announcements", type: "announcements", enabled: true, sort_order: 40, title: "ข่าวและประกาศ CWF", body: "", items: [{ title: "ติดต่อทีม CWF", action: "contact", body: "สอบถามบริการหรือแจ้งข้อมูลเพิ่มเติมกับแอดมิน" }] },
-      { id: "featured_services", type: "featured_services", enabled: true, sort_order: 50, title: "บริการแนะนำ", body: "ราคาและรายละเอียดจาก Catalog", featured_mode: "auto", featured_limit: 4, show_price: true, show_badge: true, item_ids: [], items: [] },
+      { id: "featured_services", type: "featured_services", enabled: true, sort_order: 50, title: "บริการแนะนำ", body: "ราคาและรายละเอียดจาก Catalog", featured_mode: "auto", featured_limit: 6, show_price: true, show_badge: true, item_ids: [], items: [] },
       { id: "updates", type: "updates", enabled: true, sort_order: 60, title: "ภาพกิจกรรมและโพสต์", body: "", items: [] },
       { id: "articles", type: "articles", enabled: true, sort_order: 70, title: "บทความแนะนำ", body: "", items: [] },
       { id: "social", type: "social", enabled: true, sort_order: 75, title: "ติดตามเราบนโซเชียล", body: "อัปเดตล่าสุดจาก Facebook และ YouTube ของ Coldwindflow", items: [] },
@@ -678,7 +678,7 @@
     }
     return `
       <label class="field">แหล่งข้อมูล<select class="fi" data-featured-mode><option value="auto" ${mode === "auto" ? "selected" : ""}>ดึงจาก Catalog อัตโนมัติ (is_featured)</option><option value="manual" ${mode === "manual" ? "selected" : ""}>เลือกรายการเอง</option></select></label>
-      <label class="field">จำนวนสูงสุด<input class="fi" type="number" min="1" max="12" data-featured-limit value="${esc(section.featured_limit || 4)}"></label>
+      <label class="field">จำนวนสูงสุด<input class="fi" type="number" min="1" max="12" data-featured-limit value="${esc(section.featured_limit || 6)}"></label>
       <div style="display:flex;gap:14px;flex-wrap:wrap">
         <label class="switch"><input type="checkbox" data-featured-bool="show_price" ${section.show_price !== false ? "checked" : ""}> แสดงราคา</label>
         <label class="switch"><input type="checkbox" data-featured-bool="show_badge" ${section.show_badge !== false ? "checked" : ""}> แสดง Badge</label>
@@ -835,7 +835,7 @@
       if (target.dataset.prop === "url") { delete item[ctaName].route; delete item[ctaName].action; }
     }
     if (target.matches("[data-item]")) section.items[Number(target.dataset.item)][target.dataset.prop] = target.value;
-    if (target.matches("[data-featured-limit]")) section.featured_limit = Math.max(1, Math.min(12, Number(target.value) || 4));
+    if (target.matches("[data-featured-limit]")) section.featured_limit = Math.max(1, Math.min(12, Number(target.value) || 6));
     if (target.matches("[data-seed-urls]")) section.seed_urls = target.value.split("\n").map((l) => l.trim()).filter(Boolean).slice(0, 8);
     renderPreview();
   });
