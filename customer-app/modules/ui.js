@@ -122,7 +122,7 @@
         title: "บริการแนะนำ",
         body: "ราคาและรายละเอียดดึงจาก Catalog",
         featured_mode: "auto",
-        featured_limit: 8,
+        featured_limit: 4,
         show_price: true,
         show_badge: true,
         item_ids: [],
@@ -229,7 +229,7 @@
     const rows = root.state.catalog?.items || [];
     const cfg = section || {};
     const limitRaw = Number(cfg.featured_limit);
-    const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(12, Math.round(limitRaw))) : 8;
+    const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(12, Math.round(limitRaw))) : 4;
     if (cfg.featured_mode === "manual" && Array.isArray(cfg.item_ids) && cfg.item_ids.length) {
       const byId = new Map(rows.map((item) => [String(item.item_id), item]));
       return cfg.item_ids.map((id) => byId.get(String(id))).filter(Boolean).slice(0, limit);

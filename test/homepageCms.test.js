@@ -157,7 +157,7 @@ test("featured_services normalizes auto-mode defaults and validates manual selec
   assert.equal(auto.ok, true);
   const fs1 = auto.config.sections[0];
   assert.equal(fs1.featured_mode, "auto");
-  assert.equal(fs1.featured_limit, 8);
+  assert.equal(fs1.featured_limit, 4);
   assert.equal(fs1.show_price, true);
   assert.equal(fs1.show_badge, true);
   assert.deepEqual(fs1.item_ids, []);
@@ -195,7 +195,7 @@ test("legacy published config without featured_services fields gets safe default
   assert.equal(section.title, "บริการเก่าของแอดมิน");
   assert.equal(section.body, "คำอธิบายเดิม");
   assert.equal(section.featured_mode, "auto");
-  assert.equal(section.featured_limit, 8);
+  assert.equal(section.featured_limit, 4);
   assert.equal(section.show_price, true);
   assert.equal(section.show_badge, true);
 });
@@ -278,7 +278,7 @@ test("customer homepage has no admin control, bottom nav is fixed five-tab, and 
   const sw = read("customer-app/sw.js");
   const app = read("customer-app/assets/customer-app.js");
   const manifest = read("customer-app/manifest.webmanifest");
-  const build = "20260701_featured_v1";
+  const build = "20260701_featured4_v1";
 
   assert.doesNotMatch(index + ui, /โหมดแอดมิน|openCms|localStorage\.getItem\('cwfHomeCmsDemo'/);
   assert.match(index, /data-route="store"[\s\S]*ร้านค้า/);
