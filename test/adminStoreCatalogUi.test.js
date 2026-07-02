@@ -368,9 +368,9 @@ test("gallery delete and set-primary actions ask for confirmation only on delete
   assert.match(catalogJsSource, /async function onGalleryDelete\(imageId\) \{[\s\S]*?confirm\(.*ลบรูปภาพ/);
 });
 
-test("admin-store-catalog.html script and stylesheet references were bumped to the hot/sale/reviews build id", () => {
-  assert.match(catalogHtmlSource, /admin-store-catalog\.css\?v=20260624_catalog_hot_sale_reviews/);
-  assert.match(catalogHtmlSource, /admin-store-catalog\.js\?v=20260624_catalog_hot_sale_reviews/);
+test("admin-store-catalog.html script and stylesheet references share a consistent cache-bust build id", () => {
+  assert.match(catalogHtmlSource, /admin-store-catalog\.css\?v=20260702_buy_v1/);
+  assert.match(catalogHtmlSource, /admin-store-catalog\.js\?v=20260702_buy_v1/);
 });
 
 test("admin-store-catalog.css defines gallery grid and badge styles for the marketplace UI", () => {

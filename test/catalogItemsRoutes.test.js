@@ -1951,6 +1951,17 @@ test("validateMarketplaceFields defaults booking_mode to contact_admin and is_fe
   assert.equal(result.value.is_featured, false);
 });
 
+test("validateMarketplaceFields accepts booking_mode 'purchase' (product) without requiring booking ac_type/btu", () => {
+  const result = validateMarketplaceFields({ booking_mode: "purchase" });
+  assert.equal(result.ok, true, JSON.stringify(result.errors || []));
+  assert.equal(result.value.booking_mode, "purchase");
+
+  // An unknown mode is still rejected.
+  const bad = validateMarketplaceFields({ booking_mode: "rent" });
+  assert.equal(bad.ok, false);
+  assert.ok(bad.errors.some((e) => /booking_mode/.test(e)));
+});
+
 test("validateMarketplaceFields rejects highlights that are not an array", () => {
   const result = validateMarketplaceFields({ highlights: "not an array or json array" });
   assert.equal(result.ok, false);
