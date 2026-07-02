@@ -104,6 +104,25 @@ function publicOrder(row) {
   };
 }
 
+// Admin view: everything in publicOrder plus payment details (for the orders
+// dashboard). note is admin-only too.
+function adminOrder(row) {
+  const base = publicOrder(row);
+  if (!base) return null;
+  return {
+    ...base,
+    note: row.note || "",
+    payment_method: row.payment_method || "",
+    payment_status: row.payment_status || "",
+    payment_charge_id: row.payment_charge_id || "",
+    paid_at: row.paid_at || null,
+  };
+}
+
+function isUndefinedColumn(error) {
+  return error && error.code === "42703";
+}
+
 function isSchemaError(error) {
   const code = error && error.code;
   return code === "42P01" || code === "42703"; // undefined_table / undefined_column
@@ -288,14 +307,27 @@ function createCustomerOrdersRoutes(deps = {}) {
     }
   });
 
-  // Admin: list recent orders (read-only).
+  // Admin: list recent orders (read-only). Includes payment details when the
+  // payment columns exist; on a DB that has orders but not yet the payment
+  // migration, it falls back to the base columns so the list still loads.
+  const ADMIN_BASE_COLUMNS = "order_code, customer_name, customer_phone, delivery_method, install_option, address, items, subtotal, status, note, created_at";
+  const ADMIN_PAYMENT_COLUMNS = "payment_method, payment_status, payment_charge_id, paid_at";
   router.get("/admin/orders", adminGuard, async (_req, res) => {
     try {
-      const rows = await pool.query(
-        `SELECT order_code, customer_name, customer_phone, delivery_method, install_option, address, items, subtotal, status, created_at
-           FROM public.customer_orders ORDER BY created_at DESC LIMIT 200`
-      );
-      return res.json({ ok: true, orders: rows.rows.map(publicOrder) });
+      let rows;
+      try {
+        rows = await pool.query(
+          `SELECT ${ADMIN_BASE_COLUMNS}, ${ADMIN_PAYMENT_COLUMNS}
+             FROM public.customer_orders ORDER BY created_at DESC LIMIT 200`
+        );
+      } catch (inner) {
+        if (!isUndefinedColumn(inner)) throw inner; // real error → outer catch
+        rows = await pool.query(
+          `SELECT ${ADMIN_BASE_COLUMNS}
+             FROM public.customer_orders ORDER BY created_at DESC LIMIT 200`
+        );
+      }
+      return res.json({ ok: true, orders: rows.rows.map(adminOrder) });
     } catch (error) {
       if (isSchemaError(error)) return res.json({ ok: true, orders: [], schema_ready: false });
       console.error("[orders/admin-list] failed", error);
@@ -306,4 +338,4 @@ function createCustomerOrdersRoutes(deps = {}) {
   return router;
 }
 
-module.exports = { createCustomerOrdersRoutes, normalizeOrder, generateOrderCode, publicOrder };
+module.exports = { createCustomerOrdersRoutes, normalizeOrder, generateOrderCode, publicOrder, adminOrder };
