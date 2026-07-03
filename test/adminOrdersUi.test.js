@@ -21,8 +21,8 @@ test("the shared admin menu links to the orders dashboard exactly once", () => {
 
 test("admin-orders.html loads the shared menu, its own script and stylesheet with a consistent cache-bust", () => {
   assert.match(htmlSrc, /<script src="\/admin-v2-common\.js\?v=[^"]+"><\/script>/);
-  assert.match(htmlSrc, /admin-orders\.js\?v=20260702_orders_v1/);
-  assert.match(htmlSrc, /admin-orders\.css\?v=20260702_orders_v1/);
+  assert.match(htmlSrc, /admin-orders\.js\?v=20260703_lifecycle_v1/);
+  assert.match(htmlSrc, /admin-orders\.css\?v=20260703_lifecycle_v1/);
 });
 
 test("the page has a summary strip, search, status + method filters and a list container", () => {
@@ -35,9 +35,12 @@ test("the page has a summary strip, search, status + method filters and a list c
   assert.match(htmlSrc, /id="orders_list"/);
 });
 
-test("the dashboard reads the real /admin/orders endpoint (read-only, no mutation calls)", () => {
+test("the dashboard reads the real /admin/orders endpoint and only mutates via the status endpoint", () => {
   assert.match(jsSrc, /apiFetch\("\/admin\/orders"\)/);
-  assert.doesNotMatch(jsSrc, /method:\s*"(POST|PATCH|DELETE|PUT)"/);
+  // The only write is the fulfilment status update — no other mutating calls.
+  const posts = jsSrc.match(/\/admin\/orders\/[^`"]*/g) || [];
+  assert.ok(posts.some((p) => p.includes("/status")));
+  assert.doesNotMatch(jsSrc, /method:\s*"(PATCH|DELETE|PUT)"/);
 });
 
 test("orders are rendered with a status badge and payment method, and money/dates are formatted", () => {
@@ -65,4 +68,18 @@ test("badge and summary styles exist in the stylesheet", () => {
   assert.match(cssSrc, /\.ao-badge-paid/);
   assert.match(cssSrc, /\.ao-summary/);
   assert.match(cssSrc, /\.ao-card/);
+});
+
+test("admin can advance an order's fulfilment status and save a customer note", () => {
+  assert.match(jsSrc, /FULFILLMENT_OPTIONS/);
+  // Offers the lifecycle stages that mirror the backend allow-list.
+  for (const s of ["confirmed", "preparing", "shipped", "installing", "completed", "cancelled"]) {
+    assert.match(jsSrc, new RegExp(`value: "${s}"`));
+  }
+  assert.match(jsSrc, /data-fulfil-save/);
+  assert.match(jsSrc, /data-fulfil-note/);
+  // Posts to the real status endpoint.
+  assert.match(jsSrc, /\/admin\/orders\/\$\{encodeURIComponent\(code\)\}\/status/);
+  assert.match(jsSrc, /method:\s*"POST"/);
+  assert.match(cssSrc, /\.ao-fulfil/);
 });

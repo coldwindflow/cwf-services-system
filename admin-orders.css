@@ -55,6 +55,19 @@
 .ao-badge-processing { background: #fef3c7; color: #b7791f; }
 .ao-badge-pending { background: #eef2f7; color: #475569; }
 .ao-badge-failed { background: #fee2e2; color: #dc2626; }
+.ao-badge-fulfil { background: #dbeafe; color: #1d4ed8; }
+
+.ao-fulfil {
+  margin-top: 8px; padding-top: 10px; border-top: 1px dashed #e6e9ef;
+  display: grid; gap: 8px;
+}
+.ao-fulfil-head { font-size: 13px; }
+.ao-fulfil-row { display: flex; gap: 8px; align-items: center; }
+.ao-fulfil-row .ao-filter { flex: 1; }
+.ao-fulfil-note { width: 100%; font-size: 13px; }
+.ao-fulfil-status { font-size: 12px; font-weight: 700; }
+.ao-fulfil-status.is-ok { color: #15803d; }
+.ao-fulfil-status.is-err { color: #dc2626; }
 
 @media (max-width: 560px) {
   .ao-summary { grid-template-columns: repeat(2, 1fr); }
