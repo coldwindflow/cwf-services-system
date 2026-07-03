@@ -1,5 +1,6 @@
 (() => {
   'use strict';
+  console.info('[admin-accounting-v2] payout-adjustment-v1 loaded');
 
   const TAB_META = {
     overview: { title: 'ภาพรวม', hint: 'สรุปงานบัญชีที่ต้องจัดการวันนี้', action: 'รีเฟรชข้อมูล' },
@@ -26,6 +27,7 @@
     payoutTechs: {},
     selectedPayoutId: null,
     payoutTechError: null,
+    payoutAdjustmentInFlight: new Set(),
     taxRequests: [],
     settings: null,
     loading: new Set(),
@@ -136,6 +138,16 @@
     const msg = String(e?.payload?.error || e?.message || e || '');
     if (msg.includes('CONFIRM_RECEIVED_REQUIRED')) return 'กรุณาติ๊กยืนยันว่าได้รับเงินจริงแล้ว';
     if (msg.includes('CONFIRM_PAID_REQUIRED')) return 'กรุณาติ๊กยืนยันว่าได้โอน/จ่ายเงินจริงแล้ว';
+    if (msg.includes('CONFIRM_ADJUSTMENT_REQUIRED')) return 'กรุณาติ๊กยืนยันก่อนเพิ่มเงินย้อนหลัง';
+    if (msg.includes('IDEMPOTENCY_KEY_REQUIRED')) return 'ระบบยังไม่พร้อมบันทึกซ้ำอย่างปลอดภัย กรุณาปิดหน้าต่างแล้วลองใหม่';
+    if (msg.includes('IDEMPOTENCY_KEY_REUSED')) return 'คำขอนี้ถูกใช้กับข้อมูลอื่นแล้ว กรุณาปิดหน้าต่างแล้วทำรายการใหม่';
+    if (msg.includes('INVALID_IDEMPOTENCY_KEY')) return 'รหัสป้องกันการกดซ้ำไม่ถูกต้อง กรุณาปิดหน้าต่างแล้วทำรายการใหม่';
+    if (msg.includes('PAYOUT_PAID_RECONCILIATION_REQUIRED')) return 'งวดนี้ถูกทำเครื่องหมายว่าจ่ายแล้ว แต่ยอด payment ในระบบไม่สอดคล้อง ต้องตรวจ reconciliation ก่อนเพิ่มย้อนหลัง';
+    if (msg.includes('PAYOUT_ADJUSTMENT_MIGRATION_REQUIRED')) return 'ระบบยังไม่ได้รัน migration สำหรับป้องกันการกดซ้ำ จึงยังเพิ่มเงินย้อนหลังไม่ได้';
+    if (msg.includes('INVALID_ADJUSTMENT_AMOUNT')) return 'ยอดเพิ่มย้อนหลังต้องมากกว่า 0';
+    if (msg.includes('MISSING_REASON')) return 'กรุณาใส่เหตุผล';
+    if (msg.includes('INVALID_JOB_ID')) return 'เลขงานไม่ถูกต้อง';
+    if (msg.includes('JOB_NOT_FOUND')) return 'ไม่พบเลขงานนี้';
     if (msg.includes('PAID_AMOUNT_EXCEEDS_REMAINING')) return 'ยอดที่จ่ายมากกว่ายอดคงเหลือ';
     if (msg.includes('PAYOUT_ALREADY_PAID')) return 'รายการนี้จ่ายครบแล้ว';
     if (msg.includes('PAYOUT_PERIOD_NOT_CLOSED')) return 'งวดนี้ยังไม่ปิดช่วงตัดยอด จึงยังบันทึกจ่ายก่อนไม่ได้';
@@ -406,6 +418,7 @@
                   ${payoutStatusBadge(t.paid_status)}
                   ${Number(t.cash_held_amount || 0) > 0 ? badge(`หักเงินสด ${money(t.cash_held_amount)} ฿`, 'warn') : ''}
                   ${paid ? `<button class="acctDisabledBtn" type="button" disabled>จ่ายช่างแล้ว</button>` : (t.can_pay === false ? `<button class="acctDisabledBtn" type="button" disabled>ยังไม่ปิดตัดยอด</button>` : `<button class="acctPrimaryBtn" type="button" data-pay-payout="${esc(payoutId)}" data-tech="${esc(t.technician_username)}" data-remaining="${esc(t.remaining_amount)}">บันทึกจ่ายแล้ว</button>`)}
+                  ${t.can_pay === false ? `<button class="acctDisabledBtn" type="button" disabled>เพิ่มหลังปิดยอด</button>` : `<button class="acctSecondaryBtn" type="button" data-adjust-payout="${esc(payoutId)}" data-tech="${esc(t.technician_username)}">เพิ่มเงินย้อนหลัง</button>`}
                   ${existingWht ? `<a class="acctSecondaryBtn" href="/admin/accounting/documents/${esc(existingWht.document_id)}/print" target="_blank" rel="noopener">พิมพ์ทวิ50 ${esc(existingWht.document_no || '')}</a>` : ''}
                   <button class="acctSecondaryBtn" type="button" data-edit-tech-tax="${esc(t.technician_username)}">เติมข้อมูลทวิ50</button>
                   ${whtReady && !existingWht ? `<button class="acctPrimaryBtn acctWhtBtn" type="button" data-issue-wht="${esc(payoutId)}" data-tech="${esc(t.technician_username)}">ออกทวิ50เดือนนี้</button>` : ''}
@@ -415,6 +428,7 @@
         </div>
       </div>`;
     el.querySelectorAll('[data-pay-payout]').forEach((btn) => btn.addEventListener('click', () => openPayoutPaidModal(btn.dataset.payPayout, btn.dataset.tech, btn.dataset.remaining)));
+    el.querySelectorAll('[data-adjust-payout]').forEach((btn) => btn.addEventListener('click', () => openPayoutAdjustmentModal(btn.dataset.adjustPayout, btn.dataset.tech)));
     el.querySelectorAll('[data-edit-tech-tax]').forEach((btn) => btn.addEventListener('click', () => openTechTaxProfileModal(btn.dataset.editTechTax)));
     el.querySelectorAll('[data-issue-wht]').forEach((btn) => btn.addEventListener('click', () => openIssueWithholdingModal(btn.dataset.issueWht, btn.dataset.tech)));
   }
@@ -699,6 +713,57 @@
         closeModal();
         await Promise.all([loadAudit(), loadPayoutTechs(payoutId, { keepPosition: true })]);
         if (r.print_url) window.open(r.print_url, '_blank', 'noopener');
+      });
+  }
+
+  function newIdempotencyKey() {
+    try {
+      if (window.crypto && typeof window.crypto.randomUUID === 'function') return window.crypto.randomUUID();
+    } catch (_) {}
+    try {
+      if (window.crypto && typeof window.crypto.getRandomValues === 'function') {
+        const bytes = new Uint8Array(16);
+        window.crypto.getRandomValues(bytes);
+        return `acct-adj-${Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')}`;
+      }
+    } catch (_) {}
+    return '';
+  }
+
+  function openPayoutAdjustmentModal(payoutId, tech) {
+    const idempotencyKey = newIdempotencyKey();
+    openModal(`
+      <form class="acctFormGrid">
+        <h3>เพิ่มเงินย้อนหลัง</h3>
+        <p>ช่าง: <b>${esc(tech)}</b><br>งวด: <b>${esc(payoutId)}</b><br>ยอดที่เคยบันทึกว่าจ่ายแล้วจะไม่ถูกแก้ ระบบจะเพิ่มยอดคงเหลือเฉพาะส่วนต่าง</p>
+        <label>จำนวนเงินที่เพิ่ม<input class="acctInput" name="adj_amount" type="number" min="0.01" step="0.01" required></label>
+        <label>เหตุผล<textarea class="acctInput" name="reason" required placeholder="เช่น เพิ่มตกหล่นจากงานย้อนหลัง"></textarea></label>
+        <label>เลขงาน ถ้ามี<input class="acctInput" name="job_id" type="number" min="1" placeholder="ไม่บังคับ"></label>
+        <label class="acctCheckLine"><input type="checkbox" name="confirm_adjustment" value="1"><span>ยืนยันว่าเป็นยอดเพิ่มย้อนหลังจริง และเข้าใจว่ายอดเดิมที่จ่ายแล้วจะไม่ถูกแก้</span></label>
+        <div class="acctSoftErr" data-error style="display:block;min-height:0"></div>
+        <div class="acctModalActions"><button class="acctGhostBtn" type="button" data-close>ยกเลิก</button><button class="acctPrimaryBtn" type="submit">บันทึกเพิ่มเงินย้อนหลัง</button></div>
+      </form>`, async (fd, errEl) => {
+        if (fd.get('confirm_adjustment') !== '1') { if (errEl) errEl.textContent = 'กรุณาติ๊กยืนยันก่อนเพิ่มเงินย้อนหลัง'; return; }
+        if (!idempotencyKey) { if (errEl) errEl.textContent = 'Browser นี้ไม่รองรับการสร้างรหัสป้องกันการกดซ้ำอย่างปลอดภัย'; return; }
+        const guardKey = `${payoutId}:${tech}:${idempotencyKey}`;
+        if (state.payoutAdjustmentInFlight.has(guardKey)) return;
+        state.payoutAdjustmentInFlight.add(guardKey);
+        try {
+          await postJson(`/admin/accounting/payouts/${encodeURIComponent(payoutId)}/adjust`, {
+            technician_username: tech,
+            adj_amount: fd.get('adj_amount'),
+            reason: fd.get('reason'),
+            job_id: fd.get('job_id') || null,
+            idempotency_key: idempotencyKey,
+            confirm_adjustment: true,
+          });
+          closeModal();
+          await Promise.all([loadSummary(), loadPayouts(), loadAudit()]);
+          await loadPayoutTechs(payoutId, { keepPosition: true });
+          showAccountingTab('payouts', { scroll: false, updateUrl: true });
+        } finally {
+          state.payoutAdjustmentInFlight.delete(guardKey);
+        }
       });
   }
 
