@@ -8,6 +8,7 @@ const {
 
 async function ensurePayoutPeriodAndSnapshotForPayment({
   pool,
+  client,
   payout_id,
   actor_username,
   getPayoutPeriod,
@@ -23,6 +24,7 @@ async function ensurePayoutPeriodAndSnapshotForPayment({
   }
 
   const parsed = parsePayoutId(pid);
+  const db = client || pool;
   let existing = await getPayoutPeriod(pid);
   if (!existing && !parsed) {
     const err = new Error("PAYOUT_NOT_FOUND");
@@ -56,9 +58,7 @@ async function ensurePayoutPeriodAndSnapshotForPayment({
     return { period: effectivePeriod, created: false, regenerated: false };
   }
 
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
+  if (client) {
     if (!existing) {
       await client.query(
         `INSERT INTO public.technician_payout_periods(payout_id, period_type, period_start, period_end, status, created_by)
@@ -73,14 +73,35 @@ async function ensurePayoutPeriodAndSnapshotForPayment({
       actor_username: actor_username || "system:prepay",
       req,
     });
-    await client.query("COMMIT");
+    const period = await getPayoutPeriod(pid);
+    return { period: period || effectivePeriod, created: !existing, regenerated: true, regen };
+  }
+
+  const ownedClient = await db.connect();
+  try {
+    await ownedClient.query("BEGIN");
+    if (!existing) {
+      await ownedClient.query(
+        `INSERT INTO public.technician_payout_periods(payout_id, period_type, period_start, period_end, status, created_by)
+         VALUES($1,$2,$3,$4,'draft',$5)
+         ON CONFLICT (payout_id) DO NOTHING`,
+        [pid, bounds.period_type, bounds.start.toISOString(), bounds.endEx.toISOString(), actor_username || "system:prepay"]
+      );
+    }
+    const regen = await regenerateDraftPayoutContractLines({
+      client: ownedClient,
+      payout_id: pid,
+      actor_username: actor_username || "system:prepay",
+      req,
+    });
+    await ownedClient.query("COMMIT");
     const period = await getPayoutPeriod(pid);
     return { period: period || effectivePeriod, created: !existing, regenerated: true, regen };
   } catch (e) {
-    try { await client.query("ROLLBACK"); } catch (_) {}
+    try { await ownedClient.query("ROLLBACK"); } catch (_) {}
     throw e;
   } finally {
-    client.release();
+    ownedClient.release();
   }
 }
 
