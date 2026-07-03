@@ -1,6 +1,8 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
+const http = require("node:http");
+const express = require("express");
 
 const svc = require("../server/services/accountingPayoutAdjustments");
 
@@ -19,10 +21,34 @@ class FakeClient {
     this.jobs = new Set();
     this.audit = [];
     this.nextAdjId = 1;
+    this.failAudit = false;
+    this.txStack = [];
   }
 
   clone(row) {
     return row ? { ...row } : row;
+  }
+
+  snapshot() {
+    return {
+      periods: new Map([...this.periods.entries()].map(([k, v]) => [k, this.clone(v)])),
+      lines: this.lines.map((r) => this.clone(r)),
+      adjustments: this.adjustments.map((r) => this.clone(r)),
+      payments: this.payments.map((r) => this.clone(r)),
+      deposits: this.deposits.map((r) => this.clone(r)),
+      audit: this.audit.map((r) => this.clone(r)),
+      nextAdjId: this.nextAdjId,
+    };
+  }
+
+  restore(snapshot) {
+    this.periods = new Map([...snapshot.periods.entries()].map(([k, v]) => [k, this.clone(v)]));
+    this.lines = snapshot.lines.map((r) => this.clone(r));
+    this.adjustments = snapshot.adjustments.map((r) => this.clone(r));
+    this.payments = snapshot.payments.map((r) => this.clone(r));
+    this.deposits = snapshot.deposits.map((r) => this.clone(r));
+    this.audit = snapshot.audit.map((r) => this.clone(r));
+    this.nextAdjId = snapshot.nextAdjId;
   }
 
   settlementRows(payoutId) {
@@ -53,6 +79,19 @@ class FakeClient {
   async query(sql, params = []) {
     const s = normSql(sql);
 
+    if (s === "BEGIN") {
+      this.txStack.push(this.snapshot());
+      return { rows: [] };
+    }
+    if (s === "COMMIT") {
+      this.txStack.pop();
+      return { rows: [] };
+    }
+    if (s === "ROLLBACK") {
+      const snapshot = this.txStack.pop();
+      if (snapshot) this.restore(snapshot);
+      return { rows: [] };
+    }
     if (s.includes("FROM information_schema.columns")) {
       return { rows: this.migrationReady ? [{ "?column?": 1 }] : [] };
     }
@@ -125,6 +164,7 @@ class FakeClient {
       return { rows: this.settlementRows(params[0]) };
     }
     if (s.startsWith("INSERT INTO public.accounting_audit_log")) {
+      if (this.failAudit) throw new Error("AUDIT_WRITE_FAILED");
       this.audit.push({ params });
       return { rows: [] };
     }
@@ -148,6 +188,21 @@ async function apply(db, body = {}, extra = {}) {
     req: { actor: { username: "acct", role: "admin" }, headers: {} },
     regenerateDraftPayoutContractLines: extra.regenerateDraftPayoutContractLines || (async () => ({ ok: true })),
   });
+}
+
+async function applyInsideRouteTransaction(db, body = {}) {
+  let began = false;
+  try {
+    await db.query("BEGIN");
+    began = true;
+    const result = await apply(db, body);
+    await db.query("COMMIT");
+    began = false;
+    return result;
+  } catch (err) {
+    if (began) await db.query("ROLLBACK");
+    throw err;
+  }
 }
 
 test("locked unpaid period accepts a positive adjustment and writes one audit row", async () => {
@@ -206,6 +261,34 @@ test("route uses accounting_mark_payout_paid permission", () => {
   assert.match(src, /app\.post\('\/admin\/accounting\/payouts\/:payout_id\/adjust', requireAccountingPermission\('accounting_mark_payout_paid'\)/);
 });
 
+test("HTTP permission middleware denies adjustment route before handler runs", async () => {
+  let handlerReached = false;
+  const app = express();
+  app.use(express.json());
+  app.post(
+    "/admin/accounting/payouts/:payout_id/adjust",
+    (_req, res) => res.status(403).json({ ok: false, error: "ACCOUNTING_PERMISSION_REQUIRED" }),
+    (_req, res) => {
+      handlerReached = true;
+      res.json({ ok: true });
+    }
+  );
+  const server = http.createServer(app);
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const port = server.address().port;
+    const response = await fetch(`http://127.0.0.1:${port}/admin/accounting/payouts/payout_2026-06_25/adjust`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    assert.equal(response.status, 403);
+    assert.equal(handlerReached, false);
+  } finally {
+    await new Promise((resolve, reject) => server.close((err) => err ? reject(err) : resolve()));
+  }
+});
+
 test("invalid or missing job_id is rejected before insert", async () => {
   const db = new FakeClient();
   db.periods.set("payout_2026-06_25", { payout_id: "payout_2026-06_25", status: "locked", period_type: "25", period_start: "2026-06-01T00:00:00Z", period_end: "2026-06-16T00:00:00Z" });
@@ -244,21 +327,44 @@ test("same idempotency key with different payload returns conflict", async () =>
   assert.equal(db.adjustments.length, 1);
 });
 
+test("invalid idempotency keys are rejected before insert", async () => {
+  const db = new FakeClient();
+  db.periods.set("payout_2026-06_25", { payout_id: "payout_2026-06_25", status: "locked", period_type: "25", period_start: "2026-06-01T00:00:00Z", period_end: "2026-06-16T00:00:00Z" });
+
+  await assert.rejects(() => apply(db, { idempotency_key: "bad key" }), /INVALID_IDEMPOTENCY_KEY/);
+  await assert.rejects(() => apply(db, { idempotency_key: "x".repeat(121) }), /INVALID_IDEMPOTENCY_KEY/);
+  assert.equal(db.adjustments.length, 0);
+});
+
 test("missing migration returns PAYOUT_ADJUSTMENT_MIGRATION_REQUIRED", async () => {
   const db = new FakeClient();
   db.migrationReady = false;
   await assert.rejects(() => apply(db), /PAYOUT_ADJUSTMENT_MIGRATION_REQUIRED/);
 });
 
-test("paid period without payment row does not create a fake payment row", async () => {
+test("paid period with positive net and no payment row rejects reconciliation without mutation", async () => {
   const db = new FakeClient();
   db.periods.set("payout_2026-06_25", { payout_id: "payout_2026-06_25", status: "paid", period_type: "25", period_start: "2026-06-01T00:00:00Z", period_end: "2026-06-16T00:00:00Z" });
   db.lines.push({ payout_id: "payout_2026-06_25", technician_username: "TECH_A", earn_amount: 1000 });
 
-  await apply(db);
+  await assert.rejects(() => apply(db), /PAYOUT_PAID_RECONCILIATION_REQUIRED/);
 
   assert.equal(db.payments.length, 0);
-  assert.equal(db.periods.get("payout_2026-06_25").status, "locked");
+  assert.equal(db.adjustments.length, 0);
+  assert.equal(db.periods.get("payout_2026-06_25").status, "paid");
+  assert.equal(db.audit.length, 0);
+});
+
+test("paid period with non-positive prior net may be adjusted without a fake payment row", async () => {
+  const db = new FakeClient();
+  db.periods.set("payout_2026-06_25", { payout_id: "payout_2026-06_25", status: "paid", period_type: "25", period_start: "2026-06-01T00:00:00Z", period_end: "2026-06-16T00:00:00Z" });
+  db.deposits.push({ payout_id: "payout_2026-06_25", technician_username: "TECH_A", amount: 100, transaction_type: "collect" });
+
+  const result = await apply(db, { adj_amount: 50 });
+
+  assert.equal(db.payments.length, 0);
+  assert.equal(result.totals.net_amount, -50);
+  assert.equal(db.periods.get("payout_2026-06_25").status, "paid");
 });
 
 test("historical draft after cutoff snapshots and locks, but before-cutoff draft is rejected and not locked", async () => {
@@ -275,11 +381,50 @@ test("historical draft after cutoff snapshots and locks, but before-cutoff draft
   assert.equal(open.periods.get("payout_2999-01_25").status, "draft");
 });
 
-test("transaction failure point is inside caller transaction: route begins and rolls back on error", () => {
+test("audit failure inside route transaction rolls back adjustment, status, payment, and audit", async () => {
+  const db = new FakeClient();
+  db.failAudit = true;
+  db.periods.set("payout_2026-06_25", { payout_id: "payout_2026-06_25", status: "paid", period_type: "25", period_start: "2026-06-01T00:00:00Z", period_end: "2026-06-16T00:00:00Z" });
+  db.lines.push({ payout_id: "payout_2026-06_25", technician_username: "TECH_A", earn_amount: 1000 });
+  db.payments.push({ payment_id: 1, payout_id: "payout_2026-06_25", technician_username: "TECH_A", paid_amount: 1000, paid_status: "paid" });
+
+  await assert.rejects(() => applyInsideRouteTransaction(db, { adj_amount: 250 }), /AUDIT_WRITE_FAILED/);
+
+  assert.equal(db.adjustments.length, 0);
+  assert.equal(db.payments[0].paid_amount, 1000);
+  assert.equal(db.payments[0].paid_status, "paid");
+  assert.equal(db.periods.get("payout_2026-06_25").status, "paid");
+  assert.equal(db.audit.length, 0);
+  assert.equal(db.txStack.length, 0);
+});
+
+test("bulk pay targets exclude payment-only and deposit-only rows but include adjustment-only payable rows", () => {
+  const rows = svc.getBulkPayableTargetRows([
+    { technician_username: "PAY_ONLY", gross_amount: 0, adj_total: 0, deposit_deduction_amount: 0, net_amount: 0, paid_amount: 20, remaining_amount: 0 },
+    { technician_username: "DEP_ONLY", gross_amount: 0, adj_total: 0, deposit_deduction_amount: 10, net_amount: -10, paid_amount: 0, remaining_amount: 0 },
+    { technician_username: "ADJ_ONLY", gross_amount: 0, adj_total: 75, deposit_deduction_amount: 0, net_amount: 75, paid_amount: 0, remaining_amount: 75 },
+    { technician_username: "LINE_PAID", gross_amount: 100, adj_total: 0, deposit_deduction_amount: 0, net_amount: 100, paid_amount: 100, remaining_amount: 0 },
+  ]);
+  assert.deepEqual(rows.map((r) => r.technician_username), ["ADJ_ONLY"]);
+});
+
+test("legacy_settle consumes payout summary .techs before all-paid evaluation", () => {
   const src = fs.readFileSync("index.js", "utf8");
-  assert.match(src, /await client\.query\('BEGIN'\)[\s\S]*applyAccountingPositivePayoutAdjustment/);
-  assert.match(src, /catch \(e\) \{[\s\S]*await client\.query\('ROLLBACK'\)/);
-  assert.match(src, /INSERT INTO public\.accounting_audit_log/);
+  assert.ok(src.includes("const techRowsPayload = await _buildPayoutTechSummaryRows(payout_id);"));
+  assert.ok(src.includes("const techRows = Array.isArray(techRowsPayload?.techs) ? techRowsPayload.techs : [];"));
+  assert.ok(src.includes("getPayoutTechSettlementRows(client, payout_id)"));
+});
+
+test("draft adjustment audit records original draft status before lock", async () => {
+  const db = new FakeClient();
+  db.periods.set("payout_2000-01_25", { payout_id: "payout_2000-01_25", status: "draft", period_type: "25", period_start: "2000-01-01T00:00:00Z", period_end: "2000-01-16T00:00:00Z" });
+
+  const result = await apply(db, { payout_id: "payout_2000-01_25" }, { regenerateDraftPayoutContractLines: async () => ({ ok: true }) });
+
+  assert.equal(result.period_status_before, "draft");
+  assert.equal(result.period_status_after, "locked");
+  const beforeJson = JSON.parse(db.audit[0].params[6]);
+  assert.equal(beforeJson.period.status, "draft");
 });
 
 test("slip source includes adjustment rows and deposit totals", () => {

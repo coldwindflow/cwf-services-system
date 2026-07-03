@@ -9407,9 +9407,11 @@ app.post('/admin/super/payouts/:payout_id/pay_bulk', requireSuperAdmin, async (r
     if (!period) return res.status(404).json({ ok:false, error:'PAYOUT_NOT_FOUND' });
     if (String(period.status) === 'paid') return res.status(409).json({ ok:false, error:'PAYOUT_ALREADY_PAID' });
 
-    // Load net amounts for every technician touched by lines, adjustments,
-    // payments, or deposit collections in this payout.
-    const rows = await accountingPayoutAdjustments.getPayoutTechSettlementRows(pool, payout_id);
+    // Settlement rows include payment-only/deposit-only technicians for final
+    // all-paid evaluation. Bulk payment targets are narrower: only technicians
+    // with payable gross/adjustment money and positive remaining balance.
+    const settlementRows = await accountingPayoutAdjustments.getPayoutTechSettlementRows(pool, payout_id);
+    const rows = accountingPayoutAdjustments.getBulkPayableTargetRows(settlementRows);
     if (!rows.length) return res.json({ ok:true, payout_id, updated:0, status: period.status });
     const actor = req.actor?.username || null;
     const netMap = new Map(rows.map(r=>[String(r.technician_username), _money(r.net_amount)]));
@@ -9438,6 +9440,7 @@ app.post('/admin/super/payouts/:payout_id/pay_bulk', requireSuperAdmin, async (r
     let updated = 0;
     for (const tech of targets) {
       const net = _money(netMap.get(tech));
+      if (net <= 0) continue;
       const paid_amount = net;
       const paid_status = 'paid';
       await client.query(
@@ -9531,10 +9534,11 @@ app.post('/admin/super/payouts/legacy_settle', requireSuperAdmin, async (req, re
       if (!payout_id) continue;
       checked_periods++;
 
-      const techRows = await _buildPayoutTechSummaryRows(payout_id);
+      const techRowsPayload = await _buildPayoutTechSummaryRows(payout_id);
+      const techRows = Array.isArray(techRowsPayload?.techs) ? techRowsPayload.techs : [];
       let periodTouched = false;
 
-      for (const row of (techRows || [])) {
+      for (const row of techRows) {
         const tech = String(row.technician_username || '').trim();
         if (!tech) continue;
         if (techFilter && tech !== techFilter) continue;
@@ -23211,12 +23215,14 @@ app.post('/admin/accounting/payouts/:payout_id/adjust', requireAccountingPermiss
     const error = String(e.code || e.message || 'PAYOUT_ADJUSTMENT_FAILED');
     if (error === 'PAYOUT_ADJUSTMENT_MIGRATION_REQUIRED') return res.status(503).json({ ok:false, error });
     if (error === 'IDEMPOTENCY_KEY_REUSED') return res.status(409).json({ ok:false, error });
+    if (error === 'PAYOUT_PAID_RECONCILIATION_REQUIRED') return res.status(409).json({ ok:false, error });
     if (error === 'PAYOUT_PERIOD_NOT_CLOSED') return res.status(409).json({ ok:false, error, period_end: e.period_end || null });
     if (['PAYOUT_NOT_FOUND','JOB_NOT_FOUND'].includes(error)) return res.status(code === 500 ? 404 : code).json({ ok:false, error });
     if ([
       'MISSING_PAYOUT_ID',
       'MISSING_TECHNICIAN_USERNAME',
       'INVALID_ADJUSTMENT_AMOUNT',
+      'INVALID_IDEMPOTENCY_KEY',
       'MISSING_REASON',
       'IDEMPOTENCY_KEY_REQUIRED',
       'CONFIRM_ADJUSTMENT_REQUIRED',

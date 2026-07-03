@@ -43,6 +43,9 @@ function normalizePayload(payoutId, body = {}) {
   if (!Number.isFinite(adj_amount) || adj_amount <= 0) throw appError("INVALID_ADJUSTMENT_AMOUNT", 400);
   if (!reason) throw appError("MISSING_REASON", 400);
   if (!idempotency_key) throw appError("IDEMPOTENCY_KEY_REQUIRED", 400);
+  if (idempotency_key.length > 120 || !/^[A-Za-z0-9._:-]+$/.test(idempotency_key)) {
+    throw appError("INVALID_IDEMPOTENCY_KEY", 400);
+  }
   if (!confirm_adjustment) throw appError("CONFIRM_ADJUSTMENT_REQUIRED", 400);
 
   return { payout_id, technician_username, adj_amount, reason, job_id, idempotency_key };
@@ -101,6 +104,7 @@ async function ensureClosedDraftPeriodSnapshot({
   req,
 }) {
   let period = await getPayoutPeriodForUpdate(client, payout_id);
+  let originalPeriod = period ? { ...period } : null;
   const parsed = parsePayoutId(payout_id);
   if (!period) {
     if (!parsed) throw appError("PAYOUT_NOT_FOUND", 404);
@@ -115,6 +119,7 @@ async function ensureClosedDraftPeriodSnapshot({
     if (!isPeriodCutoffClosed(virtual)) {
       throw appError("PAYOUT_PERIOD_NOT_CLOSED", 409, "PAYOUT_PERIOD_NOT_CLOSED", { period_end: virtual.period_end });
     }
+    originalPeriod = { ...virtual, status: "draft", is_virtual: true };
     await client.query(
       `INSERT INTO public.technician_payout_periods(payout_id, period_type, period_start, period_end, status, created_by)
        VALUES($1,$2,$3,$4,'draft',$5)
@@ -124,6 +129,7 @@ async function ensureClosedDraftPeriodSnapshot({
     period = await getPayoutPeriodForUpdate(client, payout_id);
   }
   if (!period) throw appError("PAYOUT_NOT_FOUND", 404);
+  if (!originalPeriod) originalPeriod = { ...period };
 
   const status = String(period.status || "draft");
   if (status === "draft") {
@@ -147,13 +153,13 @@ async function ensureClosedDraftPeriodSnapshot({
       [payout_id]
     );
     period = await getPayoutPeriodForUpdate(client, payout_id);
-    return { period, regenerated: true, regen };
+    return { period, originalPeriod, regenerated: true, regen };
   }
 
   if (status !== "locked" && status !== "paid") {
     throw appError("UNSUPPORTED_PAYOUT_STATUS", 409);
   }
-  return { period, regenerated: false, regen: null };
+  return { period, originalPeriod, regenerated: false, regen: null };
 }
 
 async function getPayoutTechSettlementRows(client, payoutId) {
@@ -234,6 +240,14 @@ function isPayoutFullyPaidFromRows(rows = []) {
   return rows.length > 0 && rows.every((r) => paidStatus(r.net_amount, r.paid_amount) === "paid");
 }
 
+function getBulkPayableTargetRows(settlementRows = []) {
+  return (settlementRows || []).filter((r) =>
+    (Number(r.gross_amount || 0) !== 0 || Number(r.adj_total || 0) !== 0) &&
+    Number(r.net_amount || 0) > 0 &&
+    Number(r.remaining_amount || 0) > 0.0001
+  );
+}
+
 async function lockPaymentRow(client, payoutId, tech) {
   const q = await client.query(
     `SELECT payment_id, payout_id, technician_username, paid_amount, paid_status, paid_at, paid_by, slip_url, note,
@@ -308,7 +322,7 @@ async function applyAccountingPositivePayoutAdjustment({
     regenerateDraftPayoutContractLines,
     req,
   });
-  const periodBefore = { ...(snapshot.period || {}) };
+  const periodBefore = { ...(snapshot.originalPeriod || snapshot.period || {}) };
   const paymentBefore = await lockPaymentRow(client, payload.payout_id, payload.technician_username);
   await validateJobIdIfPresent(client, payload.job_id);
 
@@ -330,6 +344,12 @@ async function applyAccountingPositivePayoutAdjustment({
   }
 
   const totalsBefore = await getPayoutTechTotals(client, payload.payout_id, payload.technician_username);
+  if (String(periodBefore.status || "") === "paid") {
+    const beforeStatus = paidStatus(totalsBefore.net_amount, paymentBefore?.paid_amount || 0);
+    if (money(totalsBefore.net_amount) > 0 && beforeStatus !== "paid") {
+      throw appError("PAYOUT_PAID_RECONCILIATION_REQUIRED", 409);
+    }
+  }
   const ins = await client.query(
     `INSERT INTO public.technician_payout_adjustments
        (payout_id, technician_username, job_id, adj_amount, reason, created_by, idempotency_key)
@@ -427,5 +447,6 @@ module.exports = {
   getPayoutTechSettlementRows,
   getPayoutTechTotals,
   isPayoutFullyPaidFromRows,
+  getBulkPayableTargetRows,
   applyAccountingPositivePayoutAdjustment,
 };

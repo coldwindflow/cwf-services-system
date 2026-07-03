@@ -141,6 +141,8 @@
     if (msg.includes('CONFIRM_ADJUSTMENT_REQUIRED')) return 'กรุณาติ๊กยืนยันก่อนเพิ่มเงินย้อนหลัง';
     if (msg.includes('IDEMPOTENCY_KEY_REQUIRED')) return 'ระบบยังไม่พร้อมบันทึกซ้ำอย่างปลอดภัย กรุณาปิดหน้าต่างแล้วลองใหม่';
     if (msg.includes('IDEMPOTENCY_KEY_REUSED')) return 'คำขอนี้ถูกใช้กับข้อมูลอื่นแล้ว กรุณาปิดหน้าต่างแล้วทำรายการใหม่';
+    if (msg.includes('INVALID_IDEMPOTENCY_KEY')) return 'รหัสป้องกันการกดซ้ำไม่ถูกต้อง กรุณาปิดหน้าต่างแล้วทำรายการใหม่';
+    if (msg.includes('PAYOUT_PAID_RECONCILIATION_REQUIRED')) return 'งวดนี้ถูกทำเครื่องหมายว่าจ่ายแล้ว แต่ยอด payment ในระบบไม่สอดคล้อง ต้องตรวจ reconciliation ก่อนเพิ่มย้อนหลัง';
     if (msg.includes('PAYOUT_ADJUSTMENT_MIGRATION_REQUIRED')) return 'ระบบยังไม่ได้รัน migration สำหรับป้องกันการกดซ้ำ จึงยังเพิ่มเงินย้อนหลังไม่ได้';
     if (msg.includes('INVALID_ADJUSTMENT_AMOUNT')) return 'ยอดเพิ่มย้อนหลังต้องมากกว่า 0';
     if (msg.includes('MISSING_REASON')) return 'กรุณาใส่เหตุผล';
@@ -718,7 +720,14 @@
     try {
       if (window.crypto && typeof window.crypto.randomUUID === 'function') return window.crypto.randomUUID();
     } catch (_) {}
-    return `acct-adj-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    try {
+      if (window.crypto && typeof window.crypto.getRandomValues === 'function') {
+        const bytes = new Uint8Array(16);
+        window.crypto.getRandomValues(bytes);
+        return `acct-adj-${Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')}`;
+      }
+    } catch (_) {}
+    return '';
   }
 
   function openPayoutAdjustmentModal(payoutId, tech) {
@@ -735,6 +744,7 @@
         <div class="acctModalActions"><button class="acctGhostBtn" type="button" data-close>ยกเลิก</button><button class="acctPrimaryBtn" type="submit">บันทึกเพิ่มเงินย้อนหลัง</button></div>
       </form>`, async (fd, errEl) => {
         if (fd.get('confirm_adjustment') !== '1') { if (errEl) errEl.textContent = 'กรุณาติ๊กยืนยันก่อนเพิ่มเงินย้อนหลัง'; return; }
+        if (!idempotencyKey) { if (errEl) errEl.textContent = 'Browser นี้ไม่รองรับการสร้างรหัสป้องกันการกดซ้ำอย่างปลอดภัย'; return; }
         const guardKey = `${payoutId}:${tech}:${idempotencyKey}`;
         if (state.payoutAdjustmentInFlight.has(guardKey)) return;
         state.payoutAdjustmentInFlight.add(guardKey);
