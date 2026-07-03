@@ -52,6 +52,7 @@ const createDocumentRoutes = require("./server/routes/docs");
 const createAccountingReadOnlyRoutes = require("./server/routes/accountingReadOnly");
 const { ensurePayoutPeriodAndSnapshotForPayment } = require("./server/services/technicianPayoutPrepay");
 const { buildAccountingPayoutCalendar, isPeriodCutoffClosed } = require("./server/services/technicianPayoutPeriods");
+const accountingPayoutAdjustments = require("./server/services/accountingPayoutAdjustments");
 const { createTechnicianCashCollectionService } = require("./server/services/technicianCashCollections");
 const { createTechnicianDeductionPayoutApplyService } = require("./server/services/technicianDeductionPayoutApply");
 const createAdminReworkDeductionsHelpers = require("./server/helpers/adminReworkDeductionsHelpers");
@@ -6218,6 +6219,18 @@ async function _buildPayoutTechSummaryRows(payout_id){
     if (!tech || rowMap.has(tech)) continue;
     rowMap.set(tech, { technician_username: tech, gross_amount: 0, jobs_count: 0, payment_only: true });
   }
+  const depTechsQ = await pool.query(
+    `SELECT technician_username
+       FROM public.technician_deposit_ledger
+      WHERE payout_id=$1 AND transaction_type='collect'
+      GROUP BY technician_username`,
+    [payout_id]
+  );
+  for (const r of (depTechsQ.rows || [])) {
+    const tech = String(r.technician_username || '').trim();
+    if (!tech || rowMap.has(tech)) continue;
+    rowMap.set(tech, { technician_username: tech, gross_amount: 0, jobs_count: 0, deposit_only: true });
+  }
   baseRows = Array.from(rowMap.values());
 
   const out = [];
@@ -6258,6 +6271,7 @@ async function _buildPayoutTechSummaryRows(payout_id){
       jobs_count: Number(r.jobs_count || 0),
       adjustment_only: !!r.adjustment_only,
       payment_only: !!r.payment_only,
+      deposit_only: !!r.deposit_only,
       source,
     });
   }
@@ -8320,7 +8334,7 @@ app.post('/admin/super/payouts/purge_draft_legacy', requireSuperAdmin, async (re
 // - draft only; locked/paid are never changed silently
 // - payout payments block regeneration
 // - adjustments are preserved separately and are not mixed into job income
-async function _regenerateDraftPayoutContractLines({ client, payout_id, actor_username, req }) {
+async function _regenerateDraftPayoutContractLines({ client, payout_id, actor_username, req, skipAudit = false }) {
   const metaQ = await client.query(
     `SELECT payout_id, period_type, period_start, period_end, status
        FROM public.technician_payout_periods
@@ -8425,21 +8439,23 @@ async function _regenerateDraftPayoutContractLines({ client, payout_id, actor_us
     newTotal += Number(ln.earn_amount || 0);
   }
 
-  try {
-    await auditLog(req || { actor: { username: actor_username || 'super_admin', role: 'super_admin' } }, { action: 'PAYOUT_CONTRACT_REGENERATE', target_username: null, target_role: null, meta: {
-      payout_id,
-      status,
-      old_lines: oldLines,
-      old_total: oldTotal,
-      new_lines: inserted,
-      new_total: Number(newTotal.toFixed(2)),
-      adjustments_count: adjustmentsCount,
-      adjustments_total: adjustmentsTotal,
-      errors: computed.errors || [],
-      engine: 'contract-v10-app-button',
-      ignored_legacy_fields: ['line_total','unit_price','total_price','paid_amount','final_price','special_bonus_amount','percentage','company_cut_percent','commission_percent'],
-    } });
-  } catch {}
+  if (!skipAudit) {
+    try {
+      await auditLog(req || { actor: { username: actor_username || 'super_admin', role: 'super_admin' } }, { action: 'PAYOUT_CONTRACT_REGENERATE', target_username: null, target_role: null, meta: {
+        payout_id,
+        status,
+        old_lines: oldLines,
+        old_total: oldTotal,
+        new_lines: inserted,
+        new_total: Number(newTotal.toFixed(2)),
+        adjustments_count: adjustmentsCount,
+        adjustments_total: adjustmentsTotal,
+        errors: computed.errors || [],
+        engine: 'contract-v10-app-button',
+        ignored_legacy_fields: ['line_total','unit_price','total_price','paid_amount','final_price','special_bonus_amount','percentage','company_cut_percent','commission_percent'],
+      } });
+    } catch {}
+  }
 
   return {
     ok: true,
@@ -9247,41 +9263,8 @@ async function _upsertPaymentAndMaybeMarkPaid(payout_id, tech, paid_amount, slip
   }
 
   // if all techs paid -> mark payout as paid
-  const techsQ = await pool.query(
-    `
-    WITH gross AS (
-      SELECT technician_username,
-             COALESCE(SUM(earn_amount),0) AS gross_amount
-        FROM public.technician_payout_lines
-       WHERE payout_id=$1
-       GROUP BY technician_username
-    ),
-    adj AS (
-      SELECT technician_username,
-             COALESCE(SUM(adj_amount),0) AS adj_total
-        FROM public.technician_payout_adjustments
-       WHERE payout_id=$1
-       GROUP BY technician_username
-    ),
-    dep AS (
-      SELECT technician_username,
-             COALESCE(SUM(amount),0) AS deposit_deduction_amount
-        FROM public.technician_deposit_ledger
-       WHERE payout_id=$1 AND transaction_type='collect'
-       GROUP BY technician_username
-    )
-    SELECT g.technician_username,
-           (g.gross_amount + COALESCE(a.adj_total,0) - COALESCE(d.deposit_deduction_amount,0)) AS net_amount,
-           COALESCE(p.paid_amount,0) AS paid_amount
-      FROM gross g
-      LEFT JOIN adj a ON a.technician_username=g.technician_username
-      LEFT JOIN dep d ON d.technician_username=g.technician_username
-      LEFT JOIN public.technician_payout_payments p ON p.payout_id=$1 AND p.technician_username=g.technician_username
-    `,
-    [payout_id]
-  );
-
-  const allPaid = (techsQ.rows || []).length > 0 && (techsQ.rows || []).every(r => _paidStatus(r.net_amount, r.paid_amount) === 'paid');
+  const techRows = await accountingPayoutAdjustments.getPayoutTechSettlementRows(pool, payout_id);
+  const allPaid = accountingPayoutAdjustments.isPayoutFullyPaidFromRows(techRows);
   if (allPaid) {
     await pool.query(`UPDATE public.technician_payout_periods SET status='paid' WHERE payout_id=$1`, [payout_id]);
   }
@@ -9424,34 +9407,9 @@ app.post('/admin/super/payouts/:payout_id/pay_bulk', requireSuperAdmin, async (r
     if (!period) return res.status(404).json({ ok:false, error:'PAYOUT_NOT_FOUND' });
     if (String(period.status) === 'paid') return res.status(409).json({ ok:false, error:'PAYOUT_ALREADY_PAID' });
 
-    // Load net amounts for all techs in this payout
-    const techsQ = await pool.query(
-      `
-      WITH gross AS (
-        SELECT technician_username,
-               COALESCE(SUM(earn_amount),0) AS gross_amount
-          FROM public.technician_payout_lines
-         WHERE payout_id=$1
-         GROUP BY technician_username
-      ),
-      adj AS (
-        SELECT technician_username,
-               COALESCE(SUM(adj_amount),0) AS adj_total
-          FROM public.technician_payout_adjustments
-         WHERE payout_id=$1
-         GROUP BY technician_username
-      )
-      SELECT g.technician_username,
-             g.gross_amount,
-             COALESCE(a.adj_total,0) AS adj_total,
-             (g.gross_amount + COALESCE(a.adj_total,0)) AS net_amount
-        FROM gross g
-        LEFT JOIN adj a ON a.technician_username=g.technician_username
-      ORDER BY g.technician_username ASC
-      `,
-      [payout_id]
-    );
-    const rows = techsQ.rows || [];
+    // Load net amounts for every technician touched by lines, adjustments,
+    // payments, or deposit collections in this payout.
+    const rows = await accountingPayoutAdjustments.getPayoutTechSettlementRows(pool, payout_id);
     if (!rows.length) return res.json({ ok:true, payout_id, updated:0, status: period.status });
     const actor = req.actor?.username || null;
     const netMap = new Map(rows.map(r=>[String(r.technician_username), _money(r.net_amount)]));
@@ -9513,41 +9471,9 @@ app.post('/admin/super/payouts/:payout_id/pay_bulk', requireSuperAdmin, async (r
       } catch {}
     }
 
-    // Mark paid if all techs are paid now
-    const paidCheck = await client.query(
-      `
-      WITH gross AS (
-        SELECT technician_username,
-               COALESCE(SUM(earn_amount),0) AS gross_amount
-          FROM public.technician_payout_lines
-         WHERE payout_id=$1
-         GROUP BY technician_username
-      ),
-      adj AS (
-        SELECT technician_username,
-               COALESCE(SUM(adj_amount),0) AS adj_total
-          FROM public.technician_payout_adjustments
-         WHERE payout_id=$1
-         GROUP BY technician_username
-      ),
-      dep AS (
-        SELECT technician_username,
-               COALESCE(SUM(amount),0) AS deposit_deduction_amount
-          FROM public.technician_deposit_ledger
-         WHERE payout_id=$1 AND transaction_type='collect'
-         GROUP BY technician_username
-      )
-      SELECT g.technician_username,
-             (g.gross_amount + COALESCE(a.adj_total,0) - COALESCE(d.deposit_deduction_amount,0)) AS net_amount,
-             COALESCE(p.paid_amount,0) AS paid_amount
-        FROM gross g
-        LEFT JOIN adj a ON a.technician_username=g.technician_username
-        LEFT JOIN dep d ON d.technician_username=g.technician_username
-        LEFT JOIN public.technician_payout_payments p ON p.payout_id=$1 AND p.technician_username=g.technician_username
-      `,
-      [payout_id]
-    );
-    const allPaid = (paidCheck.rows || []).length > 0 && (paidCheck.rows || []).every(r => _paidStatus(r.net_amount, r.paid_amount) === 'paid');
+    // Mark paid if all techs are paid now.
+    const paidCheckRows = await accountingPayoutAdjustments.getPayoutTechSettlementRows(client, payout_id);
+    const allPaid = accountingPayoutAdjustments.isPayoutFullyPaidFromRows(paidCheckRows);
     if (allPaid) {
       await client.query(`UPDATE public.technician_payout_periods SET status='paid' WHERE payout_id=$1`, [payout_id]);
     }
@@ -9646,36 +9572,8 @@ app.post('/admin/super/payouts/legacy_settle', requireSuperAdmin, async (req, re
 
       if (periodTouched) {
         touched_periods++;
-        const paidCheck = await client.query(
-          `WITH gross AS (
-             SELECT technician_username, COALESCE(SUM(earn_amount),0) AS gross_amount
-               FROM public.technician_payout_lines
-              WHERE payout_id=$1
-              GROUP BY technician_username
-           ),
-           adj AS (
-             SELECT technician_username, COALESCE(SUM(adj_amount),0) AS adj_total
-               FROM public.technician_payout_adjustments
-              WHERE payout_id=$1
-              GROUP BY technician_username
-           ),
-           dep AS (
-             SELECT technician_username, COALESCE(SUM(amount),0) AS deposit_deduction_amount
-               FROM public.technician_deposit_ledger
-              WHERE payout_id=$1 AND transaction_type='collect'
-              GROUP BY technician_username
-           )
-           SELECT g.technician_username,
-                  (g.gross_amount + COALESCE(a.adj_total,0) - COALESCE(d.deposit_deduction_amount,0)) AS net_amount,
-                  COALESCE(p.paid_amount,0) AS paid_amount
-             FROM gross g
-             LEFT JOIN adj a ON a.technician_username=g.technician_username
-             LEFT JOIN dep d ON d.technician_username=g.technician_username
-             LEFT JOIN public.technician_payout_payments p
-               ON p.payout_id=$1 AND p.technician_username=g.technician_username`,
-          [payout_id]
-        );
-        const allPaid = (paidCheck.rows || []).length > 0 && (paidCheck.rows || []).every(r => _paidStatus(r.net_amount, r.paid_amount) === 'paid');
+        const paidCheckRows = await accountingPayoutAdjustments.getPayoutTechSettlementRows(client, payout_id);
+        const allPaid = accountingPayoutAdjustments.isPayoutFullyPaidFromRows(paidCheckRows);
         if (allPaid) {
           await client.query(`UPDATE public.technician_payout_periods SET status='paid' WHERE payout_id=$1`, [payout_id]);
         }
@@ -23273,6 +23171,60 @@ app.get('/admin/accounting/documents/:document_id/print', requireAccountingPermi
   } catch (e) {
     console.error('GET /admin/accounting/documents/:document_id/print', e);
     return res.status(500).send('Print document failed');
+  }
+});
+
+app.post('/admin/accounting/payouts/:payout_id/adjust', requireAccountingPermission('accounting_mark_payout_paid'), async (req, res) => {
+  const client = await pool.connect();
+  let began = false;
+  try {
+    const payout_id = String(req.params.payout_id || '').trim();
+    await client.query('BEGIN');
+    began = true;
+    const result = await accountingPayoutAdjustments.applyAccountingPositivePayoutAdjustment({
+      client,
+      payout_id,
+      body: req.body || {},
+      actor: _accountingActor(req),
+      req,
+      regenerateDraftPayoutContractLines: _regenerateDraftPayoutContractLines,
+    });
+    await client.query('COMMIT');
+    began = false;
+    return res.json({
+      ok: true,
+      payout_id,
+      technician_username: result.adjustment?.technician_username || req.body?.technician_username || null,
+      adjustment: result.adjustment,
+      payment: result.payment || null,
+      totals: result.totals,
+      paid_status: result.totals?.paid_status || null,
+      period_status_before: result.period_status_before || null,
+      period_status_after: result.period_status_after || null,
+      regenerated: !!result.regenerated,
+      replayed: !!result.replayed,
+    });
+  } catch (e) {
+    if (began) { try { await client.query('ROLLBACK'); } catch {} }
+    console.error('POST /admin/accounting/payouts/:payout_id/adjust', e);
+    const code = Number(e.statusCode || 500);
+    const error = String(e.code || e.message || 'PAYOUT_ADJUSTMENT_FAILED');
+    if (error === 'PAYOUT_ADJUSTMENT_MIGRATION_REQUIRED') return res.status(503).json({ ok:false, error });
+    if (error === 'IDEMPOTENCY_KEY_REUSED') return res.status(409).json({ ok:false, error });
+    if (error === 'PAYOUT_PERIOD_NOT_CLOSED') return res.status(409).json({ ok:false, error, period_end: e.period_end || null });
+    if (['PAYOUT_NOT_FOUND','JOB_NOT_FOUND'].includes(error)) return res.status(code === 500 ? 404 : code).json({ ok:false, error });
+    if ([
+      'MISSING_PAYOUT_ID',
+      'MISSING_TECHNICIAN_USERNAME',
+      'INVALID_ADJUSTMENT_AMOUNT',
+      'MISSING_REASON',
+      'IDEMPOTENCY_KEY_REQUIRED',
+      'CONFIRM_ADJUSTMENT_REQUIRED',
+      'INVALID_JOB_ID',
+    ].includes(error)) return res.status(400).json({ ok:false, error });
+    return res.status(code >= 400 && code < 600 ? code : 500).json({ ok:false, error:'PAYOUT_ADJUSTMENT_FAILED' });
+  } finally {
+    client.release();
   }
 });
 

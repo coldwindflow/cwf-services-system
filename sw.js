@@ -1,7 +1,8 @@
 /* CWF root service worker: Tech App shell/cache refresh */
 const CWF_TECH_BUILD_ID = "20260622_urgent_offer_session_v1";
+const CWF_ACCOUNTING_CACHE_BUMP = "20260703_accounting_payout_adjustment_v1";
 const CACHE_PREFIX = "cwf-root-tech-app-";
-const CACHE_NAME = `${CACHE_PREFIX}${CWF_TECH_BUILD_ID}`;
+const CACHE_NAME = `${CACHE_PREFIX}${CWF_TECH_BUILD_ID}-${CWF_ACCOUNTING_CACHE_BUMP}`;
 const SHELL_ASSETS = [
   `/tech.html?v=${CWF_TECH_BUILD_ID}`,
   `/app.js?v=${CWF_TECH_BUILD_ID}`,
