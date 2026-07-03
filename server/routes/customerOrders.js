@@ -14,6 +14,9 @@ const { createOmiseClient, chargeToOrderStatus, promptPayQrUri } = require("../s
 const DELIVERY_METHODS = new Set(["pickup", "ship"]);
 const INSTALL_OPTIONS = new Set(["none", "cwf"]);
 const PAYMENT_METHODS = new Set(["card", "promptpay"]);
+// Admin-driven fulfilment lifecycle for a paid order (separate from the payment
+// `status`). Kept as a flat allow-list — the admin advances it manually.
+const FULFILLMENT_STATUSES = new Set(["confirmed", "preparing", "shipped", "installing", "completed", "cancelled"]);
 // An order can only START a payment from one of these states (a fresh order, or
 // one whose previous attempt failed). This blocks paying twice for one order.
 const PAYABLE_STATUSES = new Set(["pending_payment", "payment_failed"]);
@@ -100,6 +103,10 @@ function publicOrder(row) {
     items: Array.isArray(row.items) ? row.items : (row.items || []),
     subtotal: Number(row.subtotal) || 0,
     status: row.status,
+    // Fulfilment is undefined until the fulfilment migration/columns exist; a
+    // paid-but-not-yet-handled order simply has an empty fulfilment_status.
+    fulfillment_status: row.fulfillment_status || "",
+    admin_note: row.admin_note || "",
     created_at: row.created_at,
   };
 }
@@ -167,12 +174,20 @@ function createCustomerOrdersRoutes(deps = {}) {
   router.get("/public/orders/:code", async (req, res) => {
     const code = cleanText(req.params.code, 40);
     if (!code) return res.status(400).json({ error: "order code required" });
+    const base = "order_code, customer_name, customer_phone, delivery_method, install_option, address, items, subtotal, status, created_at";
     try {
-      const found = await pool.query(
-        `SELECT order_code, customer_name, customer_phone, delivery_method, install_option, address, items, subtotal, status, created_at
-           FROM public.customer_orders WHERE order_code=$1 LIMIT 1`,
-        [code]
-      );
+      let found;
+      try {
+        // Include fulfilment fields so the customer can track their order. If the
+        // fulfilment migration hasn't run yet, fall back to the base columns.
+        found = await pool.query(
+          `SELECT ${base}, fulfillment_status, admin_note FROM public.customer_orders WHERE order_code=$1 LIMIT 1`,
+          [code]
+        );
+      } catch (inner) {
+        if (!isUndefinedColumn(inner)) throw inner;
+        found = await pool.query(`SELECT ${base} FROM public.customer_orders WHERE order_code=$1 LIMIT 1`, [code]);
+      }
       if (!found.rows.length) return res.status(404).json({ error: "ไม่พบคำสั่งซื้อนี้" });
       return res.json({ ok: true, order: publicOrder(found.rows[0]) });
     } catch (error) {
@@ -311,13 +326,13 @@ function createCustomerOrdersRoutes(deps = {}) {
   // payment columns exist; on a DB that has orders but not yet the payment
   // migration, it falls back to the base columns so the list still loads.
   const ADMIN_BASE_COLUMNS = "order_code, customer_name, customer_phone, delivery_method, install_option, address, items, subtotal, status, note, created_at";
-  const ADMIN_PAYMENT_COLUMNS = "payment_method, payment_status, payment_charge_id, paid_at";
+  const ADMIN_EXTRA_COLUMNS = "payment_method, payment_status, payment_charge_id, paid_at, fulfillment_status, admin_note";
   router.get("/admin/orders", adminGuard, async (_req, res) => {
     try {
       let rows;
       try {
         rows = await pool.query(
-          `SELECT ${ADMIN_BASE_COLUMNS}, ${ADMIN_PAYMENT_COLUMNS}
+          `SELECT ${ADMIN_BASE_COLUMNS}, ${ADMIN_EXTRA_COLUMNS}
              FROM public.customer_orders ORDER BY created_at DESC LIMIT 200`
         );
       } catch (inner) {
@@ -332,6 +347,38 @@ function createCustomerOrdersRoutes(deps = {}) {
       if (isSchemaError(error)) return res.json({ ok: true, orders: [], schema_ready: false });
       console.error("[orders/admin-list] failed", error);
       return res.status(500).json({ error: "โหลดรายการคำสั่งซื้อไม่สำเร็จ" });
+    }
+  });
+
+  // Admin: advance an order's fulfilment status and/or leave a customer-visible
+  // note. Payment `status` is never touched here — this is the fulfilment lane.
+  router.post("/admin/orders/:code/status", adminGuard, async (req, res) => {
+    const code = cleanText(req.params.code, 40);
+    if (!code) return res.status(400).json({ error: "order code required" });
+    const body = req.body && typeof req.body === "object" ? req.body : {};
+    const fulfillment = cleanText(body.fulfillment_status, 20);
+    const hasNote = Object.prototype.hasOwnProperty.call(body, "admin_note");
+    const adminNote = hasNote ? cleanText(body.admin_note, 500) : null;
+    if (!fulfillment && !hasNote) return res.status(400).json({ error: "no changes" });
+    if (fulfillment && !FULFILLMENT_STATUSES.has(fulfillment)) {
+      return res.status(400).json({ error: "fulfillment_status invalid" });
+    }
+    try {
+      const updated = await pool.query(
+        `UPDATE public.customer_orders
+            SET fulfillment_status = COALESCE($2, fulfillment_status),
+                admin_note = CASE WHEN $3 THEN $4 ELSE admin_note END,
+                updated_at = now()
+          WHERE order_code=$1
+          RETURNING ${ADMIN_BASE_COLUMNS}, ${ADMIN_EXTRA_COLUMNS}`,
+        [code, fulfillment || null, hasNote, adminNote]
+      );
+      if (!updated.rows.length) return res.status(404).json({ error: "ไม่พบคำสั่งซื้อนี้" });
+      return res.json({ ok: true, order: adminOrder(updated.rows[0]) });
+    } catch (error) {
+      if (isSchemaError(error)) return res.status(503).json({ error: "ORDERS_SCHEMA_NOT_READY" });
+      console.error("[orders/admin-status] failed", error);
+      return res.status(500).json({ error: "อัปเดตสถานะไม่สำเร็จ" });
     }
   });
 

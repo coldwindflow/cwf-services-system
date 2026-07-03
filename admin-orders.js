@@ -39,6 +39,18 @@ function statusMeta(status) {
 const METHOD_LABEL = { promptpay: "พร้อมเพย์", card: "บัตร" };
 const DELIVERY_LABEL = { pickup: "รับที่ร้าน", ship: "จัดส่ง" };
 const INSTALL_LABEL = { none: "ไม่ติดตั้ง", cwf: "ติดตั้งโดยช่าง CWF" };
+// Admin fulfilment lifecycle (must mirror FULFILLMENT_STATUSES in
+// server/routes/customerOrders.js).
+const FULFILLMENT_OPTIONS = [
+  { value: "", label: "— ยังไม่จัดการ —" },
+  { value: "confirmed", label: "ยืนยันคำสั่งซื้อ" },
+  { value: "preparing", label: "กำลังเตรียมสินค้า" },
+  { value: "shipped", label: "จัดส่งแล้ว" },
+  { value: "installing", label: "กำลังติดตั้ง" },
+  { value: "completed", label: "เสร็จสิ้น" },
+  { value: "cancelled", label: "ยกเลิก" },
+];
+const FULFILLMENT_LABEL = FULFILLMENT_OPTIONS.reduce((m, o) => { if (o.value) m[o.value] = o.label; return m; }, {});
 
 function itemsSummary(items) {
   if (!Array.isArray(items) || !items.length) return "";
@@ -69,6 +81,30 @@ function orderCardHtml(o) {
       ${o.address ? `<div class="ao-card-address ao-muted">📍 ${esc(o.address)}</div>` : ""}
       ${(paidLine || chargeLine) ? `<div class="ao-card-row ao-pay-detail">${paidLine}${chargeLine}</div>` : ""}
       ${o.note ? `<div class="ao-card-note">📝 ${esc(o.note)}</div>` : ""}
+      ${fulfillmentControlHtml(o)}
+    </div>`;
+}
+
+// Admin fulfilment control: current stage + a selector, a customer-visible note,
+// and a save button. Wired via event delegation on the list container.
+function fulfillmentControlHtml(o) {
+  const current = o.fulfillment_status || "";
+  const badge = current
+    ? `<span class="ao-badge ao-badge-fulfil">${esc(FULFILLMENT_LABEL[current] || current)}</span>`
+    : `<span class="ao-muted">ยังไม่จัดการ</span>`;
+  const options = FULFILLMENT_OPTIONS
+    .map((opt) => `<option value="${opt.value}"${opt.value === current ? " selected" : ""}>${esc(opt.label)}</option>`)
+    .join("");
+  return `
+    <div class="ao-fulfil" data-order-code="${esc(o.order_code)}">
+      <div class="ao-fulfil-head"><span class="ao-muted">การจัดการ:</span> ${badge}</div>
+      <div class="ao-fulfil-row">
+        <select class="ao-filter" data-fulfil-select>${options}</select>
+        <button class="secondary btn-small" type="button" data-fulfil-save>บันทึก</button>
+      </div>
+      <input class="ao-search ao-fulfil-note" data-fulfil-note maxlength="500"
+        placeholder="โน้ตถึงลูกค้า เช่น เลขพัสดุ / นัดติดตั้ง / ค่าส่งที่ยืนยัน" value="${esc(o.admin_note || "")}">
+      <span class="ao-fulfil-status" data-fulfil-msg hidden></span>
     </div>`;
 }
 
@@ -121,10 +157,45 @@ async function loadOrders() {
   }
 }
 
+async function saveFulfillment(wrap) {
+  const code = wrap.getAttribute("data-order-code");
+  const select = wrap.querySelector("[data-fulfil-select]");
+  const note = wrap.querySelector("[data-fulfil-note]");
+  const btn = wrap.querySelector("[data-fulfil-save]");
+  const msg = wrap.querySelector("[data-fulfil-msg]");
+  const showMsg = (text, ok) => { if (msg) { msg.textContent = text; msg.hidden = false; msg.classList.toggle("is-ok", !!ok); msg.classList.toggle("is-err", !ok); } };
+  if (btn) { btn.disabled = true; btn.textContent = "กำลังบันทึก..."; }
+  try {
+    const data = await apiFetch(`/admin/orders/${encodeURIComponent(code)}/status`, {
+      method: "POST",
+      body: JSON.stringify({ fulfillment_status: select ? select.value : "", admin_note: note ? note.value : "" }),
+    });
+    // Update the in-memory order so re-render keeps the change without a full reload.
+    const updated = data && data.order;
+    if (updated) {
+      const idx = allOrders.findIndex((o) => o.order_code === code);
+      if (idx >= 0) allOrders[idx] = updated;
+      renderSummary(allOrders);
+    }
+    showMsg("บันทึกแล้ว ✓", true);
+  } catch (_err) {
+    showMsg("บันทึกไม่สำเร็จ", false);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = "บันทึก"; }
+  }
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   el("btnReloadOrders")?.addEventListener("click", loadOrders);
   el("orders_search")?.addEventListener("input", (e) => { filterState.search = e.target.value || ""; renderList(); });
   el("orders_filter_status")?.addEventListener("change", (e) => { filterState.status = e.target.value || ""; renderList(); });
   el("orders_filter_method")?.addEventListener("change", (e) => { filterState.method = e.target.value || ""; renderList(); });
+  // Delegated: fulfilment save buttons live inside re-rendered cards.
+  el("orders_list")?.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-fulfil-save]");
+    if (!btn) return;
+    const wrap = btn.closest("[data-order-code]");
+    if (wrap) saveFulfillment(wrap);
+  });
   loadOrders();
 });

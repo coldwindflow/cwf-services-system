@@ -14,6 +14,7 @@
     "migrate:customer-orders": "node scripts/run-customer-orders-migration.js",
     "migrate:catalog-booking-mode-purchase": "node scripts/run-catalog-booking-mode-purchase-migration.js",
     "migrate:customer-orders-payment": "node scripts/run-customer-orders-payment-migration.js",
+    "migrate:customer-orders-fulfillment": "node scripts/run-customer-orders-fulfillment-migration.js",
     "migrate:store-buy": "node scripts/run-store-buy-migrations.js",
     "test": "node --test test/*.test.js"
   },

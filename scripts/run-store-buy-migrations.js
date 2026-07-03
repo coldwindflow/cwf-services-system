@@ -4,6 +4,7 @@
 //   1. customer_orders table
 //   2. catalog_items.booking_mode CHECK widened to allow 'purchase'
 //   3. customer_orders payment_* columns (Omise online payment)
+//   4. customer_orders fulfilment columns (order lifecycle)
 //
 // Why this is safe to run (including on production, and repeatedly):
 //   - Each underlying migration is additive-only (CREATE ... IF NOT EXISTS /
@@ -21,11 +22,13 @@
 const ordersRunner = require("./run-customer-orders-migration");
 const bookingModeRunner = require("./run-catalog-booking-mode-purchase-migration");
 const ordersPaymentRunner = require("./run-customer-orders-payment-migration");
+const ordersFulfillmentRunner = require("./run-customer-orders-fulfillment-migration");
 
 const STEPS = [
   { name: "customer_orders table", runner: ordersRunner },
   { name: "catalog booking_mode 'purchase'", runner: bookingModeRunner },
   { name: "customer_orders payment columns", runner: ordersPaymentRunner },
+  { name: "customer_orders fulfilment columns", runner: ordersFulfillmentRunner },
 ];
 
 async function runAll(options = {}) {

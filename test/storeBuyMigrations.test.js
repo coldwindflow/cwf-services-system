@@ -6,6 +6,7 @@ const orchestrator = require("../scripts/run-store-buy-migrations");
 const ordersRunner = require("../scripts/run-customer-orders-migration");
 const bookingModeRunner = require("../scripts/run-catalog-booking-mode-purchase-migration");
 const ordersPaymentRunner = require("../scripts/run-customer-orders-payment-migration");
+const ordersFulfillmentRunner = require("../scripts/run-customer-orders-fulfillment-migration");
 
 function makeLogger() {
   const lines = [];
@@ -13,10 +14,11 @@ function makeLogger() {
 }
 
 test("STEPS wires the buy-flow migration runners in the correct order", () => {
-  assert.equal(orchestrator.STEPS.length, 3);
+  assert.equal(orchestrator.STEPS.length, 4);
   assert.equal(orchestrator.STEPS[0].runner, ordersRunner);
   assert.equal(orchestrator.STEPS[1].runner, bookingModeRunner);
   assert.equal(orchestrator.STEPS[2].runner, ordersPaymentRunner);
+  assert.equal(orchestrator.STEPS[3].runner, ordersFulfillmentRunner);
 });
 
 test("runAll runs every step in order and returns 0 when all succeed", async () => {
