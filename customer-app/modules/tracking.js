@@ -1012,6 +1012,60 @@
     return content || root.utils.stateBox("", "รูปงานจะแสดงหลังช่างอัปโหลดและงานเสร็จ");
   }
 
+  // ---- Store order tracking (codes like CWF-XXXX) --------------------------
+  const ORDER_PAYMENT_COPY = {
+    paid: { label: "ชำระเงินแล้ว", cls: "success" },
+    payment_processing: { label: "รอการชำระเงิน", cls: "loading" },
+    pending_payment: { label: "ยังไม่ได้ชำระเงิน", cls: "" },
+    payment_failed: { label: "การชำระเงินไม่สำเร็จ", cls: "error" },
+  };
+  const ORDER_FULFILMENT_STEPS = [
+    { key: "confirmed", label: "ยืนยันคำสั่งซื้อ" },
+    { key: "preparing", label: "กำลังเตรียมสินค้า" },
+    { key: "shipped", label: "จัดส่งแล้ว" },
+    { key: "installing", label: "กำลังติดตั้ง" },
+    { key: "completed", label: "เสร็จสิ้น" },
+  ];
+  const ORDER_FULFILMENT_LABEL = { cancelled: "ยกเลิกคำสั่งซื้อ", ...ORDER_FULFILMENT_STEPS.reduce((m, s) => { m[s.key] = s.label; return m; }, {}) };
+
+  function renderOrderResult(order) {
+    if (!order) return root.utils.stateBox("error", "ไม่พบคำสั่งซื้อนี้");
+    const pay = ORDER_PAYMENT_COPY[order.status] || { label: order.status || "-", cls: "" };
+    const fulfil = order.fulfillment_status || "";
+    const items = Array.isArray(order.items) ? order.items : [];
+    const itemsHtml = items.map((it) => `<div class="data-row"><span>${esc(it.name || it.item_name || "")} × ${Number(it.qty) || 1}</span><span class="muted">${root.utils.formatBaht((Number(it.unit_price) || 0) * (Number(it.qty) || 1))}</span></div>`).join("");
+    const steps = ORDER_FULFILMENT_STEPS;
+    const activeIndex = steps.findIndex((s) => s.key === fulfil);
+    const cancelled = fulfil === "cancelled";
+    const timeline = cancelled
+      ? `<div class="status-hero is-error"><strong>ยกเลิกคำสั่งซื้อ</strong></div>`
+      : `<ol class="order-steps">${steps.map((s, i) => `<li class="order-step ${activeIndex >= 0 && i <= activeIndex ? "is-done" : ""}">${esc(s.label)}</li>`).join("")}</ol>`;
+    return `
+      <div class="tracking-result-card order-result-card">
+        <div class="status-hero is-${pay.cls}">
+          <strong>${esc(pay.label)}</strong>
+          <span>คำสั่งซื้อ ${esc(order.order_code || "")}</span>
+        </div>
+        <div class="order-status-line">สถานะการจัดส่ง/ติดตั้ง: <strong>${esc(fulfil ? (ORDER_FULFILMENT_LABEL[fulfil] || fulfil) : "รอแอดมินยืนยัน")}</strong></div>
+        ${!cancelled ? timeline : timeline}
+        <div class="order-items">${itemsHtml}</div>
+        <div class="data-row order-total"><strong>ยอดชำระ</strong><strong>${root.utils.formatBaht(Number(order.subtotal) || 0)}</strong></div>
+        ${order.admin_note ? `<div class="order-admin-note">📌 ${esc(order.admin_note)}</div>` : ""}
+        <p class="muted mini">* ค่าจัดส่ง/ติดตั้งเพิ่มเติม (ถ้ามี) แอดมินจะแจ้งในโน้ตด้านบนหรือทาง LINE</p>
+      </div>`;
+  }
+
+  async function lookupOrder(container, code) {
+    const box = container.querySelector("[data-tracking-result]");
+    box.innerHTML = root.utils.stateBox("loading", "กำลังค้นหาคำสั่งซื้อ...");
+    try {
+      const res = await root.api.getOrder(code);
+      box.innerHTML = renderOrderResult(res && res.order);
+    } catch (_error) {
+      box.innerHTML = root.utils.stateBox("error", "ไม่พบคำสั่งซื้อนี้ กรุณาตรวจสอบเลขคำสั่งซื้ออีกครั้ง");
+    }
+  }
+
   function renderTrackingResult() {
     const state = root.state.tracking;
     if (state.status === "idle") return root.utils.stateBox("", "กรอกเลขงานหรือรหัสติดตามเพื่อดูสถานะจากระบบ");
@@ -1161,6 +1215,9 @@
       container.querySelector("[data-tracking-result]").innerHTML = renderTrackingResult();
       return;
     }
+    // Store order codes look like "CWF-XXXX" — route them to the order lookup
+    // instead of the job/booking tracker.
+    if (/^CWF-/i.test(q)) { await lookupOrder(container, q); return; }
     root.state.setTracking({ status: "loading", data: null, error: "" });
     container.querySelector("[data-tracking-result]").innerHTML = renderTrackingResult();
     try {
@@ -1275,9 +1332,9 @@
         <section class="screen">
           ${root.ui?.pageHeaderHtml ? root.ui.pageHeaderHtml("tracking") : ""}
           <div class="hero tracking-hero">
-            <div class="hero-badge">Live job status</div>
-            <h2>ติดตามงาน</h2>
-            <p>ใส่เลขงานหรือรหัสติดตาม เพื่อดูสถานะสำคัญตั้งแต่รับคำขอจนจบงาน</p>
+            <div class="hero-badge">Live status</div>
+            <h2>ติดตามงาน / คำสั่งซื้อ</h2>
+            <p>ใส่เลขงาน รหัสติดตาม หรือเลขคำสั่งซื้อ (CWF-...) เพื่อดูสถานะตั้งแต่ต้นจนจบ</p>
           </div>
           <section class="card lookup-card">
             <div class="section-head">
@@ -1285,11 +1342,11 @@
               <h2>ค้นหางานของคุณ</h2>
             </div>
             <div class="field">
-              <label for="tracking-code">เลขงาน / รหัสติดตาม</label>
-              <input id="tracking-code" class="input" placeholder="เช่น CWFXXXXXXX" value="${esc(code)}">
+              <label for="tracking-code">เลขงาน / รหัสติดตาม / เลขคำสั่งซื้อ</label>
+              <input id="tracking-code" class="input" placeholder="เช่น CWFXXXXXXX หรือ CWF-XXXX" value="${esc(code)}">
             </div>
             <div class="button-row">
-              <button class="primary-btn" type="button" data-action="track-read">ตรวจสอบสถานะงาน</button>
+              <button class="primary-btn" type="button" data-action="track-read">ตรวจสอบสถานะ</button>
             </div>
           </section>
           <section class="card">

@@ -1799,7 +1799,9 @@
         <div><span>ยอดชำระ</span><strong>${esc(root.utils.formatBaht(o.amount))}</strong></div>
       </div>
       <p>แอดมินจะติดต่อกลับเพื่อยืนยันการจัดส่ง/ติดตั้ง และค่าใช้จ่ายเพิ่มเติม (ถ้ามี)</p>
+      ${o.orderCode ? `<p class="purchase-note">ติดตามสถานะคำสั่งซื้อได้ที่เมนู "ติดตาม" โดยใส่เลข ${esc(o.orderCode)}</p>` : ""}
       <div class="contact-sheet-actions">
+        ${o.orderCode ? `<button class="secondary-btn" type="button" data-route="tracking" data-track-order="${esc(o.orderCode)}">ติดตามคำสั่งซื้อ</button>` : ""}
         <a class="primary-btn" href="https://lin.ee/fG1Oq7y" target="_blank" rel="noopener noreferrer">แจ้งแอดมินทาง LINE</a>
       </div>
     `;
@@ -1871,7 +1873,11 @@
       const clearError = () => { if (errEl) errEl.hidden = true; };
       const goPaid = () => {
         if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
-        sheet.innerHTML = paidConfirmHtml(item, o);
+        const orderCode = (o.order && o.order.order_code) || "";
+        // Prefill the tracking screen so the "ติดตามคำสั่งซื้อ" button lands on
+        // the live status of this exact order.
+        if (orderCode) root.state.updateDraft?.("tracking", { trackingCode: orderCode });
+        sheet.innerHTML = paidConfirmHtml(item, { ...o, orderCode });
         bindClose();
         trackItemEvent("cwf_store_purchase_paid", item, { method: o.lastMethod, amount: o.amount });
       };
@@ -1997,6 +2003,7 @@
         renderPaymentStep({ order, qty, delivery, install, name, phone, amount }, config);
         return;
       }
+      if (order?.order_code) root.state.updateDraft?.("tracking", { trackingCode: order.order_code });
       if (sheet) sheet.innerHTML = purchaseConfirmHtml(item, { qty, delivery, install, name, phone, orderCode: order?.order_code || "" });
       bindClose();
     });
