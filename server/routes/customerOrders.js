@@ -1,25 +1,30 @@
 "use strict";
 
-// Customer product orders (buy flow — Phase 2).
+// Customer product orders (buy flow).
 //
-// Self-contained router: a customer places an order from the app's purchase
-// sheet (POST /public/orders), can look it up by code (GET /public/orders/:code),
-// and admins can list orders (GET /admin/orders). Payment is a later phase —
-// an order starts as "pending_payment". This module deliberately does NOT touch
-// booking, pricing, payout, or accounting logic.
+// Security invariants:
+// - Checkout snapshots product name/price from catalog tables only.
+// - Payment claims a unique attempt before any Omise call.
+// - Webhooks are verified, then reconciled against the real Omise charge.
 
 const express = require("express");
-const { createOmiseClient, chargeToOrderStatus, promptPayQrUri } = require("../services/omise");
+const crypto = require("crypto");
+const {
+  createOmiseClient,
+  chargeToOrderStatus,
+  promptPayQrUri,
+  bahtToSatang,
+  isAmbiguousOmiseError,
+  isRetryableOmiseRejection,
+} = require("../services/omise");
 
 const DELIVERY_METHODS = new Set(["pickup", "ship"]);
 const INSTALL_OPTIONS = new Set(["none", "cwf"]);
 const PAYMENT_METHODS = new Set(["card", "promptpay"]);
-// Admin-driven fulfilment lifecycle for a paid order (separate from the payment
-// `status`). Kept as a flat allow-list — the admin advances it manually.
 const FULFILLMENT_STATUSES = new Set(["confirmed", "preparing", "shipped", "installing", "completed", "cancelled"]);
-// An order can only START a payment from one of these states (a fresh order, or
-// one whose previous attempt failed). This blocks paying twice for one order.
 const PAYABLE_STATUSES = new Set(["pending_payment", "payment_failed"]);
+const PROCESSING_STATUS = "payment_processing";
+const PAYMENT_ATTEMPT_PREFIX = "processing:";
 const MAX_ITEMS = 20;
 const MAX_QTY = 99;
 
@@ -27,8 +32,11 @@ function cleanText(value, max) {
   return String(value == null ? "" : value).trim().slice(0, max);
 }
 
-// A short human-friendly order code, e.g. "CWF-LM= K3F9" without spaces:
-// CWF + base36(time) + 3 random chars. Uppercased, easy to read back to staff.
+function money(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? Number(n.toFixed(2)) : 0;
+}
+
 function generateOrderCode() {
   const t = Date.now().toString(36).toUpperCase();
   let rand = "";
@@ -36,8 +44,24 @@ function generateOrderCode() {
   return `CWF-${t}${rand}`;
 }
 
-// Validate + normalize an incoming order payload. Prices/subtotal are computed
-// server-side from the submitted line items (never trust a client total).
+function newAttemptId() {
+  return crypto.randomBytes(16).toString("hex");
+}
+
+function currentAttemptId(value) {
+  const s = cleanText(value, 200);
+  return s.startsWith(PAYMENT_ATTEMPT_PREFIX) ? s.slice(PAYMENT_ATTEMPT_PREFIX.length) : "";
+}
+
+function paymentStatusForOutput(value) {
+  const s = cleanText(value, 200);
+  return s.startsWith(PAYMENT_ATTEMPT_PREFIX) ? "processing" : s;
+}
+
+function isPaymentInFlight(row) {
+  return row && (row.status === PROCESSING_STATUS || Boolean(currentAttemptId(row.payment_status)));
+}
+
 function normalizeOrder(input) {
   const errors = [];
   const body = input && typeof input === "object" ? input : {};
@@ -57,21 +81,27 @@ function normalizeOrder(input) {
 
   const rawItems = Array.isArray(body.items) ? body.items : [];
   if (!rawItems.length) errors.push("items required");
-  if (rawItems.length > MAX_ITEMS) errors.push("too many items");
 
-  let subtotal = 0;
-  const items = rawItems.slice(0, MAX_ITEMS).map((raw, index) => {
+  const aggregate = new Map();
+  rawItems.forEach((raw, index) => {
     const item = raw && typeof raw === "object" ? raw : {};
     const itemId = cleanText(item.item_id, 80);
-    const itemName = cleanText(item.name || item.item_name, 200);
-    const qty = Math.max(1, Math.min(MAX_QTY, Math.round(Number(item.qty) || 0)));
-    const unitPrice = Number(item.unit_price);
     if (!itemId) errors.push(`items.${index}.item_id required`);
-    if (!itemName) errors.push(`items.${index}.name required`);
-    if (!Number.isFinite(unitPrice) || unitPrice < 0) errors.push(`items.${index}.unit_price invalid`);
-    const safePrice = Number.isFinite(unitPrice) && unitPrice >= 0 ? Math.round(unitPrice * 100) / 100 : 0;
-    subtotal += safePrice * qty;
-    return { item_id: itemId, name: itemName, qty, unit_price: safePrice };
+    if (itemId && !/^\d+$/.test(itemId)) errors.push(`items.${index}.item_id invalid`);
+
+    const qty = Number(item.qty);
+    if (!Number.isInteger(qty) || qty < 1 || qty > MAX_QTY) {
+      errors.push(`items.${index}.qty invalid`);
+      return;
+    }
+    if (!itemId || !/^\d+$/.test(itemId)) return;
+    aggregate.set(itemId, (aggregate.get(itemId) || 0) + qty);
+  });
+
+  const items = Array.from(aggregate.entries()).map(([item_id, qty]) => ({ item_id, qty }));
+  if (items.length > MAX_ITEMS) errors.push("too many items");
+  items.forEach((item) => {
+    if (item.qty > MAX_QTY) errors.push(`items.${item.item_id}.qty exceeds max`);
   });
 
   return {
@@ -84,13 +114,94 @@ function normalizeOrder(input) {
       install_option: install,
       address,
       items,
-      subtotal: Math.round(subtotal * 100) / 100,
       note: cleanText(body.note, 500),
     },
   };
 }
 
-// Only fields safe to return to the customer for an order.
+function catalogRuleCurrentlyActive(row, nowMs = Date.now()) {
+  if (row.price_rule_id == null || !row.rule_is_active) return false;
+  const from = row.rule_effective_from ? new Date(row.rule_effective_from).getTime() : null;
+  const to = row.rule_effective_to ? new Date(row.rule_effective_to).getTime() : null;
+  const afterStart = from === null || Number.isNaN(from) || nowMs >= from;
+  const beforeEnd = to === null || Number.isNaN(to) || nowMs <= to;
+  return afterStart && beforeEnd;
+}
+
+function catalogEffectiveUnitPrice(row, nowMs = Date.now()) {
+  return money(catalogRuleCurrentlyActive(row, nowMs) ? row.rule_active_price : row.base_price);
+}
+
+async function withDbClient(pool, fn) {
+  if (pool && typeof pool.connect === "function") {
+    const client = await pool.connect();
+    try {
+      return await fn(client);
+    } finally {
+      if (client && typeof client.release === "function") client.release();
+    }
+  }
+  return fn(pool);
+}
+
+async function inTransaction(pool, fn) {
+  return withDbClient(pool, async (client) => {
+    await client.query("BEGIN");
+    try {
+      const result = await fn(client);
+      await client.query("COMMIT");
+      return result;
+    } catch (error) {
+      try { await client.query("ROLLBACK"); } catch (_) {}
+      throw error;
+    }
+  });
+}
+
+async function buildServerOrderSnapshot(client, normalized) {
+  const itemIds = normalized.items.map((item) => Number(item.item_id));
+  const result = await client.query(
+    `SELECT ci.item_id, ci.item_name, ci.base_price, ci.is_active, ci.is_customer_visible,
+            ci.booking_mode, ci.price_rule_id,
+            pr.active_price AS rule_active_price, pr.is_active AS rule_is_active,
+            pr.effective_from AS rule_effective_from, pr.effective_to AS rule_effective_to
+       FROM public.catalog_items ci
+       LEFT JOIN public.customer_service_price_rules pr ON pr.rule_id = ci.price_rule_id
+      WHERE ci.item_id = ANY($1::bigint[])`,
+    [itemIds]
+  );
+  const byId = new Map((result.rows || []).map((row) => [String(row.item_id), row]));
+  const errors = [];
+  let subtotal = 0;
+  const items = [];
+  for (const requested of normalized.items) {
+    const row = byId.get(String(requested.item_id));
+    if (!row) { errors.push(`items.${requested.item_id} not found`); continue; }
+    if (row.is_active !== true) errors.push(`items.${requested.item_id} inactive`);
+    if (row.is_customer_visible !== true) errors.push(`items.${requested.item_id} hidden`);
+    if (row.booking_mode !== "purchase") errors.push(`items.${requested.item_id} not purchase`);
+    const unitPrice = catalogEffectiveUnitPrice(row);
+    if (!(unitPrice > 0)) errors.push(`items.${requested.item_id} price invalid`);
+    const lineTotal = money(unitPrice * requested.qty);
+    subtotal = money(subtotal + lineTotal);
+    items.push({
+      item_id: String(row.item_id),
+      name: row.item_name,
+      item_name: row.item_name,
+      qty: requested.qty,
+      unit_price: unitPrice,
+      line_total: lineTotal,
+    });
+  }
+  if (errors.length) {
+    const err = new Error("ORDER_ITEM_VALIDATION_FAILED");
+    err.code = "ORDER_ITEM_VALIDATION_FAILED";
+    err.details = errors;
+    throw err;
+  }
+  return { items, subtotal };
+}
+
 function publicOrder(row) {
   if (!row) return null;
   return {
@@ -103,16 +214,12 @@ function publicOrder(row) {
     items: Array.isArray(row.items) ? row.items : (row.items || []),
     subtotal: Number(row.subtotal) || 0,
     status: row.status,
-    // Fulfilment is undefined until the fulfilment migration/columns exist; a
-    // paid-but-not-yet-handled order simply has an empty fulfilment_status.
     fulfillment_status: row.fulfillment_status || "",
     admin_note: row.admin_note || "",
     created_at: row.created_at,
   };
 }
 
-// Admin view: everything in publicOrder plus payment details (for the orders
-// dashboard). note is admin-only too.
 function adminOrder(row) {
   const base = publicOrder(row);
   if (!base) return null;
@@ -120,7 +227,7 @@ function adminOrder(row) {
     ...base,
     note: row.note || "",
     payment_method: row.payment_method || "",
-    payment_status: row.payment_status || "",
+    payment_status: paymentStatusForOutput(row.payment_status),
     payment_charge_id: row.payment_charge_id || "",
     paid_at: row.paid_at || null,
   };
@@ -132,36 +239,152 @@ function isUndefinedColumn(error) {
 
 function isSchemaError(error) {
   const code = error && error.code;
-  return code === "42P01" || code === "42703"; // undefined_table / undefined_column
+  return code === "42P01" || code === "42703";
+}
+
+function getWebhookSecret(env) {
+  return cleanText(env && env.OMISE_WEBHOOK_SECRET, 500);
+}
+
+function paymentReadiness(omise, env) {
+  const webhookReady = Boolean(getWebhookSecret(env));
+  const secretReady = omise.isConfigured();
+  const publicKey = cleanText(omise.getPublicKey && omise.getPublicKey(), 200);
+  const enabled = secretReady && webhookReady;
+  return {
+    enabled,
+    secretReady,
+    webhookReady,
+    publicKey,
+    methods: enabled ? ["promptpay", ...(publicKey ? ["card"] : [])] : [],
+  };
+}
+
+function safeHeader(req, name) {
+  return (typeof req.get === "function" ? req.get(name) : (req.headers && req.headers[name.toLowerCase()])) || "";
+}
+
+function signatureCandidates(value) {
+  return String(value || "")
+    .split(",")
+    .map((part) => part.trim())
+    .map((part) => part.includes("=") ? part.split("=").pop().trim() : part)
+    .filter(Boolean);
+}
+
+function verifyOmiseWebhookSignature(req, secret) {
+  const timestamp = cleanText(safeHeader(req, "Omise-Signature-Timestamp"), 80);
+  const header = safeHeader(req, "Omise-Signature");
+  const raw = Buffer.isBuffer(req.rawBody) ? req.rawBody : Buffer.from(req.rawBody || "");
+  if (!timestamp || !header || !raw.length) return { ok: false };
+  const signed = Buffer.concat([Buffer.from(`${timestamp}.`, "utf8"), raw]);
+  const expected = crypto.createHmac("sha256", secret).update(signed).digest();
+  for (const candidate of signatureCandidates(header)) {
+    if (!/^[0-9a-f]{64}$/i.test(candidate)) continue;
+    const actual = Buffer.from(candidate, "hex");
+    if (actual.length === expected.length && crypto.timingSafeEqual(actual, expected)) return { ok: true };
+  }
+  return { ok: false };
+}
+
+function chargeMetadata(charge) {
+  return charge && charge.metadata && typeof charge.metadata === "object" ? charge.metadata : {};
+}
+
+function chargeAmountMatchesOrder(charge, order) {
+  return Number(charge && charge.amount) === bahtToSatang(order && order.subtotal);
+}
+
+function chargeCurrencyIsThb(charge) {
+  return String(charge && charge.currency || "").toLowerCase() === "thb";
+}
+
+async function applyVerifiedCharge(pool, charge) {
+  return inTransaction(pool, async (client) => {
+    const metadata = chargeMetadata(charge);
+    const metaOrderCode = cleanText(metadata.order_code, 40);
+    const metaAttemptId = cleanText(metadata.attempt_id, 120);
+    let found = await client.query(
+      `SELECT order_code, subtotal, status, payment_status, payment_charge_id, paid_at
+         FROM public.customer_orders
+        WHERE payment_charge_id=$1
+        FOR UPDATE`,
+      [charge.id]
+    );
+    let order = found.rows[0] || null;
+    let matchedBy = order ? "charge_id" : "";
+
+    if (!order && metaOrderCode && metaAttemptId) {
+      found = await client.query(
+        `SELECT order_code, subtotal, status, payment_status, payment_charge_id, paid_at
+           FROM public.customer_orders
+          WHERE order_code=$1
+          FOR UPDATE`,
+        [metaOrderCode]
+      );
+      const candidate = found.rows[0] || null;
+      if (candidate && candidate.status === PROCESSING_STATUS && currentAttemptId(candidate.payment_status) === metaAttemptId) {
+        order = candidate;
+        matchedBy = "metadata";
+      }
+    }
+
+    if (!order) return { status: 200, body: { ok: true, ignored: true } };
+    if (metaOrderCode && metaOrderCode !== order.order_code) return { status: 200, body: { ok: true, ignored: true } };
+    if (matchedBy === "metadata" && currentAttemptId(order.payment_status) !== metaAttemptId) {
+      return { status: 200, body: { ok: true, ignored: true } };
+    }
+    if (!chargeAmountMatchesOrder(charge, order) || !chargeCurrencyIsThb(charge)) {
+      return { status: 200, body: { ok: true, ignored: true } };
+    }
+    if (order.status === "paid") return { status: 200, body: { ok: true, replayed: true } };
+
+    const mapped = chargeToOrderStatus(charge);
+    await client.query(
+      `UPDATE public.customer_orders
+          SET payment_charge_id=COALESCE(payment_charge_id, $2),
+              payment_status=$3,
+              status=$4,
+              paid_at = CASE WHEN $4='paid' AND paid_at IS NULL THEN now() ELSE paid_at END,
+              updated_at=now()
+        WHERE order_code=$1`,
+      [order.order_code, charge.id, charge.status || null, mapped]
+    );
+    return { status: 200, body: { ok: true } };
+  });
 }
 
 function createCustomerOrdersRoutes(deps = {}) {
   const { pool, requireAdminSession } = deps;
-  // Injectable so tests can drive a fake Omise; defaults to an env-keyed client.
-  const omise = deps.omiseClient || createOmiseClient({ env: deps.env || process.env });
+  const env = deps.env || process.env;
+  const omise = deps.omiseClient || createOmiseClient({ env });
   const router = express.Router();
   const adminGuard = typeof requireAdminSession === "function" ? requireAdminSession : (_req, _res, next) => next();
 
-  // Create an order (public — customer may be a guest).
   router.post("/public/orders", async (req, res) => {
     const result = normalizeOrder(req.body);
     if (!result.ok) return res.status(400).json({ error: "VALIDATION_FAILED", details: result.errors });
     const o = result.value;
-    // A few attempts in the unlikely event of an order_code collision.
     for (let attempt = 0; attempt < 5; attempt += 1) {
       const code = generateOrderCode();
       try {
-        const inserted = await pool.query(
-          `INSERT INTO public.customer_orders
-             (order_code, customer_name, customer_phone, delivery_method, install_option, address, items, subtotal, status, note)
-           VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,'pending_payment',$9)
-           RETURNING order_code, customer_name, customer_phone, delivery_method, install_option, address, items, subtotal, status, created_at`,
-          [code, o.customer_name, o.customer_phone, o.delivery_method, o.install_option, o.address || null,
-            JSON.stringify(o.items), o.subtotal, o.note || null]
-        );
+        const inserted = await inTransaction(pool, async (client) => {
+          const snapshot = await buildServerOrderSnapshot(client, o);
+          return client.query(
+            `INSERT INTO public.customer_orders
+               (order_code, customer_name, customer_phone, delivery_method, install_option, address, items, subtotal, status, note)
+             VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,'pending_payment',$9)
+             RETURNING order_code, customer_name, customer_phone, delivery_method, install_option, address, items, subtotal, status, created_at`,
+            [code, o.customer_name, o.customer_phone, o.delivery_method, o.install_option, o.address || null,
+              JSON.stringify(snapshot.items), snapshot.subtotal, o.note || null]
+          );
+        });
         return res.status(201).json({ ok: true, order: publicOrder(inserted.rows[0]) });
       } catch (error) {
-        if (error && error.code === "23505") continue; // unique_violation on order_code → retry
+        if (error && error.code === "23505") continue;
+        if (error && error.code === "ORDER_ITEM_VALIDATION_FAILED") {
+          return res.status(400).json({ error: "ORDER_ITEM_VALIDATION_FAILED", details: error.details || [] });
+        }
         if (isSchemaError(error)) return res.status(503).json({ error: "ORDERS_SCHEMA_NOT_READY" });
         console.error("[orders/create] failed", error);
         return res.status(500).json({ error: "สร้างคำสั่งซื้อไม่สำเร็จ" });
@@ -170,7 +393,6 @@ function createCustomerOrdersRoutes(deps = {}) {
     return res.status(500).json({ error: "สร้างคำสั่งซื้อไม่สำเร็จ" });
   });
 
-  // Look up one order by its code (public — the code is the access token).
   router.get("/public/orders/:code", async (req, res) => {
     const code = cleanText(req.params.code, 40);
     if (!code) return res.status(400).json({ error: "order code required" });
@@ -178,8 +400,6 @@ function createCustomerOrdersRoutes(deps = {}) {
     try {
       let found;
       try {
-        // Include fulfilment fields so the customer can track their order. If the
-        // fulfilment migration hasn't run yet, fall back to the base columns.
         found = await pool.query(
           `SELECT ${base}, fulfillment_status, admin_note FROM public.customer_orders WHERE order_code=$1 LIMIT 1`,
           [code]
@@ -197,77 +417,146 @@ function createCustomerOrdersRoutes(deps = {}) {
     }
   });
 
-  // Public: what the customer app needs to render the payment step. Exposes the
-  // PUBLIC key only (safe to ship to the browser) — never the secret key.
   router.get("/public/payment-config", (_req, res) => {
-    const enabled = omise.isConfigured();
+    const ready = paymentReadiness(omise, env);
     return res.json({
-      enabled,
+      enabled: ready.enabled,
       provider: "omise",
-      public_key: enabled ? omise.getPublicKey() : "",
-      test_mode: enabled ? omise.isTestMode() : false,
-      methods: ["promptpay", "card"],
+      public_key: ready.enabled && ready.publicKey ? ready.publicKey : "",
+      test_mode: ready.enabled ? omise.isTestMode() : false,
+      methods: ready.methods,
     });
   });
 
-  // Pay for an order. The amount is ALWAYS the server-stored subtotal — the
-  // client cannot influence how much is charged. Card: pass a one-time token
-  // from Omise.js (card data never reaches us). PromptPay: we return a QR to
-  // scan; the actual payment is confirmed later by the Omise webhook.
   router.post("/public/orders/:code/pay", async (req, res) => {
-    if (!omise.isConfigured()) return res.status(503).json({ error: "PAYMENT_NOT_CONFIGURED" });
+    const ready = paymentReadiness(omise, env);
+    if (!ready.enabled) return res.status(503).json({ error: "PAYMENT_NOT_CONFIGURED" });
     const code = cleanText(req.params.code, 40);
     if (!code) return res.status(400).json({ error: "order code required" });
     const method = cleanText(req.body && req.body.method, 20);
     if (!PAYMENT_METHODS.has(method)) return res.status(400).json({ error: "payment method invalid" });
+    if (method === "card" && !ready.publicKey) return res.status(503).json({ error: "CARD_PAYMENT_NOT_CONFIGURED" });
     const token = cleanText(req.body && req.body.token, 200);
     if (method === "card" && !token) return res.status(400).json({ error: "card token required" });
 
-    let order;
+    let claim;
     try {
-      const found = await pool.query(
-        `SELECT order_code, subtotal, status FROM public.customer_orders WHERE order_code=$1 LIMIT 1`,
-        [code]
-      );
-      if (!found.rows.length) return res.status(404).json({ error: "ไม่พบคำสั่งซื้อนี้" });
-      order = found.rows[0];
+      claim = await inTransaction(pool, async (client) => {
+        const found = await client.query(
+          `SELECT order_code, customer_name, customer_phone, delivery_method, install_option, address, items, subtotal,
+                  status, payment_status, payment_charge_id, paid_at
+             FROM public.customer_orders
+            WHERE order_code=$1
+            FOR UPDATE`,
+          [code]
+        );
+        if (!found.rows.length) return { type: "missing" };
+        const order = found.rows[0];
+        if (order.status === "paid") return { type: "already_paid", order };
+        if (isPaymentInFlight(order)) return { type: "processing", order };
+        if (!PAYABLE_STATUSES.has(order.status)) return { type: "not_payable", order };
+        const amount = money(order.subtotal);
+        if (amount <= 0) return { type: "invalid_amount", order };
+        const attemptId = newAttemptId();
+        const updated = await client.query(
+          `UPDATE public.customer_orders
+              SET payment_provider='omise', payment_method=$2, payment_charge_id=NULL,
+                  payment_status=$3, status='payment_processing',
+                  updated_at=now()
+            WHERE order_code=$1
+            RETURNING order_code, customer_name, customer_phone, delivery_method, install_option, address, items, subtotal,
+                      status, payment_status, payment_charge_id, paid_at`,
+          [code, method, `${PAYMENT_ATTEMPT_PREFIX}${attemptId}`]
+        );
+        return { type: "claimed", order: updated.rows[0], amount, attemptId };
+      });
     } catch (error) {
       if (isSchemaError(error)) return res.status(503).json({ error: "ORDERS_SCHEMA_NOT_READY" });
-      console.error("[orders/pay:lookup] failed", error);
+      console.error("[orders/pay:claim] failed", error);
       return res.status(500).json({ error: "เริ่มการชำระเงินไม่สำเร็จ" });
     }
 
-    if (!PAYABLE_STATUSES.has(order.status)) {
-      // Already paid or a payment is already in progress — tell the client so it
-      // can just poll the order status instead of charging again.
-      return res.status(409).json({ error: "ORDER_NOT_PAYABLE", status: order.status });
+    if (claim.type === "missing") return res.status(404).json({ error: "ไม่พบคำสั่งซื้อนี้" });
+    if (claim.type === "already_paid") return res.status(409).json({ error: "ORDER_ALREADY_PAID", status: "paid", order: publicOrder(claim.order) });
+    if (claim.type === "processing") {
+      return res.status(202).json({
+        ok: false,
+        error: "PAYMENT_PROCESSING",
+        message: "กำลังตรวจสอบการชำระเงิน",
+        order: publicOrder(claim.order),
+        payment: { status: PROCESSING_STATUS, requires_polling: true },
+      });
     }
-    const amount = Number(order.subtotal) || 0;
-    if (amount <= 0) return res.status(400).json({ error: "ยอดชำระไม่ถูกต้อง" });
+    if (claim.type === "not_payable") return res.status(409).json({ error: "ORDER_NOT_PAYABLE", status: claim.order.status });
+    if (claim.type === "invalid_amount") return res.status(400).json({ error: "ยอดชำระไม่ถูกต้อง" });
 
     let charge;
     try {
-      const metadata = { order_code: code };
+      const metadata = { order_code: code, attempt_id: claim.attemptId };
       charge = method === "card"
-        ? await omise.createCardCharge({ amount, token, metadata })
-        : await omise.createPromptPayCharge({ amount, metadata });
+        ? await omise.createCardCharge({ amount: claim.amount, token, metadata })
+        : await omise.createPromptPayCharge({ amount: claim.amount, metadata });
     } catch (error) {
       console.error("[orders/pay:charge] failed", error && error.code);
-      return res.status(502).json({ error: "ชำระเงินไม่สำเร็จ กรุณาลองใหม่", code: error && error.code });
+      if (isRetryableOmiseRejection(error)) {
+        let markedFailed = false;
+        try {
+          await inTransaction(pool, async (client) => {
+            await client.query(
+              `UPDATE public.customer_orders
+                  SET payment_status=$3, status='payment_failed', updated_at=now()
+                WHERE order_code=$1 AND payment_status=$2`,
+              [code, `${PAYMENT_ATTEMPT_PREFIX}${claim.attemptId}`, error.code || "omise_rejected"]
+            );
+          });
+          markedFailed = true;
+        } catch (updateError) {
+          console.error("[orders/pay:failure-update] failed", updateError);
+        }
+        if (!markedFailed) {
+          return res.status(202).json({
+            ok: false,
+            error: "PAYMENT_RESULT_UNKNOWN",
+            message: "กำลังตรวจสอบการชำระเงิน",
+            order: publicOrder(claim.order),
+            payment: { status: PROCESSING_STATUS, requires_polling: true },
+          });
+        }
+        return res.status(502).json({ error: "ชำระเงินไม่สำเร็จ กรุณาลองใหม่", code: error && error.code });
+      }
+      if (isAmbiguousOmiseError(error)) {
+        return res.status(202).json({
+          ok: false,
+          error: "PAYMENT_RESULT_UNKNOWN",
+          message: "กำลังตรวจสอบการชำระเงิน",
+          order: publicOrder(claim.order),
+          payment: { status: PROCESSING_STATUS, requires_polling: true },
+        });
+      }
+      return res.status(502).json({ error: "ชำระเงินไม่สำเร็จ", code: error && error.code });
     }
 
     const mapped = chargeToOrderStatus(charge);
     try {
-      const updated = await pool.query(
+      const updated = await inTransaction(pool, async (client) => client.query(
         `UPDATE public.customer_orders
             SET payment_provider='omise', payment_method=$2, payment_charge_id=$3,
                 payment_status=$4, status=$5,
-                paid_at = CASE WHEN $5='paid' THEN now() ELSE paid_at END,
+                paid_at = CASE WHEN $5='paid' AND paid_at IS NULL THEN now() ELSE paid_at END,
                 updated_at = now()
-          WHERE order_code=$1
+          WHERE order_code=$1 AND payment_status=$6
           RETURNING order_code, customer_name, customer_phone, delivery_method, install_option, address, items, subtotal, status, created_at`,
-        [code, method, charge.id || null, (charge && charge.status) || null, mapped]
-      );
+        [code, method, charge.id || null, (charge && charge.status) || null, mapped, `${PAYMENT_ATTEMPT_PREFIX}${claim.attemptId}`]
+      ));
+      if (!updated.rows.length) {
+        return res.status(202).json({
+          ok: false,
+          error: "PAYMENT_PROCESSING",
+          message: "กำลังตรวจสอบการชำระเงิน",
+          order: publicOrder(claim.order),
+          payment: { status: PROCESSING_STATUS, requires_polling: true },
+        });
+      }
       return res.json({
         ok: true,
         order: publicOrder(updated.rows[0]),
@@ -275,11 +564,8 @@ function createCustomerOrdersRoutes(deps = {}) {
           method,
           status: mapped,
           charge_id: charge.id || null,
-          // PromptPay only: the QR the customer scans in their banking app.
           qr_uri: method === "promptpay" ? promptPayQrUri(charge) : null,
-          // The client should poll GET /public/orders/:code until status leaves
-          // 'payment_processing' (PromptPay) — card resolves synchronously.
-          requires_polling: mapped === "payment_processing",
+          requires_polling: mapped === PROCESSING_STATUS,
         },
       });
     } catch (error) {
@@ -289,42 +575,29 @@ function createCustomerOrdersRoutes(deps = {}) {
     }
   });
 
-  // Omise webhook. Omise webhooks are NOT signed, so we never trust the payload:
-  // we take the charge id from it, re-fetch the charge from Omise (source of
-  // truth), then update the matching order. Idempotent — replays are no-ops.
-  // Always answer 200 so Omise stops retrying a delivered event.
   router.post("/webhooks/omise", async (req, res) => {
     try {
+      const webhookSecret = getWebhookSecret(env);
+      if (!webhookSecret) return res.status(503).json({ error: "OMISE_WEBHOOK_NOT_CONFIGURED" });
+      const signature = verifyOmiseWebhookSignature(req, webhookSecret);
+      if (!signature.ok) return res.status(401).json({ error: "OMISE_WEBHOOK_SIGNATURE_INVALID" });
+
       const event = req.body && typeof req.body === "object" ? req.body : {};
       const data = event.data && typeof event.data === "object" ? event.data : {};
-      // The event data object may be the charge, or (for source events) carry it.
       const chargeId = cleanText(data.object === "charge" ? data.id : (data.charge || ""), 80);
       if (!chargeId || !omise.isConfigured()) return res.json({ ok: true, ignored: true });
 
-      const charge = await omise.retrieveCharge(chargeId).catch(() => null);
+      const charge = await omise.retrieveCharge(chargeId);
       if (!charge || !charge.id) return res.json({ ok: true, ignored: true });
-      const mapped = chargeToOrderStatus(charge);
-
-      await pool.query(
-        `UPDATE public.customer_orders
-            SET payment_status=$2, status=$3,
-                paid_at = CASE WHEN $3='paid' AND paid_at IS NULL THEN now() ELSE paid_at END,
-                updated_at = now()
-          WHERE payment_charge_id=$1`,
-        [charge.id, charge.status || null, mapped]
-      );
-      return res.json({ ok: true });
+      const result = await applyVerifiedCharge(pool, charge);
+      return res.status(result.status || 200).json(result.body || { ok: true });
     } catch (error) {
-      if (isSchemaError(error)) return res.json({ ok: true, ignored: true });
-      console.error("[orders/webhook] failed", error);
-      // Still 200: a 500 makes Omise retry a payload we can't process anyway.
-      return res.json({ ok: false });
+      if (isSchemaError(error)) return res.status(503).json({ ok: false, error: "ORDERS_SCHEMA_NOT_READY" });
+      console.error("[orders/webhook] failed", error && error.code);
+      return res.status(502).json({ ok: false, error: "OMISE_WEBHOOK_PROCESSING_FAILED" });
     }
   });
 
-  // Admin: list recent orders (read-only). Includes payment details when the
-  // payment columns exist; on a DB that has orders but not yet the payment
-  // migration, it falls back to the base columns so the list still loads.
   const ADMIN_BASE_COLUMNS = "order_code, customer_name, customer_phone, delivery_method, install_option, address, items, subtotal, status, note, created_at";
   const ADMIN_EXTRA_COLUMNS = "payment_method, payment_status, payment_charge_id, paid_at, fulfillment_status, admin_note";
   router.get("/admin/orders", adminGuard, async (_req, res) => {
@@ -336,7 +609,7 @@ function createCustomerOrdersRoutes(deps = {}) {
              FROM public.customer_orders ORDER BY created_at DESC LIMIT 200`
         );
       } catch (inner) {
-        if (!isUndefinedColumn(inner)) throw inner; // real error → outer catch
+        if (!isUndefinedColumn(inner)) throw inner;
         rows = await pool.query(
           `SELECT ${ADMIN_BASE_COLUMNS}
              FROM public.customer_orders ORDER BY created_at DESC LIMIT 200`
@@ -350,8 +623,6 @@ function createCustomerOrdersRoutes(deps = {}) {
     }
   });
 
-  // Admin: advance an order's fulfilment status and/or leave a customer-visible
-  // note. Payment `status` is never touched here — this is the fulfilment lane.
   router.post("/admin/orders/:code/status", adminGuard, async (req, res) => {
     const code = cleanText(req.params.code, 40);
     if (!code) return res.status(400).json({ error: "order code required" });
@@ -385,4 +656,14 @@ function createCustomerOrdersRoutes(deps = {}) {
   return router;
 }
 
-module.exports = { createCustomerOrdersRoutes, normalizeOrder, generateOrderCode, publicOrder, adminOrder };
+module.exports = {
+  createCustomerOrdersRoutes,
+  normalizeOrder,
+  generateOrderCode,
+  publicOrder,
+  adminOrder,
+  catalogRuleCurrentlyActive,
+  catalogEffectiveUnitPrice,
+  verifyOmiseWebhookSignature,
+  applyVerifiedCharge,
+};

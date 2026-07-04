@@ -21,6 +21,7 @@ test("store renders a payment step offering PromptPay and card after the order i
   assert.match(storeSrc, /paymentStepHtml/);
   assert.match(storeSrc, /data-pay-method="promptpay"/);
   assert.match(storeSrc, /data-pay-method="card"/);
+  assert.match(storeSrc, /config\.methods/);
   // The order is created first, then the payment step is shown.
   assert.match(storeSrc, /renderPaymentStep\(\{ order/);
 });
@@ -37,8 +38,16 @@ test("store shows the PromptPay QR and polls the order status until it resolves"
   assert.match(storeSrc, /payOrder\(o\.order\.order_code, \{ method: "promptpay" \}\)/);
   assert.match(storeSrc, /pay-qr-img/);
   assert.match(storeSrc, /startPolling\(o\.order\.order_code/);
+  assert.match(storeSrc, /processingPaymentHtml/);
   // Polling stops on a terminal status.
   assert.match(storeSrc, /status === "paid" \|\| status === "payment_failed"/);
+});
+
+test("store sends only item_id and qty for order items and guards duplicate payment clicks", () => {
+  assert.match(storeSrc, /items: \[\{ item_id: item\.item_id, qty \}\]/);
+  assert.doesNotMatch(storeSrc, /items: \[\{ item_id: item\.item_id, name:/);
+  assert.doesNotMatch(storeSrc, /unit_price: unitPrice/);
+  assert.match(storeSrc, /paymentInFlight/);
 });
 
 test("store falls back to the LINE hand-off when payment is unconfigured or the order did not save", () => {
@@ -49,6 +58,7 @@ test("store falls back to the LINE hand-off when payment is unconfigured or the 
 test("payment step styles exist and the Customer App payment build id is bumped", () => {
   assert.match(cssSrc, /\.pay-method-btn/);
   assert.match(cssSrc, /\.pay-qr-img/);
-  assert.match(read("customer-app/index.html"), /modules\/store\.js\?v=20260703_lifecycle_v1/);
-  assert.match(read("customer-app/sw.js"), /BUILD_ID = "20260703_lifecycle_v1"/);
+  assert.match(read("customer-app/index.html"), /modules\/store\.js\?v=20260705_payment_security_v1/);
+  assert.match(read("customer-app/sw.js"), /BUILD_ID = "20260705_payment_security_v1"/);
+  assert.match(storeSrc, /payment-security 20260705 loaded/);
 });

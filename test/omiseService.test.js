@@ -8,6 +8,8 @@ const {
   bahtToSatang,
   chargeToOrderStatus,
   promptPayQrUri,
+  isAmbiguousOmiseError,
+  isRetryableOmiseRejection,
 } = require("../server/services/omise");
 
 // A fake transport that records requests and returns queued responses.
@@ -103,4 +105,15 @@ test("chargeToOrderStatus maps Omise charge states to persisted order statuses",
   assert.equal(chargeToOrderStatus({ status: "failed" }), "payment_failed");
   assert.equal(chargeToOrderStatus({ status: "expired" }), "payment_failed");
   assert.equal(chargeToOrderStatus({}), "payment_processing");
+});
+
+test("Omise error classification keeps ambiguous outcomes non-retryable", () => {
+  assert.equal(isAmbiguousOmiseError(Object.assign(new Error("timeout"), { code: "ETIMEDOUT" })), true);
+  assert.equal(isAmbiguousOmiseError(Object.assign(new Error("reset"), { code: "ECONNRESET" })), true);
+  assert.equal(isAmbiguousOmiseError(Object.assign(new Error("408"), { status: 408 })), true);
+  assert.equal(isAmbiguousOmiseError(Object.assign(new Error("429"), { status: 429 })), true);
+  assert.equal(isAmbiguousOmiseError(Object.assign(new Error("500"), { status: 500 })), true);
+  assert.equal(isRetryableOmiseRejection(Object.assign(new Error("bad request"), { status: 400, code: "bad_request" })), true);
+  assert.equal(isRetryableOmiseRejection(Object.assign(new Error("declined"), { status: 402, code: "failed_capture" })), true);
+  assert.equal(isRetryableOmiseRejection(Object.assign(new Error("429"), { status: 429 })), false);
 });

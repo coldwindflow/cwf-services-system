@@ -655,7 +655,12 @@ const app = express();
 app.set('trust proxy', 1);
 app.use(cors());
 app.use(createLineWebhookRoutes({ pool }));
-app.use(express.json());
+app.use(express.json({
+  verify: (req, _res, buf) => {
+    const pathOnly = String(req.originalUrl || req.url || "").split("?")[0];
+    if (pathOnly === "/webhooks/omise") req.rawBody = Buffer.from(buf);
+  },
+}));
 app.use(customerAuth.createCustomerAuthRoutes({ pool, env: process.env, logger: console }));
 
 // =======================================
