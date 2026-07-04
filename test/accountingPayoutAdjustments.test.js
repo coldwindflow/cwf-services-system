@@ -23,6 +23,7 @@ class FakeClient {
     this.nextAdjId = 1;
     this.failAudit = false;
     this.txStack = [];
+    this.queries = [];
   }
 
   clone(row) {
@@ -78,6 +79,7 @@ class FakeClient {
 
   async query(sql, params = []) {
     const s = normSql(sql);
+    this.queries.push({ sql: s, params });
 
     if (s === "BEGIN") {
       this.txStack.push(this.snapshot());
@@ -102,6 +104,13 @@ class FakeClient {
       const row = this.periods.get(params[0]);
       return { rows: row ? [this.clone(row)] : [] };
     }
+    if (s.startsWith("SELECT payout_id, status, period_start, period_end FROM public.technician_payout_periods")) {
+      const rows = [...this.periods.values()]
+        .filter((r) => !params[0] || String(r.period_end || "") <= String(params[0]))
+        .sort((a, b) => String(a.period_end || "").localeCompare(String(b.period_end || "")) || String(a.payout_id || "").localeCompare(String(b.payout_id || "")))
+        .map((r) => this.clone(r));
+      return { rows };
+    }
     if (s.startsWith("INSERT INTO public.technician_payout_periods")) {
       const [payout_id, period_type, period_start, period_end, statusOrCreatedBy, maybeCreatedBy] = params;
       if (!this.periods.has(payout_id)) {
@@ -119,6 +128,11 @@ class FakeClient {
     if (s.startsWith("UPDATE public.technician_payout_periods SET status='locked'")) {
       const row = this.periods.get(params[0]);
       if (row && row.status === "draft") row.status = "locked";
+      return { rows: [] };
+    }
+    if (s.startsWith("UPDATE public.technician_payout_periods SET status='paid'")) {
+      const row = this.periods.get(params[0]);
+      if (row) row.status = "paid";
       return { rows: [] };
     }
     if (s.startsWith("UPDATE public.technician_payout_periods SET status=$2")) {
@@ -159,6 +173,28 @@ class FakeClient {
       const row = this.payments.find((r) => r.payout_id === params[0] && r.technician_username === params[1]);
       if (row) row.paid_status = params[2];
       return { rows: [] };
+    }
+    if (s.startsWith("INSERT INTO public.technician_payout_payments(")) {
+      const [payout_id, technician_username, paid_amount, paid_by, note] = params;
+      const existing = this.payments.find((r) => r.payout_id === payout_id && r.technician_username === technician_username);
+      if (existing) {
+        existing.paid_amount = Math.max(Number(existing.paid_amount || 0), Number(paid_amount || 0));
+        existing.paid_status = "paid";
+        existing.paid_at = "2026-07-04T00:00:00.000Z";
+        existing.paid_by = paid_by;
+        existing.note = existing.note || note;
+      } else {
+        this.payments.push({
+          payout_id,
+          technician_username,
+          paid_amount: Number(paid_amount || 0),
+          paid_status: "paid",
+          paid_at: "2026-07-04T00:00:00.000Z",
+          paid_by,
+          note,
+        });
+      }
+      return { rows: [], rowCount: 1 };
     }
     if (s.includes("FROM techs t")) {
       return { rows: this.settlementRows(params[0]) };
@@ -408,11 +444,61 @@ test("bulk pay targets exclude payment-only and deposit-only rows but include ad
   assert.deepEqual(rows.map((r) => r.technician_username), ["ADJ_ONLY"]);
 });
 
-test("legacy_settle consumes payout summary .techs before all-paid evaluation", () => {
-  const src = fs.readFileSync("index.js", "utf8");
-  assert.ok(src.includes("const techRowsPayload = await _buildPayoutTechSummaryRows(payout_id);"));
-  assert.ok(src.includes("const techRows = Array.isArray(techRowsPayload?.techs) ? techRowsPayload.techs : [];"));
-  assert.ok(src.includes("getPayoutTechSettlementRows(client, payout_id)"));
+async function settleLegacy(db, opts = {}) {
+  return svc.settleLegacyPaidPayouts({
+    client: db,
+    cutoffEnd: "2026-07-31T16:59:59.000Z",
+    cutoffDate: "2026-07-31",
+    actor: "super",
+    ...opts,
+  });
+}
+
+test("legacy settle with gross 1000 and no collect pays 1000 and writes zero ledger rows", async () => {
+  const db = new FakeClient();
+  db.periods.set("payout_2026-07_10", { payout_id: "payout_2026-07_10", status: "locked", period_start: "2026-06-25T17:00:00.000Z", period_end: "2026-07-10T17:00:00.000Z" });
+  db.lines.push({ payout_id: "payout_2026-07_10", technician_username: "TECH_A", earn_amount: 1000 });
+
+  const result = await settleLegacy(db);
+
+  assert.equal(result.updated_payments, 1);
+  assert.equal(db.payments.length, 1);
+  assert.equal(db.payments[0].paid_amount, 1000);
+  assert.equal(db.deposits.length, 0);
+  assert.equal(result.affected[0].deposit_deduction_amount, 0);
+  assert.equal(result.affected[0].deposit_inserted, false);
+});
+
+test("legacy settle preserves existing collect and pays net after that collect", async () => {
+  const db = new FakeClient();
+  db.periods.set("payout_2026-07_10", { payout_id: "payout_2026-07_10", status: "locked", period_start: "2026-06-25T17:00:00.000Z", period_end: "2026-07-10T17:00:00.000Z" });
+  db.lines.push({ payout_id: "payout_2026-07_10", technician_username: "TECH_A", earn_amount: 1000 });
+  db.deposits.push({ ledger_id: 1, payout_id: "payout_2026-07_10", technician_username: "TECH_A", transaction_type: "collect", amount: 125 });
+
+  const result = await settleLegacy(db);
+
+  assert.equal(result.updated_payments, 1);
+  assert.equal(db.payments.length, 1);
+  assert.equal(db.payments[0].paid_amount, 875);
+  assert.equal(db.deposits.length, 1);
+  assert.equal(db.deposits[0].amount, 125);
+  assert.equal(result.affected[0].deposit_deduction_amount, 125);
+  assert.equal(result.affected[0].deposit_inserted, false);
+});
+
+test("legacy settle uses only injected client and locks periods before settlement rows", async () => {
+  const db = new FakeClient();
+  const poisonedGlobalPool = { query() { throw new Error("GLOBAL_POOL_USED"); } };
+  db.periods.set("payout_2026-07_10", { payout_id: "payout_2026-07_10", status: "locked", period_start: "2026-06-25T17:00:00.000Z", period_end: "2026-07-10T17:00:00.000Z" });
+  db.lines.push({ payout_id: "payout_2026-07_10", technician_username: "TECH_A", earn_amount: 1000 });
+
+  await settleLegacy(db, { pool: poisonedGlobalPool });
+
+  const periodLockIndex = db.queries.findIndex((q) => q.sql.includes("FROM public.technician_payout_periods") && q.sql.includes("FOR UPDATE"));
+  const settlementIndex = db.queries.findIndex((q) => q.sql.includes("FROM techs t"));
+  assert.ok(periodLockIndex >= 0, "periods must be read with FOR UPDATE");
+  assert.ok(settlementIndex > periodLockIndex, "settlement rows must be read after period lock");
+  assert.equal(db.payments[0].paid_amount, 1000);
 });
 
 test("draft adjustment audit records original draft status before lock", async () => {
