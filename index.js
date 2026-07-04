@@ -53,6 +53,7 @@ const createAccountingReadOnlyRoutes = require("./server/routes/accountingReadOn
 const { ensurePayoutPeriodAndSnapshotForPayment } = require("./server/services/technicianPayoutPrepay");
 const { buildAccountingPayoutCalendar, isPeriodCutoffClosed } = require("./server/services/technicianPayoutPeriods");
 const accountingPayoutAdjustments = require("./server/services/accountingPayoutAdjustments");
+const technicianDepositCollections = require("./server/services/technicianDepositCollections");
 const { createTechnicianCashCollectionService } = require("./server/services/technicianCashCollections");
 const { createTechnicianDeductionPayoutApplyService } = require("./server/services/technicianDeductionPayoutApply");
 const createAdminReworkDeductionsHelpers = require("./server/helpers/adminReworkDeductionsHelpers");
@@ -1559,10 +1560,11 @@ function requireAccountingPermission(permissionKey) {
   };
 }
 
-async function logAccountingAudit(req, { action, entity_type, entity_id = null, before_json = null, after_json = null, note = null } = {}) {
+async function logAccountingAudit(req, { action, entity_type, entity_id = null, before_json = null, after_json = null, note = null } = {}, opts = {}) {
   try {
     const actor = _accountingActor(req);
-    await pool.query(
+    const db = opts.client || pool;
+    await db.query(
       `INSERT INTO public.accounting_audit_log
         (actor_user_id, actor_username, actor_role, action, entity_type, entity_id,
          before_json, after_json, ip_address, user_agent, note)
@@ -1582,6 +1584,7 @@ async function logAccountingAudit(req, { action, entity_type, entity_id = null, 
       ]
     );
   } catch (e) {
+    if (opts.strict) throw e;
     console.warn('[accounting_audit] log failed:', e.message);
   }
 }
@@ -5790,10 +5793,10 @@ function _normCompMode(mode) {
   return 'commission';
 }
 
-async function _getTechProfile(username) {
+async function _getTechProfile(username, db = pool) {
   if (!username) return null;
   try {
-    const q = await pool.query(
+    const q = await db.query(
       `SELECT username,
               COALESCE(employment_type,'company') AS employment_type,
               COALESCE(compensation_mode,'commission') AS compensation_mode,
@@ -6253,8 +6256,14 @@ async function _buildPayoutTechSummaryRows(payout_id){
     const gross_amount = Number(r.gross_amount || 0);
     const adj_total = Number(adjQ.rows?.[0]?.adj_total || 0);
     const paid_amount = Number(payQ.rows?.[0]?.paid_amount || 0);
-    const deposit_deduction_amount = await _getDepositDeductionForPayout(payout_id, tech);
-    const deposit = await _getDepositSummary(tech);
+    const deposit = await technicianDepositCollections.getProjectedDepositDeductionForPayout(pool, {
+      payout_id,
+      technician_username: tech,
+      gross_amount,
+      adj_total,
+      period_status: status,
+    });
+    const deposit_deduction_amount = _money(deposit.deposit_deduction_amount || 0);
     const net_amount = _money(gross_amount + adj_total - deposit_deduction_amount);
     const paid_status = _paidStatus(net_amount, paid_amount);
     out.push({
@@ -8203,8 +8212,14 @@ app.get('/admin/super/payouts/:payout_id/tech/:username', requireSuperAdmin, asy
 
     const gross = lines.reduce((s,x)=>s+Number(x.earn_amount||0),0);
     const adj_total = (adjR.rows||[]).reduce((s,x)=>s+Number(x.adj_amount||0),0);
-    const deposit_deduction_amount = await _getDepositDeductionForPayout(payout_id, username);
-    const deposit = await _getDepositSummary(username);
+    const deposit = await technicianDepositCollections.getProjectedDepositDeductionForPayout(pool, {
+      payout_id,
+      technician_username: username,
+      gross_amount: gross,
+      adj_total,
+      period_status: status,
+    });
+    const deposit_deduction_amount = _money(deposit.deposit_deduction_amount || 0);
     const net = _money(gross + adj_total - deposit_deduction_amount);
     const paid_amount = Number(payR.rows?.[0]?.paid_amount || 0);
     const remaining = _money(net - paid_amount);
@@ -8289,8 +8304,14 @@ app.get('/admin/payouts/:payout_id/tech/:username', requireAdminSession, async (
     );
     const gross = lines.reduce((s,x)=>s+Number(x.earn_amount||0),0);
     const adj_total = (adjR.rows||[]).reduce((s,x)=>s+Number(x.adj_amount||0),0);
-    const deposit_deduction_amount = await _getDepositDeductionForPayout(payout_id, username);
-    const deposit = await _getDepositSummary(username);
+    const deposit = await technicianDepositCollections.getProjectedDepositDeductionForPayout(pool, {
+      payout_id,
+      technician_username: username,
+      gross_amount: gross,
+      adj_total,
+      period_status: status,
+    });
+    const deposit_deduction_amount = _money(deposit.deposit_deduction_amount || 0);
     const net = _money(gross + adj_total - deposit_deduction_amount);
     const paid_amount = Number(payR.rows?.[0]?.paid_amount || 0);
     return res.json({ ok:true, payout_id, technician_username: username, status, source: loaded.source, gross_amount: gross, adj_total, deposit_deduction_amount, net_amount: net, paid_amount, remaining_amount: _money(net-paid_amount), paid_status: _paidStatus(net, paid_amount), ...deposit, latest_deposit_deduction: deposit_deduction_amount, payment: payR.rows?.[0] || null, adjustments: adjR.rows || [], lines });
@@ -8632,11 +8653,11 @@ function _paidStatus(netAmount, paidAmount){
   return 'partial';
 }
 
-async function _getDepositAccount(username){
+async function _getDepositAccount(username, db = pool){
   const tech = String(username || '').trim();
   if (!tech) return { technician_username: '', target_amount: 5000, is_required: true };
   try {
-    const q = await pool.query(
+    const q = await db.query(
       `SELECT technician_username, COALESCE(target_amount,5000)::numeric AS target_amount,
               COALESCE(is_required,TRUE) AS is_required, created_at, updated_at, updated_by
          FROM public.technician_deposit_accounts
@@ -8649,11 +8670,11 @@ async function _getDepositAccount(username){
   return { technician_username: tech, target_amount: 5000, is_required: true };
 }
 
-async function _getDepositCollected(username){
+async function _getDepositCollected(username, db = pool){
   const tech = String(username || '').trim();
   if (!tech) return 0;
   try {
-    const q = await pool.query(
+    const q = await db.query(
       `SELECT COALESCE(SUM(
           CASE transaction_type
             WHEN 'collect' THEN amount
@@ -8673,9 +8694,9 @@ async function _getDepositCollected(username){
   }
 }
 
-async function _getDepositSummary(username){
-  const account = await _getDepositAccount(username);
-  const collected = await _getDepositCollected(username);
+async function _getDepositSummary(username, db = pool){
+  const account = await _getDepositAccount(username, db);
+  const collected = await _getDepositCollected(username, db);
   const target = _money(account.target_amount || 5000);
   return {
     deposit_target_amount: target,
@@ -8685,12 +8706,12 @@ async function _getDepositSummary(username){
   };
 }
 
-async function _getDepositDeductionForPayout(payout_id, username){
+async function _getDepositDeductionForPayout(payout_id, username, db = pool){
   const pid = String(payout_id || '').trim();
   const tech = String(username || '').trim();
   if (!pid || !tech) return 0;
   try {
-    const q = await pool.query(
+    const q = await db.query(
       `SELECT COALESCE(SUM(amount),0)::numeric AS amount
          FROM public.technician_deposit_ledger
         WHERE payout_id=$1 AND technician_username=$2 AND transaction_type='collect'`,
@@ -8734,43 +8755,50 @@ async function _calcPartnerDepositDeduction({ username, gross_amount } = {}){
 }
 
 async function _ensureDepositCollectionForPayout({ payout_id, username, gross_amount, actor } = {}){
+  const opts = arguments[0] || {};
+  const db = opts.client || pool;
   const pid = String(payout_id || '').trim();
   const tech = String(username || '').trim();
   if (!pid || !tech) return { deposit_deduction_amount: 0, inserted: false, disabled: !ENABLE_PARTNER_DEPOSIT_DEDUCTION };
-  const existing = await _getDepositDeductionForPayout(pid, tech);
-  if (existing > 0) return { deposit_deduction_amount: existing, inserted: false, existing: true };
   if (!ENABLE_PARTNER_DEPOSIT_DEDUCTION) return { deposit_deduction_amount: 0, inserted: false, disabled: true };
-  const deduction = await _calcPartnerDepositDeduction({ username: tech, gross_amount });
-  if (deduction <= 0) return { deposit_deduction_amount: 0, inserted: false };
-  const q = await pool.query(
-    `INSERT INTO public.technician_deposit_ledger(
-       technician_username, payout_id, transaction_type, amount, note, created_by, meta_json
-     ) VALUES($1,$2,'collect',$3,$4,$5,$6::jsonb)
-     ON CONFLICT (technician_username, payout_id, transaction_type)
-     WHERE transaction_type='collect'
-     DO NOTHING
-     RETURNING ledger_id`,
-    [
-      tech,
-      pid,
-      deduction,
-      'Automatic partner work deposit deduction',
-      actor || null,
-      JSON.stringify({ gross_amount: _money(gross_amount || 0), formula: 'flexible_partner_deposit_v2', policy: 'gross<700=0, 700-1499=max 100, 1500-2999=150-250, >=3000=10% max 500, cap remaining' })
-    ]
-  );
-  const after = await _getDepositDeductionForPayout(pid, tech);
-  return { deposit_deduction_amount: after, inserted: (q.rowCount || 0) > 0 };
+  return technicianDepositCollections.materializeDepositCollectForPayout(db, {
+    payout_id: pid,
+    technician_username: tech,
+    gross_amount,
+    adj_total: opts.adj_total || 0,
+    actor,
+  });
 }
 
-async function _ensureDepositCollectionsForPayout(payout_id, actor) {
+async function _ensureDepositCollectionsForPayout(payout_id, actor, db = pool) {
   const pid = String(payout_id || '').trim();
   if (!pid) return { checked: 0, inserted: 0 };
-  const q = await pool.query(
-    `SELECT technician_username, COALESCE(SUM(earn_amount),0)::numeric AS gross_amount
-       FROM public.technician_payout_lines
-      WHERE payout_id=$1
-      GROUP BY technician_username`,
+  await technicianDepositCollections.assertDepositCollectUniqueIndexReady(db);
+  const q = await db.query(
+    `WITH gross AS (
+       SELECT technician_username, COALESCE(SUM(earn_amount),0)::numeric AS gross_amount
+         FROM public.technician_payout_lines
+        WHERE payout_id=$1
+        GROUP BY technician_username
+     ),
+     adj AS (
+       SELECT technician_username, COALESCE(SUM(adj_amount),0)::numeric AS adj_total
+         FROM public.technician_payout_adjustments
+        WHERE payout_id=$1
+        GROUP BY technician_username
+     ),
+     techs AS (
+       SELECT technician_username FROM gross
+       UNION
+       SELECT technician_username FROM adj
+     )
+     SELECT t.technician_username,
+            COALESCE(g.gross_amount,0)::numeric AS gross_amount,
+            COALESCE(a.adj_total,0)::numeric AS adj_total
+       FROM techs t
+       LEFT JOIN gross g ON g.technician_username=t.technician_username
+       LEFT JOIN adj a ON a.technician_username=t.technician_username
+      ORDER BY t.technician_username ASC`,
     [pid]
   );
   let checked = 0;
@@ -8783,7 +8811,9 @@ async function _ensureDepositCollectionsForPayout(payout_id, actor) {
       payout_id: pid,
       username,
       gross_amount: row.gross_amount,
+      adj_total: row.adj_total,
       actor,
+      client: db,
     });
     if (r.inserted) inserted++;
   }
@@ -9123,25 +9153,26 @@ async function _computeTechnicianWorkSummary(username, start, endEx, labelYm = '
   }
 }
 
-async function _getPayoutPeriod(payout_id){
-  const r = await pool.query(
+async function _getPayoutPeriod(payout_id, db = pool, opts = {}){
+  const r = await db.query(
     `SELECT payout_id, status, period_type, period_start, period_end, created_at
        FROM public.technician_payout_periods
       WHERE payout_id=$1
-      LIMIT 1`,
+      LIMIT 1
+      ${opts.forUpdate ? 'FOR UPDATE' : ''}`,
     [payout_id]
   );
   return r.rows[0] || null;
 }
 
-async function _getTechGrossAdjNet(payout_id, tech){
-  const g = await pool.query(
+async function _getTechGrossAdjNet(payout_id, tech, db = pool, opts = {}){
+  const g = await db.query(
     `SELECT COALESCE(SUM(earn_amount),0) AS gross_amount
        FROM public.technician_payout_lines
       WHERE payout_id=$1 AND technician_username=$2`,
     [payout_id, tech]
   );
-  const a = await pool.query(
+  const a = await db.query(
     `SELECT COALESCE(SUM(adj_amount),0) AS adj_total
        FROM public.technician_payout_adjustments
       WHERE payout_id=$1 AND technician_username=$2`,
@@ -9149,8 +9180,20 @@ async function _getTechGrossAdjNet(payout_id, tech){
   );
   const gross = _money(g.rows[0]?.gross_amount || 0);
   const adj = _money(a.rows[0]?.adj_total || 0);
-  const deposit_deduction_amount = await _getDepositDeductionForPayout(payout_id, tech);
-  const deposit = await _getDepositSummary(tech);
+  const periodStatus = opts.period_status == null ? null : String(opts.period_status || '');
+  const deposit = opts.projectDeposit
+    ? await technicianDepositCollections.getProjectedDepositDeductionForPayout(db, {
+        payout_id,
+        technician_username: tech,
+        gross_amount: gross,
+        adj_total: adj,
+        period_status: periodStatus || 'draft',
+      })
+    : {
+        ...(await _getDepositSummary(tech, db)),
+        deposit_deduction_amount: await _getDepositDeductionForPayout(payout_id, tech, db),
+      };
+  const deposit_deduction_amount = _money(deposit.deposit_deduction_amount || 0);
   return {
     gross_amount: gross,
     adj_total: adj,
@@ -9200,11 +9243,13 @@ async function _requireWithdrawIfPartner(payout_id, tech, actor){
 }
 
 async function _upsertPaymentAndMaybeMarkPaid(payout_id, tech, paid_amount, slip_url, note, actor, reqForAudit, opts = {}){
+  const db = opts.client || pool;
   const prep = opts && opts.preparedPeriod ? { period: opts.preparedPeriod, already_prepared: true } : await ensurePayoutPeriodAndSnapshotForPayment({
     pool,
+    client: opts.client || null,
     payout_id,
     actor_username: actor || null,
-    getPayoutPeriod: _getPayoutPeriod,
+    getPayoutPeriod: (pid) => _getPayoutPeriod(pid, db, opts.client ? { forUpdate: true } : {}),
     regenerateDraftPayoutContractLines: _regenerateDraftPayoutContractLines,
     req: reqForAudit || null,
   });
@@ -9217,17 +9262,27 @@ async function _upsertPaymentAndMaybeMarkPaid(payout_id, tech, paid_amount, slip
   }
 
   let deposit_collections = { checked: 0, inserted: 0 };
-  if (String(period.status) === 'draft') {
-    deposit_collections = await _ensureDepositCollectionsForPayout(payout_id, actor);
+  if (opts.depositAlreadyPrepared) {
+    deposit_collections = opts.depositCollections || { checked: 1, inserted: 0 };
+  } else if (String(period.status) === 'draft') {
+    deposit_collections = await _ensureDepositCollectionsForPayout(payout_id, actor, db);
   } else {
-    const beforeDeposit = await _getTechGrossAdjNet(payout_id, tech);
-    const r = await _ensureDepositCollectionForPayout({ payout_id, username: tech, gross_amount: beforeDeposit.gross_amount, actor });
+    const beforeDeposit = await _getTechGrossAdjNet(payout_id, tech, db, { period_status: period.status });
+    const r = await _ensureDepositCollectionForPayout({ payout_id, username: tech, gross_amount: beforeDeposit.gross_amount, adj_total: beforeDeposit.adj_total, actor, client: db });
     deposit_collections = { checked: 1, inserted: r.inserted ? 1 : 0 };
   }
-  const { net_amount } = await _getTechGrossAdjNet(payout_id, tech);
+  const { net_amount } = await _getTechGrossAdjNet(payout_id, tech, db, { period_status: period.status });
+  if (_money(paid_amount) - _money(net_amount) > 0.01) {
+    const err = new Error('PAYOUT_PAYABLE_CHANGED');
+    err.code = 'PAYOUT_PAYABLE_CHANGED';
+    err.statusCode = 409;
+    err.current_payable_amount = _money(net_amount);
+    err.requested_paid_amount = _money(paid_amount);
+    throw err;
+  }
   const paid_status = _paidStatus(net_amount, paid_amount);
 
-  await pool.query(
+  await db.query(
     `INSERT INTO public.technician_payout_payments(
        payout_id, technician_username, paid_amount, paid_status, paid_at, paid_by, slip_url, note, updated_at
      ) VALUES($1,$2,$3,$4,NOW(),$5,$6,$7,NOW())
@@ -9245,14 +9300,14 @@ async function _upsertPaymentAndMaybeMarkPaid(payout_id, tech, paid_amount, slip
 
   // auto-lock if still draft
   if (String(period.status) === 'draft') {
-    await pool.query(`UPDATE public.technician_payout_periods SET status='locked' WHERE payout_id=$1 AND status='draft'`, [payout_id]);
+    await db.query(`UPDATE public.technician_payout_periods SET status='locked' WHERE payout_id=$1 AND status='draft'`, [payout_id]);
   }
 
   if (String(paid_status) === 'paid') {
     try {
-      const prof = await _getTechProfile(tech);
+      const prof = await _getTechProfile(tech, db);
       if (_isPartnerEmploymentType(prof?.employment_type || '')) {
-        await pool.query(
+        await db.query(
           `UPDATE public.technician_withdraw_requests
               SET status='paid', paid_at=NOW(), paid_by=$3
             WHERE payout_id=$1 AND technician_username=$2 AND status IN ('approved','requested')`,
@@ -9263,10 +9318,10 @@ async function _upsertPaymentAndMaybeMarkPaid(payout_id, tech, paid_amount, slip
   }
 
   // if all techs paid -> mark payout as paid
-  const techRows = await accountingPayoutAdjustments.getPayoutTechSettlementRows(pool, payout_id);
+  const techRows = await accountingPayoutAdjustments.getPayoutTechSettlementRows(db, payout_id);
   const allPaid = accountingPayoutAdjustments.isPayoutFullyPaidFromRows(techRows);
   if (allPaid) {
-    await pool.query(`UPDATE public.technician_payout_periods SET status='paid' WHERE payout_id=$1`, [payout_id]);
+    await db.query(`UPDATE public.technician_payout_periods SET status='paid' WHERE payout_id=$1`, [payout_id]);
   }
 
   return { paid_status, net_amount, deposit_collections };
@@ -9318,49 +9373,53 @@ app.delete('/admin/super/payouts/:payout_id', requireSuperAdmin, async (req, res
   }
 });
 app.post('/admin/super/payouts/:payout_id/lock', requireSuperAdmin, async (req, res) => {
+  const client = await pool.connect();
   try {
     const payout_id = String(req.params.payout_id || '').trim();
     if (!payout_id) return res.status(400).json({ ok:false, error:'MISSING_PAYOUT_ID' });
 
-    const p = await _getPayoutPeriod(payout_id);
-    if (!p) return res.status(404).json({ ok:false, error:'PAYOUT_NOT_FOUND' });
-    if (String(p.status) === 'paid') return res.json({ ok:true, payout_id, status:'paid', already:true });
+    await client.query('BEGIN');
+    const p = await _getPayoutPeriod(payout_id, client, { forUpdate: true });
+    if (!p) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ ok:false, error:'PAYOUT_NOT_FOUND' });
+    }
+    if (String(p.status) === 'paid') {
+      await client.query('COMMIT');
+      return res.json({ ok:true, payout_id, status:'paid', already:true });
+    }
 
     // If this period was lazily auto-created, it may not have stored lines yet.
     // Before locking, regenerate draft lines from the contract engine so locked/paid periods use a stable snapshot.
     let regen = null;
     if (String(p.status || 'draft') === 'draft') {
-      const client = await pool.connect();
-      try {
-        await client.query('BEGIN');
-        regen = await _regenerateDraftPayoutContractLines({
-          client,
-          payout_id,
-          actor_username: req.actor?.username || null,
-          req,
-        });
-        await client.query('COMMIT');
-      } catch (e) {
-        try { await client.query('ROLLBACK'); } catch {}
-        throw e;
-      } finally {
-        client.release();
-      }
+      regen = await _regenerateDraftPayoutContractLines({
+        client,
+        payout_id,
+        actor_username: req.actor?.username || null,
+        req,
+      });
     }
 
-    const depositSummary = await _ensureDepositCollectionsForPayout(payout_id, req.actor?.username || null);
+    const depositSummary = await _ensureDepositCollectionsForPayout(payout_id, req.actor?.username || null, client);
 
-    await pool.query(`UPDATE public.technician_payout_periods SET status='locked' WHERE payout_id=$1 AND status='draft'`, [payout_id]);
-    const p2 = await _getPayoutPeriod(payout_id);
+    await client.query(`UPDATE public.technician_payout_periods SET status='locked' WHERE payout_id=$1 AND status='draft'`, [payout_id]);
+    const p2 = await _getPayoutPeriod(payout_id, client);
+    await client.query('COMMIT');
     return res.json({ ok:true, payout_id, status: p2?.status || 'locked', regenerated: regen ? true : false, deposit_collections: depositSummary.inserted, deposit_checked: depositSummary.checked });
   } catch (e) {
+    try { await client.query('ROLLBACK'); } catch {}
     console.error('POST /admin/super/payouts/:payout_id/lock', e);
+    if (String(e.code||'') === 'DEPOSIT_COLLECT_INDEX_REQUIRED') return res.status(503).json({ ok:false, error:'DEPOSIT_COLLECT_INDEX_REQUIRED' });
     return res.status(500).json({ ok:false, error:'LOCK_FAILED' });
+  } finally {
+    client.release();
   }
 });
 
 // ---- Super Admin: pay (upsert per tech)
 app.post('/admin/super/payouts/:payout_id/pay', requireSuperAdmin, async (req, res) => {
+  const client = await pool.connect();
   try {
     const payout_id = String(req.params.payout_id || '').trim();
     const b = req.body || {};
@@ -9371,15 +9430,22 @@ app.post('/admin/super/payouts/:payout_id/pay', requireSuperAdmin, async (req, r
 
     if (!payout_id || !tech) return res.status(400).json({ ok:false, error:'MISSING_PARAMS' });
 
-    const r = await _upsertPaymentAndMaybeMarkPaid(payout_id, tech, paid_amount, slip_url, note, req.actor?.username || null, req);
+    await client.query('BEGIN');
+    const r = await _upsertPaymentAndMaybeMarkPaid(payout_id, tech, paid_amount, slip_url, note, req.actor?.username || null, req, { client });
+    await client.query('COMMIT');
     return res.json({ ok:true, payout_id, technician_username: tech, paid_amount, paid_status: r.paid_status, net_amount: r.net_amount });
   } catch (e) {
+    try { await client.query('ROLLBACK'); } catch {}
     console.error('POST /admin/super/payouts/:payout_id/pay', e);
     if (String(e.code||'') === 'PAYOUT_NOT_FOUND') return res.status(404).json({ ok:false, error:'PAYOUT_NOT_FOUND' });
     if (String(e.code||'') === 'PAYOUT_ALREADY_PAID') return res.status(409).json({ ok:false, error:'PAYOUT_ALREADY_PAID' });
+    if (String(e.code||'') === 'DEPOSIT_COLLECT_INDEX_REQUIRED') return res.status(503).json({ ok:false, error:'DEPOSIT_COLLECT_INDEX_REQUIRED' });
+    if (String(e.code||'') === 'PAYOUT_PAYABLE_CHANGED') return res.status(409).json({ ok:false, error:'PAYOUT_PAYABLE_CHANGED', current_payable_amount: e.current_payable_amount, requested_paid_amount: e.requested_paid_amount });
     if (String(e.code||'') === 'PAYOUT_PERIOD_NOT_CLOSED') return res.status(409).json({ ok:false, error:'PAYOUT_PERIOD_NOT_CLOSED', period_end: e.period_end || null });
     if (String(e.message||'').includes('CANNOT_REGENERATE')) return res.status(409).json({ ok:false, error:String(e.message || 'CANNOT_REGENERATE') });
     return res.status(500).json({ ok:false, error:'PAY_FAILED' });
+  } finally {
+    client.release();
   }
 });
 
@@ -9403,17 +9469,37 @@ app.post('/admin/super/payouts/:payout_id/pay_bulk', requireSuperAdmin, async (r
     const note = String(b.note || '').trim() || null;
     if (!payout_id) return res.status(400).json({ ok:false, error:'MISSING_PAYOUT_ID' });
 
-    const period = await _getPayoutPeriod(payout_id);
-    if (!period) return res.status(404).json({ ok:false, error:'PAYOUT_NOT_FOUND' });
-    if (String(period.status) === 'paid') return res.status(409).json({ ok:false, error:'PAYOUT_ALREADY_PAID' });
+    await client.query('BEGIN');
+    const period = await _getPayoutPeriod(payout_id, client, { forUpdate: true });
+    if (!period) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ ok:false, error:'PAYOUT_NOT_FOUND' });
+    }
+    if (String(period.status) === 'paid') {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ ok:false, error:'PAYOUT_ALREADY_PAID' });
+    }
+
+    if (String(period.status) === 'draft') {
+      await _regenerateDraftPayoutContractLines({
+        client,
+        payout_id,
+        actor_username: req.actor?.username || null,
+        req,
+      });
+    }
+    const actor = req.actor?.username || null;
+    const depositSummary = await _ensureDepositCollectionsForPayout(payout_id, actor, client);
 
     // Settlement rows include payment-only/deposit-only technicians for final
     // all-paid evaluation. Bulk payment targets are narrower: only technicians
     // with payable gross/adjustment money and positive remaining balance.
-    const settlementRows = await accountingPayoutAdjustments.getPayoutTechSettlementRows(pool, payout_id);
+    const settlementRows = await accountingPayoutAdjustments.getPayoutTechSettlementRows(client, payout_id);
     const rows = accountingPayoutAdjustments.getBulkPayableTargetRows(settlementRows);
-    if (!rows.length) return res.json({ ok:true, payout_id, updated:0, status: period.status });
-    const actor = req.actor?.username || null;
+    if (!rows.length) {
+      await client.query('COMMIT');
+      return res.json({ ok:true, payout_id, updated:0, status: period.status });
+    }
     const netMap = new Map(rows.map(r=>[String(r.technician_username), _money(r.net_amount)]));
 
     let targets = [];
@@ -9422,15 +9508,10 @@ app.post('/admin/super/payouts/:payout_id/pay_bulk', requireSuperAdmin, async (r
     } else {
       targets = list.filter(u=>netMap.has(u));
     }
-    if (!targets.length) return res.status(400).json({ ok:false, error:'NO_TECH_SELECTED' });
-
-    const depositSummary = await _ensureDepositCollectionsForPayout(payout_id, actor);
-    for (const r of rows) {
-      const totals = await _getTechGrossAdjNet(payout_id, String(r.technician_username || ''));
-      netMap.set(String(r.technician_username), _money(totals.net_amount));
+    if (!targets.length) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ ok:false, error:'NO_TECH_SELECTED' });
     }
-
-    await client.query('BEGIN');
 
     // auto-lock if draft
     if (String(period.status) === 'draft') {
@@ -9462,7 +9543,7 @@ app.post('/admin/super/payouts/:payout_id/pay_bulk', requireSuperAdmin, async (r
 
       // ✅ mark withdraw request paid for partner
       try {
-        const prof = await _getTechProfile(tech);
+        const prof = await _getTechProfile(tech, client);
         if (_isPartnerEmploymentType(prof?.employment_type || '')) {
           await client.query(
             `UPDATE public.technician_withdraw_requests
@@ -9487,6 +9568,7 @@ app.post('/admin/super/payouts/:payout_id/pay_bulk', requireSuperAdmin, async (r
   } catch (e) {
     try { await client.query('ROLLBACK'); } catch {}
     console.error('POST /admin/super/payouts/:payout_id/pay_bulk', e);
+    if (String(e.code||'') === 'DEPOSIT_COLLECT_INDEX_REQUIRED') return res.status(503).json({ ok:false, error:'DEPOSIT_COLLECT_INDEX_REQUIRED' });
     return res.status(500).json({ ok:false, error:'PAY_BULK_FAILED' });
   } finally {
     client.release();
@@ -9513,82 +9595,19 @@ app.post('/admin/super/payouts/legacy_settle', requireSuperAdmin, async (req, re
     }
 
     const cutoffEnd = `${cutoff} 23:59:59+07`;
-    const periodsQ = await pool.query(
-      `SELECT payout_id, status, period_start, period_end
-         FROM public.technician_payout_periods
-        WHERE period_end <= $1::timestamptz
-        ORDER BY period_end ASC, payout_id ASC`,
-      [cutoffEnd]
-    );
-
-    let checked_periods = 0;
-    let touched_periods = 0;
-    let updated_payments = 0;
-    let skipped_paid_rows = 0;
-    const affected = [];
-
-    await client.query('BEGIN');
-
-    for (const period of (periodsQ.rows || [])) {
-      const payout_id = String(period.payout_id || '').trim();
-      if (!payout_id) continue;
-      checked_periods++;
-
-      const techRowsPayload = await _buildPayoutTechSummaryRows(payout_id);
-      const techRows = Array.isArray(techRowsPayload?.techs) ? techRowsPayload.techs : [];
-      let periodTouched = false;
-
-      for (const row of techRows) {
-        const tech = String(row.technician_username || '').trim();
-        if (!tech) continue;
-        if (techFilter && tech !== techFilter) continue;
-
-        const net = _money(row.net_amount ?? row.total_amount ?? 0);
-        const paid = _money(row.paid_amount || 0);
-        const status = String(row.paid_status || '').trim();
-        const remaining = _money(Math.max(0, net - paid));
-
-        if (net <= 0 || status === 'paid' || remaining <= 0.0001) {
-          skipped_paid_rows++;
-          continue;
-        }
-
-        const note = noteInput || `Legacy paid outside app before payout MVP. Settled by Super Admin cutoff ${cutoff}.`;
-        await client.query(
-          `INSERT INTO public.technician_payout_payments(
-             payout_id, technician_username, paid_amount, paid_status, paid_at, paid_by, slip_url, note, updated_at
-           ) VALUES($1,$2,$3,'paid',NOW(),$4,NULL,$5,NOW())
-           ON CONFLICT (payout_id, technician_username)
-           DO UPDATE SET
-             paid_amount=GREATEST(public.technician_payout_payments.paid_amount, EXCLUDED.paid_amount),
-             paid_status='paid',
-             paid_at=NOW(),
-             paid_by=EXCLUDED.paid_by,
-             note=COALESCE(NULLIF(public.technician_payout_payments.note,''), EXCLUDED.note),
-             updated_at=NOW()`,
-          [payout_id, tech, net, actor, note]
-        );
-
-        updated_payments++;
-        periodTouched = true;
-        affected.push({ payout_id, technician_username: tech, paid_amount: net, previous_paid_amount: paid, previous_remaining_amount: remaining });
-      }
-
-      if (periodTouched) {
-        touched_periods++;
-        const paidCheckRows = await accountingPayoutAdjustments.getPayoutTechSettlementRows(client, payout_id);
-        const allPaid = accountingPayoutAdjustments.isPayoutFullyPaidFromRows(paidCheckRows);
-        if (allPaid) {
-          await client.query(`UPDATE public.technician_payout_periods SET status='paid' WHERE payout_id=$1`, [payout_id]);
-        }
-      }
-    }
-
-    await client.query('COMMIT');
-    return res.json({ ok:true, cutoff_date: cutoff, technician_username: techFilter || null, checked_periods, touched_periods, updated_payments, skipped_paid_rows, affected });
+    const result = await accountingPayoutAdjustments.settleLegacyPaidPayouts({
+      client,
+      cutoffEnd,
+      cutoffDate: cutoff,
+      techFilter,
+      noteInput,
+      actor,
+    });
+    return res.json(result);
   } catch (e) {
     try { await client.query('ROLLBACK'); } catch {}
     console.error('POST /admin/super/payouts/legacy_settle', e);
+    if (String(e.code||'') === 'DEPOSIT_COLLECT_INDEX_REQUIRED') return res.status(503).json({ ok:false, error:'DEPOSIT_COLLECT_INDEX_REQUIRED' });
     return res.status(500).json({ ok:false, error:'LEGACY_SETTLE_FAILED' });
   } finally {
     client.release();
@@ -9725,8 +9744,14 @@ app.get('/tech/payouts/:payout_id/slip', requireTechnicianSession, async (req, r
 
     const gross = (rows || []).reduce((a, it) => a + _money(it.earn_amount || 0), 0);
     const adj_total = (adjQ.rows || []).reduce((a, it) => a + _money(it.adj_amount || 0), 0);
-    const deposit_deduction_amount = await _getDepositDeductionForPayout(payout_id, tech);
-    const deposit = await _getDepositSummary(tech);
+    const deposit = await technicianDepositCollections.getProjectedDepositDeductionForPayout(pool, {
+      payout_id,
+      technician_username: tech,
+      gross_amount: gross,
+      adj_total,
+      period_status: period.status,
+    });
+    const deposit_deduction_amount = _money(deposit.deposit_deduction_amount || 0);
     const net = _money(gross + adj_total - deposit_deduction_amount);
 
     const payment = payQ.rows[0] || null;
@@ -9984,8 +10009,14 @@ app.get('/tech/payouts', requireTechnicianSession, async (req, res) => {
       const paid_amount = Number(payment?.paid_amount || 0);
       const paid_status = String(payment?.paid_status || (paid_amount > 0 ? 'partial' : 'unpaid'));
 
-      const deposit_deduction_amount = await _getDepositDeductionForPayout(p.payout_id, tech);
-      const deposit = await _getDepositSummary(tech);
+      const deposit = await technicianDepositCollections.getProjectedDepositDeductionForPayout(pool, {
+        payout_id: p.payout_id,
+        technician_username: tech,
+        gross_amount,
+        adj_total,
+        period_status: status,
+      });
+      const deposit_deduction_amount = _money(deposit.deposit_deduction_amount || 0);
       const net_amount = _money(gross_amount + adj_total - deposit_deduction_amount);
       const remaining_amount = _money(net_amount - paid_amount);
       const paid_status_calc = _paidStatus(net_amount, paid_amount);
@@ -10073,8 +10104,14 @@ app.get('/tech/payouts/:payout_id', requireTechnicianSession, async (req, res) =
 
     const gross = (lines || []).reduce((a, it) => a + Number(it.earn_amount || 0), 0);
     const adj_total = (adjQ.rows || []).reduce((a, it) => a + Number(it.adj_amount || 0), 0);
-    const deposit_deduction_amount = await _getDepositDeductionForPayout(payout_id, tech);
-    const deposit = await _getDepositSummary(tech);
+    const deposit = await technicianDepositCollections.getProjectedDepositDeductionForPayout(pool, {
+      payout_id,
+      technician_username: tech,
+      gross_amount: gross,
+      adj_total,
+      period_status: status,
+    });
+    const deposit_deduction_amount = _money(deposit.deposit_deduction_amount || 0);
     const net = _money(gross + adj_total - deposit_deduction_amount);
     const payment = payQ.rows[0] || null;
     const paid_amount = Number(payment?.paid_amount || 0);
@@ -23235,6 +23272,7 @@ app.post('/admin/accounting/payouts/:payout_id/adjust', requireAccountingPermiss
 });
 
 app.post('/admin/accounting/payouts/:payout_id/pay', requireAccountingPermission('accounting_mark_payout_paid'), async (req, res) => {
+  const client = await pool.connect();
   try {
     const payout_id = String(req.params.payout_id || '').trim();
     const body = req.body || {};
@@ -23245,36 +23283,66 @@ app.post('/admin/accounting/payouts/:payout_id/pay', requireAccountingPermission
     if (body.confirm_paid !== true) return res.status(400).json({ ok: false, error: 'CONFIRM_PAID_REQUIRED' });
     if (Number(paidNow || 0) <= 0) return res.status(400).json({ ok: false, error: 'INVALID_PAID_AMOUNT' });
 
+    await client.query('BEGIN');
     const prepared = await ensurePayoutPeriodAndSnapshotForPayment({
       pool,
+      client,
       payout_id,
       actor_username: _accountingActor(req).username || null,
-      getPayoutPeriod: _getPayoutPeriod,
+      getPayoutPeriod: (pid) => _getPayoutPeriod(pid, client, { forUpdate: true }),
       regenerateDraftPayoutContractLines: _regenerateDraftPayoutContractLines,
       req,
     });
-    const beforeTotals = await _getTechGrossAdjNet(payout_id, tech);
-    const beforePayQ = await pool.query(
+    const beforeTotals = await _getTechGrossAdjNet(payout_id, tech, client, { period_status: prepared.period?.status || 'draft' });
+    const beforePayQ = await client.query(
       `SELECT paid_amount, paid_status, paid_at, paid_by, slip_url, note, payment_method, payment_reference
          FROM public.technician_payout_payments
         WHERE payout_id=$1 AND technician_username=$2
-        LIMIT 1`,
+        LIMIT 1
+        FOR UPDATE`,
       [payout_id, tech]
     );
     const beforePayment = beforePayQ.rows[0] || null;
     const currentPaid = Number(beforePayment?.paid_amount || 0);
-    const remaining = Math.max(0, Number(beforeTotals.net_amount || 0) - currentPaid);
-    if (remaining <= 0.0001) return res.status(409).json({ ok: false, error: 'PAYOUT_ALREADY_PAID' });
-    if (Number(paidNow) - remaining > 0.01) return res.status(400).json({ ok: false, error: 'PAID_AMOUNT_EXCEEDS_REMAINING', remaining_amount: _money(remaining) });
+    const depositResult = await _ensureDepositCollectionForPayout({
+      payout_id,
+      username: tech,
+      gross_amount: beforeTotals.gross_amount,
+      adj_total: beforeTotals.adj_total,
+      actor: _accountingActor(req).username || null,
+      client,
+    });
+    const currentTotals = await _getTechGrossAdjNet(payout_id, tech, client, { period_status: prepared.period?.status || 'draft' });
+    const remaining = Math.max(0, Number(currentTotals.net_amount || 0) - currentPaid);
+    if (remaining <= 0.0001) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ ok: false, error: 'PAYOUT_ALREADY_PAID' });
+    }
+    if (Number(paidNow) - remaining > 0.01) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        ok: false,
+        error: 'PAYOUT_PAYABLE_CHANGED',
+        current_payable_amount: _money(currentTotals.net_amount || 0),
+        remaining_amount: _money(remaining),
+        requested_paid_amount: _money(paidNow),
+        deposit_deduction_amount: _money(currentTotals.deposit_deduction_amount || 0),
+      });
+    }
 
     const payment_method = String(body.payment_method || '').trim() || null;
     const payment_reference = String(body.payment_reference || '').trim() || null;
     const note = String(body.note || '').trim() || null;
     const slip_url = String(body.slip_url || '').trim() || null;
     const cumulativePaid = _money(currentPaid + Number(paidNow));
-    const result = await _upsertPaymentAndMaybeMarkPaid(payout_id, tech, cumulativePaid, slip_url, note, _accountingActor(req).username || null, req, { preparedPeriod: prepared.period });
+    const result = await _upsertPaymentAndMaybeMarkPaid(payout_id, tech, cumulativePaid, slip_url, note, _accountingActor(req).username || null, req, {
+      client,
+      preparedPeriod: prepared.period,
+      depositAlreadyPrepared: true,
+      depositCollections: { checked: 1, inserted: depositResult.inserted ? 1 : 0 },
+    });
 
-    await pool.query(
+    await client.query(
       `UPDATE public.technician_payout_payments
           SET payment_method=COALESCE($3, payment_method),
               payment_reference=COALESCE($4, payment_reference)
@@ -23282,14 +23350,14 @@ app.post('/admin/accounting/payouts/:payout_id/pay', requireAccountingPermission
       [payout_id, tech, payment_method, payment_reference]
     );
 
-    const afterPayQ = await pool.query(
+    const afterPayQ = await client.query(
       `SELECT paid_amount, paid_status, paid_at, paid_by, slip_url, note, payment_method, payment_reference
          FROM public.technician_payout_payments
         WHERE payout_id=$1 AND technician_username=$2
         LIMIT 1`,
       [payout_id, tech]
     );
-    const afterTotals = await _getTechGrossAdjNet(payout_id, tech);
+    const afterTotals = await _getTechGrossAdjNet(payout_id, tech, client, { period_status: prepared.period?.status || 'locked' });
     await logAccountingAudit(req, {
       action: 'MARK_PAYOUT_PAID',
       entity_type: 'technician_payout_payment',
@@ -23297,7 +23365,9 @@ app.post('/admin/accounting/payouts/:payout_id/pay', requireAccountingPermission
       before_json: { totals: beforeTotals, payment: beforePayment },
       after_json: { totals: afterTotals, payment: afterPayQ.rows[0] || null },
       note: note || payment_reference || payment_method || null,
-    });
+    }, { client, strict: true });
+
+    await client.query('COMMIT');
 
     return res.json({
       ok: true,
@@ -23309,12 +23379,17 @@ app.post('/admin/accounting/payouts/:payout_id/pay', requireAccountingPermission
       payment: afterPayQ.rows[0] || null,
     });
   } catch (e) {
+    try { await client.query('ROLLBACK'); } catch {}
     console.error('POST /admin/accounting/payouts/:payout_id/pay', e);
     if (String(e.code || '') === 'PAYOUT_NOT_FOUND') return res.status(404).json({ ok: false, error: 'PAYOUT_NOT_FOUND' });
     if (String(e.code || '') === 'PAYOUT_ALREADY_PAID') return res.status(409).json({ ok: false, error: 'PAYOUT_ALREADY_PAID' });
+    if (String(e.code || '') === 'DEPOSIT_COLLECT_INDEX_REQUIRED') return res.status(503).json({ ok: false, error: 'DEPOSIT_COLLECT_INDEX_REQUIRED' });
+    if (String(e.code || '') === 'PAYOUT_PAYABLE_CHANGED') return res.status(409).json({ ok: false, error: 'PAYOUT_PAYABLE_CHANGED', current_payable_amount: e.current_payable_amount, requested_paid_amount: e.requested_paid_amount });
     if (String(e.code || '') === 'PAYOUT_PERIOD_NOT_CLOSED') return res.status(409).json({ ok: false, error: 'PAYOUT_PERIOD_NOT_CLOSED', period_end: e.period_end || null });
     if (String(e.message || '').includes('CANNOT_REGENERATE')) return res.status(409).json({ ok: false, error: String(e.message || 'CANNOT_REGENERATE') });
     return res.status(500).json({ ok: false, error: 'MARK_PAYOUT_PAID_FAILED' });
+  } finally {
+    client.release();
   }
 });
 

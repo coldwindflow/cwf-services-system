@@ -248,6 +248,117 @@ function getBulkPayableTargetRows(settlementRows = []) {
   );
 }
 
+async function settleLegacyPaidPayouts({
+  client,
+  cutoffEnd,
+  cutoffDate,
+  techFilter = "",
+  noteInput = "",
+  actor = null,
+} = {}) {
+  if (!client || typeof client.query !== "function") throw appError("INVALID_LEGACY_SETTLE_CLIENT", 500);
+  const cutoff = String(cutoffDate || "").trim();
+  const techOnly = String(techFilter || "").trim();
+  const noteText = String(noteInput || "").trim();
+  let checked_periods = 0;
+  let touched_periods = 0;
+  let updated_payments = 0;
+  let skipped_paid_rows = 0;
+  const affected = [];
+
+  await client.query("BEGIN");
+  try {
+    const periodsQ = await client.query(
+      `SELECT payout_id, status, period_start, period_end
+         FROM public.technician_payout_periods
+        WHERE period_end <= $1::timestamptz
+        ORDER BY period_end ASC, payout_id ASC
+        FOR UPDATE`,
+      [cutoffEnd]
+    );
+
+    for (const period of (periodsQ.rows || [])) {
+      const payout_id = String(period.payout_id || "").trim();
+      if (!payout_id) continue;
+      checked_periods++;
+      if (String(period.status || "") === "paid") {
+        skipped_paid_rows++;
+        continue;
+      }
+
+      const techRows = await getPayoutTechSettlementRows(client, payout_id);
+      let periodTouched = false;
+
+      for (const row of techRows) {
+        const tech = String(row.technician_username || "").trim();
+        if (!tech) continue;
+        if (techOnly && tech !== techOnly) continue;
+
+        const paid = money(row.paid_amount || 0);
+        const status = String(row.paid_status || "").trim();
+        const net = money(row.net_amount ?? row.total_amount ?? 0);
+        const remaining = money(Math.max(0, net - paid));
+        if (net <= 0 || status === "paid" || remaining <= 0.0001) {
+          skipped_paid_rows++;
+          continue;
+        }
+
+        const note = noteText || `Legacy paid outside app before payout MVP. Settled by Super Admin cutoff ${cutoff}.`;
+        await client.query(
+          `INSERT INTO public.technician_payout_payments(
+             payout_id, technician_username, paid_amount, paid_status, paid_at, paid_by, slip_url, note, updated_at
+           ) VALUES($1,$2,$3,'paid',NOW(),$4,NULL,$5,NOW())
+           ON CONFLICT (payout_id, technician_username)
+           DO UPDATE SET
+             paid_amount=GREATEST(public.technician_payout_payments.paid_amount, EXCLUDED.paid_amount),
+             paid_status='paid',
+             paid_at=NOW(),
+             paid_by=EXCLUDED.paid_by,
+             note=COALESCE(NULLIF(public.technician_payout_payments.note,''), EXCLUDED.note),
+             updated_at=NOW()`,
+          [payout_id, tech, net, actor, note]
+        );
+
+        updated_payments++;
+        periodTouched = true;
+        affected.push({
+          payout_id,
+          technician_username: tech,
+          paid_amount: net,
+          previous_paid_amount: paid,
+          previous_remaining_amount: remaining,
+          deposit_deduction_amount: money(row.deposit_deduction_amount || 0),
+          deposit_inserted: false,
+        });
+      }
+
+      if (periodTouched) {
+        touched_periods++;
+        const paidCheckRows = await getPayoutTechSettlementRows(client, payout_id);
+        const allPaid = isPayoutFullyPaidFromRows(paidCheckRows);
+        if (allPaid) {
+          await client.query(`UPDATE public.technician_payout_periods SET status='paid' WHERE payout_id=$1`, [payout_id]);
+        }
+      }
+    }
+
+    await client.query("COMMIT");
+    return {
+      ok: true,
+      cutoff_date: cutoff,
+      technician_username: techOnly || null,
+      checked_periods,
+      touched_periods,
+      updated_payments,
+      skipped_paid_rows,
+      affected,
+    };
+  } catch (err) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw err;
+  }
+}
+
 async function lockPaymentRow(client, payoutId, tech) {
   const q = await client.query(
     `SELECT payment_id, payout_id, technician_username, paid_amount, paid_status, paid_at, paid_by, slip_url, note,
@@ -448,5 +559,6 @@ module.exports = {
   getPayoutTechTotals,
   isPayoutFullyPaidFromRows,
   getBulkPayableTargetRows,
+  settleLegacyPaidPayouts,
   applyAccountingPositivePayoutAdjustment,
 };
