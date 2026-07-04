@@ -143,6 +143,32 @@ async function getExistingCollectForPayout(client, payoutId, username, { forUpda
   };
 }
 
+async function getTechnicianPayoutPaymentState(client, payoutId, username, { forUpdate = false } = {}) {
+  const pid = String(payoutId || "").trim();
+  const tech = String(username || "").trim();
+  if (!pid || !tech) {
+    return { exists: false, paid_amount: 0, paid_status: "", paid_at: null, paymentAlreadyRecorded: false };
+  }
+  const q = await client.query(
+    `SELECT paid_amount, paid_status, paid_at
+       FROM public.technician_payout_payments
+      WHERE payout_id=$1 AND technician_username=$2
+      LIMIT 1
+      ${forUpdate ? "FOR UPDATE" : ""}`,
+    [pid, tech]
+  );
+  const row = q.rows?.[0] || null;
+  const paidAmount = money(row?.paid_amount || 0);
+  const paidStatus = String(row?.paid_status || "").trim().toLowerCase();
+  return {
+    exists: !!row,
+    paid_amount: paidAmount,
+    paid_status: paidStatus,
+    paid_at: row?.paid_at || null,
+    paymentAlreadyRecorded: paidAmount > 0 || paidStatus === "partial" || paidStatus === "paid" || row?.paid_at != null,
+  };
+}
+
 function calculateDepositDeduction({
   existingCollectExists = false,
   existingCollectAmount = 0,
@@ -185,10 +211,11 @@ async function getProjectedDepositDeductionForPayout(client, {
   const pid = String(payout_id || "").trim();
   const tech = String(technician_username || "").trim();
   const existing = await getExistingCollectForPayout(client, pid, tech);
+  const payment = await getTechnicianPayoutPaymentState(client, pid, tech);
   const account = await getDepositAccount(client, tech);
   const collected = await getDepositCollected(client, tech);
   const profile = await getTechnicianProfile(client, tech);
-  const paidHistory = String(period_status || "").trim() === "paid";
+  const paidHistory = String(period_status || "").trim() === "paid" || (!existing.exists && payment.paymentAlreadyRecorded);
   const calc = paidHistory
     ? calculateDepositDeduction({
         existingCollectExists: existing.exists,
@@ -210,18 +237,24 @@ async function getProjectedDepositDeductionForPayout(client, {
         grossAmount: gross_amount,
         adjustmentTotal: adj_total,
       });
+  const reason = !existing.exists && payment.paymentAlreadyRecorded
+    ? "payment_already_recorded"
+    : calc.reason;
   return {
     deposit_deduction_amount: calc.amount,
     deposit_existing_collect_amount: existing.amount,
     deposit_existing_collect_exists: existing.exists,
     deposit_projected: !existing.exists && calc.amount > 0,
-    deposit_projection_reason: calc.reason,
+    deposit_projection_reason: reason,
     deposit_target_amount: account.target_amount,
     deposit_collected_total: collected,
     deposit_collected_total_projected: money(collected + (!existing.exists ? calc.amount : 0)),
     deposit_remaining_amount: money(Math.max(0, Number(account.target_amount || 0) - Number(collected || 0))),
     deposit_remaining_amount_projected: money(Math.max(0, Number(account.target_amount || 0) - Number(collected || 0) - (!existing.exists ? calc.amount : 0))),
     deposit_is_required: account.is_required !== false,
+    deposit_payment_paid_amount: payment.paid_amount,
+    deposit_payment_paid_status: payment.paid_status,
+    deposit_payment_paid_at: payment.paid_at,
     latest_deposit_deduction: calc.amount,
   };
 }
@@ -241,6 +274,18 @@ async function materializeDepositCollectForPayout(client, {
   await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`technician_deposit_collect:${tech}`]);
 
   const existing = await getExistingCollectForPayout(client, pid, tech, { forUpdate: true });
+  const payment = await getTechnicianPayoutPaymentState(client, pid, tech, { forUpdate: true });
+  if (!existing.exists && payment.paymentAlreadyRecorded) {
+    return {
+      deposit_deduction_amount: 0,
+      inserted: false,
+      existing: false,
+      reason: "payment_already_recorded",
+      paid_amount: payment.paid_amount,
+      paid_status: payment.paid_status,
+      paid_at: payment.paid_at,
+    };
+  }
   const account = await getDepositAccount(client, tech);
   const collected = await getDepositCollected(client, tech);
   const profile = await getTechnicianProfile(client, tech);
@@ -304,6 +349,7 @@ module.exports = {
   getDepositAccount,
   getDepositCollected,
   getExistingCollectForPayout,
+  getTechnicianPayoutPaymentState,
   getProjectedDepositDeductionForPayout,
   materializeDepositCollectForPayout,
 };

@@ -25,7 +25,8 @@ async function ensurePayoutPeriodAndSnapshotForPayment({
 
   const parsed = parsePayoutId(pid);
   const db = client || pool;
-  let existing = await getPayoutPeriod(pid);
+  const readPeriod = (forUpdate = false) => getPayoutPeriod(pid, db, { forUpdate });
+  let existing = await readPeriod(Boolean(client));
   if (!existing && !parsed) {
     const err = new Error("PAYOUT_NOT_FOUND");
     err.code = "PAYOUT_NOT_FOUND";
@@ -73,7 +74,7 @@ async function ensurePayoutPeriodAndSnapshotForPayment({
       actor_username: actor_username || "system:prepay",
       req,
     });
-    const period = await getPayoutPeriod(pid);
+    const period = await readPeriod(true);
     return { period: period || effectivePeriod, created: !existing, regenerated: true, regen };
   }
 
@@ -95,7 +96,7 @@ async function ensurePayoutPeriodAndSnapshotForPayment({
       req,
     });
     await ownedClient.query("COMMIT");
-    const period = await getPayoutPeriod(pid);
+    const period = await getPayoutPeriod(pid, pool, { forUpdate: false });
     return { period: period || effectivePeriod, created: !existing, regenerated: true, regen };
   } catch (e) {
     try { await ownedClient.query("ROLLBACK"); } catch (_) {}

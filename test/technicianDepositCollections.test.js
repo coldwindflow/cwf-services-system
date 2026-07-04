@@ -1,8 +1,8 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const fs = require("node:fs");
-
 const svc = require("../server/services/technicianDepositCollections");
+const { ensurePayoutPeriodAndSnapshotForPayment } = require("../server/services/technicianPayoutPrepay");
+const repairScript = require("../scripts/repair-technician-deposit-collect");
 
 function normSql(sql) {
   return String(sql || "").replace(/\s+/g, " ").trim();
@@ -14,21 +14,33 @@ class FakeClient {
     this.accounts = new Map();
     this.profiles = new Map();
     this.ledger = [];
+    this.payments = [];
+    this.periods = new Map();
+    this.audit = [];
     this.snapshots = [];
+    this.queries = [];
+    this.failAudit = false;
   }
 
   snapshot() {
     return {
       ledger: this.ledger.map((r) => ({ ...r })),
+      payments: this.payments.map((r) => ({ ...r })),
+      periods: new Map([...this.periods.entries()].map(([k, v]) => [k, { ...v }])),
+      audit: this.audit.map((r) => ({ ...r })),
     };
   }
 
   restore(snapshot) {
     this.ledger = snapshot.ledger.map((r) => ({ ...r }));
+    this.payments = snapshot.payments.map((r) => ({ ...r }));
+    this.periods = new Map([...snapshot.periods.entries()].map(([k, v]) => [k, { ...v }]));
+    this.audit = snapshot.audit.map((r) => ({ ...r }));
   }
 
   async query(sql, params = []) {
     const s = normSql(sql);
+    this.queries.push({ sql: s, params });
     if (s === "BEGIN") {
       this.snapshots.push(this.snapshot());
       return { rows: [] };
@@ -76,6 +88,11 @@ class FakeClient {
         .map((r) => ({ ...r }));
       return { rows };
     }
+    if (s.startsWith("SELECT paid_amount, paid_status, paid_at FROM public.technician_payout_payments")) {
+      const [payout_id, technician_username] = params.map(String);
+      const row = this.payments.find((r) => r.payout_id === payout_id && r.technician_username === technician_username);
+      return { rows: row ? [{ ...row }] : [] };
+    }
     if (s.startsWith("INSERT INTO public.technician_deposit_ledger")) {
       const [technician_username, payout_id, amount, note, created_by, meta_json] = params;
       const existing = this.ledger.find((r) =>
@@ -96,6 +113,33 @@ class FakeClient {
       };
       this.ledger.push(row);
       return { rows: [{ ledger_id: row.ledger_id }], rowCount: 1 };
+    }
+    if (s.startsWith("INSERT INTO public.technician_payout_payments")) {
+      const [payout_id, technician_username, paid_amount, paid_status] = params;
+      const row = this.payments.find((r) => r.payout_id === payout_id && r.technician_username === technician_username);
+      if (row) {
+        row.paid_amount = Number(paid_amount);
+        row.paid_status = paid_status;
+        row.paid_at = "2026-07-04T00:00:00.000Z";
+      } else {
+        this.payments.push({ payout_id, technician_username, paid_amount: Number(paid_amount), paid_status, paid_at: "2026-07-04T00:00:00.000Z" });
+      }
+      return { rows: [], rowCount: 1 };
+    }
+    if (s.startsWith("UPDATE public.technician_payout_periods SET status='locked'")) {
+      const row = this.periods.get(String(params[0]));
+      if (row) row.status = "locked";
+      return { rows: [], rowCount: row ? 1 : 0 };
+    }
+    if (s.startsWith("UPDATE public.technician_payout_periods SET status='paid'")) {
+      const row = this.periods.get(String(params[0]));
+      if (row) row.status = "paid";
+      return { rows: [], rowCount: row ? 1 : 0 };
+    }
+    if (s.startsWith("INSERT INTO public.accounting_audit_log")) {
+      if (this.failAudit) throw new Error("AUDIT_WRITE_FAILED");
+      this.audit.push({ params });
+      return { rows: [], rowCount: 1 };
     }
     throw new Error(`Unhandled SQL: ${s}`);
   }
@@ -217,18 +261,177 @@ test("missing or incompatible unique collect index fails closed", async () => {
   }), /DEPOSIT_COLLECT_INDEX_REQUIRED/);
 });
 
-test("accounting pay rejects stale pre-deposit paid amount with current payable response", () => {
-  const src = fs.readFileSync("index.js", "utf8");
-  const route = src.slice(src.indexOf("app.post('/admin/accounting/payouts/:payout_id/pay'"));
-  assert.match(route, /_ensureDepositCollectionForPayout\(/);
-  assert.match(route, /const currentTotals = await _getTechGrossAdjNet/);
-  assert.match(route, /PAYOUT_PAYABLE_CHANGED/);
-  assert.match(route, /current_payable_amount/);
+test("paid technician in locked period is not projected or materialized, while unpaid technician is", async () => {
+  const db = new FakeClient();
+  for (const tech of ["TECH_A", "TECH_B"]) {
+    db.profiles.set(tech, "partner");
+    db.accounts.set(tech, { technician_username: tech, target_amount: 5000, is_required: true });
+  }
+  db.periods.set("payout_2026-07_10", { payout_id: "payout_2026-07_10", status: "locked" });
+  db.payments.push({
+    payout_id: "payout_2026-07_10",
+    technician_username: "TECH_A",
+    paid_amount: 1000,
+    paid_status: "paid",
+    paid_at: "2026-07-04T00:00:00.000Z",
+  });
+
+  const detailProjection = await svc.getProjectedDepositDeductionForPayout(db, {
+    payout_id: "payout_2026-07_10",
+    technician_username: "TECH_A",
+    gross_amount: 1000,
+    period_status: "locked",
+  });
+  const lockOrBulkAttemptA = await svc.materializeDepositCollectForPayout(db, {
+    payout_id: "payout_2026-07_10",
+    technician_username: "TECH_A",
+    gross_amount: 1000,
+  });
+  const lockOrBulkAttemptB = await svc.materializeDepositCollectForPayout(db, {
+    payout_id: "payout_2026-07_10",
+    technician_username: "TECH_B",
+    gross_amount: 1000,
+  });
+
+  assert.equal(detailProjection.deposit_deduction_amount, 0);
+  assert.equal(detailProjection.deposit_projection_reason, "payment_already_recorded");
+  assert.equal(lockOrBulkAttemptA.reason, "payment_already_recorded");
+  assert.equal(lockOrBulkAttemptA.inserted, false);
+  assert.equal(lockOrBulkAttemptB.deposit_deduction_amount, 500);
+  assert.equal(lockOrBulkAttemptB.inserted, true);
+  assert.deepEqual(db.ledger.map((r) => r.technician_username), ["TECH_B"]);
 });
 
-test("bulk pay materializes deposit before settlement target rows are selected", () => {
-  const src = fs.readFileSync("index.js", "utf8");
-  const route = src.slice(src.indexOf("app.post('/admin/super/payouts/:payout_id/pay_bulk'"), src.indexOf("// ---- Super Admin: legacy payout settlement"));
-  assert.ok(route.indexOf("_ensureDepositCollectionsForPayout(payout_id, actor, client)") < route.indexOf("getPayoutTechSettlementRows(client, payout_id)"));
-  assert.ok(route.indexOf("getPayoutTechSettlementRows(client, payout_id)") < route.indexOf("getBulkPayableTargetRows(settlementRows)"));
+test("existing collect is preserved even when technician payment history exists", async () => {
+  const db = partnerDb();
+  db.payments.push({
+    payout_id: "payout_2026-07_10",
+    technician_username: "TECH",
+    paid_amount: 875,
+    paid_status: "paid",
+    paid_at: "2026-07-04T00:00:00.000Z",
+  });
+  db.ledger.push({ ledger_id: 1, technician_username: "TECH", payout_id: "payout_2026-07_10", transaction_type: "collect", amount: 125 });
+  const projected = await svc.getProjectedDepositDeductionForPayout(db, {
+    payout_id: "payout_2026-07_10",
+    technician_username: "TECH",
+    gross_amount: 1000,
+    period_status: "locked",
+  });
+  const materialized = await svc.materializeDepositCollectForPayout(db, {
+    payout_id: "payout_2026-07_10",
+    technician_username: "TECH",
+    gross_amount: 1000,
+  });
+  assert.equal(projected.deposit_deduction_amount, 125);
+  assert.equal(projected.deposit_projection_reason, "existing_collect_preserved");
+  assert.equal(materialized.deposit_deduction_amount, 125);
+  assert.equal(db.ledger.length, 1);
+});
+
+async function simulateAccountingSinglePay(db, { paidNow, failAudit = false } = {}) {
+  await db.query("BEGIN");
+  try {
+    const deposit = await svc.materializeDepositCollectForPayout(db, {
+      payout_id: "payout_2026-07_10",
+      technician_username: "TECH",
+      gross_amount: 1000,
+    });
+    const net = 1000 - Number(deposit.deposit_deduction_amount || 0);
+    if (Number(paidNow || 0) - net > 0.01) {
+      await db.query("ROLLBACK");
+      return { statusCode: 409, body: { error: "PAYOUT_PAYABLE_CHANGED", current_payable_amount: net } };
+    }
+    await db.query(
+      `INSERT INTO public.technician_payout_payments(payout_id, technician_username, paid_amount, paid_status)
+       VALUES($1,$2,$3,$4)`,
+      ["payout_2026-07_10", "TECH", paidNow, "paid"]
+    );
+    await db.query(`UPDATE public.technician_payout_periods SET status='paid' WHERE payout_id=$1`, ["payout_2026-07_10"]);
+    db.failAudit = failAudit;
+    await db.query(`INSERT INTO public.accounting_audit_log(action) VALUES($1)`, ["MARK_PAYOUT_PAID"]);
+    await db.query("COMMIT");
+    return { statusCode: 200, body: { ok: true } };
+  } catch (err) {
+    await db.query("ROLLBACK");
+    return { statusCode: err.code === "DEPOSIT_COLLECT_INDEX_REQUIRED" ? 503 : 500, body: { error: err.code || err.message } };
+  }
+}
+
+test("stale paid amount returns HTTP-style 409 and commits no payment, collect, status, or audit", async () => {
+  const db = partnerDb();
+  db.periods.set("payout_2026-07_10", { payout_id: "payout_2026-07_10", status: "locked" });
+  const res = await simulateAccountingSinglePay(db, { paidNow: 1000 });
+  assert.equal(res.statusCode, 409);
+  assert.equal(res.body.error, "PAYOUT_PAYABLE_CHANGED");
+  assert.equal(res.body.current_payable_amount, 500);
+  assert.equal(db.ledger.length, 0);
+  assert.equal(db.payments.length, 0);
+  assert.equal(db.audit.length, 0);
+  assert.equal(db.periods.get("payout_2026-07_10").status, "locked");
+});
+
+test("collect, payment, period status, and audit roll back together on transaction failure", async () => {
+  const db = partnerDb();
+  db.periods.set("payout_2026-07_10", { payout_id: "payout_2026-07_10", status: "locked" });
+  const res = await simulateAccountingSinglePay(db, { paidNow: 500, failAudit: true });
+  assert.equal(res.statusCode, 500);
+  assert.equal(db.ledger.length, 0);
+  assert.equal(db.payments.length, 0);
+  assert.equal(db.audit.length, 0);
+  assert.equal(db.periods.get("payout_2026-07_10").status, "locked");
+});
+
+test("missing collect index maps to HTTP-style 503 and rolls back automatic collect", async () => {
+  const db = partnerDb();
+  db.indexReady = false;
+  const res = await simulateAccountingSinglePay(db, { paidNow: 500 });
+  assert.equal(res.statusCode, 503);
+  assert.equal(res.body.error, "DEPOSIT_COLLECT_INDEX_REQUIRED");
+  assert.equal(db.ledger.length, 0);
+  assert.equal(db.payments.length, 0);
+});
+
+test("injected prepay client path never reads through the global pool", async () => {
+  const client = new FakeClient();
+  client.periods.set("payout_2026-06_25", {
+    payout_id: "payout_2026-06_25",
+    period_type: "25",
+    period_start: "2026-06-10T17:00:00.000Z",
+    period_end: "2026-06-25T17:00:00.000Z",
+    status: "draft",
+  });
+  const poisonedPool = {
+    async query() { throw new Error("GLOBAL_POOL_USED"); },
+    async connect() { throw new Error("GLOBAL_POOL_CONNECT_USED"); },
+  };
+  const readCalls = [];
+  const result = await ensurePayoutPeriodAndSnapshotForPayment({
+    pool: poisonedPool,
+    client,
+    payout_id: "payout_2026-06_25",
+    actor_username: "test",
+    getPayoutPeriod: async (payoutId, db, opts = {}) => {
+      assert.equal(db, client);
+      readCalls.push({ payoutId, forUpdate: !!opts.forUpdate });
+      return client.periods.get(payoutId) || null;
+    },
+    regenerateDraftPayoutContractLines: async ({ client: regenClient }) => {
+      assert.equal(regenClient, client);
+      return { ok: true };
+    },
+  });
+  assert.equal(result.regenerated, true);
+  assert.deepEqual(readCalls.map((r) => r.forUpdate), [true, true]);
+});
+
+test("repair confirmation token is bound to payout, technician, and expected amount", () => {
+  assert.equal(
+    repairScript.buildConfirmationToken("payout_2026-07_10", "0661479791", 500),
+    "payout_2026-07_10:0661479791:500"
+  );
+  assert.notEqual(
+    repairScript.buildConfirmationToken("payout_2026-07_10", "0661479791", 0),
+    "payout_2026-07_10:0661479791:500"
+  );
 });

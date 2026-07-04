@@ -13,10 +13,15 @@ function arg(name, fallback = "") {
   return found ? String(found).slice(prefix.length).trim() : fallback;
 }
 
+function buildConfirmationToken(payoutId, technician, expectedCollect) {
+  return `${String(payoutId || "").trim()}:${String(technician || "").trim()}:${Number(expectedCollect || 0)}`;
+}
+
 async function main() {
   const payoutId = arg("payout");
   const technician = arg("technician");
   const execute = process.argv.includes("--execute");
+  const confirm = arg("confirm");
   const databaseUrl = process.env.DATABASE_URL;
 
   if (!databaseUrl) throw new Error("DATABASE_URL is required");
@@ -62,7 +67,14 @@ async function main() {
       };
     }
 
+    async function readPaymentAndCollect(db, { lockPayment = false, lockCollect = false } = {}) {
+      const payment = await deposits.getTechnicianPayoutPaymentState(db, payoutId, technician, { forUpdate: lockPayment });
+      const existingCollect = await deposits.getExistingCollectForPayout(db, payoutId, technician, { forUpdate: lockCollect });
+      return { payment, existingCollect };
+    }
+
     const { period, totals } = await readPeriodAndTotals(client);
+    const precheck = await readPaymentAndCollect(client);
     const projected = await deposits.getProjectedDepositDeductionForPayout(client, {
       payout_id: payoutId,
       technician_username: technician,
@@ -70,6 +82,8 @@ async function main() {
       adj_total: totals.adj_total,
       period_status: period.status,
     });
+    const expectedCollect = Number(projected.deposit_deduction_amount || 0);
+    const confirmationToken = buildConfirmationToken(payoutId, technician, expectedCollect);
 
     const report = {
       dry_run: !execute,
@@ -78,6 +92,13 @@ async function main() {
       period_status: period.status,
       gross_amount: Number(totals.gross_amount || 0),
       adj_total: Number(totals.adj_total || 0),
+      paid_amount: precheck.payment.paid_amount,
+      paid_status: precheck.payment.paid_status || null,
+      paid_at: precheck.payment.paid_at || null,
+      existing_collect: precheck.existingCollect.amount,
+      existing_collect_exists: precheck.existingCollect.exists,
+      expected_collect: expectedCollect,
+      confirmation_token: confirmationToken,
       projected,
     };
 
@@ -88,6 +109,26 @@ async function main() {
 
     await client.query("BEGIN");
     const locked = await readPeriodAndTotals(client, { lock: true });
+    const lockedPrecheck = await readPaymentAndCollect(client, { lockPayment: true, lockCollect: true });
+    const lockedProjected = await deposits.getProjectedDepositDeductionForPayout(client, {
+      payout_id: payoutId,
+      technician_username: technician,
+      gross_amount: locked.totals.gross_amount,
+      adj_total: locked.totals.adj_total,
+      period_status: locked.period.status,
+    });
+    const lockedExpectedCollect = Number(lockedProjected.deposit_deduction_amount || 0);
+    const lockedConfirmationToken = buildConfirmationToken(payoutId, technician, lockedExpectedCollect);
+    if (confirm !== lockedConfirmationToken) {
+      const err = new Error(`CONFIRMATION_TOKEN_REQUIRED:${lockedConfirmationToken}`);
+      err.code = "CONFIRMATION_TOKEN_REQUIRED";
+      throw err;
+    }
+    if (!lockedPrecheck.existingCollect.exists && lockedPrecheck.payment.paymentAlreadyRecorded) {
+      const err = new Error("PAYMENT_ALREADY_RECORDED");
+      err.code = "PAYMENT_ALREADY_RECORDED";
+      throw err;
+    }
     const materialized = await deposits.materializeDepositCollectForPayout(client, {
       payout_id: payoutId,
       technician_username: technician,
@@ -103,6 +144,12 @@ async function main() {
         period_status: locked.period.status,
         gross_amount: Number(locked.totals.gross_amount || 0),
         adj_total: Number(locked.totals.adj_total || 0),
+        paid_amount: lockedPrecheck.payment.paid_amount,
+        paid_status: lockedPrecheck.payment.paid_status || null,
+        paid_at: lockedPrecheck.payment.paid_at || null,
+        existing_collect: lockedPrecheck.existingCollect.amount,
+        expected_collect: lockedExpectedCollect,
+        confirmation_token: lockedConfirmationToken,
       },
       materialized,
     }, null, 2));
@@ -115,7 +162,13 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  console.error(err.message || err);
-  process.exitCode = 1;
-});
+if (require.main === module) {
+  main().catch((err) => {
+    console.error(err.message || err);
+    process.exitCode = 1;
+  });
+}
+
+module.exports = {
+  buildConfirmationToken,
+};
