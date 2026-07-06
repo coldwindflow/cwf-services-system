@@ -69,7 +69,7 @@
           <option value="all" selected>ทั้งหมด</option>
           <option value="pending">รอตรวจสอบ</option>
           <option value="return">ตีกลับ</option>
-          <option value="waiting">??????????????</option>
+          <option value="waiting">กำลังรอช่างรับ</option>
           <option value="noaccept">ไม่พบช่างรับงาน</option>
           <option value="timeproposal">รอพิจารณาเวลาใหม่</option>
         </select>
@@ -98,6 +98,8 @@
       <div class="muted" id="mSub"></div>
 
       <div class="hr"></div>
+
+      <div id="mReadOnlyNotice" class="proposal-warning" style="display:none;margin-bottom:10px">งานนี้กำลังรอช่างรับ ระบบเปิดให้ดูรายละเอียดเท่านั้น</div>
 
       <div class="form">
         <div class="grid2">
@@ -172,7 +174,7 @@
   </div>
 
   <script src="admin-v2-common.js?v=20260428_allpages_ui1"></script>
-  <script src="admin-review-v2.js?v=20260707_customer_booking_notify_v1"></script>
+  <script src="admin-review-v2.js?v=20260707_customer_booking_notify_v2"></script>
   <script src="admin-review-ai-intake.js?v=ai-booking-intake-customer-cards-v10"></script>
 </body>
 </html>

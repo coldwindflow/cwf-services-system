@@ -1,9 +1,11 @@
 "use strict";
 
 const assert = require("node:assert/strict");
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
+const vm = require("node:vm");
 
 const root = path.join(__dirname, "..");
 const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
@@ -17,12 +19,202 @@ const customerIndex = read("customer-app/index.html");
 const customerSw = read("customer-app/sw.js");
 const customerManifest = read("customer-app/manifest.webmanifest");
 
+function deriveTestScheduledToken(requestKey) {
+  return crypto.createHash("sha256").update(`scheduled_v1:${String(requestKey || "").trim()}`).digest("hex").slice(0, 24);
+}
+
+function validScheduledRequestKey(value) {
+  return /^[A-Za-z0-9_-]{16,128}$/.test(String(value || "").trim());
+}
+
+async function simulateScheduledCustomerBook(store, body) {
+  const bm = String(body.booking_mode || "scheduled").trim().toLowerCase();
+  const clientApp = String(body.client_app || "").trim().toLowerCase();
+  const requestKey = bm === "scheduled" && clientApp === "customer_app_v2"
+    ? String(body.scheduled_request_key || "").trim()
+    : "";
+  if (bm === "scheduled" && clientApp === "customer_app_v2" && !validScheduledRequestKey(requestKey)) {
+    return { status: 400, body: { code: "MISSING_REQUEST_KEY" } };
+  }
+  const token = requestKey ? deriveTestScheduledToken(requestKey) : `random-${store.nextId}`;
+  store.ops.push("BEGIN");
+  await store.lock(requestKey);
+  store.ops.push("lock");
+  const existing = store.jobsByToken.get(token);
+  store.ops.push("lookup");
+  if (existing) {
+    store.unlock(requestKey);
+    store.ops.push("COMMIT");
+    return { status: 200, body: { ...existing, replayed: true } };
+  }
+  store.ops.push("reserve");
+  store.reserveCount += 1;
+  const job = {
+    job_id: store.nextId++,
+    booking_code: `CWF${store.nextId}`,
+    token,
+  };
+  store.jobsByToken.set(token, job);
+  store.unlock(requestKey);
+  store.ops.push("COMMIT");
+  return { status: 200, body: { ...job, replayed: false } };
+}
+
+function createScheduledStore() {
+  const queues = new Map();
+  const store = {
+    nextId: 1,
+    jobsByToken: new Map(),
+    reserveCount: 0,
+    ops: [],
+    async lock(key) {
+      const prior = queues.get(key) || Promise.resolve();
+      let release;
+      queues.set(key, new Promise((resolve) => { release = resolve; }));
+      await prior;
+      store.currentRelease = release;
+    },
+    unlock() {
+      const release = store.currentRelease;
+      store.currentRelease = null;
+      if (release) release();
+    },
+  };
+  return store;
+}
+
+function createElement(id = "") {
+  const classes = new Set();
+  return {
+    id,
+    value: "",
+    textContent: "",
+    innerHTML: "",
+    disabled: false,
+    style: {},
+    parentNode: null,
+    removedClass: "",
+    classList: {
+      add(name) { classes.add(name); },
+      remove(name) { classes.delete(name); this.removedClass = name; },
+      toggle(name, enabled) { if (enabled) classes.add(name); else classes.delete(name); },
+      contains(name) { return classes.has(name); },
+    },
+    addEventListener() {},
+    setAttribute() {},
+    getAttribute() { return ""; },
+    closest() { return null; },
+  };
+}
+
+function createAdminReviewSandbox() {
+  const elements = new Map();
+  const card = createElement("card-2");
+  card.classList.add("review-card-new");
+  const getElement = (id) => {
+    if (!elements.has(id)) elements.set(id, createElement(id));
+    return elements.get(id);
+  };
+  [
+    "approvalAlert", "overlay", "list", "pillCount", "filterStatus", "slotBox",
+    "mCustomerName", "mCustomerPhone", "mJobType", "mBookingCode", "mAppt",
+    "mAddress", "mMaps", "mZone", "mLat", "mLng", "mNote", "mTitle", "mSub",
+    "mTechType", "mPrimaryTech", "mDispatchMode", "mTeamSearch", "mTeamSuggest",
+    "mTeamSelected", "mPricing", "mReadOnlyNotice", "btnLoadSlots", "btnSave",
+    "btnDispatch", "btnRebroadcast", "btnCancel", "btnLoadPricing", "btnReload",
+  ].forEach(getElement);
+  getElement("filterStatus").value = "all";
+  const storage = new Map();
+  let now = 10_000;
+  let soundCount = 0;
+  class FakeDate extends Date {
+    static now() { return now; }
+  }
+  class FakeAudioContext {
+    createOscillator() {
+      return { type: "", frequency: { value: 0 }, connect() {}, start() { soundCount += 1; }, stop() {} };
+    }
+    createGain() { return { gain: { value: 0 }, connect() {} }; }
+    close() {}
+  }
+  const document = {
+    title: "Admin Review Queue - CWF",
+    hidden: false,
+    readyState: "complete",
+    head: { appendChild() {} },
+    getElementById: getElement,
+    createElement(id) {
+      const el = createElement(id);
+      el.parentNode = { insertBefore() {} };
+      return el;
+    },
+    querySelector(selector) {
+      if (selector === '[data-review-job-id="2"]') return card;
+      return null;
+    },
+    querySelectorAll() { return []; },
+    addEventListener() {},
+  };
+  getElement("list").parentNode = { insertBefore() {} };
+  const sandbox = {
+    console,
+    setTimeout,
+    clearTimeout,
+    URLSearchParams,
+    Intl,
+    Number,
+    String,
+    Array,
+    Map,
+    Set,
+    JSON,
+    Math,
+    Date: FakeDate,
+    document,
+    location: { href: "", replace(value) { this.href = value; } },
+    sessionStorage: {
+      getItem(key) { return storage.has(key) ? storage.get(key) : null; },
+      setItem(key, value) { storage.set(key, String(value)); },
+    },
+    AudioContext: FakeAudioContext,
+    webkitAudioContext: FakeAudioContext,
+    confirm() { return true; },
+    prompt() { return ""; },
+    alert() {},
+    showToast() {},
+    apiFetch: async (url, options = {}) => {
+      if (options.method) throw new Error(`unexpected mutation ${options.method} ${url}`);
+      if (/\/team/.test(url)) return { members: [] };
+      if (/\/pricing/.test(url)) return { total: 0, discount: 0 };
+      return {};
+    },
+    window: null,
+    __advance(ms) { now += ms; },
+    __soundCount() { return soundCount; },
+    __card: card,
+    __elements: elements,
+  };
+  sandbox.window = sandbox;
+  sandbox.window.__CWF_ADMIN_REVIEW_DISABLE_AUTO_INIT__ = true;
+  vm.createContext(sandbox);
+  vm.runInContext(adminReview, sandbox, { filename: "admin-review-v2.js" });
+  return sandbox;
+}
+
+function loadAiIntakeIntoSandbox(sandbox) {
+  sandbox.window.__CWF_AI_INTAKE_DISABLE_AUTO_INIT__ = true;
+  vm.runInContext(read("admin-review-ai-intake.js"), sandbox, { filename: "admin-review-ai-intake.js" });
+  return sandbox.window.__CWF_AI_INTAKE_TEST__;
+}
+
 test("scheduled customer booking has durable request-key idempotency before reservation", () => {
   assert.match(index, /function deriveCustomerScheduledBookingToken\(requestKey\)/);
   assert.match(index, /scheduled_request_key/);
   assert.match(index, /pg_advisory_xact_lock\(hashtext\(\$1\)\)/);
   assert.match(index, /WHERE booking_token=\$1[\s\S]*job_source='customer'[\s\S]*COALESCE\(booking_mode,'scheduled'\)='scheduled'/);
   assert.match(index, /replayed:\s*true/);
+  assert.match(index, /validScheduledRequestKey/);
+  assert.match(index, /\^\[A-Za-z0-9_-\]\{16,128\}\$/);
   assert.ok(index.indexOf("SELECT pg_advisory_xact_lock(hashtext($1))") < index.indexOf("reservePublicCustomerTechnician"));
 });
 
@@ -46,13 +238,16 @@ test("admin review queue includes urgent waiting rows as read-only without offer
 });
 
 test("admin review UI separates waiting urgent jobs and disables duplicate dispatch actions", () => {
-  assert.match(adminReviewHtml, /<option value="waiting">/);
+  assert.match(adminReviewHtml, /<option value="waiting">กำลังรอช่างรับ<\/option>/);
+  assert.doesNotMatch(adminReviewHtml, /\?{6,}/);
+  assert.doesNotMatch(adminReviewHtml, /\uFFFD/);
   assert.match(adminReview, /waiting:\s*REVIEW_WAITING_STATUS/);
   assert.match(adminReview, /function queueBucket\(row\)/);
   assert.match(adminReview, /waiting_technician/);
   assert.match(adminReview, /function isAdminActionAllowed\(row\)/);
-  assert.match(adminReview, /\$\("btnDispatch"\)\.disabled = !actionAllowed/);
-  assert.match(adminReview, /\$\("btnRebroadcast"\)\.disabled = !actionAllowed/);
+  assert.match(adminReview, /function applyReadOnlyMode\(readOnly\)/);
+  assert.match(adminReview, /งานนี้กำลังรอช่างรับ ระบบเปิดให้ดูรายละเอียดเท่านั้น/);
+  assert.match(adminReview, /function blockReadOnlyMutation\(\)/);
   assert.match(adminReview, /\$\{actionAllowed \? "" : "disabled"\} onclick="rebroadcastOfferQuick/);
 });
 
@@ -78,15 +273,134 @@ test("admin review new-job notification uses first-load baseline and one sound p
   assert.match(adminReview, /sessionStorage\.setItem\(REVIEW_NOTIFY_STORAGE_KEY/);
   assert.match(adminReview, /reason === "filter_change" \|\| reason === "manual_reload"/);
   assert.match(adminReview, /AudioContext \|\| window\.webkitAudioContext/);
-  assert.match(adminReview, /__CWF_LAST_ADMIN_ALERT_SOUND_AT/);
+  assert.match(adminReview, /__CWF_ADMIN_ALERT_GATE__/);
+  assert.match(adminReview, /function acknowledgeNewJob\(jobId\)/);
+  assert.match(adminReview, /function pruneNewJobIds\(rows\)/);
+  assert.match(adminReview, /function filterRowsForDisplay\(rows, selectedFilter\)/);
   assert.match(adminReview, /review-card-new/);
   assert.match(adminReview, /document\.title = count > 0/);
 });
 
 test("admin/customer frontend cache versions are bumped for booking notification changes", () => {
-  assert.match(adminReviewHtml, /admin-review-v2\.js\?v=20260707_customer_booking_notify_v1/);
+  assert.match(adminReviewHtml, /admin-review-v2\.js\?v=20260707_customer_booking_notify_v2/);
   assert.match(customerIndex, /bookingScheduled\.js\?v=20260707_booking_admin_notify_v1/);
   assert.match(customerIndex, /state\.js\?v=20260707_booking_admin_notify_v1/);
   assert.match(customerSw, /const BUILD_ID = "20260707_booking_admin_notify_v1"/);
   assert.match(customerManifest, /20260707_booking_admin_notify_v1/);
+});
+
+test("behavior: concurrent scheduled requests with the same key create one job and one reservation", async () => {
+  const store = createScheduledStore();
+  const body = {
+    booking_mode: "scheduled",
+    client_app: "customer_app_v2",
+    scheduled_request_key: "same-request-key-123",
+  };
+  const [a, b] = await Promise.all([
+    simulateScheduledCustomerBook(store, body),
+    simulateScheduledCustomerBook(store, body),
+  ]);
+  assert.equal(a.status, 200);
+  assert.equal(b.status, 200);
+  assert.equal(a.body.job_id, b.body.job_id);
+  assert.equal(a.body.booking_code, b.body.booking_code);
+  assert.equal(a.body.token, b.body.token);
+  assert.equal(store.jobsByToken.size, 1);
+  assert.equal(store.reserveCount, 1);
+  assert.ok([a.body.replayed, b.body.replayed].includes(true));
+  assert.deepEqual(store.ops.slice(0, 4), ["BEGIN", "BEGIN", "lock", "lookup"]);
+  assert.ok(store.ops.indexOf("reserve") > store.ops.indexOf("lookup"));
+});
+
+test("behavior: missing scheduled request key for Customer App V2 is rejected", async () => {
+  const store = createScheduledStore();
+  const res = await simulateScheduledCustomerBook(store, {
+    booking_mode: "scheduled",
+    client_app: "customer_app_v2",
+  });
+  assert.equal(res.status, 400);
+  assert.equal(res.body.code, "MISSING_REQUEST_KEY");
+  assert.equal(store.reserveCount, 0);
+  assert.equal(store.jobsByToken.size, 0);
+});
+
+test("behavior: urgent waiting modal is viewable but all mutation paths are read-only", async () => {
+  const sandbox = createAdminReviewSandbox();
+  const hooks = sandbox.window.__CWF_ADMIN_REVIEW_TEST__;
+  hooks.setRowMap([{
+    job_id: 7,
+    booking_code: "URG-7",
+    booking_mode: "urgent",
+    job_status: "รอช่างยืนยัน",
+    admin_action_required: false,
+    duration_min: 60,
+  }]);
+  await hooks.openJob(7);
+  assert.equal(hooks.getCurrent().job_id, 7);
+  for (const id of ["btnSave", "btnDispatch", "btnRebroadcast", "btnCancel", "btnLoadSlots", "mCustomerName", "mAppt", "mTechType", "mPrimaryTech", "mDispatchMode"]) {
+    assert.equal(sandbox.__elements.get(id).disabled, true, `${id} should be disabled`);
+  }
+  assert.equal(sandbox.__elements.get("mReadOnlyNotice").style.display, "block");
+  await hooks.saveJob();
+  await hooks.dispatchJob();
+  await hooks.rebroadcastOffer();
+  await hooks.rebroadcastOfferQuick(7);
+  await hooks.cancelJob();
+});
+
+test("behavior: notification checks all queue rows even when selected display filter hides the new job", () => {
+  const sandbox = createAdminReviewSandbox();
+  const hooks = sandbox.window.__CWF_ADMIN_REVIEW_TEST__;
+  hooks.REVIEW_QUEUE_NOTIFY.audioUnlocked = true;
+  const waiting = { job_id: 1, booking_mode: "urgent", job_status: "รอช่างยืนยัน", admin_action_required: false };
+  const scheduledPending = { job_id: 2, booking_mode: "scheduled", job_status: "รอตรวจสอบ", admin_action_required: true };
+  hooks.processQueueNotifications([waiting], { reason: "init" });
+  assert.deepEqual(hooks.filterRowsForDisplay([waiting, scheduledPending], "waiting").map((r) => r.job_id), [1]);
+  hooks.processQueueNotifications([waiting, scheduledPending], { reason: "poll" });
+  assert.equal(hooks.REVIEW_QUEUE_NOTIFY.newIds.has(2), true);
+  assert.equal(sandbox.document.title, "(1) Admin Review Queue - CWF");
+  assert.equal(sandbox.__soundCount(), 1);
+});
+
+test("behavior: unread jobs acknowledge on open, prune when gone, and do not sound twice", () => {
+  const sandbox = createAdminReviewSandbox();
+  const hooks = sandbox.window.__CWF_ADMIN_REVIEW_TEST__;
+  hooks.REVIEW_QUEUE_NOTIFY.audioUnlocked = true;
+  const one = { job_id: 1, job_status: "รอตรวจสอบ", admin_action_required: true };
+  const two = { job_id: 2, job_status: "รอตรวจสอบ", admin_action_required: true };
+  const three = { job_id: 3, job_status: "รอตรวจสอบ", admin_action_required: true };
+  hooks.processQueueNotifications([one], { reason: "init" });
+  hooks.processQueueNotifications([one, two], { reason: "poll" });
+  assert.equal(hooks.REVIEW_QUEUE_NOTIFY.newIds.has(2), true);
+  hooks.setRowMap([one, two]);
+  hooks.acknowledgeNewJob(2);
+  assert.equal(hooks.REVIEW_QUEUE_NOTIFY.newIds.size, 0);
+  assert.equal(hooks.REVIEW_QUEUE_NOTIFY.notifiedIds.has(2), true);
+  assert.equal(sandbox.document.title, "Admin Review Queue - CWF");
+  assert.equal(sandbox.__card.classList.contains("review-card-new"), false);
+  const soundAfterAck = sandbox.__soundCount();
+  hooks.processQueueNotifications([one, two], { reason: "poll" });
+  assert.equal(sandbox.__soundCount(), soundAfterAck);
+  sandbox.__advance(2000);
+  hooks.processQueueNotifications([one, two, three], { reason: "poll" });
+  assert.equal(hooks.REVIEW_QUEUE_NOTIFY.newIds.has(3), true);
+  hooks.processQueueNotifications([one, two], { reason: "poll" });
+  assert.equal(hooks.REVIEW_QUEUE_NOTIFY.newIds.has(3), false);
+  assert.equal(sandbox.document.title, "Admin Review Queue - CWF");
+});
+
+test("behavior: Customer Booking and LINE AI Intake share one sound throttle gate", () => {
+  const sandbox = createAdminReviewSandbox();
+  const admin = sandbox.window.__CWF_ADMIN_REVIEW_TEST__;
+  const ai = loadAiIntakeIntoSandbox(sandbox);
+  admin.REVIEW_QUEUE_NOTIFY.audioUnlocked = true;
+  admin.playNewJobSound();
+  assert.equal(sandbox.__soundCount(), 1);
+  ai.playSoftAlert();
+  assert.equal(sandbox.__soundCount(), 1);
+  sandbox.__advance(1600);
+  ai.playSoftAlert();
+  assert.equal(sandbox.__soundCount(), 2);
+  ai.render([{ id: 9, status: "READY_TO_CREATE_JOB", updated_at: "t2", line_display_name: "LINE Customer" }], "");
+  assert.equal(sandbox.__elements.get("aiIntakePanel").style.display, "flex");
 });

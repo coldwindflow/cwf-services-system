@@ -25309,7 +25309,8 @@ app.post("/public/book", async (req, res) => {
   const scheduledRequestKey = bm === "scheduled" && clientApp === "customer_app_v2"
     ? String(scheduled_request_key || "").trim()
     : "";
-  if (scheduledRequestKey && scheduledRequestKey.length < 16) {
+  const validScheduledRequestKey = /^[A-Za-z0-9_-]{16,128}$/.test(scheduledRequestKey);
+  if (bm === "scheduled" && clientApp === "customer_app_v2" && !validScheduledRequestKey) {
     return res.status(400).json({ error: "MISSING_REQUEST_KEY", code: "MISSING_REQUEST_KEY" });
   }
   const scheduledDeterministicToken = scheduledRequestKey

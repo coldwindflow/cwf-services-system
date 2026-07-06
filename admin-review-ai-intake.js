@@ -33,6 +33,20 @@
     if (values.booking_card_alert_enabled === false) return false;
     return true;
   }
+  function sharedAdminAlertGate(){
+    window.__CWF_ADMIN_ALERT_GATE__ = window.__CWF_ADMIN_ALERT_GATE__ || {
+      lastPlayedAt: 0,
+      minGapMs: 1500,
+    };
+    return window.__CWF_ADMIN_ALERT_GATE__;
+  }
+  function claimSharedAdminAlertSound(){
+    const gate = sharedAdminAlertGate();
+    const now = Date.now();
+    if (now - Number(gate.lastPlayedAt || 0) < Number(gate.minGapMs || 1500)) return false;
+    gate.lastPlayedAt = now;
+    return true;
+  }
 
   function stageLabel(status){
     return ({
@@ -177,7 +191,7 @@
     STATE.lastReadyFingerprint = fp;
   }
   function playSoftAlert(){
-    try { const Ctx = window.AudioContext || window.webkitAudioContext; if (!Ctx) return; const ctx = new Ctx(); const osc = ctx.createOscillator(); const gain = ctx.createGain(); osc.frequency.value = 880; gain.gain.value = 0.035; osc.connect(gain); gain.connect(ctx.destination); osc.start(); setTimeout(()=>{ try { osc.stop(); ctx.close(); } catch(_){} }, 170); } catch(_) {}
+    try { if (!claimSharedAdminAlertSound()) return; const Ctx = window.AudioContext || window.webkitAudioContext; if (!Ctx) return; const ctx = new Ctx(); const osc = ctx.createOscillator(); const gain = ctx.createGain(); osc.frequency.value = 880; gain.gain.value = 0.035; osc.connect(gain); gain.connect(ctx.destination); osc.start(); setTimeout(()=>{ try { osc.stop(); ctx.close(); } catch(_){} }, 170); } catch(_) {}
   }
   document.addEventListener("click", (e)=>{
     const add = e.target.closest("[data-ai-open-add]");
@@ -187,6 +201,16 @@
     const card = e.target.closest("[data-ai-open-office]");
     if (card) return openOfficeFor(card.getAttribute("data-ai-open-office"));
   });
+  window.__CWF_AI_INTAKE_TEST__ = {
+    STATE,
+    render,
+    notifyAdmin,
+    playSoftAlert,
+    claimSharedAdminAlertSound,
+    sharedAdminAlertGate,
+  };
   function init(){ loadAiIntakes(); STATE.timer = setInterval(loadAiIntakes, 15000); }
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init); else init();
+  if (!window.__CWF_AI_INTAKE_DISABLE_AUTO_INIT__) {
+    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init); else init();
+  }
 })();

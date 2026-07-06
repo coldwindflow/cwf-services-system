@@ -5,7 +5,7 @@
  * - Production-safe: fail-open, ไม่กระทบ endpoint เดิม
  */
 
-const ADMIN_REVIEW_V2_DEDUP_BUILD = "20260707_customer_booking_notify_v1";
+const ADMIN_REVIEW_V2_DEDUP_BUILD = "20260707_customer_booking_notify_v2";
 window.__CWF_ADMIN_REVIEW_V2_VERSION__ = ADMIN_REVIEW_V2_DEDUP_BUILD;
 
 let TECHS = [];
@@ -30,6 +30,7 @@ const REVIEW_QUEUE_NOTIFY = {
   newIds: new Set(),
   audioUnlocked: false,
 };
+const ADMIN_REVIEW_EXTERNAL_TOAST = typeof window.showToast === "function" ? window.showToast : null;
 
 function $(id){ return document.getElementById(id); }
 function safe(s){ return (s==null?'':String(s)); }
@@ -67,6 +68,34 @@ function isAdminActionAllowed(row){
   return queueBucket(row) !== "waiting_technician";
 }
 
+function isCurrentReadOnly(){
+  return !!(CURRENT && CURRENT.admin_action_required === false);
+}
+
+function blockReadOnlyMutation(){
+  if (!isCurrentReadOnly()) return false;
+  showToast("งานนี้กำลังรอช่างรับ ระบบเปิดให้ดูรายละเอียดเท่านั้น", "info");
+  return true;
+}
+
+function applyReadOnlyMode(readOnly){
+  const ids = [
+    "mCustomerName", "mCustomerPhone", "mJobType", "mAppt", "mAddress",
+    "mMaps", "mZone", "mNote", "mLat", "mLng", "mTechType",
+    "mPrimaryTech", "mDispatchMode", "mTeamSearch", "btnLoadSlots",
+    "btnSave", "btnDispatch", "btnRebroadcast", "btnCancel",
+  ];
+  ids.forEach((id) => {
+    const el = $(id);
+    if (el) el.disabled = !!readOnly;
+  });
+  const notice = $("mReadOnlyNotice");
+  if (notice) notice.style.display = readOnly ? "block" : "none";
+  document.querySelectorAll(".team-chip-add,.team-action,.team-x,#slotBox button").forEach((el) => {
+    el.disabled = !!readOnly;
+  });
+}
+
 function updateTitleBadge(count){
   const baseTitle = "Admin Review Queue - CWF";
   document.title = count > 0 ? `(${count}) ${baseTitle}` : baseTitle;
@@ -76,12 +105,26 @@ function markAdminInteraction(){
   REVIEW_QUEUE_NOTIFY.audioUnlocked = true;
 }
 
+function sharedAdminAlertGate(){
+  window.__CWF_ADMIN_ALERT_GATE__ = window.__CWF_ADMIN_ALERT_GATE__ || {
+    lastPlayedAt: 0,
+    minGapMs: 1500,
+  };
+  return window.__CWF_ADMIN_ALERT_GATE__;
+}
+
+function claimSharedAdminAlertSound(){
+  const gate = sharedAdminAlertGate();
+  const now = Date.now();
+  if (now - Number(gate.lastPlayedAt || 0) < Number(gate.minGapMs || 1500)) return false;
+  gate.lastPlayedAt = now;
+  return true;
+}
+
 function playNewJobSound(){
   if (!REVIEW_QUEUE_NOTIFY.audioUnlocked) return;
   try {
-    const last = Number(window.__CWF_LAST_ADMIN_ALERT_SOUND_AT || 0);
-    if (Date.now() - last < 1200) return;
-    window.__CWF_LAST_ADMIN_ALERT_SOUND_AT = Date.now();
+    if (!claimSharedAdminAlertSound()) return;
     const AudioCtx = window.AudioContext || window.webkitAudioContext;
     if (!AudioCtx) return;
     const ctx = new AudioCtx();
@@ -101,17 +144,67 @@ function playNewJobSound(){
   }
 }
 
+function notificationRows(rows){
+  return Array.isArray(rows) ? rows : [];
+}
+
+function renderNotificationSummary(rows = []){
+  const count = REVIEW_QUEUE_NOTIFY.newIds.size;
+  updateTitleBadge(count);
+  const alertBox = $("approvalAlert");
+  if (!alertBox) return;
+  if (count > 0) {
+    alertBox.style.display = "block";
+    alertBox.innerHTML = `🔔 มีงานจองใหม่ ${count} งาน`;
+    return;
+  }
+  const needs = notificationRows(rows).filter((r) => isAdminActionAllowed(r));
+  if (needs.length) {
+    const pending = needs.filter(r=>safe(r.job_status)==="รอตรวจสอบ").length;
+    const noaccept = needs.filter(r=>safe(r.job_status)==="ไม่พบช่างรับงาน" || safe(r.job_status)==="ตีกลับ").length;
+    const timep = needs.filter(r=>safe(r.job_status)==="รอพิจารณาเวลาใหม่").length;
+    alertBox.style.display = "block";
+    alertBox.innerHTML = `🔔 งานที่แอดมินต้องจัดการ ${needs.length} งาน` + (pending?` • รอตรวจสอบ ${pending}`:"") + (noaccept?` • ต้องยิงใหม่/ติดต่อ ${noaccept}`:"") + (timep?` • รออนุมัติเวลาใหม่ ${timep}`:"");
+  } else {
+    alertBox.style.display = "none";
+    alertBox.innerHTML = "";
+  }
+}
+
+function pruneNewJobIds(rows){
+  const live = new Set(notificationRows(rows).map((r) => Number(r.job_id)).filter(Number.isFinite));
+  let changed = false;
+  for (const id of Array.from(REVIEW_QUEUE_NOTIFY.newIds)) {
+    if (!live.has(Number(id))) {
+      REVIEW_QUEUE_NOTIFY.newIds.delete(id);
+      changed = true;
+    }
+  }
+  if (changed) renderNotificationSummary(rows);
+}
+
+function acknowledgeNewJob(jobId){
+  const id = Number(jobId);
+  if (!Number.isFinite(id)) return;
+  REVIEW_QUEUE_NOTIFY.newIds.delete(id);
+  renderNotificationSummary(Array.from(ROW_MAP.values()));
+  const card = document.querySelector(`[data-review-job-id="${id}"]`);
+  if (card) card.classList.remove("review-card-new");
+}
+
 function processQueueNotifications(rows, opts = {}){
   const reason = String(opts.reason || "");
   const ids = (rows || []).map((r) => Number(r.job_id)).filter(Number.isFinite);
+  pruneNewJobIds(rows);
   if (!REVIEW_QUEUE_NOTIFY.baselineReady) {
     ids.forEach((id) => REVIEW_QUEUE_NOTIFY.knownIds.add(id));
     REVIEW_QUEUE_NOTIFY.baselineReady = true;
-    updateTitleBadge(0);
+    renderNotificationSummary(rows);
     return;
   }
   if (reason === "filter_change" || reason === "manual_reload") {
     ids.forEach((id) => REVIEW_QUEUE_NOTIFY.knownIds.add(id));
+    renderNotificationSummary(rows);
     return;
   }
   const fresh = ids.filter((id) => !REVIEW_QUEUE_NOTIFY.knownIds.has(id) && !REVIEW_QUEUE_NOTIFY.notifiedIds.has(id));
@@ -122,12 +215,7 @@ function processQueueNotifications(rows, opts = {}){
     REVIEW_QUEUE_NOTIFY.notifiedIds.add(id);
   });
   saveNotifiedJobIds();
-  updateTitleBadge(REVIEW_QUEUE_NOTIFY.newIds.size);
-  const alertBox = $("approvalAlert");
-  if (alertBox) {
-    alertBox.style.display = "block";
-    alertBox.innerHTML = `🔔 มีงานจองใหม่ ${fresh.length} งาน`;
-  }
+  renderNotificationSummary(rows);
   playNewJobSound();
 }
 
@@ -230,8 +318,9 @@ function localDatetimeToBangkokISO(localValue){
 
 function showToast(msg, type="info"){
   // reuse helper if exists
-  if (typeof window.showToast === "function") return window.showToast(msg, type);
-  alert(msg);
+  if (ADMIN_REVIEW_EXTERNAL_TOAST && ADMIN_REVIEW_EXTERNAL_TOAST !== showToast) return ADMIN_REVIEW_EXTERNAL_TOAST(msg, type);
+  if (typeof alert === "function") return alert(msg);
+  console.log(`[admin-review-v2:${type}]`, msg);
 }
 
 async function loadTechs(){
@@ -256,6 +345,11 @@ function mapFilterStatus(v){
   return m[v] || "all";
 }
 
+function filterRowsForDisplay(rows, selectedFilter){
+  const status = mapFilterStatus(selectedFilter || "all");
+  if (status === "all") return Array.isArray(rows) ? rows : [];
+  return (Array.isArray(rows) ? rows : []).filter((row) => safe(row.job_status) === status);
+}
 
 const REVIEW_QUEUE_LOAD_GUARD = {
   inFlight: null,
@@ -286,37 +380,20 @@ async function loadQueue(opts = {}){
   REVIEW_QUEUE_LOAD_GUARD.lastStartAt = now;
   const runLoadQueue = async () => {
   const f = $("filterStatus")?.value || "all";
-  const status = mapFilterStatus(f);
 
   $("list").innerHTML = '<div class="card"><div class="muted">กำลังโหลด...</div></div>';
 
   try{
     const q = new URLSearchParams();
-    q.set("status", status);
+    q.set("status", "all");
     q.set("limit", "200");
     const data = await apiFetch(`/admin/review_queue_v2?${q.toString()}`);
-    const rows = Array.isArray(data.rows) ? data.rows : [];
-    ROW_MAP = new Map(rows.map(r=>[Number(r.job_id), r]));
-    processQueueNotifications(rows, opts);
+    const allRows = Array.isArray(data.rows) ? data.rows : [];
+    ROW_MAP = new Map(allRows.map(r=>[Number(r.job_id), r]));
+    processQueueNotifications(allRows, opts);
+    const rows = filterRowsForDisplay(allRows, f);
     $("pillCount").textContent = `${rows.length} งาน`;
-    const needs = rows.filter(r => ["รอตรวจสอบ","ตีกลับ","ไม่พบช่างรับงาน","รอพิจารณาเวลาใหม่"].includes(safe(r.job_status)));
-    const alertBox = $("approvalAlert");
-    if (alertBox) {
-      if (needs.length) {
-        const pending = needs.filter(r=>safe(r.job_status)==="รอตรวจสอบ").length;
-        const noaccept = needs.filter(r=>safe(r.job_status)==="ไม่พบช่างรับงาน" || safe(r.job_status)==="ตีกลับ").length;
-        const timep = needs.filter(r=>safe(r.job_status)==="รอพิจารณาเวลาใหม่").length;
-        alertBox.style.display = "block";
-        alertBox.innerHTML = `🔔 มีงานที่แอดมินต้องจัดการ ${needs.length} งาน` + (pending?` • รอตรวจสอบ ${pending}`:"") + (noaccept?` • ต้องยิงใหม่/ติดต่อ ${noaccept}`:"") + (timep?` • รออนุมัติเวลาใหม่ ${timep}`:"");
-      } else {
-        alertBox.style.display = "none";
-      }
-    }
-
-    if (REVIEW_QUEUE_NOTIFY.newIds.size && alertBox) {
-      alertBox.style.display = "block";
-      alertBox.innerHTML = `🔔 มีงานจองใหม่ ${REVIEW_QUEUE_NOTIFY.newIds.size} งาน`;
-    }
+    renderNotificationSummary(allRows);
 
     if (!rows.length){
       $("list").innerHTML = '<div class="card"><div class="muted">ไม่มีงานในคิวนี้</div></div>';
@@ -341,7 +418,7 @@ async function loadQueue(opts = {}){
            </div>`
         : "";
       return `
-        <div class="card review-card-hot ${isNew ? "review-card-new" : ""}">
+        <div class="card review-card-hot ${isNew ? "review-card-new" : ""}" data-review-job-id="${Number(r.job_id)}">
           <div class="row">
             <div>
               <b>#${r.job_id} • ${safe(r.booking_code||"")}</b>
@@ -424,6 +501,7 @@ async function loadProposalPanels(rows){
 }
 
 async function approveTimeProposal(proposalId){
+  if (blockReadOnlyMutation()) return;
   if (!confirm("ยืนยันอนุมัติเวลาใหม่นี้และมอบหมายงานให้ช่าง?")) return;
   try {
     const r = await apiFetch(`/admin/time-proposals/${Number(proposalId)}/approve`, { method:"POST", body: JSON.stringify({}) });
@@ -435,6 +513,7 @@ async function approveTimeProposal(proposalId){
 }
 
 async function rejectTimeProposal(proposalId){
+  if (blockReadOnlyMutation()) return;
   const admin_note = prompt("หมายเหตุถึงช่าง/ทีมงาน (ถ้ามี)") || "";
   try {
     const r = await apiFetch(`/admin/time-proposals/${Number(proposalId)}/reject`, { method:"POST", body: JSON.stringify({ admin_note }) });
@@ -450,6 +529,7 @@ async function rejectTimeProposal(proposalId){
 const TEAM_STATE = { selected: new Set(), primary: "" };
 
 function setPrimaryInModal(username){
+  if (blockReadOnlyMutation()) return;
   const u = String(username||"").trim();
   if(!u) return;
   TEAM_STATE.primary = u;
@@ -459,6 +539,7 @@ function setPrimaryInModal(username){
 }
 
 function addTeamMemberModal(username){
+  if (blockReadOnlyMutation()) return;
   const u = String(username||"").trim();
   if(!u) return;
   TEAM_STATE.selected.add(u);
@@ -470,6 +551,7 @@ function addTeamMemberModal(username){
 }
 
 function removeTeamMemberModal(username){
+  if (blockReadOnlyMutation()) return;
   const u = String(username||"").trim();
   if(!u) return;
   if(u === TEAM_STATE.primary) return; // must change primary first
@@ -484,6 +566,7 @@ function getSelectedTeam(){
 }
 
 function ensurePrimaryInTeam(){
+  if (isCurrentReadOnly()) return;
   const primary = $("mPrimaryTech").value;
   if(!primary) return;
   TEAM_STATE.primary = primary;
@@ -546,6 +629,7 @@ function renderTeamPickerModal(){
 
   // keep hidden team list in CURRENT for later dispatch
   CURRENT.team_members = getSelectedTeam();
+  applyReadOnlyMode(isCurrentReadOnly());
 }
 
 // public wrapper called on tech type/search changes
@@ -566,6 +650,7 @@ function setModal(show){
 
 function closeModal(){
   setModal(false);
+  applyReadOnlyMode(false);
   CURRENT = null;
   CURRENT_SLOTS = [];
   $("slotBox").style.display = "none";
@@ -578,6 +663,7 @@ async function openJob(jobId){
   try{
     const row = ROW_MAP.get(Number(jobId));
     if (!row) throw new Error("ไม่พบงาน");
+    acknowledgeNewJob(jobId);
 
     CURRENT = {
       job_id: row.job_id,
@@ -636,8 +722,7 @@ async function openJob(jobId){
     CURRENT_SLOTS = [];
 
     const actionAllowed = isAdminActionAllowed(row);
-    if ($("btnDispatch")) $("btnDispatch").disabled = !actionAllowed;
-    if ($("btnRebroadcast")) $("btnRebroadcast").disabled = !actionAllowed;
+    applyReadOnlyMode(!actionAllowed);
     setModal(true);
   }catch(e){
     console.error(e);
@@ -660,6 +745,7 @@ async function loadPricing(){
 
 async function saveJob(){
   if (!CURRENT) return;
+  if (blockReadOnlyMutation()) return;
   const payload = {
     customer_name: $("mCustomerName").value.trim() || null,
     customer_phone: $("mCustomerPhone").value.trim() || null,
@@ -683,6 +769,7 @@ async function saveJob(){
 
 function pickSlot(isoStart){
   if (!CURRENT) return;
+  if (blockReadOnlyMutation()) return;
   $("mAppt").value = toLocalInputDatetime(isoStart);
   $("slotBox").style.display = "none";
   showToast("เลือกเวลาแล้ว","success");
@@ -692,6 +779,7 @@ window.pickSlot = pickSlot;
 
 async function loadSlots(){
   if (!CURRENT) return;
+  if (blockReadOnlyMutation()) return;
   const dtStr = $("mAppt").value;
   if (!dtStr){
     showToast("ต้องเลือกวัน/เวลา ก่อนโหลดคิวว่าง","error");
@@ -739,6 +827,7 @@ async function loadSlots(){
 
 async function dispatchJob(){
   if (!CURRENT) return;
+  if (blockReadOnlyMutation()) return;
 
   const tech_type = $("mTechType").value || "company";
   const technician_username = $("mPrimaryTech").value;
@@ -771,6 +860,11 @@ async function dispatchJob(){
 async function rebroadcastOfferQuick(jobId){
   const id = Number(jobId || 0);
   if (!id) return showToast("ไม่พบรหัสงาน", "error");
+  const row = ROW_MAP.get(id);
+  if (row && !isAdminActionAllowed(row)) {
+    showToast("งานนี้กำลังรอช่างรับ ระบบเปิดให้ดูรายละเอียดเท่านั้น", "info");
+    return;
+  }
   if (!confirm("ยืนยันยิงข้อเสนอใหม่ให้ช่างที่เปิดรับงาน ว่างจริง และอยู่ในพื้นที่นี้?")) return;
   try{
     const out = await apiFetch(`/jobs/${id}/rebroadcast_offer_v2`, { method:"POST", body: JSON.stringify({ tech_type:"all" }) });
@@ -785,6 +879,7 @@ window.rebroadcastOfferQuick = rebroadcastOfferQuick;
 
 async function rebroadcastOffer(){
   if (!CURRENT) return;
+  if (blockReadOnlyMutation()) return;
   if (!confirm("ยืนยันยิงข้อเสนอใหม่ให้ช่างที่เปิดรับงาน ว่างจริง และอยู่ในพื้นที่นี้?")) return;
   try{
     await saveJob();
@@ -801,6 +896,7 @@ async function rebroadcastOffer(){
 
 async function cancelJob(){
   if (!CURRENT) return;
+  if (blockReadOnlyMutation()) return;
   if (!confirm("ยืนยันยกเลิกงานนี้?")) return;
   try{
     await apiFetch(`/jobs/${CURRENT.job_id}/cancel`, { method:"POST", body: JSON.stringify({ reason: "admin_cancel" }) });
@@ -812,7 +908,33 @@ async function cancelJob(){
   }
 }
 
-(async function init(){
+window.__CWF_ADMIN_REVIEW_TEST__ = {
+  REVIEW_QUEUE_NOTIFY,
+  ROW_MAP: () => ROW_MAP,
+  setRowMap(rows){
+    ROW_MAP = new Map((rows || []).map((r) => [Number(r.job_id), r]));
+  },
+  queueBucket,
+  isAdminActionAllowed,
+  filterRowsForDisplay,
+  processQueueNotifications,
+  acknowledgeNewJob,
+  renderNotificationSummary,
+  applyReadOnlyMode,
+  playNewJobSound,
+  claimSharedAdminAlertSound,
+  sharedAdminAlertGate,
+  setCurrent(value){ CURRENT = value; },
+  getCurrent(){ return CURRENT; },
+  openJob,
+  saveJob,
+  dispatchJob,
+  rebroadcastOffer,
+  rebroadcastOfferQuick,
+  cancelJob,
+};
+
+if (!window.__CWF_ADMIN_REVIEW_DISABLE_AUTO_INIT__) (async function init(){
   await loadTechs();
   await loadQueue({ force:true, reason:"init" });
 
