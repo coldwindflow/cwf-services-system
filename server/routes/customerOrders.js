@@ -562,7 +562,7 @@ function createCustomerOrdersRoutes(deps = {}) {
       if (!updated.rows.length) {
         return res.status(202).json({
           ok: false,
-          error: "PAYMENT_PROCESSING",
+          error: "PAYMENT_RESULT_UNKNOWN",
           message: "กำลังตรวจสอบการชำระเงิน",
           order: publicOrder(claim.order),
           payment: { status: PROCESSING_STATUS, requires_polling: true },
@@ -580,7 +580,6 @@ function createCustomerOrdersRoutes(deps = {}) {
         },
       });
     } catch (error) {
-      if (isSchemaError(error)) return res.status(503).json({ error: "ORDERS_SCHEMA_NOT_READY" });
       console.error("[orders/pay:update] failed", error);
       return res.status(202).json({
         ok: false,

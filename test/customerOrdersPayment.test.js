@@ -77,7 +77,12 @@ function makePool(seed, options = {}) {
         return { rows: [], rowCount: 0 };
       }
       if (s.includes("WHERE order_code=$1 AND payment_status=$6")) {
-        if (options.failFinalPaymentUpdate) throw new Error("simulated final payment update failure");
+        if (options.failFinalPaymentUpdate || options.failFinalPaymentUpdateCode) {
+          const e = new Error("simulated final payment update failure");
+          if (options.failFinalPaymentUpdateCode) e.code = options.failFinalPaymentUpdateCode;
+          throw e;
+        }
+        if (options.finalPaymentUpdateNoRows) return { rows: [], rowCount: 0 };
         const o = orders.get(params[0]);
         if (!o || o.payment_status !== params[5]) return { rows: [], rowCount: 0 };
         o.payment_method = params[1];
@@ -285,6 +290,49 @@ test("provider success with final DB update failure returns unknown and blocks d
     const second = await postJson(`${url(server)}/public/orders/CWF-PAY1/pay`, { method: "card", token: "tokn_x" });
     assert.equal(second.status, 202);
     assert.equal((await second.json()).error, "PAYMENT_PROCESSING");
+    assert.equal(omise.spy.charges.length, 1);
+  } finally { server.close(); }
+});
+
+test("schema-classified final DB update failure after charge returns unknown and blocks duplicate charge", async () => {
+  const pool = makePool(seedOrder(), { failFinalPaymentUpdateCode: "42703" });
+  const omise = fakeOmise();
+  const server = await startServer(pool, omise);
+  try {
+    const first = await postJson(`${url(server)}/public/orders/CWF-PAY1/pay`, { method: "card", token: "tokn_x" });
+    const firstBody = await first.json();
+    assert.equal(first.status, 202);
+    assert.equal(firstBody.error, "PAYMENT_RESULT_UNKNOWN");
+    assert.equal(firstBody.payment.status, "payment_processing");
+    assert.equal(firstBody.payment.requires_polling, true);
+    assert.equal(firstBody.order.order_code, "CWF-PAY1");
+    assert.equal(pool.orders.get("CWF-PAY1").status, "payment_processing");
+    assert.equal(omise.spy.charges.length, 1);
+
+    const second = await postJson(`${url(server)}/public/orders/CWF-PAY1/pay`, { method: "card", token: "tokn_x" });
+    assert.equal(second.status, 202);
+    assert.ok(["PAYMENT_PROCESSING", "PAYMENT_RESULT_UNKNOWN"].includes((await second.json()).error));
+    assert.equal(omise.spy.charges.length, 1);
+  } finally { server.close(); }
+});
+
+test("final DB update zero rows after charge returns unknown and blocks duplicate charge", async () => {
+  const pool = makePool(seedOrder(), { finalPaymentUpdateNoRows: true });
+  const omise = fakeOmise();
+  const server = await startServer(pool, omise);
+  try {
+    const first = await postJson(`${url(server)}/public/orders/CWF-PAY1/pay`, { method: "card", token: "tokn_x" });
+    const firstBody = await first.json();
+    assert.equal(first.status, 202);
+    assert.equal(firstBody.error, "PAYMENT_RESULT_UNKNOWN");
+    assert.equal(firstBody.payment.status, "payment_processing");
+    assert.equal(firstBody.payment.requires_polling, true);
+    assert.equal(pool.orders.get("CWF-PAY1").status, "payment_processing");
+    assert.equal(omise.spy.charges.length, 1);
+
+    const second = await postJson(`${url(server)}/public/orders/CWF-PAY1/pay`, { method: "card", token: "tokn_x" });
+    assert.equal(second.status, 202);
+    assert.ok(["PAYMENT_PROCESSING", "PAYMENT_RESULT_UNKNOWN"].includes((await second.json()).error));
     assert.equal(omise.spy.charges.length, 1);
   } finally { server.close(); }
 });
