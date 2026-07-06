@@ -12,7 +12,7 @@
   let eligibilityRequestSeq = 0;
   let reviewSubmitSeq = 0;
 
-  console.info("[customer-store] store-card-spacing-review-privacy 20260629 loaded");
+  console.info("[customer-store] payment-security 20260705 loaded");
 
   const FILTER_AC_TYPES = [
     { value: "wall", label: "แอร์ผนัง" },
@@ -1755,18 +1755,38 @@
 
   function paymentStepHtml(item, o) {
     const totalStr = root.utils.formatBaht(o.amount);
+    const methods = Array.isArray(o.methods) && o.methods.length ? o.methods : ["promptpay"];
     return `
       <button class="contact-sheet-close" type="button" data-purchase-close aria-label="ปิด">×</button>
       <span class="section-kicker">ชำระเงิน</span>
       <h2>ชำระค่าสินค้า</h2>
       <div class="purchase-total"><span>ยอดชำระ</span><strong>${esc(totalStr)}</strong></div>
       <div class="pay-methods" role="tablist">
-        <button class="pay-method-btn is-active" type="button" data-pay-method="promptpay" role="tab">พร้อมเพย์ (PromptPay)</button>
-        <button class="pay-method-btn" type="button" data-pay-method="card" role="tab">บัตรเครดิต/เดบิต</button>
+        ${methods.includes("promptpay") ? `<button class="pay-method-btn is-active" type="button" data-pay-method="promptpay" role="tab">พร้อมเพย์ (PromptPay)</button>` : ""}
+        ${methods.includes("card") ? `<button class="pay-method-btn${methods.includes("promptpay") ? "" : " is-active"}" type="button" data-pay-method="card" role="tab">บัตรเครดิต/เดบิต</button>` : ""}
       </div>
       <div class="pay-body" data-pay-body></div>
       <p class="purchase-error" data-pay-error hidden></p>
       <p class="purchase-note">ชำระเงินอย่างปลอดภัยผ่าน Omise · ข้อมูลบัตรไม่ถูกเก็บบนเซิร์ฟเวอร์ของเรา</p>
+    `;
+  }
+
+  function processingPaymentHtml(item, o) {
+    const orderCode = (o.order && o.order.order_code) || o.orderCode || "";
+    return `
+      <button class="contact-sheet-close" type="button" data-purchase-close aria-label="ปิด">×</button>
+      <span class="section-kicker">กำลังตรวจสอบ</span>
+      <h2>กำลังตรวจสอบการชำระเงิน</h2>
+      <div class="purchase-summary">
+        ${orderCode ? `<div><span>เลขคำสั่งซื้อ</span><strong>${esc(orderCode)}</strong></div>` : ""}
+        <div><span>สินค้า</span><strong>${esc(item.item_name || "")} × ${o.qty}</strong></div>
+        <div><span>ยอดชำระ</span><strong>${esc(root.utils.formatBaht(o.amount))}</strong></div>
+      </div>
+      <p>ระบบได้รับคำขอชำระเงินแล้วและกำลังรอตรวจสอบผล กรุณาอย่ากดจ่ายซ้ำ</p>
+      <div class="contact-sheet-actions">
+        ${orderCode ? `<button class="secondary-btn" type="button" data-route="tracking" data-track-order="${esc(orderCode)}">ติดตามคำสั่งซื้อ</button>` : ""}
+        <a class="primary-btn" href="https://lin.ee/fG1Oq7y" target="_blank" rel="noopener noreferrer">แจ้งแอดมินทาง LINE</a>
+      </div>
     `;
   }
 
@@ -1865,12 +1885,24 @@
     const renderPaymentStep = (o, config) => {
       const sheet = mount.querySelector(".purchase-sheet");
       if (!sheet) return;
+      o.methods = Array.isArray(config.methods) && config.methods.length ? config.methods : ["promptpay"];
       sheet.innerHTML = paymentStepHtml(item, o);
       bindClose();
       const body = sheet.querySelector("[data-pay-body]");
       const errEl = sheet.querySelector("[data-pay-error]");
       const showError = (msg) => { if (errEl) { errEl.textContent = msg; errEl.hidden = false; } };
       const clearError = () => { if (errEl) errEl.hidden = true; };
+      const isProcessingResponse = (res) => {
+        const status = res?.order?.status || res?.payment?.status || "";
+        return status === "payment_processing" || res?.error === "PAYMENT_PROCESSING" || res?.error === "PAYMENT_RESULT_UNKNOWN";
+      };
+      const goProcessing = (res) => {
+        if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+        const orderCode = (res?.order && res.order.order_code) || (o.order && o.order.order_code) || "";
+        if (orderCode) root.state.updateDraft?.("tracking", { trackingCode: orderCode });
+        sheet.innerHTML = processingPaymentHtml(item, { ...o, order: res?.order || o.order, orderCode });
+        bindClose();
+      };
       const goPaid = () => {
         if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
         const orderCode = (o.order && o.order.order_code) || "";
@@ -1890,11 +1922,14 @@
         body.innerHTML = method === "card" ? cardBodyHtml() : promptPayBodyHtml();
         if (method === "promptpay") {
           body.querySelector("[data-pp-start]")?.addEventListener("click", async () => {
+            if (o.paymentInFlight) return;
+            o.paymentInFlight = true;
             clearError();
             const btn = body.querySelector("[data-pp-start]");
             if (btn) { btn.disabled = true; btn.textContent = "กำลังสร้าง QR..."; }
             try {
               const res = await root.api.payOrder(o.order.order_code, { method: "promptpay" });
+              if (isProcessingResponse(res) && !res?.payment?.qr_uri) { goProcessing(res); return; }
               const qr = res?.payment?.qr_uri;
               if (!qr) throw new Error("no qr");
               body.innerHTML = `
@@ -1909,11 +1944,13 @@
               });
             } catch (_) {
               showError("สร้าง QR ไม่สำเร็จ กรุณาลองใหม่");
+              o.paymentInFlight = false;
               if (btn) { btn.disabled = false; btn.textContent = "สร้าง QR พร้อมเพย์"; }
             }
           });
         } else {
           body.querySelector("[data-card-pay]")?.addEventListener("click", async () => {
+            if (o.paymentInFlight) return;
             clearError();
             const number = (body.querySelector("[data-card-number]")?.value || "").replace(/\s+/g, "");
             const exp = (body.querySelector("[data-card-exp]")?.value || "").trim();
@@ -1925,6 +1962,7 @@
             if (btn) { btn.disabled = true; btn.textContent = "กำลังชำระเงิน..."; }
             const reset = () => { if (btn) { btn.disabled = false; btn.textContent = "ชำระด้วยบัตร"; } };
             try {
+              o.paymentInFlight = true;
               const Omise = await ensureOmiseJs(config.public_key);
               const token = await new Promise((resolve, reject) => {
                 Omise.createToken("card", {
@@ -1940,9 +1978,11 @@
               });
               const res = await root.api.payOrder(o.order.order_code, { method: "card", token });
               if (res?.order?.status === "paid") goPaid();
-              else { showError("การชำระเงินไม่สำเร็จ กรุณาตรวจสอบบัตรแล้วลองใหม่"); reset(); }
+              else if (isProcessingResponse(res)) goProcessing(res);
+              else { showError("การชำระเงินไม่สำเร็จ กรุณาตรวจสอบบัตรแล้วลองใหม่"); o.paymentInFlight = false; reset(); }
             } catch (err) {
               showError(err && err.message ? "ชำระเงินไม่สำเร็จ: " + err.message : "ชำระเงินไม่สำเร็จ กรุณาลองใหม่");
+              o.paymentInFlight = false;
               reset();
             }
           });
@@ -1952,7 +1992,7 @@
       sheet.querySelectorAll("[data-pay-method]").forEach((b) =>
         b.addEventListener("click", () => renderMethod(b.getAttribute("data-pay-method")))
       );
-      renderMethod("promptpay");
+      renderMethod((o.methods || []).includes("promptpay") ? "promptpay" : "card");
     };
     const qtyVal = mount.querySelector("[data-qty-val]");
     const totalEl = mount.querySelector("[data-buy-total]");
@@ -1984,7 +2024,7 @@
           delivery_method: delivery,
           install_option: install,
           address,
-          items: [{ item_id: item.item_id, name: item.item_name, qty, unit_price: unitPrice || 0 }],
+          items: [{ item_id: item.item_id, qty }],
         });
         order = res?.order || null;
       } catch (_error) {

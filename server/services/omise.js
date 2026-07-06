@@ -162,6 +162,26 @@ function chargeToOrderStatus(charge) {
   return "payment_processing";
 }
 
+function isTerminalFailedCharge(charge) {
+  const status = charge && charge.status;
+  return status === "failed" || status === "expired" || status === "reversed";
+}
+
+function isAmbiguousOmiseError(error) {
+  if (!error) return true;
+  const status = Number(error.status || 0);
+  if (!status) return true;
+  if (status === 408 || status === 429 || status >= 500) return true;
+  const code = String(error.code || "").toUpperCase();
+  return code === "ETIMEDOUT" || code === "ECONNRESET" || code === "ECONNABORTED";
+}
+
+function isRetryableOmiseRejection(error) {
+  if (!error || isAmbiguousOmiseError(error)) return false;
+  const status = Number(error.status || 0);
+  return status >= 400 && status < 500 && status !== 408 && status !== 429;
+}
+
 // The scannable PromptPay QR image URL, if present on a charge.
 function promptPayQrUri(charge) {
   const source = charge && charge.source;
@@ -174,6 +194,9 @@ module.exports = {
   defaultHttpRequest,
   bahtToSatang,
   chargeToOrderStatus,
+  isAmbiguousOmiseError,
+  isRetryableOmiseRejection,
+  isTerminalFailedCharge,
   promptPayQrUri,
   DEFAULT_CURRENCY,
 };
