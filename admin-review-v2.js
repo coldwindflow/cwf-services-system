@@ -5,17 +5,164 @@
  * - Production-safe: fail-open, ไม่กระทบ endpoint เดิม
  */
 
-const ADMIN_REVIEW_V2_DEDUP_BUILD = "20260612_phase35a_review_queue_dedup";
+const ADMIN_REVIEW_V2_DEDUP_BUILD = "20260707_customer_booking_notify_v1";
 window.__CWF_ADMIN_REVIEW_V2_VERSION__ = ADMIN_REVIEW_V2_DEDUP_BUILD;
 
 let TECHS = [];
 let CURRENT = null;
 let CURRENT_SLOTS = [];
 let ROW_MAP = new Map();
+const REVIEW_POLL_MS = 12000;
+const REVIEW_WAITING_STATUS = "\u0e23\u0e2d\u0e0a\u0e48\u0e32\u0e07\u0e22\u0e37\u0e19\u0e22\u0e31\u0e19";
+const REVIEW_STATUS_LABELS = {
+  waiting_technician: "\u0e01\u0e33\u0e25\u0e31\u0e07\u0e23\u0e2d\u0e0a\u0e48\u0e32\u0e07\u0e23\u0e31\u0e1a",
+  pending_review: "\u0e23\u0e2d\u0e15\u0e23\u0e27\u0e08\u0e2a\u0e2d\u0e1a",
+  no_accept: "\u0e44\u0e21\u0e48\u0e1e\u0e1a\u0e0a\u0e48\u0e32\u0e07\u0e23\u0e31\u0e1a\u0e07\u0e32\u0e19",
+  returned: "\u0e15\u0e35\u0e01\u0e25\u0e31\u0e1a",
+  time_proposal: "\u0e23\u0e2d\u0e1e\u0e34\u0e08\u0e32\u0e23\u0e13\u0e32\u0e40\u0e27\u0e25\u0e32\u0e43\u0e2b\u0e21\u0e48",
+};
+const REVIEW_NOTIFY_STORAGE_KEY = "cwf_admin_review_notified_job_ids_v1";
+const REVIEW_QUEUE_POLL = { timer: null, stopped: false, authStopped: false };
+const REVIEW_QUEUE_NOTIFY = {
+  baselineReady: false,
+  knownIds: new Set(),
+  notifiedIds: new Set(loadNotifiedJobIds()),
+  newIds: new Set(),
+  audioUnlocked: false,
+};
 
 function $(id){ return document.getElementById(id); }
 function safe(s){ return (s==null?'':String(s)); }
 function pad2(x){ return String(x).padStart(2,'0'); }
+
+function loadNotifiedJobIds(){
+  try {
+    const raw = sessionStorage.getItem(REVIEW_NOTIFY_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.map(Number).filter(Number.isFinite) : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+function saveNotifiedJobIds(){
+  try {
+    sessionStorage.setItem(REVIEW_NOTIFY_STORAGE_KEY, JSON.stringify(Array.from(REVIEW_QUEUE_NOTIFY.notifiedIds).slice(-500)));
+  } catch (_) {}
+}
+
+function queueBucket(row){
+  const status = safe(row?.job_status);
+  const mode = String(row?.booking_mode || "").toLowerCase();
+  if (mode === "urgent" && status === REVIEW_WAITING_STATUS) return "waiting_technician";
+  if (status === "pending_review" || status === "รอตรวจสอบ") return "pending_review";
+  if (status === "ไม่พบช่างรับงาน") return "no_accept";
+  if (status === "ตีกลับ") return "returned";
+  if (status === "รอพิจารณาเวลาใหม่") return "time_proposal";
+  return "pending_review";
+}
+
+function isAdminActionAllowed(row){
+  if (row && row.admin_action_required === false) return false;
+  return queueBucket(row) !== "waiting_technician";
+}
+
+function updateTitleBadge(count){
+  const baseTitle = "Admin Review Queue - CWF";
+  document.title = count > 0 ? `(${count}) ${baseTitle}` : baseTitle;
+}
+
+function markAdminInteraction(){
+  REVIEW_QUEUE_NOTIFY.audioUnlocked = true;
+}
+
+function playNewJobSound(){
+  if (!REVIEW_QUEUE_NOTIFY.audioUnlocked) return;
+  try {
+    const last = Number(window.__CWF_LAST_ADMIN_ALERT_SOUND_AT || 0);
+    if (Date.now() - last < 1200) return;
+    window.__CWF_LAST_ADMIN_ALERT_SOUND_AT = Date.now();
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.value = 880;
+    gain.gain.value = 0.05;
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    setTimeout(() => {
+      try { osc.stop(); ctx.close(); } catch (_) {}
+    }, 140);
+  } catch (_) {
+    // Autoplay restrictions must not break visual notification.
+  }
+}
+
+function processQueueNotifications(rows, opts = {}){
+  const reason = String(opts.reason || "");
+  const ids = (rows || []).map((r) => Number(r.job_id)).filter(Number.isFinite);
+  if (!REVIEW_QUEUE_NOTIFY.baselineReady) {
+    ids.forEach((id) => REVIEW_QUEUE_NOTIFY.knownIds.add(id));
+    REVIEW_QUEUE_NOTIFY.baselineReady = true;
+    updateTitleBadge(0);
+    return;
+  }
+  if (reason === "filter_change" || reason === "manual_reload") {
+    ids.forEach((id) => REVIEW_QUEUE_NOTIFY.knownIds.add(id));
+    return;
+  }
+  const fresh = ids.filter((id) => !REVIEW_QUEUE_NOTIFY.knownIds.has(id) && !REVIEW_QUEUE_NOTIFY.notifiedIds.has(id));
+  ids.forEach((id) => REVIEW_QUEUE_NOTIFY.knownIds.add(id));
+  if (!fresh.length) return;
+  fresh.forEach((id) => {
+    REVIEW_QUEUE_NOTIFY.newIds.add(id);
+    REVIEW_QUEUE_NOTIFY.notifiedIds.add(id);
+  });
+  saveNotifiedJobIds();
+  updateTitleBadge(REVIEW_QUEUE_NOTIFY.newIds.size);
+  const alertBox = $("approvalAlert");
+  if (alertBox) {
+    alertBox.style.display = "block";
+    alertBox.innerHTML = `🔔 มีงานจองใหม่ ${fresh.length} งาน`;
+  }
+  playNewJobSound();
+}
+
+function stopReviewQueuePolling(){
+  if (REVIEW_QUEUE_POLL.timer) {
+    clearTimeout(REVIEW_QUEUE_POLL.timer);
+    REVIEW_QUEUE_POLL.timer = null;
+  }
+}
+
+function scheduleReviewQueuePolling(){
+  if (REVIEW_QUEUE_POLL.stopped || REVIEW_QUEUE_POLL.authStopped || REVIEW_QUEUE_POLL.timer) return;
+  if (document.hidden) return;
+  REVIEW_QUEUE_POLL.timer = setTimeout(async () => {
+    REVIEW_QUEUE_POLL.timer = null;
+    if (!REVIEW_QUEUE_POLL.stopped && !REVIEW_QUEUE_POLL.authStopped && !document.hidden) {
+      await loadQueue({ reason:"poll" }).catch((e) => console.warn("[admin-review-v2] poll failed", e));
+    }
+    scheduleReviewQueuePolling();
+  }, REVIEW_POLL_MS);
+}
+
+function resumeReviewQueuePolling(reason){
+  if (REVIEW_QUEUE_POLL.authStopped) return;
+  REVIEW_QUEUE_POLL.stopped = false;
+  if (!document.hidden) loadQueue({ force:true, reason }).catch((e) => console.warn("[admin-review-v2] resume reload failed", e));
+  scheduleReviewQueuePolling();
+}
+
+function stopPollingForAuth(){
+  REVIEW_QUEUE_POLL.authStopped = true;
+  stopReviewQueuePolling();
+  try { if (typeof doLogout === "function") doLogout(); else location.replace("/login.html"); }
+  catch (_) { location.href = "/login.html"; }
+}
 
 function parseLatLngClient(input){
   const s = String(input||'').trim();
@@ -102,6 +249,7 @@ function mapFilterStatus(v){
     pending: "รอตรวจสอบ",
     return: "ตีกลับ",
     noaccept: "ไม่พบช่างรับงาน",
+    waiting: REVIEW_WAITING_STATUS,
     timeproposal: "รอพิจารณาเวลาใหม่",
     all: "all",
   };
@@ -149,6 +297,7 @@ async function loadQueue(opts = {}){
     const data = await apiFetch(`/admin/review_queue_v2?${q.toString()}`);
     const rows = Array.isArray(data.rows) ? data.rows : [];
     ROW_MAP = new Map(rows.map(r=>[Number(r.job_id), r]));
+    processQueueNotifications(rows, opts);
     $("pillCount").textContent = `${rows.length} งาน`;
     const needs = rows.filter(r => ["รอตรวจสอบ","ตีกลับ","ไม่พบช่างรับงาน","รอพิจารณาเวลาใหม่"].includes(safe(r.job_status)));
     const alertBox = $("approvalAlert");
@@ -164,6 +313,11 @@ async function loadQueue(opts = {}){
       }
     }
 
+    if (REVIEW_QUEUE_NOTIFY.newIds.size && alertBox) {
+      alertBox.style.display = "block";
+      alertBox.innerHTML = `🔔 มีงานจองใหม่ ${REVIEW_QUEUE_NOTIFY.newIds.size} งาน`;
+    }
+
     if (!rows.length){
       $("list").innerHTML = '<div class="card"><div class="muted">ไม่มีงานในคิวนี้</div></div>';
       return;
@@ -171,6 +325,14 @@ async function loadQueue(opts = {}){
 
     $("list").innerHTML = rows.map(r=>{
       const badge = `<span class="pill">${safe(r.job_status||"")}</span>`;
+      const bucket = queueBucket(r);
+      const actionAllowed = isAdminActionAllowed(r);
+      const items = Array.isArray(r.items) ? r.items : [];
+      const itemSummary = items.length ? items.map((it)=>`${safe(it.item_name || "-")} x${Number(it.qty || 0) || 0}`).join(" • ") : safe(r.job_type || "-");
+      const units = Number(r.service_units || 0);
+      const reserveTech = safe(r.technician_username || "");
+      const isNew = REVIEW_QUEUE_NOTIFY.newIds.has(Number(r.job_id));
+      const mapLink = safe(r.maps_url || "");
       const urgent = (String(r.booking_mode||"").toLowerCase()==="urgent") ? '<span class="pill" style="background:#fee2e2">ด่วน</span>' : '';
       const proposalPanel = safe(r.job_status) === "รอพิจารณาเวลาใหม่"
         ? `<div class="proposal-panel" id="proposal-panel-${Number(r.job_id)}">
@@ -179,21 +341,26 @@ async function loadQueue(opts = {}){
            </div>`
         : "";
       return `
-        <div class="card review-card-hot">
+        <div class="card review-card-hot ${isNew ? "review-card-new" : ""}">
           <div class="row">
             <div>
               <b>#${r.job_id} • ${safe(r.booking_code||"")}</b>
               <div class="muted" style="margin-top:2px;">${safe(r.customer_name||"-")} • ${safe(r.customer_phone||"-")}</div>
             </div>
             <div style="text-align:right;display:flex;flex-direction:column;gap:6px;align-items:flex-end;">
-              ${badge}${urgent}
+              ${badge}${urgent}<span class="pill">${safe(REVIEW_STATUS_LABELS[bucket] || bucket)}</span>
               <button class="btn btn-primary" type="button" onclick="openJob(${r.job_id})">เปิด</button>
-              <button class="btn" type="button" style="background:linear-gradient(135deg,#2563eb,#06b6d4);color:#fff" onclick="rebroadcastOfferQuick(${Number(r.job_id)})">📣 ลองยิงใหม่</button>
+              <button class="btn" type="button" style="background:linear-gradient(135deg,#2563eb,#06b6d4);color:#fff" ${actionAllowed ? "" : "disabled"} onclick="rebroadcastOfferQuick(${Number(r.job_id)})">📣 ลองยิงใหม่</button>
             </div>
           </div>
           <div class="muted" style="margin-top:8px;">📅 ${thDateTime(r.appointment_datetime)} • 🧾 ${safe(r.job_type||"-")}</div>
           <div class="muted" style="margin-top:4px;">📍 ${safe(r.job_zone||"")} ${safe(r.address_text||"")}</div>
           <div class="muted" style="margin-top:4px;">⏱️ ${Number(r.duration_min||0)} นาที</div>
+          <div class="muted" style="margin-top:4px;">บริการ: ${safe(itemSummary)}</div>
+          <div class="muted" style="margin-top:4px;">จำนวนเครื่อง: ${Number.isFinite(units) && units > 0 ? units : "-"} • ราคา: ${Number(r.job_price||0).toLocaleString("th-TH")} บาท</div>
+          <div class="muted" style="margin-top:4px;">ช่างที่ระบบ reserve: ${reserveTech || "-"}</div>
+          ${mapLink ? `<div class="muted" style="margin-top:4px;"><a href="${safe(mapLink)}" target="_blank" rel="noopener">เปิด Maps URL</a></div>` : ""}
+          ${bucket === "waiting_technician" ? `<div class="muted" style="margin-top:4px;">กำลังรอช่างรับ (${Number(r.pending_offer_count || 0)} offer ค้าง) • read-only จนกว่าจะหมดรอบหรือมีช่างรับ</div>` : ""}
           ${proposalPanel}
         </div>
       `;
@@ -201,6 +368,10 @@ async function loadQueue(opts = {}){
     loadProposalPanels(rows);
   }catch(e){
     console.error(e);
+    if (e && (Number(e.status) === 401 || Number(e.status) === 403)) {
+      stopPollingForAuth();
+      return;
+    }
     $("list").innerHTML = `<div class="card"><div class="muted">โหลดไม่สำเร็จ: ${safe(e.message||e)}</div></div>`;
   }
   };
@@ -424,6 +595,7 @@ async function openJob(jobId){
       job_zone: row.job_zone,
       technician_username: row.technician_username || "",
       team_members: [],
+      admin_action_required: row.admin_action_required !== false,
     };
 
     // team
@@ -463,6 +635,9 @@ async function openJob(jobId){
     $("slotBox").innerHTML = "";
     CURRENT_SLOTS = [];
 
+    const actionAllowed = isAdminActionAllowed(row);
+    if ($("btnDispatch")) $("btnDispatch").disabled = !actionAllowed;
+    if ($("btnRebroadcast")) $("btnRebroadcast").disabled = !actionAllowed;
     setModal(true);
   }catch(e){
     console.error(e);
@@ -652,8 +827,24 @@ async function cancelJob(){
     }
   }catch(e){ console.warn('auto open job', e); }
 
-  $("btnReload").addEventListener("click", () => loadQueue({ reason:"manual_reload" }));
-  $("filterStatus").addEventListener("change", () => loadQueue({ reason:"filter_change" }));
+  document.addEventListener("click", markAdminInteraction, { capture:true });
+  document.addEventListener("keydown", markAdminInteraction, { capture:true });
+  document.addEventListener("touchstart", markAdminInteraction, { capture:true, passive:true });
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) stopReviewQueuePolling();
+    else resumeReviewQueuePolling("visibilitychange");
+  });
+  window.addEventListener("focus", () => resumeReviewQueuePolling("focus"));
+  window.addEventListener("pageshow", () => resumeReviewQueuePolling("pageshow"));
+  window.addEventListener("pagehide", () => {
+    REVIEW_QUEUE_POLL.stopped = true;
+    stopReviewQueuePolling();
+  });
+  window.addEventListener("beforeunload", stopReviewQueuePolling);
+
+  $("btnReload").addEventListener("click", () => loadQueue({ force:true, reason:"manual_reload" }));
+  $("filterStatus").addEventListener("change", () => loadQueue({ force:true, reason:"filter_change" }));
+  scheduleReviewQueuePolling();
 
   $("btnLoadSlots").addEventListener("click", loadSlots);
   $("btnSave").addEventListener("click", saveJob);

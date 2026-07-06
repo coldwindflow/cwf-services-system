@@ -41,6 +41,15 @@
     return `${d.date}T${selected.start}:00`;
   }
 
+  function ensureScheduledRequestKey() {
+    const d = draft();
+    const existing = String(d.scheduled_request_key || "").trim();
+    if (existing) return existing;
+    const key = root.utils.randomKey();
+    root.state.updateDraft("scheduled", { scheduled_request_key: key });
+    return key;
+  }
+
   function dateFromYmd(value) {
     const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
     if (!match) return null;
@@ -721,6 +730,7 @@
       customer_note: String(d.customer_note || "").trim(),
       booking_mode: "scheduled",
       client_app: "customer_app_v2",
+      scheduled_request_key: ensureScheduledRequestKey(),
       job_zone: String(d.job_zone || "").trim(),
       service_kind: "clean",
       allow_time_proposal: d.allow_time_proposal === true,
