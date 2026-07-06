@@ -114,6 +114,15 @@
     return true;
   }
 
+  function finishPricingRequestFailure(row, token) {
+    if (!row || !token) return false;
+    if (!token.rowId || row.client_row_id !== token.rowId) return false;
+    if (Number(row.pricing_generation || 0) !== Number(token.generation || 0)) return false;
+    if (row.latest_pricing_request_id !== token.requestId) return false;
+    row.latest_pricing_request_id = null;
+    return true;
+  }
+
   function makeSavedRow(input, clientRowId, inferAssignee) {
     const row = input && typeof input === "object" ? input : {};
     return {
@@ -142,6 +151,7 @@
     markManualPrice,
     beginPricingRequest,
     canApplyPricingResponse,
+    finishPricingRequestFailure,
     makeSavedRow,
   };
 });

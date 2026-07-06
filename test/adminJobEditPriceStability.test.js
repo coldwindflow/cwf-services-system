@@ -121,7 +121,7 @@ test("a newer request supersedes an older request on the same row", () => {
   assert.equal(priceState.canApplyPricingResponse(row, newToken, "payload-a"), true);
 });
 
-test("parts-repair pricing failure restores the complete pre-click row state", () => {
+test("current pricing failure clears only request metadata", () => {
   const row = {
     client_row_id: "row-1",
     is_saved_row: true,
@@ -144,6 +144,94 @@ test("parts-repair pricing failure restores the complete pre-click row state", (
     pricing_generation: 0,
     latest_pricing_request_id: null,
   };
+  const token = priceState.beginPricingRequest(row, 1, "payload-standard");
+  const expected = priceState.snapshotRow(row);
+  expected.latest_pricing_request_id = null;
+  assert.equal(priceState.finishPricingRequestFailure(row, token), true);
+  assert.deepEqual(priceState.snapshotRow(row), expected);
+});
+
+test("failed stale pricing request after manual price edit does not restore old price", () => {
+  const row = { client_row_id: "row-1", pricing_generation: 0, unit_price: 550, latest_pricing_request_id: null };
+  const token = priceState.beginPricingRequest(row, 1, "payload-a");
+  priceState.markManualPrice(row, 777);
+  assert.equal(priceState.finishPricingRequestFailure(row, token), false);
+  assert.equal(row.unit_price, 777);
+  assert.equal(row.price_overridden, true);
+});
+
+test("failed older pricing request cannot overwrite newer successful pricing result", () => {
+  const row = { client_row_id: "row-1", pricing_generation: 0, unit_price: 550, latest_pricing_request_id: null };
+  const tokenA = priceState.beginPricingRequest(row, 1, "payload-a");
+  const tokenB = priceState.beginPricingRequest(row, 2, "payload-b");
+  if (priceState.canApplyPricingResponse(row, tokenB, "payload-b")) {
+    row.unit_price = 900;
+    row.used_standard_price = true;
+    row.price_overridden = false;
+  }
+  assert.equal(priceState.finishPricingRequestFailure(row, tokenA), false);
+  assert.equal(row.unit_price, 900);
+  assert.equal(row.used_standard_price, true);
+  assert.equal(row.price_overridden, false);
+});
+
+test("global job type mutation invalidates pending pricing responses before old result returns", () => {
+  const row = {
+    client_row_id: "row-1",
+    pricing_generation: 0,
+    latest_pricing_request_id: null,
+    job_type_key: "wash",
+    item_name: "wash old",
+    unit_price: 550,
+  };
+  const token = priceState.beginPricingRequest(row, 1, "payload-wash");
+  priceState.invalidatePricingRequests(row);
+  row.job_type_key = "repair";
+  row.item_name = "repair new";
+  if (priceState.canApplyPricingResponse(row, token, "payload-wash")) row.item_name = "stale old";
+  assert.equal(priceState.finishPricingRequestFailure(row, token), false);
+  assert.equal(row.job_type_key, "repair");
+  assert.equal(row.item_name, "repair new");
+});
+
+test("converting a row invalidates pending pricing responses before old result returns", () => {
+  const row = {
+    client_row_id: "row-1",
+    pricing_generation: 0,
+    latest_pricing_request_id: null,
+    is_standard: false,
+    item_name: "custom legacy",
+    unit_price: 500,
+  };
+  const token = priceState.beginPricingRequest(row, 1, "payload-custom");
+  priceState.invalidatePricingRequests(row);
+  Object.assign(row, { is_standard: true, job_type_key: "wash", item_name: "converted standard" });
+  if (priceState.canApplyPricingResponse(row, token, "payload-custom")) row.item_name = "stale custom";
+  assert.equal(priceState.finishPricingRequestFailure(row, token), false);
+  assert.equal(row.is_standard, true);
+  assert.equal(row.job_type_key, "wash");
+  assert.equal(row.item_name, "converted standard");
+});
+
+test("custom item name edit invalidates pending pricing responses before old result returns", () => {
+  const row = {
+    client_row_id: "row-1",
+    pricing_generation: 0,
+    latest_pricing_request_id: null,
+    is_standard: false,
+    item_name: "old custom",
+    unit_price: 500,
+  };
+  const token = priceState.beginPricingRequest(row, 1, "payload-custom");
+  priceState.invalidatePricingRequests(row);
+  row.item_name = "new custom";
+  if (priceState.canApplyPricingResponse(row, token, "payload-custom")) row.item_name = "stale custom";
+  assert.equal(priceState.finishPricingRequestFailure(row, token), false);
+  assert.equal(row.item_name, "new custom");
+});
+
+test("legacy restore helper remains available for explicit snapshots", () => {
+  const row = { client_row_id: "row-1", unit_price: 1 };
   const before = priceState.snapshotRow(row);
   const candidate = priceState.snapshotRow(row);
   candidate.repair_type_key = "standard";
@@ -196,9 +284,16 @@ test("explicit standard pricing uses candidate state and no fallback", () => {
   assert.match(source, /Object\.assign\(currentRow, candidate\)/);
 });
 
-test("pricing preview failure leaves all row data unchanged via snapshot restore", () => {
-  assert.match(source, /const before = priceState\.snapshotRow\(row\)/);
-  assert.match(source, /priceState\.restoreRow\(row, before\)/);
+test("pricing preview failure only finishes the current request metadata", () => {
+  assert.doesNotMatch(source, /const before = priceState\.snapshotRow\(row\)/);
+  assert.doesNotMatch(source, /priceState\.restoreRow\(row, before\)/);
+  assert.match(source, /priceState\.finishPricingRequestFailure\(currentRow, pricingToken\)/);
+});
+
+test("pricing-relevant UI mutations invalidate pending pricing requests before applying live changes", () => {
+  assert.match(source, /if \(convert\) convert\.onclick = \(\) => \{[\s\S]*?priceState\.invalidatePricingRequests\(row\);[\s\S]*?Object\.assign\(row, parsed\);/);
+  assert.match(source, /if \(name\) name\.oninput = \(\)=>\{[\s\S]*?priceState\.invalidatePricingRequests\(row\);[\s\S]*?row\.item_name = name\.value;/);
+  assert.match(source, /editJobTypeEl\.onchange = \(\) => \{[\s\S]*?if \(row\?\.is_standard\) \{[\s\S]*?priceState\.invalidatePricingRequests\(row\);[\s\S]*?row\.job_type_key = normalizeEditJobTypeKey/);
 });
 
 test("post-save verification detects unit_price, qty, line_total, and assignee mismatches", () => {
@@ -210,8 +305,8 @@ test("post-save verification detects unit_price, qty, line_total, and assignee m
 });
 
 test("HTML loads the shared helper and references the new JS cache version", () => {
-  assert.match(html, /admin-job-edit-price-state\.js\?v=20260706_price_state_v1/);
-  assert.match(html, /admin-job-view-v2\.js\?v=20260706_saved_price_stability_review_fix/);
+  assert.match(html, /admin-job-edit-price-state\.js\?v=20260707_price_state_v2/);
+  assert.match(html, /admin-job-view-v2\.js\?v=20260707_saved_price_stability_review_fix2/);
 });
 
 test("backend helper preserves submitted saved prices when frontend marks the row overridden", () => {

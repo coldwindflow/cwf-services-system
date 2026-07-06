@@ -1416,7 +1416,6 @@ async function loadJob(){
         if (useStandard) useStandard.onclick = async ()=>{
           const row = editorItems[idx];
           if (!row) return;
-          const before = priceState.snapshotRow(row);
           const candidate = priceState.snapshotRow(row);
           if (isPartsRepairRow(candidate)) {
             candidate.repair_type_key = 'standard';
@@ -1451,23 +1450,34 @@ async function loadJob(){
             Object.assign(currentRow, candidate);
             renderEditor();
           } catch (e) {
-            priceState.restoreRow(row, before);
+            const currentIdx = editorItems.findIndex((it)=>it && it.client_row_id === rowId);
+            if (currentIdx < 0) return;
+            const currentRow = editorItems[currentIdx];
+            if (!priceState.finishPricingRequestFailure(currentRow, pricingToken)) return;
             showToast('ดึงราคามาตรฐานไม่สำเร็จ ราคาปัจจุบันยังไม่ถูกเปลี่ยน', 'error');
-            updatePriceStatusForRow(idx);
+            updatePriceStatusForRow(currentIdx);
           }
         };
         if (convert) convert.onclick = () => {
-          const parsed = parseStandardItemName(editorItems[idx].item_name) || { job_type_key:'wash', job_type:'ล้าง', ac_type_key:'wall', wash_type_key:'normal', repair_type_key:'standard', btu_tier:'small', is_standard:true };
-          Object.assign(editorItems[idx], parsed);
-          editorItems[idx].price_overridden = !!editorItems[idx].is_saved_row ? editorItems[idx].price_overridden : false;
-          editorItems[idx].item_name = standardItemName(editorItems[idx]);
+          const row = editorItems[idx];
+          if (!row) return;
+          priceState.invalidatePricingRequests(row);
+          const parsed = parseStandardItemName(row.item_name) || { job_type_key:'wash', job_type:'ล้าง', ac_type_key:'wall', wash_type_key:'normal', repair_type_key:'standard', btu_tier:'small', is_standard:true };
+          Object.assign(row, parsed);
+          row.price_overridden = !!row.is_saved_row ? row.price_overridden : false;
+          row.item_name = standardItemName(row);
           renderEditor();
-          if (!editorItems[idx]?.is_saved_row) {
-            const rowId = editorItems[idx]?.client_row_id;
+          if (!row.is_saved_row) {
+            const rowId = row.client_row_id;
             setTimeout(()=>updateEditItemPriceFromSelection(idx, { force:true, rowId }), 0);
           }
         };
-        if (name) name.oninput = ()=>{ editorItems[idx].item_name = name.value; };
+        if (name) name.oninput = ()=>{
+          const row = editorItems[idx];
+          if (!row) return;
+          priceState.invalidatePricingRequests(row);
+          row.item_name = name.value;
+        };
         if (del) del.onclick = ()=>{ editorItems.splice(idx,1); renderEditor(); };
         updatePriceStatusForRow(idx);
       });
@@ -1480,6 +1490,7 @@ async function loadJob(){
       editJobTypeEl.onchange = () => {
         editorItems.forEach((row, idx) => {
           if (row?.is_standard) {
+            priceState.invalidatePricingRequests(row);
             row.job_type_key = normalizeEditJobTypeKey(editJobTypeEl.value || row.job_type_key || 'wash');
             row.job_type = jobTypePayload(row.job_type_key);
             row.item_name = standardItemName(row);
