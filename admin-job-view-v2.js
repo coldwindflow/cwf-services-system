@@ -17,6 +17,7 @@ console.info('[admin-job-view] rework UI v3 loaded');
 console.info('[admin-job-edit] service builder v2 loaded');
 console.info('[admin-job-edit] ac type parser fix 20260617 loaded');
 console.info('[admin-job-edit] saved price stability 20260706 loaded');
+console.info('[admin-job-edit] price state review fix 20260706 loaded');
 
 function safe(t){ return (t||'').toString(); }
 function fmtDT(iso){
@@ -485,7 +486,7 @@ async function loadJob(){
 
   const r = await apiFetch(`/admin/job_v2/${encodeURIComponent(jobId)}`);
   const job = r.job || {};
-  const items = Array.isArray(r.items) ? r.items.map(x=>normalizeLegacyQtyUnit(Object.assign({}, x))) : [];
+  const items = Array.isArray(r.items) ? r.items.map(x=>Object.assign({}, x)) : [];
   const photos = Array.isArray(r.photos) ? r.photos : [];
   const units = Array.isArray(r.units) ? r.units : [];
   const updates = Array.isArray(r.updates) ? r.updates : [];
@@ -876,6 +877,8 @@ async function loadJob(){
       if (m && m[1]) return String(m[1]).trim();
       return null;
     };
+    const priceState = window.CWFAdminJobEditPriceState;
+    if (!priceState) throw new Error('Admin job edit price state helper failed to load');
 
     // Auto-normalize legacy service rows:
     // - บางงานเก่าถูกเก็บเป็น qty=1 แต่ชื่อมี "... 5 เครื่อง" และ unit_price=ยอดรวม
@@ -887,20 +890,7 @@ async function loadJob(){
       const n = Number(m[1]);
       return Number.isFinite(n) ? n : 0;
     };
-    const normalizeLegacyServiceRow = (row) => {
-      try {
-        const nm = String(row.item_name || '');
-        const mc = parseMachineCountFromName(nm);
-        const q = Number(row.qty || 0);
-        const u = Number(row.unit_price || 0);
-        const total = (Number.isFinite(q) ? q : 0) * (Number.isFinite(u) ? u : 0);
-        if (mc >= 2 && q === 1 && total > 0) {
-          row.qty = mc;
-          row.unit_price = Number((total / mc).toFixed(2));
-        }
-      } catch(_e) {}
-      return row;
-    };
+    const normalizeLegacyServiceRow = (row) => priceState.normalizeLegacyServiceRow(row);
     const EDIT_JOB_TYPES = { wash:'ล้าง', repair:'ซ่อม', install:'ติดตั้ง' };
     const EDIT_REPAIR_TYPES = { standard:'ตรวจเช็ค/ซ่อมทั่วไป', leak:'ตรวจเช็ครั่ว', parts:'ซ่อมเปลี่ยนอะไหล่' };
     const EDIT_REPAIR_PAYLOAD = { standard:'', leak:'ตรวจเช็ครั่ว', parts:'ซ่อมเปลี่ยนอะไหล่' };
@@ -1059,15 +1049,9 @@ async function loadJob(){
     let editPricingRequestSeq = 0;
     const nextEditClientRowId = () => `edit-row-${Date.now().toString(36)}-${++editClientRowSeq}`;
 
-    let editorItems = (Array.isArray(items) ? items : []).map(it=>({
-      client_row_id: nextEditClientRowId(),
-      is_saved_row: true,
-      item_id: Number(it.item_id||0) || null,
-      item_name: safe(it.item_name||''),
-      qty: Number(it.qty||1) || 1,
-      unit_price: Number(it.unit_price||0) || 0,
-      assigned_technician_username: (String(it.assigned_technician_username||'').trim() || inferAssigneeFromItemName(it.item_name) || null),
-    })).map(normalizeLegacyServiceRow).map(row => {
+    let editorItems = (Array.isArray(items) ? items : []).map(it=>
+      priceState.makeSavedRow(it, nextEditClientRowId(), inferAssigneeFromItemName)
+    ).map(row => {
       const parsed = parseStandardItemName(row.item_name) || { is_standard:false };
       const merged = Object.assign(row, parsed);
       if (isPartsRepairRow(merged)) merged.price_overridden = true;
@@ -1167,13 +1151,12 @@ async function loadJob(){
       const rowId = row.client_row_id;
       const requestId = ++editPricingRequestSeq;
       const requestPayloadKey = JSON.stringify(getEditStandardPayload(row));
-      row.latest_pricing_request_id = requestId;
+      const pricingToken = priceState.beginPricingRequest(row, requestId, requestPayloadKey);
       const preview = await getEditPricingPreview(row, { allowFallback: opts.allowFallback !== false });
       const currentIdx = editorItems.findIndex((it)=>it && it.client_row_id === rowId);
       if (currentIdx < 0) return null;
       const currentRow = editorItems[currentIdx];
-      if (!currentRow || currentRow.latest_pricing_request_id !== requestId) return null;
-      if (JSON.stringify(getEditStandardPayload(currentRow)) !== requestPayloadKey) return null;
+      if (!priceState.canApplyPricingResponse(currentRow, pricingToken, JSON.stringify(getEditStandardPayload(currentRow)))) return null;
       const standardPrice = Math.max(0, Number(preview.standard_price || 0));
       const currentQty = Math.max(1, Math.round(Number(currentRow.qty || 1)));
       const unitPrice = currentQty > 0 ? Number((standardPrice / currentQty).toFixed(2)) : standardPrice;
@@ -1378,6 +1361,7 @@ async function loadJob(){
         const syncStandard = () => {
           const row = editorItems[idx];
           if (!row) return;
+          priceState.invalidatePricingRequests(row);
           row.is_standard = true;
           row.job_type_key = normalizeEditJobTypeKey(jobSel?.value || row.job_type_key || 'wash');
           row.job_type = jobTypePayload(row.job_type_key);
@@ -1405,6 +1389,7 @@ async function loadJob(){
           const row = editorItems[idx];
           if (!row) return;
           row.repair_detail = cleanRepairDetail(repairDetail.value || '');
+          priceState.invalidatePricingRequests(row);
           row.price_overridden = isPartsRepairRow(row) ? true : !!row.price_overridden;
           row.item_name = standardItemName(row);
           updatePriceStatusForRow(idx);
@@ -1416,6 +1401,7 @@ async function loadJob(){
         }
         if (qty) qty.oninput = ()=>{
           const row = editorItems[idx];
+          priceState.invalidatePricingRequests(row);
           row.qty = Math.max(1, Math.round(Number(qty.value||1)));
           if (row.is_standard) {
             row.item_name = standardItemName(row);
@@ -1424,30 +1410,48 @@ async function loadJob(){
           } else updatePriceStatusForRow(idx);
         };
         if (unit) unit.oninput = ()=>{
-          editorItems[idx].unit_price = Number(unit.value||0);
-          editorItems[idx].price_overridden = true;
-          editorItems[idx].used_standard_price = false;
+          priceState.markManualPrice(editorItems[idx], unit.value);
           updatePriceStatusForRow(idx);
         };
         if (useStandard) useStandard.onclick = async ()=>{
           const row = editorItems[idx];
           if (!row) return;
-          const before = {
-            unit_price: row.unit_price,
-            price_overridden: row.price_overridden,
-            used_standard_price: row.used_standard_price,
-          };
-          if (isPartsRepairRow(editorItems[idx])) {
-            editorItems[idx].repair_type_key = 'standard';
-            editorItems[idx].repair_detail = '';
+          const before = priceState.snapshotRow(row);
+          const candidate = priceState.snapshotRow(row);
+          if (isPartsRepairRow(candidate)) {
+            candidate.repair_type_key = 'standard';
+            candidate.repair_detail = '';
           }
-          editorItems[idx].price_overridden = false;
+          candidate.price_overridden = false;
+          candidate.used_standard_price = false;
+          candidate.item_name = standardItemName(candidate);
+          const rowId = row.client_row_id;
+          const requestId = ++editPricingRequestSeq;
+          const requestPayloadKey = JSON.stringify(getEditStandardPayload(candidate));
+          const pricingToken = priceState.beginPricingRequest(row, requestId, requestPayloadKey);
           try {
-            const preview = await updateEditItemPriceFromSelection(idx, { force:true, explicitStandard:true, allowFallback:false, rowId: row.client_row_id });
-            if (!preview) throw new Error('pricing preview stale');
+            const preview = await getEditPricingPreview(candidate, { allowFallback:false });
+            const currentIdx = editorItems.findIndex((it)=>it && it.client_row_id === rowId);
+            if (currentIdx < 0) return;
+            const currentRow = editorItems[currentIdx];
+            if (!priceState.canApplyPricingResponse(currentRow, pricingToken, JSON.stringify(getEditStandardPayload(candidate)))) return;
+            const q = Math.max(1, Math.round(Number(candidate.qty || 1)));
+            const standardPrice = Math.max(0, Number(preview.standard_price || 0));
+            const unitPrice = q > 0 ? Number((standardPrice / q).toFixed(2)) : standardPrice;
+            candidate.qty = q;
+            candidate.unit_price = unitPrice;
+            candidate.price_overridden = false;
+            candidate.used_standard_price = true;
+            candidate.auto_unit_price = unitPrice;
+            candidate.auto_line_total = standardPrice;
+            candidate.duration_min = Number(preview.duration_min || 0);
+            candidate.pricing_payload = preview.payload;
+            candidate.latest_pricing_request_id = currentRow.latest_pricing_request_id;
+            candidate.pricing_generation = currentRow.pricing_generation;
+            Object.assign(currentRow, candidate);
             renderEditor();
           } catch (e) {
-            Object.assign(row, before);
+            priceState.restoreRow(row, before);
             showToast('ดึงราคามาตรฐานไม่สำเร็จ ราคาปัจจุบันยังไม่ถูกเปลี่ยน', 'error');
             updatePriceStatusForRow(idx);
           }
@@ -1498,6 +1502,25 @@ async function loadJob(){
         editorItems.push({ client_row_id: rowId, is_saved_row: false, item_id: null, item_name: 'ล้างแอร์ผนัง • ล้างธรรมดา • 12000 BTU • 1 เครื่อง', qty: 1, unit_price: 0, job_type_key:'wash', job_type:'ล้าง', ac_type_key:'wall', wash_type_key:'normal', repair_type_key:'standard', btu_tier:'small', is_standard:true, price_overridden:false });
         renderEditor();
         setTimeout(()=>updateEditItemPriceFromSelection(idx, { force:true, rowId }), 0);
+      };
+    }
+
+    const btnNormalizeItems = el('btnNormalizeItems');
+    if (btnNormalizeItems) {
+      btnNormalizeItems.onclick = () => {
+        editorItems = editorItems.map((row) => {
+          const normalized = normalizeLegacyServiceRow(row);
+          normalized.client_row_id = row.client_row_id || normalized.client_row_id || nextEditClientRowId();
+          normalized.is_saved_row = !!row.is_saved_row;
+          normalized.price_overridden = row.price_overridden;
+          normalized.used_standard_price = row.used_standard_price;
+          normalized.assigned_technician_username = row.assigned_technician_username;
+          normalized.pricing_generation = Number(row.pricing_generation || 0) + 1;
+          normalized.latest_pricing_request_id = null;
+          return normalized;
+        });
+        renderEditor();
+        showToast('แปลงจำนวนเครื่องจากชื่อรายการแล้ว กรุณาตรวจสอบก่อนบันทึก', 'success');
       };
     }
 

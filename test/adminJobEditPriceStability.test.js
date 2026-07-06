@@ -10,104 +10,198 @@ const jsPath = path.join(root, "admin-job-view-v2.js");
 const htmlPath = path.join(root, "admin-job-view-v2.html");
 const source = fs.readFileSync(jsPath, "utf8");
 const html = fs.readFileSync(htmlPath, "utf8");
+const priceState = require("../admin-job-edit-price-state");
 const { normalizeAdminJobItemsForSave } = require("../server/adminJobItems");
 
-test("existing saved item retains unit_price on initial load", () => {
-  assert.match(source, /is_saved_row:\s*true/);
-  assert.match(source, /unit_price:\s*Number\(it\.unit_price\|\|0\)\s*\|\|\s*0/);
-  assert.match(source, /ใช้ราคาที่บันทึกไว้/);
+function savePayloadFromRow(row) {
+  return {
+    item_id: row.item_id ? Number(row.item_id) : null,
+    item_name: String(row.is_saved_row ? (row.item_name || "") : (row.item_name || "")).trim(),
+    qty: Number(row.qty || 0),
+    unit_price: Number(row.unit_price || 0),
+    line_total: Number(row.qty || 0) * Number(row.unit_price || 0),
+    assigned_technician_username: String(row.assigned_technician_username || "").trim() || null,
+    is_service: true,
+    price_overridden: !!row.price_overridden || !!row.is_saved_row,
+  };
+}
+
+test("saved legacy row initializes with exact DB qty and unit_price", () => {
+  const row = priceState.makeSavedRow({
+    item_id: 7,
+    item_name: "ล้างแอร์ผนัง • ล้างธรรมดา • 12000 BTU • 5 เครื่อง",
+    qty: 1,
+    unit_price: 2500,
+  }, "row-1");
+  assert.equal(row.is_saved_row, true);
+  assert.equal(row.qty, 1);
+  assert.equal(row.unit_price, 2500);
+  assert.equal(row.item_name, "ล้างแอร์ผนัง • ล้างธรรมดา • 12000 BTU • 5 เครื่อง");
 });
 
-test("open edit page and save immediately retains exact saved price", () => {
-  assert.match(source, /!editorItems\[i\]\?\.is_saved_row/);
-  assert.match(source, /item_name:\s*String\(it\.is_saved_row\s*\?\s*\(it\.item_name\|\|''\)/);
-  assert.match(source, /price_overridden:\s*!!it\.price_overridden\s*\|\|\s*!!it\.is_saved_row/);
+test("immediate save payload preserves exact saved legacy qty and price", () => {
+  const row = priceState.makeSavedRow({
+    item_name: "ล้างแอร์ผนัง • ล้างธรรมดา • 12000 BTU • 5 เครื่อง",
+    qty: 1,
+    unit_price: 2500,
+  }, "row-1");
+  const payload = savePayloadFromRow(row);
+  assert.equal(payload.qty, 1);
+  assert.equal(payload.unit_price, 2500);
+  assert.equal(payload.line_total, 2500);
+  assert.equal(payload.price_overridden, true);
 });
 
-test("edit customer name retains price because saved rows are skipped during save-time repricing", () => {
-  assert.match(source, /if \(editorItems\[i\]\?\.is_standard && !editorItems\[i\]\?\.is_saved_row && !editorItems\[i\]\?\.price_overridden\)/);
+test("explicit legacy normalize action may convert qty=1 total price into per-machine price", () => {
+  const row = priceState.makeSavedRow({
+    item_name: "ล้างแอร์ผนัง • ล้างธรรมดา • 12000 BTU • 5 เครื่อง",
+    qty: 1,
+    unit_price: 2500,
+  }, "row-1");
+  const normalized = priceState.normalizeLegacyServiceRow(row);
+  assert.equal(normalized.qty, 5);
+  assert.equal(normalized.unit_price, 500);
+  assert.equal(row.qty, 1, "normalizer returns a clone and does not mutate until explicit action applies it");
 });
 
-test("edit phone address appointment and zone retain price", () => {
-  assert.doesNotMatch(source, /edit_customer_phone[\s\S]{0,300}updateEditItemPriceFromSelection/);
-  assert.doesNotMatch(source, /edit_address[\s\S]{0,300}updateEditItemPriceFromSelection/);
-  assert.doesNotMatch(source, /edit_appt[\s\S]{0,300}updateEditItemPriceFromSelection/);
-  assert.doesNotMatch(source, /edit_zone[\s\S]{0,300}updateEditItemPriceFromSelection/);
+test("opening and reloading without explicit normalize never converts saved legacy rows", () => {
+  assert.match(source, /r\.items\.map\(x=>Object\.assign\(\{\}, x\)\)/);
+  assert.doesNotMatch(source, /\)\)\.map\(normalizeLegacyServiceRow\)\.map\(row =>/);
 });
 
-test("edit team and primary technician retain price", () => {
-  assert.match(source, /primarySel\.onchange = \(\)=>\{ renderTeamEditor\(getPrimaryTechFromUI\(primaryU\), curTeamUsers\); renderEditor\(\); \}/);
-  assert.doesNotMatch(source, /primarySel\.onchange[\s\S]{0,160}updateEditItemPriceFromSelection/);
+test("manual price input invalidates pending standard-price requests", () => {
+  const row = { client_row_id: "row-1", pricing_generation: 0, unit_price: 550, latest_pricing_request_id: null };
+  const token = priceState.beginPricingRequest(row, 1, "payload-a");
+  priceState.markManualPrice(row, 777);
+  assert.equal(row.unit_price, 777);
+  assert.equal(row.price_overridden, true);
+  assert.equal(row.used_standard_price, false);
+  assert.equal(priceState.canApplyPricingResponse(row, token, "payload-a"), false);
 });
 
-test("edit item technician assignment retains price", () => {
-  assert.match(source, /assignee\.onchange = \(\)=>\{ editorItems\[idx\]\.assigned_technician_username/);
-  assert.doesNotMatch(source, /assignee\.onchange[\s\S]{0,180}updateEditItemPriceFromSelection/);
+test("old standard-price response cannot overwrite a newer manual value or save payload", () => {
+  const row = { client_row_id: "row-1", pricing_generation: 0, qty: 2, unit_price: 550, latest_pricing_request_id: null };
+  const token = priceState.beginPricingRequest(row, 1, "payload-a");
+  priceState.markManualPrice(row, 1234);
+  if (priceState.canApplyPricingResponse(row, token, "payload-a")) row.unit_price = 500;
+  assert.equal(row.unit_price, 1234);
+  assert.equal(savePayloadFromRow(row).unit_price, 1234);
 });
 
-test("change job type retains saved unit_price", () => {
-  assert.match(source, /if \(!row\.is_saved_row\) \{\s*row\.price_overridden = false;\s*updateEditItemPriceFromSelection/);
-  assert.match(source, /else \{\s*updatePriceStatusForRow\(idx\);\s*\}/);
+test("row deletion makes pending pricing response a no-op", () => {
+  const row = { client_row_id: "row-1", pricing_generation: 0, latest_pricing_request_id: null };
+  const token = priceState.beginPricingRequest(row, 1, "payload-a");
+  const rows = [];
+  const current = rows.find((it) => it.client_row_id === token.rowId);
+  assert.equal(priceState.canApplyPricingResponse(current, token, "payload-a"), false);
 });
 
-test("change AC type retains saved unit_price", () => {
-  assert.match(source, /if \(!row\.is_saved_row && !isPartsRepairRow\(row\)\)/);
+test("row reorder still applies only to the matching client row id", () => {
+  const rowA = { client_row_id: "row-a", pricing_generation: 0, latest_pricing_request_id: null };
+  const rowB = { client_row_id: "row-b", pricing_generation: 0, latest_pricing_request_id: null };
+  const token = priceState.beginPricingRequest(rowA, 1, "payload-a");
+  const rows = [rowB, rowA];
+  const current = rows.find((it) => it.client_row_id === token.rowId);
+  assert.equal(current, rowA);
+  assert.equal(priceState.canApplyPricingResponse(current, token, "payload-a"), true);
+  assert.equal(priceState.canApplyPricingResponse(rowB, token, "payload-a"), false);
 });
 
-test("change wash type retains saved unit_price", () => {
-  assert.match(source, /if \(!row\.is_saved_row && !isPartsRepairRow\(row\)\)/);
+test("stale pricing response is rejected when selection payload changes", () => {
+  const row = { client_row_id: "row-1", pricing_generation: 0, latest_pricing_request_id: null };
+  const token = priceState.beginPricingRequest(row, 1, "payload-old");
+  assert.equal(priceState.canApplyPricingResponse(row, token, "payload-new"), false);
 });
 
-test("change BTU retains saved unit_price", () => {
-  assert.match(source, /if \(btuSel\) btuSel\.onchange = syncStandard/);
-  assert.match(source, /if \(!row\.is_saved_row && !isPartsRepairRow\(row\)\)/);
+test("a newer request supersedes an older request on the same row", () => {
+  const row = { client_row_id: "row-1", pricing_generation: 0, latest_pricing_request_id: null };
+  const oldToken = priceState.beginPricingRequest(row, 1, "payload-a");
+  const newToken = priceState.beginPricingRequest(row, 2, "payload-a");
+  assert.equal(priceState.canApplyPricingResponse(row, oldToken, "payload-a"), false);
+  assert.equal(priceState.canApplyPricingResponse(row, newToken, "payload-a"), true);
 });
 
-test("change qty retains unit_price and recalculates line total", () => {
-  assert.match(source, /if \(!row\.is_saved_row && !row\.price_overridden\) updateEditItemPriceFromSelection/);
-  assert.match(source, /else updatePriceStatusForRow\(idx\)/);
-  assert.match(source, /const line = Math\.max\(0, Number\(row\?\.qty \|\| 0\)\) \* Math\.max\(0, Number\(row\?\.unit_price \|\| 0\)\)/);
+test("parts-repair pricing failure restores the complete pre-click row state", () => {
+  const row = {
+    client_row_id: "row-1",
+    is_saved_row: true,
+    item_name: "ซ่อมแอร์ผนัง • ซ่อมเปลี่ยนอะไหล่ • เปลี่ยนแคป • 12000 BTU • 1 เครื่อง",
+    job_type_key: "repair",
+    job_type: "ซ่อม",
+    ac_type_key: "wall",
+    wash_type_key: "normal",
+    repair_type_key: "parts",
+    repair_detail: "เปลี่ยนแคป",
+    btu_tier: "small",
+    qty: 1,
+    unit_price: 1800,
+    price_overridden: true,
+    used_standard_price: false,
+    duration_min: 0,
+    pricing_payload: { before: true },
+    auto_unit_price: 0,
+    auto_line_total: 0,
+    pricing_generation: 0,
+    latest_pricing_request_id: null,
+  };
+  const before = priceState.snapshotRow(row);
+  const candidate = priceState.snapshotRow(row);
+  candidate.repair_type_key = "standard";
+  candidate.repair_detail = "";
+  candidate.item_name = "ซ่อมแอร์ผนัง • ตรวจเช็ค/ซ่อมทั่วไป • 12000 BTU • 1 เครื่อง";
+  priceState.beginPricingRequest(row, 1, "payload-standard");
+  priceState.restoreRow(row, before);
+  assert.deepEqual(priceState.snapshotRow(row), before);
 });
 
-test("manually edit price, save, reload, price remains", () => {
-  assert.match(source, /editorItems\[idx\]\.unit_price = Number\(unit\.value\|\|0\)/);
-  assert.match(source, /editorItems\[idx\]\.price_overridden = true/);
+test("successful explicit standard pricing can apply candidate state after token validation", () => {
+  const row = { client_row_id: "row-1", pricing_generation: 0, latest_pricing_request_id: null, qty: 2, unit_price: 550, price_overridden: true };
+  const candidate = priceState.snapshotRow(row);
+  const token = priceState.beginPricingRequest(row, 1, "payload-standard");
+  assert.equal(priceState.canApplyPricingResponse(row, token, "payload-standard"), true);
+  candidate.unit_price = 600;
+  candidate.price_overridden = false;
+  candidate.used_standard_price = true;
+  candidate.latest_pricing_request_id = row.latest_pricing_request_id;
+  candidate.pricing_generation = row.pricing_generation;
+  Object.assign(row, candidate);
+  assert.equal(row.unit_price, 600);
+  assert.equal(row.used_standard_price, true);
 });
 
-test("saved price different from current Price Book remains unchanged", () => {
-  assert.match(source, /if \(row\.is_saved_row && !opts\.explicitStandard\)/);
-  assert.match(source, /return null/);
+test("new row automatic pricing remains possible with request token validation", () => {
+  const row = { client_row_id: "new-1", is_saved_row: false, pricing_generation: 0, latest_pricing_request_id: null };
+  const token = priceState.beginPricingRequest(row, 1, "new-payload");
+  assert.equal(priceState.canApplyPricingResponse(row, token, "new-payload"), true);
 });
 
-test("pricing preview failure does not overwrite saved price", () => {
-  assert.match(source, /allowFallback:false/);
-  assert.match(source, /Object\.assign\(row, before\)/);
-  assert.match(source, /ราคาปัจจุบันยังไม่ถูกเปลี่ยน/);
+test("saved row non-price edits keep price because save-time repricing excludes saved rows", () => {
+  assert.match(source, /editorItems\[i\]\?\.is_standard && !editorItems\[i\]\?\.is_saved_row && !editorItems\[i\]\?\.price_overridden/);
 });
 
-test("clicking use standard price explicitly changes price", () => {
-  assert.match(source, /explicitStandard:true/);
-  assert.match(source, /used_standard_price = !!opts\.explicitStandard/);
-  assert.match(source, /ใช้ราคามาตรฐาน/);
+test("qty changes keep saved unit price and update line totals through existing row state", () => {
+  const row = priceState.makeSavedRow({ item_name: "ล้างแอร์ผนัง", qty: 2, unit_price: 550 }, "row-1");
+  row.qty = 3;
+  assert.equal(savePayloadFromRow(row).line_total, 1650);
+  assert.equal(row.unit_price, 550);
 });
 
-test("new item still receives automatic standard pricing", () => {
-  assert.match(source, /is_saved_row:\s*false/);
-  assert.match(source, /setTimeout\(\(\)=>updateEditItemPriceFromSelection\(idx, \{ force:true, rowId \}\), 0\)/);
+test("manual price edits use the shared helper in production code", () => {
+  assert.match(source, /priceState\.markManualPrice\(editorItems\[idx\], unit\.value\)/);
 });
 
-test("delete row while pricing request is pending does not update another row", () => {
-  assert.match(source, /const currentIdx = editorItems\.findIndex\(\(it\)=>it && it\.client_row_id === rowId\)/);
-  assert.match(source, /if \(currentIdx < 0\) return null/);
-  assert.match(source, /latest_pricing_request_id !== requestId/);
+test("explicit standard pricing uses candidate state and no fallback", () => {
+  assert.match(source, /const candidate = priceState\.snapshotRow\(row\)/);
+  assert.match(source, /getEditPricingPreview\(candidate, \{ allowFallback:false \}\)/);
+  assert.match(source, /Object\.assign\(currentRow, candidate\)/);
 });
 
-test("stale pricing response does not overwrite latest selection", () => {
-  assert.match(source, /const requestPayloadKey = JSON\.stringify\(getEditStandardPayload\(row\)\)/);
-  assert.match(source, /JSON\.stringify\(getEditStandardPayload\(currentRow\)\) !== requestPayloadKey/);
+test("pricing preview failure leaves all row data unchanged via snapshot restore", () => {
+  assert.match(source, /const before = priceState\.snapshotRow\(row\)/);
+  assert.match(source, /priceState\.restoreRow\(row, before\)/);
 });
 
-test("post-save verification detects unit_price mismatch", () => {
+test("post-save verification detects unit_price, qty, line_total, and assignee mismatches", () => {
   assert.doesNotMatch(source, /!it\.price_overridden && Math\.abs\(Number\(saved\.unit_price/);
   assert.match(source, /field:\s*'unit_price'/);
   assert.match(source, /field:\s*'qty'/);
@@ -115,8 +209,9 @@ test("post-save verification detects unit_price mismatch", () => {
   assert.match(source, /field:\s*'assigned_technician_username'/);
 });
 
-test("HTML references the new JS cache version", () => {
-  assert.match(html, /admin-job-view-v2\.js\?v=20260706_saved_price_stability/);
+test("HTML loads the shared helper and references the new JS cache version", () => {
+  assert.match(html, /admin-job-edit-price-state\.js\?v=20260706_price_state_v1/);
+  assert.match(html, /admin-job-view-v2\.js\?v=20260706_saved_price_stability_review_fix/);
 });
 
 test("backend helper preserves submitted saved prices when frontend marks the row overridden", () => {
