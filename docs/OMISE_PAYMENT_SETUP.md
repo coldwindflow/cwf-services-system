@@ -16,13 +16,13 @@ Never commit them and never paste secrets into chat, code, or a PR.
 | Variable | Example | Notes |
 | --- | --- | --- |
 | `OMISE_SECRET_KEY` | `skey_test_xxxxx` | **Secret.** Server only. Required for charge/retrieve. |
-| `OMISE_WEBHOOK_SECRET` | `whsec_xxxxx` | **Secret.** Required before online payment is enabled. |
+| `OMISE_WEBHOOK_SECRET` | `base64-secret-from-dashboard` | **Secret.** Base64 webhook signing secret from the Omise dashboard. Required before online payment is enabled. |
 | `OMISE_PUBLIC_KEY` | `pkey_test_xxxxx` | Safe to expose. Required only for card payment UI. |
 
 Readiness behavior:
 
 - Online payment is **off** unless both `OMISE_SECRET_KEY` and
-  `OMISE_WEBHOOK_SECRET` are set.
+  `OMISE_WEBHOOK_SECRET` are set and the webhook secret is valid Base64.
 - PromptPay can be advertised with only `OMISE_SECRET_KEY` and
   `OMISE_WEBHOOK_SECRET`.
 - Card payment is advertised only when `OMISE_PUBLIC_KEY` is also set.
@@ -58,7 +58,12 @@ In the Omise dashboard -> **Webhooks**, add an endpoint pointing at:
 https://<your-host>/webhooks/omise
 ```
 
-The endpoint must be configured with HMAC-SHA256 signatures. The server verifies:
+The endpoint must be configured with HMAC-SHA256 signatures. Omise exposes the
+webhook signing secret as Base64 in the dashboard; set that exact Base64 value
+as `OMISE_WEBHOOK_SECRET`. The server decodes it to bytes before calculating the
+HMAC and fails closed if the value is empty or not valid Base64.
+
+The server verifies:
 
 - `Omise-Signature`
 - `Omise-Signature-Timestamp`
@@ -99,7 +104,7 @@ Before enabling online payment in production:
 
 1. Confirm `OMISE_SECRET_KEY` is set for the intended Omise account.
 2. Confirm `OMISE_WEBHOOK_SECRET` is set and matches the Omise dashboard
-   webhook signing secret.
+   webhook signing secret Base64 value.
 3. Confirm `OMISE_PUBLIC_KEY` is set if card payment should be shown.
 4. Confirm `GET /public/payment-config` returns:
    - `enabled: true`
@@ -130,7 +135,20 @@ Manual process:
    order to `payment_failed` so the customer can retry.
 6. Never change production data without an approved reconciliation ticket.
 
-## 7. Live test
+## 7. Rollback notes
+
+Do not remove `OMISE_WEBHOOK_SECRET` while there are `payment_processing` orders
+or PromptPay QR charges that may still send webhooks. Removing it disables both
+new payment readiness and the webhook receiver, so in-flight payments can no
+longer reconcile automatically.
+
+Before rollback, reconcile in-flight orders using the manual process above. The
+safest rollback is to revert the payment-security application change. If the
+system later supports disabling only the start of new online payments while
+keeping webhook reconciliation active, that is also acceptable; do not change
+production config destructively as part of rollback without owner approval.
+
+## 8. Live test
 
 Run this only in an environment that is intentionally configured to reach Omise.
 

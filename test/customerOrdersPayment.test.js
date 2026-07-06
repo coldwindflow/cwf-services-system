@@ -4,11 +4,14 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const http = require("node:http");
 const crypto = require("node:crypto");
+const fs = require("node:fs");
+const path = require("node:path");
 const express = require("express");
 
 const { createCustomerOrdersRoutes } = require("../server/routes/customerOrders");
 
-const WEBHOOK_SECRET = "whsec_test";
+const WEBHOOK_SECRET_BYTES = Buffer.from("omise webhook secret fixture", "utf8");
+const WEBHOOK_SECRET = WEBHOOK_SECRET_BYTES.toString("base64");
 
 function baseRow(o) {
   return {
@@ -49,11 +52,11 @@ function makePool(seed, options = {}) {
     async query(sql, params = []) {
       const s = String(sql).replace(/\s+/g, " ").trim();
       calls.push(s);
-      if (["BEGIN", "COMMIT", "ROLLBACK"].includes(s)) return { rows: [] };
+      if (["BEGIN", "COMMIT", "ROLLBACK"].includes(s)) return { rows: [], rowCount: 0 };
       if (options.schemaReady === false) { const e = new Error("schema missing"); e.code = "42P01"; throw e; }
       if (s.includes("WHERE order_code=$1") && s.includes("FOR UPDATE")) {
         const o = orders.get(params[0]);
-        return { rows: o ? [baseRow(o)] : [] };
+        return { rows: o ? [baseRow(o)] : [], rowCount: o ? 1 : 0 };
       }
       if (s.includes("SET payment_provider='omise'") && s.includes("payment_status=$3") && s.includes("payment_charge_id=NULL")) {
         const o = orders.get(params[0]);
@@ -61,29 +64,32 @@ function makePool(seed, options = {}) {
         o.payment_charge_id = null;
         o.payment_status = params[2];
         o.status = "payment_processing";
-        return { rows: [baseRow(o)] };
+        return { rows: [baseRow(o)], rowCount: 1 };
       }
       if (s.includes("SET payment_status=$3, status='payment_failed'")) {
+        if (options.failureUpdateNoMatch) return { rows: [], rowCount: 0 };
         const o = orders.get(params[0]);
         if (o && o.payment_status === params[1]) {
           o.payment_status = params[2];
           o.status = "payment_failed";
+          return { rows: [baseRow(o)], rowCount: 1 };
         }
-        return { rows: [] };
+        return { rows: [], rowCount: 0 };
       }
       if (s.includes("WHERE order_code=$1 AND payment_status=$6")) {
+        if (options.failFinalPaymentUpdate) throw new Error("simulated final payment update failure");
         const o = orders.get(params[0]);
-        if (!o || o.payment_status !== params[5]) return { rows: [] };
+        if (!o || o.payment_status !== params[5]) return { rows: [], rowCount: 0 };
         o.payment_method = params[1];
         o.payment_charge_id = params[2];
         o.payment_status = params[3];
         o.status = params[4];
         if (o.status === "paid" && !o.paid_at) o.paid_at = new Date().toISOString();
-        return { rows: [baseRow(o)] };
+        return { rows: [baseRow(o)], rowCount: 1 };
       }
       if (s.includes("WHERE payment_charge_id=$1") && s.includes("FOR UPDATE")) {
         const row = Array.from(orders.values()).find((o) => o.payment_charge_id === params[0]);
-        return { rows: row ? [baseRow(row)] : [] };
+        return { rows: row ? [baseRow(row)] : [], rowCount: row ? 1 : 0 };
       }
       if (s.includes("SET payment_charge_id=COALESCE")) {
         if (pool.failWebhookUpdate) throw new Error("simulated db failure");
@@ -94,13 +100,13 @@ function makePool(seed, options = {}) {
           o.status = params[3];
           if (o.status === "paid" && !o.paid_at) o.paid_at = new Date().toISOString();
         }
-        return { rows: [] };
+        return { rows: [], rowCount: o ? 1 : 0 };
       }
       if (s.includes("FROM public.customer_orders WHERE order_code=$1")) {
         const o = orders.get(params[0]);
-        return { rows: o ? [baseRow(o)] : [] };
+        return { rows: o ? [baseRow(o)] : [], rowCount: o ? 1 : 0 };
       }
-      return { rows: [] };
+      return { rows: [], rowCount: 0 };
     },
   };
   return pool;
@@ -162,9 +168,9 @@ function postJson(u, body) {
   return fetch(u, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body || {}) });
 }
 
-function signedHeaders(raw, secret = WEBHOOK_SECRET, extraSignature = "") {
+function signedHeaders(raw, secretBytes = WEBHOOK_SECRET_BYTES, extraSignature = "") {
   const timestamp = "1770000000";
-  const sig = crypto.createHmac("sha256", secret).update(`${timestamp}.${raw}`).digest("hex");
+  const sig = crypto.createHmac("sha256", secretBytes).update(`${timestamp}.${raw}`).digest("hex");
   return {
     "content-type": "application/json",
     "Omise-Signature-Timestamp": timestamp,
@@ -198,6 +204,23 @@ test("GET /public/payment-config fails closed without webhook secret and omits c
   } finally { noPublic.close(); }
 });
 
+test("invalid Base64 webhook secret disables payment and rejects webhooks", async () => {
+  const server = await startServer(makePool(seedOrder()), fakeOmise(), { OMISE_WEBHOOK_SECRET: "not-base64%%%" });
+  try {
+    const config = await (await fetch(`${url(server)}/public/payment-config`)).json();
+    assert.equal(config.enabled, false);
+    assert.deepEqual(config.methods, []);
+    const raw = JSON.stringify({ data: { object: "charge", id: "chrg_invalid_secret" } });
+    const res = await fetch(`${url(server)}/webhooks/omise`, {
+      method: "POST",
+      headers: signedHeaders(raw),
+      body: raw,
+    });
+    assert.equal(res.status, 503);
+    assert.equal((await res.json()).error, "OMISE_WEBHOOK_NOT_CONFIGURED");
+  } finally { server.close(); }
+});
+
 test("card payment claims an attempt before charging and uses stored amount with metadata", async () => {
   const pool = makePool(seedOrder());
   const omise = fakeOmise();
@@ -210,6 +233,18 @@ test("card payment claims an attempt before charging and uses stored amount with
     assert.equal(omise.spy.charges[0].metadata.order_code, "CWF-PAY1");
     assert.match(omise.spy.charges[0].metadata.attempt_id, /^[0-9a-f]{32}$/);
     assert.equal(pool.orders.get("CWF-PAY1").status, "paid");
+  } finally { server.close(); }
+});
+
+test("paid order is non-payable and does not create an Omise charge", async () => {
+  const pool = makePool(seedOrder({ status: "paid", payment_status: "successful", payment_charge_id: "chrg_paid", paid_at: new Date().toISOString() }));
+  const omise = fakeOmise();
+  const server = await startServer(pool, omise);
+  try {
+    const res = await postJson(`${url(server)}/public/orders/CWF-PAY1/pay`, { method: "card", token: "tokn_x" });
+    assert.equal(res.status, 409);
+    assert.equal((await res.json()).error, "ORDER_ALREADY_PAID");
+    assert.equal(omise.spy.charges.length, 0);
   } finally { server.close(); }
 });
 
@@ -232,6 +267,28 @@ test("concurrent duplicate pay requests create at most one charge", async () => 
   } finally { server.close(); }
 });
 
+test("provider success with final DB update failure returns unknown and blocks duplicate charge", async () => {
+  const pool = makePool(seedOrder(), { failFinalPaymentUpdate: true });
+  const omise = fakeOmise();
+  const server = await startServer(pool, omise);
+  try {
+    const first = await postJson(`${url(server)}/public/orders/CWF-PAY1/pay`, { method: "card", token: "tokn_x" });
+    const firstBody = await first.json();
+    assert.equal(first.status, 202);
+    assert.equal(firstBody.error, "PAYMENT_RESULT_UNKNOWN");
+    assert.equal(firstBody.payment.status, "payment_processing");
+    assert.equal(firstBody.payment.requires_polling, true);
+    assert.equal(firstBody.order.order_code, "CWF-PAY1");
+    assert.equal(pool.orders.get("CWF-PAY1").status, "payment_processing");
+    assert.equal(omise.spy.charges.length, 1);
+
+    const second = await postJson(`${url(server)}/public/orders/CWF-PAY1/pay`, { method: "card", token: "tokn_x" });
+    assert.equal(second.status, 202);
+    assert.equal((await second.json()).error, "PAYMENT_PROCESSING");
+    assert.equal(omise.spy.charges.length, 1);
+  } finally { server.close(); }
+});
+
 test("deterministic failure becomes retryable and creates a new attempt B", async () => {
   const pool = makePool(seedOrder());
   let calls = 0;
@@ -250,6 +307,27 @@ test("deterministic failure becomes retryable and creates a new attempt B", asyn
     const second = await postJson(`${url(server)}/public/orders/CWF-PAY1/pay`, { method: "card", token: "ok" });
     assert.equal(second.status, 200);
     assert.notEqual(omise.spy.charges[0].metadata.attempt_id, omise.spy.charges[1].metadata.attempt_id);
+  } finally { server.close(); }
+});
+
+test("deterministic failure update no-match returns unknown without opening retry", async () => {
+  const pool = makePool(seedOrder(), { failureUpdateNoMatch: true });
+  const omise = fakeOmise({ createCardCharge: async ({ metadata }) => {
+    omise.spy.charges.push({ metadata });
+    const e = new Error("bad token"); e.status = 400; e.code = "bad_request"; throw e;
+  } });
+  const server = await startServer(pool, omise);
+  try {
+    const first = await postJson(`${url(server)}/public/orders/CWF-PAY1/pay`, { method: "card", token: "bad" });
+    const body = await first.json();
+    assert.equal(first.status, 202);
+    assert.equal(body.error, "PAYMENT_RESULT_UNKNOWN");
+    assert.equal(pool.orders.get("CWF-PAY1").status, "payment_processing");
+
+    const second = await postJson(`${url(server)}/public/orders/CWF-PAY1/pay`, { method: "card", token: "bad" });
+    assert.equal(second.status, 202);
+    assert.equal((await second.json()).error, "PAYMENT_PROCESSING");
+    assert.equal(omise.spy.charges.length, 1);
   } finally { server.close(); }
 });
 
@@ -281,16 +359,27 @@ test("webhook validates missing, invalid, valid, dual signatures and raw tamperi
   const raw = JSON.stringify(payload);
   try {
     assert.equal((await fetch(`${url(server)}/webhooks/omise`, { method: "POST", headers: { "content-type": "application/json" }, body: raw })).status, 401);
-    assert.equal((await postWebhook(server, payload, signedHeaders(raw, "wrong"))).status, 401);
+    assert.equal((await postWebhook(server, payload, signedHeaders(raw, Buffer.from("wrong")))).status, 401);
     assert.equal((await postWebhook(server, payload, signedHeaders(raw))).status, 200);
 
     pool.orders.set("CWF-PAY1", seedOrder({ status: "payment_processing", payment_status: "processing:attempt" }));
-    const dual = signedHeaders(raw, WEBHOOK_SECRET, "0".repeat(64));
+    const dual = signedHeaders(raw, WEBHOOK_SECRET_BYTES, "0".repeat(64));
     assert.equal((await postWebhook(server, payload, dual)).status, 200);
 
     const tamperedHeaders = signedHeaders(raw);
     assert.equal((await postWebhook(server, { data: { object: "charge", id: "different" } }, tamperedHeaders)).status, 401);
   } finally { server.close(); }
+});
+
+test("backend pay route accepts only token and Customer App tokenizes card before backend pay", () => {
+  const routeSource = fs.readFileSync(path.join(__dirname, "..", "server", "routes", "customerOrders.js"), "utf8");
+  assert.match(routeSource, /const token = cleanText\(req\.body && req\.body\.token, 200\)/);
+  assert.doesNotMatch(routeSource, /card_number|cardNumber|expiration_month|expiration_year|security_code|cvc/i);
+  assert.doesNotMatch(routeSource, /console\.(log|warn|error)\([^;\n]*(token|req\.body)/i);
+
+  const storeSource = fs.readFileSync(path.join(__dirname, "..", "customer-app", "modules", "store.js"), "utf8");
+  assert.match(storeSource, /Omise\.createToken\("card"/);
+  assert.match(storeSource, /payOrder\(o\.order\.order_code, \{ method: "card", token \}\)/);
 });
 
 test("webhook recovery requires matching order, attempt, amount and THB currency", async () => {

@@ -242,8 +242,18 @@ function isSchemaError(error) {
   return code === "42P01" || code === "42703";
 }
 
+function decodeOmiseWebhookSecret(secret) {
+  const raw = cleanText(secret, 1000);
+  if (!raw || raw.length % 4 !== 0 || !/^[A-Za-z0-9+/]+={0,2}$/.test(raw)) return null;
+  const decoded = Buffer.from(raw, "base64");
+  if (!decoded.length) return null;
+  const normalizedInput = raw.replace(/=+$/, "");
+  const normalizedOutput = decoded.toString("base64").replace(/=+$/, "");
+  return normalizedInput === normalizedOutput ? decoded : null;
+}
+
 function getWebhookSecret(env) {
-  return cleanText(env && env.OMISE_WEBHOOK_SECRET, 500);
+  return decodeOmiseWebhookSecret(env && env.OMISE_WEBHOOK_SECRET);
 }
 
 function paymentReadiness(omise, env) {
@@ -272,13 +282,13 @@ function signatureCandidates(value) {
     .filter(Boolean);
 }
 
-function verifyOmiseWebhookSignature(req, secret) {
+function verifyOmiseWebhookSignature(req, secretKey) {
   const timestamp = cleanText(safeHeader(req, "Omise-Signature-Timestamp"), 80);
   const header = safeHeader(req, "Omise-Signature");
   const raw = Buffer.isBuffer(req.rawBody) ? req.rawBody : Buffer.from(req.rawBody || "");
-  if (!timestamp || !header || !raw.length) return { ok: false };
+  if (!Buffer.isBuffer(secretKey) || !secretKey.length || !timestamp || !header || !raw.length) return { ok: false };
   const signed = Buffer.concat([Buffer.from(`${timestamp}.`, "utf8"), raw]);
-  const expected = crypto.createHmac("sha256", secret).update(signed).digest();
+  const expected = crypto.createHmac("sha256", secretKey).update(signed).digest();
   for (const candidate of signatureCandidates(header)) {
     if (!/^[0-9a-f]{64}$/i.test(candidate)) continue;
     const actual = Buffer.from(candidate, "hex");
@@ -502,14 +512,15 @@ function createCustomerOrdersRoutes(deps = {}) {
         let markedFailed = false;
         try {
           await inTransaction(pool, async (client) => {
-            await client.query(
+            const failed = await client.query(
               `UPDATE public.customer_orders
                   SET payment_status=$3, status='payment_failed', updated_at=now()
-                WHERE order_code=$1 AND payment_status=$2`,
+                WHERE order_code=$1 AND payment_status=$2
+                RETURNING order_code`,
               [code, `${PAYMENT_ATTEMPT_PREFIX}${claim.attemptId}`, error.code || "omise_rejected"]
             );
+            markedFailed = Boolean((failed.rowCount || (failed.rows && failed.rows.length) || 0) > 0);
           });
-          markedFailed = true;
         } catch (updateError) {
           console.error("[orders/pay:failure-update] failed", updateError);
         }
@@ -571,7 +582,13 @@ function createCustomerOrdersRoutes(deps = {}) {
     } catch (error) {
       if (isSchemaError(error)) return res.status(503).json({ error: "ORDERS_SCHEMA_NOT_READY" });
       console.error("[orders/pay:update] failed", error);
-      return res.status(500).json({ error: "บันทึกผลการชำระเงินไม่สำเร็จ" });
+      return res.status(202).json({
+        ok: false,
+        error: "PAYMENT_RESULT_UNKNOWN",
+        message: "กำลังตรวจสอบการชำระเงิน",
+        order: publicOrder(claim.order),
+        payment: { status: PROCESSING_STATUS, requires_polling: true },
+      });
     }
   });
 
