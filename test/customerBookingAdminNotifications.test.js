@@ -130,7 +130,7 @@ function createElement(id = "") {
   };
 }
 
-function createAdminReviewSandbox() {
+function createAdminReviewSandbox(options = {}) {
   const elements = new Map();
   const card = createElement("card-2");
   card.classList.add("review-card-new");
@@ -184,6 +184,7 @@ function createAdminReviewSandbox() {
     setTimeout,
     clearTimeout,
     URLSearchParams,
+    URL,
     Intl,
     Number,
     String,
@@ -205,12 +206,12 @@ function createAdminReviewSandbox() {
     prompt() { return ""; },
     alert() {},
     showToast() {},
-    apiFetch: async (url, options = {}) => {
-      if (options.method) throw new Error(`unexpected mutation ${options.method} ${url}`);
+    apiFetch: options.apiFetch || (async (url, requestOptions = {}) => {
+      if (requestOptions.method) throw new Error(`unexpected mutation ${requestOptions.method} ${url}`);
       if (/\/team/.test(url)) return { members: [] };
       if (/\/pricing/.test(url)) return { total: 0, discount: 0 };
       return {};
-    },
+    }),
     window: null,
     __advance(ms) { now += ms; },
     __soundCount() { return soundCount; },
@@ -306,7 +307,8 @@ test("admin review new-job notification uses first-load baseline and one sound p
 });
 
 test("admin/customer frontend cache versions are bumped for booking notification changes", () => {
-  assert.match(adminReviewHtml, /admin-review-v2\.js\?v=20260707_customer_booking_notify_v2/);
+  assert.match(adminReviewHtml, /admin-review-v2\.js\?v=20260707_customer_booking_notify_v3_xss_guard/);
+  assert.doesNotMatch(adminReviewHtml, /admin-review-v2\.js\?v=20260707_customer_booking_notify_v2/);
   assert.match(adminReviewHtml, /admin-review-ai-intake\.js\?v=ai-booking-intake-customer-cards-v11-admin-alert-gate/);
   assert.doesNotMatch(adminReviewHtml, /admin-review-ai-intake\.js\?v=ai-booking-intake-customer-cards-v10/);
   assert.match(customerIndex, /bookingScheduled\.js\?v=20260707_booking_admin_notify_v1/);
@@ -335,6 +337,121 @@ test("behavior: review queue only includes customer urgent waiting rows while pr
   const waitingOnly = simulateReviewQueueRows(rows, WAITING_URGENT_STATUS);
   assert.deepEqual(waitingOnly.map((row) => row.job_id), [1]);
   assert.equal(waitingOnly[0].admin_action_required, false);
+});
+
+test("security: admin review queue escapes untrusted customer, item, proposal, technician, and error HTML", async () => {
+  const imgPayload = '<img src=x onerror="window.__xss=1">';
+  const scriptPayload = '</div><script>window.__xss=1</script>';
+  const attrPayload = '" autofocus onfocus="window.__xss=1';
+  const row = {
+    job_id: 101,
+    booking_code: `CWF-${attrPayload}`,
+    booking_mode: "scheduled",
+    job_status: REVIEW_STATUSES[4],
+    customer_name: imgPayload,
+    customer_phone: attrPayload,
+    address_text: scriptPayload,
+    job_zone: attrPayload,
+    job_type: imgPayload,
+    technician_username: attrPayload,
+    maps_url: `javascript:${attrPayload}`,
+    items: [{ item_name: imgPayload, qty: 2 }],
+    admin_action_required: true,
+  };
+  const sandbox = createAdminReviewSandbox({
+    apiFetch: async (url, requestOptions = {}) => {
+      if (requestOptions.method) throw new Error(`unexpected mutation ${requestOptions.method} ${url}`);
+      if (/review_queue_v2/.test(url)) return { rows: [row] };
+      if (/time-proposals/.test(url)) {
+        return {
+          rows: [{
+            proposal_id: 5,
+            status: "pending",
+            technician_name: imgPayload,
+            technician_username: attrPayload,
+            note: scriptPayload,
+            proposed_datetime: "2026-07-10T10:00:00+07:00",
+          }],
+        };
+      }
+      return { members: [], total: 0, discount: 0 };
+    },
+  });
+  const hooks = sandbox.window.__CWF_ADMIN_REVIEW_TEST__;
+  await hooks.loadQueue({ force: true, reason: "security" });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const rendered = [
+    sandbox.__elements.get("list").innerHTML,
+    sandbox.__elements.get("proposal-panel-101").innerHTML,
+  ].join("\n");
+  assert.doesNotMatch(rendered, /<img/i);
+  assert.doesNotMatch(rendered, /<script/i);
+  assert.doesNotMatch(rendered, /onerror=/i);
+  assert.doesNotMatch(rendered, /onfocus=/i);
+  assert.match(rendered, /&lt;img src&#61;x onerror&#61;&quot;window\.__xss&#61;1&quot;&gt;/);
+  assert.match(rendered, /&lt;\/div&gt;&lt;script&gt;window\.__xss&#61;1&lt;\/script&gt;/);
+
+  const errorSandbox = createAdminReviewSandbox({
+    apiFetch: async (url) => {
+      if (/review_queue_v2/.test(url)) throw new Error(imgPayload);
+      return {};
+    },
+  });
+  await errorSandbox.window.__CWF_ADMIN_REVIEW_TEST__.loadQueue({ force: true, reason: "security_error" });
+  const errorHtml = errorSandbox.__elements.get("list").innerHTML;
+  assert.doesNotMatch(errorHtml, /<img/i);
+  assert.doesNotMatch(errorHtml, /onerror=/i);
+  assert.match(errorHtml, /&lt;img src&#61;x onerror&#61;&quot;window\.__xss&#61;1&quot;&gt;/);
+});
+
+test("security: admin review queue blocks unsafe Maps URLs and preserves valid external HTTP links", async () => {
+  const unsafeUrls = [
+    "javascript:alert(1)",
+    "data:text/html,<script>alert(1)</script>",
+    "vbscript:msgbox(1)",
+    "file:///etc/passwd",
+    "/maps",
+    "//evil.example",
+    "not a url",
+    '" autofocus onfocus="window.__xss=1',
+  ];
+  for (const maps_url of unsafeUrls) {
+    const sandbox = createAdminReviewSandbox({
+      apiFetch: async (url) => {
+        if (/review_queue_v2/.test(url)) {
+          return { rows: [{ job_id: 201, job_status: REVIEW_STATUSES[0], booking_mode: "scheduled", maps_url, admin_action_required: true }] };
+        }
+        return {};
+      },
+    });
+    await sandbox.window.__CWF_ADMIN_REVIEW_TEST__.loadQueue({ force: true, reason: "security_url" });
+    const rendered = sandbox.__elements.get("list").innerHTML;
+    assert.doesNotMatch(rendered, /<a href=/i, maps_url);
+    assert.doesNotMatch(rendered, /javascript:/i, maps_url);
+    assert.doesNotMatch(rendered, /data:/i, maps_url);
+    assert.doesNotMatch(rendered, /onfocus=/i, maps_url);
+  }
+
+  for (const maps_url of [
+    "https://maps.google.com/?q=13.7000,100.6000",
+    "https://www.google.com/maps/place/test",
+    "http://maps.example.com/location",
+  ]) {
+    const sandbox = createAdminReviewSandbox({
+      apiFetch: async (url) => {
+        if (/review_queue_v2/.test(url)) {
+          return { rows: [{ job_id: 202, job_status: REVIEW_STATUSES[0], booking_mode: "scheduled", maps_url, admin_action_required: true }] };
+        }
+        return {};
+      },
+    });
+    await sandbox.window.__CWF_ADMIN_REVIEW_TEST__.loadQueue({ force: true, reason: "security_url_valid" });
+    const rendered = sandbox.__elements.get("list").innerHTML;
+    assert.match(rendered, /<a href="https?:\/\//i);
+    assert.match(rendered, /target="_blank"/);
+    assert.match(rendered, /rel="noopener noreferrer"/);
+  }
 });
 
 test("behavior: concurrent scheduled requests with the same key create one job and one reservation", async () => {
