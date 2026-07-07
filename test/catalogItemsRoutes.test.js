@@ -1161,7 +1161,7 @@ test("admin POST with a pricing object creates the catalog item and the linked p
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        item_name: "ล้างแอร์โปร", base_price: 700,
+        item_name: "ล้างแอร์โปร", base_price: 700, job_category: "ล้าง", ac_type: "ผนัง",
         pricing: { normal_price: 700, active_price: 500, campaign_name: "โปรทดสอบ", pricing_is_active: true },
       }),
     });
@@ -1698,6 +1698,8 @@ test("admin POST with a pricing rule still responds successfully against a singl
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         item_name: "ทดสอบราคา",
+        job_category: "ล้าง",
+        ac_type: "ผนัง",
         pricing: { normal_price: 700, active_price: 550, pricing_is_active: true },
       }),
     });

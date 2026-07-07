@@ -20,6 +20,43 @@ function fmtMoney(v){
   return n.toLocaleString('th-TH', { maximumFractionDigits: 0 });
 }
 
+const PRICE_RULE_RISK_LABELS = {
+  MISSING_JOB_TYPE: 'missing job type',
+  MISSING_AC_TYPE: 'missing AC type',
+  UNSUPPORTED_JOB_TYPE: 'unsupported job type',
+  UNSUPPORTED_AC_TYPE: 'unsupported AC type',
+  INVALID_PRICE: 'invalid price',
+  ACTIVE_PRICE_ABOVE_NORMAL: 'active price above normal',
+  PRICE_OUTLIER: 'price outlier',
+  INVALID_BTU_RANGE: 'invalid BTU range',
+  INVALID_MACHINE_RANGE: 'invalid machine range',
+  INVALID_DATE_RANGE: 'invalid date range',
+  PRODUCT_RULE_LEAK: 'product-linked rule',
+  CATALOG_SCOPE_MISMATCH: 'catalog scope mismatch',
+  OVERLAPPING_ACTIVE_RULE: 'overlapping active rule',
+  INVALID_PRIORITY: 'invalid priority',
+  UNSUPPORTED_WASH_VARIANT: 'unsupported wash variant',
+};
+
+function riskText(codes){
+  return (codes || []).map((c) => PRICE_RULE_RISK_LABELS[c] || c).join(', ');
+}
+
+function clientPriceRuleRisks(body){
+  const risks = [];
+  if(!body.job_type) risks.push('MISSING_JOB_TYPE');
+  if(!body.ac_type) risks.push('MISSING_AC_TYPE');
+  if(!Number.isFinite(Number(body.normal_price)) || Number(body.normal_price) <= 0 || !Number.isFinite(Number(body.active_price)) || Number(body.active_price) <= 0) risks.push('INVALID_PRICE');
+  if(Number(body.active_price) > Number(body.normal_price)) risks.push('ACTIVE_PRICE_ABOVE_NORMAL');
+  if(body.btu_min && (!Number.isFinite(Number(body.btu_min)) || Number(body.btu_min) <= 0)) risks.push('INVALID_BTU_RANGE');
+  if(body.btu_max && (!Number.isFinite(Number(body.btu_max)) || Number(body.btu_max) <= 0)) risks.push('INVALID_BTU_RANGE');
+  if(body.btu_min && body.btu_max && Number(body.btu_min) > Number(body.btu_max)) risks.push('INVALID_BTU_RANGE');
+  if(body.effective_from && body.effective_to && Date.parse(body.effective_from) > Date.parse(body.effective_to)) risks.push('INVALID_DATE_RANGE');
+  if(!Number.isInteger(Number(body.priority)) || Number(body.priority) < -1000 || Number(body.priority) > 1000) risks.push('INVALID_PRIORITY');
+  if(Number(body.normal_price) >= 10000 || Number(body.active_price) >= 10000) risks.push('PRICE_OUTLIER');
+  return [...new Set(risks)];
+}
+
 function pricePayload(){
   const from = (el('price_effective_from')?.value || '').trim();
   const to = (el('price_effective_to')?.value || '').trim();
@@ -66,6 +103,8 @@ function dateInputValue(value){
 
 function priceRuleCard(r){
   const active = !!r.is_active;
+  const risks = r.risk_codes || [];
+  const unsafe = risks.length || r.is_safe_for_service_pricing === false;
   const range = `${r.btu_min || 0}${r.btu_max ? `-${r.btu_max}` : '+'} BTU`;
   const promo = r.campaign_name || r.label || '';
   const dates = [dateInputValue(r.effective_from), dateInputValue(r.effective_to)].filter(Boolean).join(' ถึง ');
@@ -75,6 +114,7 @@ function priceRuleCard(r){
       <div class="svc-title"><b>${r.job_type || '-'} / ${r.ac_type || '-'} ${r.wash_variant || ''}</b></div>
       <div class="muted2 mini">${range} • ปกติ ${fmtMoney(r.normal_price)} บาท • ใช้จริง ${fmtMoney(r.active_price)} บาท</div>
       <div class="muted2 mini">${promo ? `แคมเปญ: ${promo} • ` : ''}${dates ? `ช่วงเวลา: ${dates} • ` : ''}priority ${Number(r.priority || 0)} • สถานะ: <b>${active ? 'เปิดใช้' : 'ปิด'}</b></div>
+      ${unsafe ? `<div class="muted2 mini" style="color:#991b1b">Risk: ${riskText(risks)}</div>` : ''}
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
       <button class="secondary btn-small" data-price-act="edit" data-id="${r.rule_id}">แก้ไข</button>
@@ -92,6 +132,10 @@ async function loadPriceRules(){
     const rules = r.rules || [];
     window.__priceRules = rules;
     box.innerHTML = rules.map(priceRuleCard).join('') || `<div class="muted2">ยังไม่มีราคาบริการ</div>`;
+    const riskyCount = rules.filter((rule) => (rule.risk_codes || []).length || rule.is_safe_for_service_pricing === false).length;
+    if (riskyCount) {
+      box.innerHTML = `<div class="svc-row" style="border-color:#fecaca;background:#fff1f2;color:#991b1b">Risky service price rules: ${riskyCount}</div>` + box.innerHTML;
+    }
   }catch(e){
     box.innerHTML = `<div class="muted2">โหลดราคาบริการไม่สำเร็จ: ${e.message}</div>`;
   }
@@ -101,6 +145,11 @@ async function savePriceRule(){
   const body = pricePayload();
   if(!body.job_type || !body.ac_type || !body.normal_price || !body.active_price){
     showToast('กรอกประเภทงาน ประเภทแอร์ ราคาปกติ และราคาที่ใช้จริง', 'error');
+    return;
+  }
+  const risks = clientPriceRuleRisks(body);
+  if(risks.length){
+    showToast(`Rule เสี่ยง: ${riskText(risks)}`, 'error');
     return;
   }
   try{
@@ -136,6 +185,14 @@ function editPriceRule(id){
 }
 
 async function togglePriceRule(id, currentActive){
+  if(currentActive === false){
+    const rule = (window.__priceRules || []).find((r) => Number(r.rule_id) === Number(id));
+    const risks = rule ? (rule.risk_codes || []) : [];
+    if(risks.length || rule?.is_safe_for_service_pricing === false){
+      showToast(`เปิดใช้ไม่ได้: ${riskText(risks)}`, 'error');
+      return;
+    }
+  }
   try{
     await apiFetch(`/admin/customer-pricing/rules/${id}/toggle`, { method:'PATCH', body: JSON.stringify({ is_active: !currentActive }) });
     await loadPriceRules();
