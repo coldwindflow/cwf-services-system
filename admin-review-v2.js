@@ -5,17 +5,284 @@
  * - Production-safe: fail-open, ไม่กระทบ endpoint เดิม
  */
 
-const ADMIN_REVIEW_V2_DEDUP_BUILD = "20260612_phase35a_review_queue_dedup";
+const ADMIN_REVIEW_V2_DEDUP_BUILD = "20260707_customer_booking_notify_v3_xss_guard";
 window.__CWF_ADMIN_REVIEW_V2_VERSION__ = ADMIN_REVIEW_V2_DEDUP_BUILD;
 
 let TECHS = [];
 let CURRENT = null;
 let CURRENT_SLOTS = [];
 let ROW_MAP = new Map();
+const REVIEW_POLL_MS = 12000;
+const REVIEW_WAITING_STATUS = "\u0e23\u0e2d\u0e0a\u0e48\u0e32\u0e07\u0e22\u0e37\u0e19\u0e22\u0e31\u0e19";
+const REVIEW_STATUS_LABELS = {
+  waiting_technician: "\u0e01\u0e33\u0e25\u0e31\u0e07\u0e23\u0e2d\u0e0a\u0e48\u0e32\u0e07\u0e23\u0e31\u0e1a",
+  pending_review: "\u0e23\u0e2d\u0e15\u0e23\u0e27\u0e08\u0e2a\u0e2d\u0e1a",
+  no_accept: "\u0e44\u0e21\u0e48\u0e1e\u0e1a\u0e0a\u0e48\u0e32\u0e07\u0e23\u0e31\u0e1a\u0e07\u0e32\u0e19",
+  returned: "\u0e15\u0e35\u0e01\u0e25\u0e31\u0e1a",
+  time_proposal: "\u0e23\u0e2d\u0e1e\u0e34\u0e08\u0e32\u0e23\u0e13\u0e32\u0e40\u0e27\u0e25\u0e32\u0e43\u0e2b\u0e21\u0e48",
+};
+const REVIEW_NOTIFY_STORAGE_KEY = "cwf_admin_review_notified_job_ids_v1";
+const REVIEW_QUEUE_POLL = { timer: null, stopped: false, authStopped: false };
+const REVIEW_QUEUE_NOTIFY = {
+  baselineReady: false,
+  knownIds: new Set(),
+  notifiedIds: new Set(loadNotifiedJobIds()),
+  newIds: new Set(),
+  audioUnlocked: false,
+};
+const ADMIN_REVIEW_EXTERNAL_TOAST = typeof window.showToast === "function" ? window.showToast : null;
 
 function $(id){ return document.getElementById(id); }
-function safe(s){ return (s==null?'':String(s)); }
+function text(s){ return (s==null?'':String(s)); }
+function escapeHtml(value){
+  return text(value).replace(/[&<>"'=]/g, (char) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+    "=": "&#61;",
+  })[char]);
+}
+function html(value){ return escapeHtml(value); }
+function attr(value){ return escapeHtml(value); }
+function jsString(value){
+  return text(value)
+    .replace(/\\/g, "\\\\")
+    .replace(/'/g, "\\'")
+    .replace(/\r/g, "\\r")
+    .replace(/\n/g, "\\n")
+    .replace(/\u2028/g, "\\u2028")
+    .replace(/\u2029/g, "\\u2029");
+}
+function safeExternalHttpUrl(value){
+  const raw = text(value).trim();
+  if (!raw) return "";
+  try {
+    const parsed = new URL(raw);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return "";
+    return parsed.href;
+  } catch (_) {
+    return "";
+  }
+}
 function pad2(x){ return String(x).padStart(2,'0'); }
+
+function loadNotifiedJobIds(){
+  try {
+    const raw = sessionStorage.getItem(REVIEW_NOTIFY_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.map(Number).filter(Number.isFinite) : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+function saveNotifiedJobIds(){
+  try {
+    sessionStorage.setItem(REVIEW_NOTIFY_STORAGE_KEY, JSON.stringify(Array.from(REVIEW_QUEUE_NOTIFY.notifiedIds).slice(-500)));
+  } catch (_) {}
+}
+
+function queueBucket(row){
+  const status = text(row?.job_status);
+  const mode = String(row?.booking_mode || "").toLowerCase();
+  if (mode === "urgent" && status === REVIEW_WAITING_STATUS) return "waiting_technician";
+  if (status === "pending_review" || status === "รอตรวจสอบ") return "pending_review";
+  if (status === "ไม่พบช่างรับงาน") return "no_accept";
+  if (status === "ตีกลับ") return "returned";
+  if (status === "รอพิจารณาเวลาใหม่") return "time_proposal";
+  return "pending_review";
+}
+
+function isAdminActionAllowed(row){
+  if (row && row.admin_action_required === false) return false;
+  return queueBucket(row) !== "waiting_technician";
+}
+
+function isCurrentReadOnly(){
+  return !!(CURRENT && CURRENT.admin_action_required === false);
+}
+
+function blockReadOnlyMutation(){
+  if (!isCurrentReadOnly()) return false;
+  showToast("งานนี้กำลังรอช่างรับ ระบบเปิดให้ดูรายละเอียดเท่านั้น", "info");
+  return true;
+}
+
+function applyReadOnlyMode(readOnly){
+  const ids = [
+    "mCustomerName", "mCustomerPhone", "mJobType", "mAppt", "mAddress",
+    "mMaps", "mZone", "mNote", "mLat", "mLng", "mTechType",
+    "mPrimaryTech", "mDispatchMode", "mTeamSearch", "btnLoadSlots",
+    "btnSave", "btnDispatch", "btnRebroadcast", "btnCancel",
+  ];
+  ids.forEach((id) => {
+    const el = $(id);
+    if (el) el.disabled = !!readOnly;
+  });
+  const notice = $("mReadOnlyNotice");
+  if (notice) notice.style.display = readOnly ? "block" : "none";
+  document.querySelectorAll(".team-chip-add,.team-action,.team-x,#slotBox button").forEach((el) => {
+    el.disabled = !!readOnly;
+  });
+}
+
+function updateTitleBadge(count){
+  const baseTitle = "Admin Review Queue - CWF";
+  document.title = count > 0 ? `(${count}) ${baseTitle}` : baseTitle;
+}
+
+function markAdminInteraction(){
+  REVIEW_QUEUE_NOTIFY.audioUnlocked = true;
+}
+
+function sharedAdminAlertGate(){
+  window.__CWF_ADMIN_ALERT_GATE__ = window.__CWF_ADMIN_ALERT_GATE__ || {
+    lastPlayedAt: 0,
+    minGapMs: 1500,
+  };
+  return window.__CWF_ADMIN_ALERT_GATE__;
+}
+
+function claimSharedAdminAlertSound(){
+  const gate = sharedAdminAlertGate();
+  const now = Date.now();
+  if (now - Number(gate.lastPlayedAt || 0) < Number(gate.minGapMs || 1500)) return false;
+  gate.lastPlayedAt = now;
+  return true;
+}
+
+function playNewJobSound(){
+  if (!REVIEW_QUEUE_NOTIFY.audioUnlocked) return;
+  try {
+    if (!claimSharedAdminAlertSound()) return;
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.value = 880;
+    gain.gain.value = 0.05;
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    setTimeout(() => {
+      try { osc.stop(); ctx.close(); } catch (_) {}
+    }, 140);
+  } catch (_) {
+    // Autoplay restrictions must not break visual notification.
+  }
+}
+
+function notificationRows(rows){
+  return Array.isArray(rows) ? rows : [];
+}
+
+function renderNotificationSummary(rows = []){
+  const count = REVIEW_QUEUE_NOTIFY.newIds.size;
+  updateTitleBadge(count);
+  const alertBox = $("approvalAlert");
+  if (!alertBox) return;
+  if (count > 0) {
+    alertBox.style.display = "block";
+    alertBox.innerHTML = `🔔 มีงานจองใหม่ ${count} งาน`;
+    return;
+  }
+  const needs = notificationRows(rows).filter((r) => isAdminActionAllowed(r));
+  if (needs.length) {
+    const pending = needs.filter(r=>text(r.job_status)==="รอตรวจสอบ").length;
+    const noaccept = needs.filter(r=>text(r.job_status)==="ไม่พบช่างรับงาน" || text(r.job_status)==="ตีกลับ").length;
+    const timep = needs.filter(r=>text(r.job_status)==="รอพิจารณาเวลาใหม่").length;
+    alertBox.style.display = "block";
+    alertBox.innerHTML = `🔔 งานที่แอดมินต้องจัดการ ${needs.length} งาน` + (pending?` • รอตรวจสอบ ${pending}`:"") + (noaccept?` • ต้องยิงใหม่/ติดต่อ ${noaccept}`:"") + (timep?` • รออนุมัติเวลาใหม่ ${timep}`:"");
+  } else {
+    alertBox.style.display = "none";
+    alertBox.innerHTML = "";
+  }
+}
+
+function pruneNewJobIds(rows){
+  const live = new Set(notificationRows(rows).map((r) => Number(r.job_id)).filter(Number.isFinite));
+  let changed = false;
+  for (const id of Array.from(REVIEW_QUEUE_NOTIFY.newIds)) {
+    if (!live.has(Number(id))) {
+      REVIEW_QUEUE_NOTIFY.newIds.delete(id);
+      changed = true;
+    }
+  }
+  if (changed) renderNotificationSummary(rows);
+}
+
+function acknowledgeNewJob(jobId){
+  const id = Number(jobId);
+  if (!Number.isFinite(id)) return;
+  REVIEW_QUEUE_NOTIFY.newIds.delete(id);
+  renderNotificationSummary(Array.from(ROW_MAP.values()));
+  const card = document.querySelector(`[data-review-job-id="${id}"]`);
+  if (card) card.classList.remove("review-card-new");
+}
+
+function processQueueNotifications(rows, opts = {}){
+  const reason = String(opts.reason || "");
+  const ids = (rows || []).map((r) => Number(r.job_id)).filter(Number.isFinite);
+  pruneNewJobIds(rows);
+  if (!REVIEW_QUEUE_NOTIFY.baselineReady) {
+    ids.forEach((id) => REVIEW_QUEUE_NOTIFY.knownIds.add(id));
+    REVIEW_QUEUE_NOTIFY.baselineReady = true;
+    renderNotificationSummary(rows);
+    return;
+  }
+  if (reason === "filter_change" || reason === "manual_reload") {
+    ids.forEach((id) => REVIEW_QUEUE_NOTIFY.knownIds.add(id));
+    renderNotificationSummary(rows);
+    return;
+  }
+  const fresh = ids.filter((id) => !REVIEW_QUEUE_NOTIFY.knownIds.has(id) && !REVIEW_QUEUE_NOTIFY.notifiedIds.has(id));
+  ids.forEach((id) => REVIEW_QUEUE_NOTIFY.knownIds.add(id));
+  if (!fresh.length) return;
+  fresh.forEach((id) => {
+    REVIEW_QUEUE_NOTIFY.newIds.add(id);
+    REVIEW_QUEUE_NOTIFY.notifiedIds.add(id);
+  });
+  saveNotifiedJobIds();
+  renderNotificationSummary(rows);
+  playNewJobSound();
+}
+
+function stopReviewQueuePolling(){
+  if (REVIEW_QUEUE_POLL.timer) {
+    clearTimeout(REVIEW_QUEUE_POLL.timer);
+    REVIEW_QUEUE_POLL.timer = null;
+  }
+}
+
+function scheduleReviewQueuePolling(){
+  if (REVIEW_QUEUE_POLL.stopped || REVIEW_QUEUE_POLL.authStopped || REVIEW_QUEUE_POLL.timer) return;
+  if (document.hidden) return;
+  REVIEW_QUEUE_POLL.timer = setTimeout(async () => {
+    REVIEW_QUEUE_POLL.timer = null;
+    if (!REVIEW_QUEUE_POLL.stopped && !REVIEW_QUEUE_POLL.authStopped && !document.hidden) {
+      await loadQueue({ reason:"poll" }).catch((e) => console.warn("[admin-review-v2] poll failed", e));
+    }
+    scheduleReviewQueuePolling();
+  }, REVIEW_POLL_MS);
+}
+
+function resumeReviewQueuePolling(reason){
+  if (REVIEW_QUEUE_POLL.authStopped) return;
+  REVIEW_QUEUE_POLL.stopped = false;
+  if (!document.hidden) loadQueue({ force:true, reason }).catch((e) => console.warn("[admin-review-v2] resume reload failed", e));
+  scheduleReviewQueuePolling();
+}
+
+function stopPollingForAuth(){
+  REVIEW_QUEUE_POLL.authStopped = true;
+  stopReviewQueuePolling();
+  try { if (typeof doLogout === "function") doLogout(); else location.replace("/login.html"); }
+  catch (_) { location.href = "/login.html"; }
+}
 
 function parseLatLngClient(input){
   const s = String(input||'').trim();
@@ -83,8 +350,9 @@ function localDatetimeToBangkokISO(localValue){
 
 function showToast(msg, type="info"){
   // reuse helper if exists
-  if (typeof window.showToast === "function") return window.showToast(msg, type);
-  alert(msg);
+  if (ADMIN_REVIEW_EXTERNAL_TOAST && ADMIN_REVIEW_EXTERNAL_TOAST !== showToast) return ADMIN_REVIEW_EXTERNAL_TOAST(msg, type);
+  if (typeof alert === "function") return alert(msg);
+  console.log(`[admin-review-v2:${type}]`, msg);
 }
 
 async function loadTechs(){
@@ -102,12 +370,18 @@ function mapFilterStatus(v){
     pending: "รอตรวจสอบ",
     return: "ตีกลับ",
     noaccept: "ไม่พบช่างรับงาน",
+    waiting: REVIEW_WAITING_STATUS,
     timeproposal: "รอพิจารณาเวลาใหม่",
     all: "all",
   };
   return m[v] || "all";
 }
 
+function filterRowsForDisplay(rows, selectedFilter){
+  const status = mapFilterStatus(selectedFilter || "all");
+  if (status === "all") return Array.isArray(rows) ? rows : [];
+  return (Array.isArray(rows) ? rows : []).filter((row) => text(row.job_status) === status);
+}
 
 const REVIEW_QUEUE_LOAD_GUARD = {
   inFlight: null,
@@ -138,31 +412,20 @@ async function loadQueue(opts = {}){
   REVIEW_QUEUE_LOAD_GUARD.lastStartAt = now;
   const runLoadQueue = async () => {
   const f = $("filterStatus")?.value || "all";
-  const status = mapFilterStatus(f);
 
   $("list").innerHTML = '<div class="card"><div class="muted">กำลังโหลด...</div></div>';
 
   try{
     const q = new URLSearchParams();
-    q.set("status", status);
+    q.set("status", "all");
     q.set("limit", "200");
     const data = await apiFetch(`/admin/review_queue_v2?${q.toString()}`);
-    const rows = Array.isArray(data.rows) ? data.rows : [];
-    ROW_MAP = new Map(rows.map(r=>[Number(r.job_id), r]));
+    const allRows = Array.isArray(data.rows) ? data.rows : [];
+    ROW_MAP = new Map(allRows.map(r=>[Number(r.job_id), r]));
+    processQueueNotifications(allRows, opts);
+    const rows = filterRowsForDisplay(allRows, f);
     $("pillCount").textContent = `${rows.length} งาน`;
-    const needs = rows.filter(r => ["รอตรวจสอบ","ตีกลับ","ไม่พบช่างรับงาน","รอพิจารณาเวลาใหม่"].includes(safe(r.job_status)));
-    const alertBox = $("approvalAlert");
-    if (alertBox) {
-      if (needs.length) {
-        const pending = needs.filter(r=>safe(r.job_status)==="รอตรวจสอบ").length;
-        const noaccept = needs.filter(r=>safe(r.job_status)==="ไม่พบช่างรับงาน" || safe(r.job_status)==="ตีกลับ").length;
-        const timep = needs.filter(r=>safe(r.job_status)==="รอพิจารณาเวลาใหม่").length;
-        alertBox.style.display = "block";
-        alertBox.innerHTML = `🔔 มีงานที่แอดมินต้องจัดการ ${needs.length} งาน` + (pending?` • รอตรวจสอบ ${pending}`:"") + (noaccept?` • ต้องยิงใหม่/ติดต่อ ${noaccept}`:"") + (timep?` • รออนุมัติเวลาใหม่ ${timep}`:"");
-      } else {
-        alertBox.style.display = "none";
-      }
-    }
+    renderNotificationSummary(allRows);
 
     if (!rows.length){
       $("list").innerHTML = '<div class="card"><div class="muted">ไม่มีงานในคิวนี้</div></div>';
@@ -170,30 +433,45 @@ async function loadQueue(opts = {}){
     }
 
     $("list").innerHTML = rows.map(r=>{
-      const badge = `<span class="pill">${safe(r.job_status||"")}</span>`;
+      const jobId = Number(r.job_id);
+      const safeJobId = Number.isFinite(jobId) ? jobId : 0;
+      const badge = `<span class="pill">${html(r.job_status||"")}</span>`;
+      const bucket = queueBucket(r);
+      const actionAllowed = isAdminActionAllowed(r);
+      const items = Array.isArray(r.items) ? r.items : [];
+      const itemSummary = items.length ? items.map((it)=>`${text(it.item_name || "-")} x${Number(it.qty || 0) || 0}`).join(" • ") : text(r.job_type || "-");
+      const units = Number(r.service_units || 0);
+      const reserveTech = text(r.technician_username || "");
+      const isNew = REVIEW_QUEUE_NOTIFY.newIds.has(Number(r.job_id));
+      const mapHref = safeExternalHttpUrl(r.maps_url);
       const urgent = (String(r.booking_mode||"").toLowerCase()==="urgent") ? '<span class="pill" style="background:#fee2e2">ด่วน</span>' : '';
-      const proposalPanel = safe(r.job_status) === "รอพิจารณาเวลาใหม่"
-        ? `<div class="proposal-panel" id="proposal-panel-${Number(r.job_id)}">
+      const proposalPanel = text(r.job_status) === "รอพิจารณาเวลาใหม่"
+        ? `<div class="proposal-panel" id="proposal-panel-${safeJobId}">
              <div class="proposal-warning">มีช่างเสนอเวลาใหม่ กรุณาสอบถามลูกค้าและกดยอมรับเวลาที่เหมาะสม</div>
              <div class="muted">กำลังโหลดเวลาที่เสนอ...</div>
            </div>`
         : "";
       return `
-        <div class="card review-card-hot">
+        <div class="card review-card-hot ${isNew ? "review-card-new" : ""}" data-review-job-id="${safeJobId}">
           <div class="row">
             <div>
-              <b>#${r.job_id} • ${safe(r.booking_code||"")}</b>
-              <div class="muted" style="margin-top:2px;">${safe(r.customer_name||"-")} • ${safe(r.customer_phone||"-")}</div>
+              <b>#${safeJobId} • ${html(r.booking_code||"")}</b>
+              <div class="muted" style="margin-top:2px;">${html(r.customer_name||"-")} • ${html(r.customer_phone||"-")}</div>
             </div>
             <div style="text-align:right;display:flex;flex-direction:column;gap:6px;align-items:flex-end;">
-              ${badge}${urgent}
-              <button class="btn btn-primary" type="button" onclick="openJob(${r.job_id})">เปิด</button>
-              <button class="btn" type="button" style="background:linear-gradient(135deg,#2563eb,#06b6d4);color:#fff" onclick="rebroadcastOfferQuick(${Number(r.job_id)})">📣 ลองยิงใหม่</button>
+              ${badge}${urgent}<span class="pill">${html(REVIEW_STATUS_LABELS[bucket] || bucket)}</span>
+              <button class="btn btn-primary" type="button" onclick="openJob(${safeJobId})">เปิด</button>
+              <button class="btn" type="button" style="background:linear-gradient(135deg,#2563eb,#06b6d4);color:#fff" ${actionAllowed ? "" : "disabled"} onclick="rebroadcastOfferQuick(${safeJobId})">📣 ลองยิงใหม่</button>
             </div>
           </div>
-          <div class="muted" style="margin-top:8px;">📅 ${thDateTime(r.appointment_datetime)} • 🧾 ${safe(r.job_type||"-")}</div>
-          <div class="muted" style="margin-top:4px;">📍 ${safe(r.job_zone||"")} ${safe(r.address_text||"")}</div>
+          <div class="muted" style="margin-top:8px;">📅 ${html(thDateTime(r.appointment_datetime))} • 🧾 ${html(r.job_type||"-")}</div>
+          <div class="muted" style="margin-top:4px;">📍 ${html(r.job_zone||"")} ${html(r.address_text||"")}</div>
           <div class="muted" style="margin-top:4px;">⏱️ ${Number(r.duration_min||0)} นาที</div>
+          <div class="muted" style="margin-top:4px;">บริการ: ${html(itemSummary)}</div>
+          <div class="muted" style="margin-top:4px;">จำนวนเครื่อง: ${Number.isFinite(units) && units > 0 ? units : "-"} • ราคา: ${Number(r.job_price||0).toLocaleString("th-TH")} บาท</div>
+          <div class="muted" style="margin-top:4px;">ช่างที่ระบบ reserve: ${html(reserveTech || "-")}</div>
+          ${mapHref ? `<div class="muted" style="margin-top:4px;"><a href="${attr(mapHref)}" target="_blank" rel="noopener noreferrer">เปิด Maps URL</a></div>` : ""}
+          ${bucket === "waiting_technician" ? `<div class="muted" style="margin-top:4px;">กำลังรอช่างรับ (${Number(r.pending_offer_count || 0)} offer ค้าง) • read-only จนกว่าจะหมดรอบหรือมีช่างรับ</div>` : ""}
           ${proposalPanel}
         </div>
       `;
@@ -201,7 +479,11 @@ async function loadQueue(opts = {}){
     loadProposalPanels(rows);
   }catch(e){
     console.error(e);
-    $("list").innerHTML = `<div class="card"><div class="muted">โหลดไม่สำเร็จ: ${safe(e.message||e)}</div></div>`;
+    if (e && (Number(e.status) === 401 || Number(e.status) === 403)) {
+      stopPollingForAuth();
+      return;
+    }
+    $("list").innerHTML = `<div class="card"><div class="muted">โหลดไม่สำเร็จ: ${html(e.message||e)}</div></div>`;
   }
   };
 
@@ -221,13 +503,13 @@ async function loadQueue(opts = {}){
 }
 
 async function loadProposalPanels(rows){
-  const targets = (rows || []).filter(r => safe(r.job_status) === "รอพิจารณาเวลาใหม่");
+  const targets = (rows || []).filter(r => text(r.job_status) === "รอพิจารณาเวลาใหม่");
   for (const r of targets) {
     const box = $(`proposal-panel-${Number(r.job_id)}`);
     if (!box) continue;
     try {
       const data = await apiFetch(`/admin/jobs/${Number(r.job_id)}/time-proposals`);
-      const proposals = (Array.isArray(data.rows) ? data.rows : []).filter(p => safe(p.status) === "pending");
+      const proposals = (Array.isArray(data.rows) ? data.rows : []).filter(p => text(p.status) === "pending");
       if (!proposals.length) {
         box.innerHTML = `<div class="proposal-warning">มีช่างเสนอเวลาใหม่ กรุณาสอบถามลูกค้าและกดยอมรับเวลาที่เหมาะสม</div><div class="muted">ยังไม่มีข้อเสนอที่รอพิจารณา</div>`;
         continue;
@@ -236,9 +518,9 @@ async function loadProposalPanels(rows){
         <div class="proposal-warning">มีช่างเสนอเวลาใหม่ กรุณาสอบถามลูกค้าและกดยอมรับเวลาที่เหมาะสม</div>
         ${proposals.map(p => `
           <div class="proposal-item">
-            <b>${safe(p.technician_name || p.technician_username || "-")}</b>
-            <div class="muted">เวลาใหม่: ${thDateTime(p.proposed_datetime)}</div>
-            ${safe(p.note) ? `<div class="muted">หมายเหตุช่าง: ${safe(p.note)}</div>` : ""}
+            <b>${html(p.technician_name || p.technician_username || "-")}</b>
+            <div class="muted">เวลาใหม่: ${html(thDateTime(p.proposed_datetime))}</div>
+            ${text(p.note) ? `<div class="muted">หมายเหตุช่าง: ${html(p.note)}</div>` : ""}
             <div class="proposal-actions">
               <button class="btn btn-primary" type="button" onclick="approveTimeProposal(${Number(p.proposal_id)})">ยอมรับเวลานี้</button>
               <button class="btn btn-danger" type="button" onclick="rejectTimeProposal(${Number(p.proposal_id)})">ปฏิเสธ</button>
@@ -247,12 +529,13 @@ async function loadProposalPanels(rows){
         `).join("")}
       `;
     } catch (e) {
-      box.innerHTML = `<div class="proposal-warning">มีช่างเสนอเวลาใหม่ กรุณาสอบถามลูกค้าและกดยอมรับเวลาที่เหมาะสม</div><div class="muted">โหลดข้อเสนอไม่สำเร็จ: ${safe(e.message || e)}</div>`;
+      box.innerHTML = `<div class="proposal-warning">มีช่างเสนอเวลาใหม่ กรุณาสอบถามลูกค้าและกดยอมรับเวลาที่เหมาะสม</div><div class="muted">โหลดข้อเสนอไม่สำเร็จ: ${html(e.message || e)}</div>`;
     }
   }
 }
 
 async function approveTimeProposal(proposalId){
+  if (blockReadOnlyMutation()) return;
   if (!confirm("ยืนยันอนุมัติเวลาใหม่นี้และมอบหมายงานให้ช่าง?")) return;
   try {
     const r = await apiFetch(`/admin/time-proposals/${Number(proposalId)}/approve`, { method:"POST", body: JSON.stringify({}) });
@@ -264,6 +547,7 @@ async function approveTimeProposal(proposalId){
 }
 
 async function rejectTimeProposal(proposalId){
+  if (blockReadOnlyMutation()) return;
   const admin_note = prompt("หมายเหตุถึงช่าง/ทีมงาน (ถ้ามี)") || "";
   try {
     const r = await apiFetch(`/admin/time-proposals/${Number(proposalId)}/reject`, { method:"POST", body: JSON.stringify({ admin_note }) });
@@ -279,6 +563,7 @@ async function rejectTimeProposal(proposalId){
 const TEAM_STATE = { selected: new Set(), primary: "" };
 
 function setPrimaryInModal(username){
+  if (blockReadOnlyMutation()) return;
   const u = String(username||"").trim();
   if(!u) return;
   TEAM_STATE.primary = u;
@@ -288,6 +573,7 @@ function setPrimaryInModal(username){
 }
 
 function addTeamMemberModal(username){
+  if (blockReadOnlyMutation()) return;
   const u = String(username||"").trim();
   if(!u) return;
   TEAM_STATE.selected.add(u);
@@ -299,6 +585,7 @@ function addTeamMemberModal(username){
 }
 
 function removeTeamMemberModal(username){
+  if (blockReadOnlyMutation()) return;
   const u = String(username||"").trim();
   if(!u) return;
   if(u === TEAM_STATE.primary) return; // must change primary first
@@ -313,6 +600,7 @@ function getSelectedTeam(){
 }
 
 function ensurePrimaryInTeam(){
+  if (isCurrentReadOnly()) return;
   const primary = $("mPrimaryTech").value;
   if(!primary) return;
   TEAM_STATE.primary = primary;
@@ -328,7 +616,7 @@ function renderTeamPickerModal(){
   const currentPrimary = CURRENT?.technician_username || primarySel.value || "";
   primarySel.innerHTML = '<option value="">-- เลือกช่างหลัก --</option>' + group.map(t=>{
     const name = t.full_name || t.username;
-    return `<option value="${t.username}">${safe(name)} (${t.username})</option>`;
+    return `<option value="${attr(t.username)}">${html(name)} (${html(t.username)})</option>`;
   }).join("");
   primarySel.value = currentPrimary;
 
@@ -337,20 +625,20 @@ function renderTeamPickerModal(){
   TEAM_STATE.primary = primarySel.value || "";
   if(TEAM_STATE.primary) TEAM_STATE.selected.add(TEAM_STATE.primary);
 
-  const q = safe($("mTeamSearch").value).toLowerCase();
+  const q = text($("mTeamSearch").value).toLowerCase();
   const suggestBox = $("mTeamSuggest");
   const selectedBox = $("mTeamSelected");
 
   const suggestions = group
     .filter(t=>{
-      const key = (safe(t.full_name)+safe(t.username)).toLowerCase();
+      const key = (text(t.full_name)+text(t.username)).toLowerCase();
       return (!q || key.includes(q)) && !TEAM_STATE.selected.has(t.username);
     })
     .slice(0, 30);
 
   suggestBox.innerHTML = suggestions.map(t=>{
     const name = t.full_name || t.username;
-    return `<button type="button" class="team-chip team-chip-add" data-u="${t.username}">+ ${safe(name)} (${t.username})</button>`;
+    return `<button type="button" class="team-chip team-chip-add" data-u="${attr(t.username)}">+ ${html(name)} (${html(t.username)})</button>`;
   }).join("") || `<div class="team-empty">ไม่พบช่าง</div>`;
 
   const selected = Array.from(TEAM_STATE.selected).filter(Boolean);
@@ -365,16 +653,17 @@ function renderTeamPickerModal(){
     const t = group.find(x=>x.username===u);
     const name = (t?.full_name || u);
     if(isPrimary){
-      return `<div class="team-chip team-chip-primary"><span class="team-name">${safe(name)} (${u})</span><span class="team-badge">Primary</span></div>`;
+      return `<div class="team-chip team-chip-primary"><span class="team-name">${html(name)} (${html(u)})</span><span class="team-badge">Primary</span></div>`;
     }
-    return `<div class="team-chip"><span class="team-name">${safe(name)} (${u})</span>
-      <button type="button" class="team-action" data-act="primary" data-u="${u}">ตั้งเป็นหลัก</button>
-      <button type="button" class="team-x" data-act="remove" data-u="${u}">✕</button>
+    return `<div class="team-chip"><span class="team-name">${html(name)} (${html(u)})</span>
+      <button type="button" class="team-action" data-act="primary" data-u="${attr(u)}">ตั้งเป็นหลัก</button>
+      <button type="button" class="team-x" data-act="remove" data-u="${attr(u)}">✕</button>
     </div>`;
   }).join("") || `<div class="team-empty">ยังไม่ได้เลือกช่างร่วม</div>`;
 
   // keep hidden team list in CURRENT for later dispatch
   CURRENT.team_members = getSelectedTeam();
+  applyReadOnlyMode(isCurrentReadOnly());
 }
 
 // public wrapper called on tech type/search changes
@@ -383,10 +672,10 @@ function renderTechPickers(){
 }
 
 function technicianTypeForUsername(username){
-  const u = safe(username).trim();
+  const u = text(username).trim();
   if(!u) return "";
-  const row = (TECHS||[]).find(t => safe(t.username).trim() === u);
-  return safe(row?.employment_type || "company").trim().toLowerCase() || "company";
+  const row = (TECHS||[]).find(t => text(t.username).trim() === u);
+  return text(row?.employment_type || "company").trim().toLowerCase() || "company";
 }
 
 function setModal(show){
@@ -395,6 +684,7 @@ function setModal(show){
 
 function closeModal(){
   setModal(false);
+  applyReadOnlyMode(false);
   CURRENT = null;
   CURRENT_SLOTS = [];
   $("slotBox").style.display = "none";
@@ -407,6 +697,7 @@ async function openJob(jobId){
   try{
     const row = ROW_MAP.get(Number(jobId));
     if (!row) throw new Error("ไม่พบงาน");
+    acknowledgeNewJob(jobId);
 
     CURRENT = {
       job_id: row.job_id,
@@ -424,6 +715,7 @@ async function openJob(jobId){
       job_zone: row.job_zone,
       technician_username: row.technician_username || "",
       team_members: [],
+      admin_action_required: row.admin_action_required !== false,
     };
 
     // team
@@ -434,21 +726,21 @@ async function openJob(jobId){
 
     // fill
     $("mTitle").textContent = `ตรวจงาน #${CURRENT.job_id}`;
-    $("mSub").textContent = `${safe(CURRENT.booking_code||"")} • สถานะ: ${safe(CURRENT.job_status||"")}${CURRENT.job_status === "รอตรวจสอบ" && CURRENT.technician_username ? ` • ร่างจองช่าง: ${safe(CURRENT.technician_username)}` : ""}`;
+    $("mSub").textContent = `${text(CURRENT.booking_code||"")} • สถานะ: ${text(CURRENT.job_status||"")}${CURRENT.job_status === "รอตรวจสอบ" && CURRENT.technician_username ? ` • ร่างจองช่าง: ${text(CURRENT.technician_username)}` : ""}`;
 
-    $("mCustomerName").value = safe(CURRENT.customer_name||"");
-    $("mCustomerPhone").value = safe(CURRENT.customer_phone||"");
-    $("mJobType").value = safe(CURRENT.job_type||"");
-    $("mBookingCode").value = safe(CURRENT.booking_code||"");
+    $("mCustomerName").value = text(CURRENT.customer_name||"");
+    $("mCustomerPhone").value = text(CURRENT.customer_phone||"");
+    $("mJobType").value = text(CURRENT.job_type||"");
+    $("mBookingCode").value = text(CURRENT.booking_code||"");
     $("mAppt").value = toLocalInputDatetime(CURRENT.appointment_datetime);
-    $("mAddress").value = safe(CURRENT.address_text||"");
-    $("mMaps").value = safe(CURRENT.maps_url||"");
-    $("mZone").value = safe(CURRENT.job_zone||"");
+    $("mAddress").value = text(CURRENT.address_text||"");
+    $("mMaps").value = text(CURRENT.maps_url||"");
+    $("mZone").value = text(CURRENT.job_zone||"");
     // auto parse lat/lng (fail-open)
     const ll = parseLatLngClient($("mMaps").value) || parseLatLngClient($("mAddress").value);
     if (ll) { $("mLat").value = String(ll.lat); $("mLng").value = String(ll.lng); }
 
-    $("mNote").value = safe(CURRENT.customer_note||"");
+    $("mNote").value = text(CURRENT.customer_note||"");
 
     // Draft reservations must keep the reserved technician visible/preselected.
     const draftType = technicianTypeForUsername(CURRENT.technician_username);
@@ -463,6 +755,8 @@ async function openJob(jobId){
     $("slotBox").innerHTML = "";
     CURRENT_SLOTS = [];
 
+    const actionAllowed = isAdminActionAllowed(row);
+    applyReadOnlyMode(!actionAllowed);
     setModal(true);
   }catch(e){
     console.error(e);
@@ -485,6 +779,7 @@ async function loadPricing(){
 
 async function saveJob(){
   if (!CURRENT) return;
+  if (blockReadOnlyMutation()) return;
   const payload = {
     customer_name: $("mCustomerName").value.trim() || null,
     customer_phone: $("mCustomerPhone").value.trim() || null,
@@ -508,6 +803,7 @@ async function saveJob(){
 
 function pickSlot(isoStart){
   if (!CURRENT) return;
+  if (blockReadOnlyMutation()) return;
   $("mAppt").value = toLocalInputDatetime(isoStart);
   $("slotBox").style.display = "none";
   showToast("เลือกเวลาแล้ว","success");
@@ -517,6 +813,7 @@ window.pickSlot = pickSlot;
 
 async function loadSlots(){
   if (!CURRENT) return;
+  if (blockReadOnlyMutation()) return;
   const dtStr = $("mAppt").value;
   if (!dtStr){
     showToast("ต้องเลือกวัน/เวลา ก่อนโหลดคิวว่าง","error");
@@ -545,25 +842,26 @@ async function loadSlots(){
 
     $("slotBox").innerHTML = slots.map(s=>{
       const dis = !s.available;
-      const iso = `${date}T${s.start}:00`;
+      const iso = `${date}T${text(s.start)}:00`;
       return `
         <div class="slot" style="${dis?'opacity:.5':''}">
           <div>
-            <b>${s.start} - ${s.end}</b><br/>
+            <b>${html(s.start)} - ${html(s.end)}</b><br/>
             <small>${dis ? "เต็ม" : `ว่าง • ช่างว่าง ${Array.isArray(s.available_tech_ids)?s.available_tech_ids.length:0} คน`}</small>
           </div>
-          <button class="btn btn-ghost" type="button" ${dis?'disabled':''} onclick="pickSlot('${iso}')">เลือก</button>
+          <button class="btn btn-ghost" type="button" ${dis?'disabled':''} onclick="pickSlot('${attr(jsString(iso))}')">เลือก</button>
         </div>
       `;
     }).join("");
   }catch(e){
     console.error(e);
-    $("slotBox").innerHTML = `<div class="muted">โหลดคิวว่างไม่สำเร็จ: ${safe(e.message||e)}</div>`;
+    $("slotBox").innerHTML = `<div class="muted">โหลดคิวว่างไม่สำเร็จ: ${html(e.message||e)}</div>`;
   }
 }
 
 async function dispatchJob(){
   if (!CURRENT) return;
+  if (blockReadOnlyMutation()) return;
 
   const tech_type = $("mTechType").value || "company";
   const technician_username = $("mPrimaryTech").value;
@@ -596,6 +894,11 @@ async function dispatchJob(){
 async function rebroadcastOfferQuick(jobId){
   const id = Number(jobId || 0);
   if (!id) return showToast("ไม่พบรหัสงาน", "error");
+  const row = ROW_MAP.get(id);
+  if (row && !isAdminActionAllowed(row)) {
+    showToast("งานนี้กำลังรอช่างรับ ระบบเปิดให้ดูรายละเอียดเท่านั้น", "info");
+    return;
+  }
   if (!confirm("ยืนยันยิงข้อเสนอใหม่ให้ช่างที่เปิดรับงาน ว่างจริง และอยู่ในพื้นที่นี้?")) return;
   try{
     const out = await apiFetch(`/jobs/${id}/rebroadcast_offer_v2`, { method:"POST", body: JSON.stringify({ tech_type:"all" }) });
@@ -610,6 +913,7 @@ window.rebroadcastOfferQuick = rebroadcastOfferQuick;
 
 async function rebroadcastOffer(){
   if (!CURRENT) return;
+  if (blockReadOnlyMutation()) return;
   if (!confirm("ยืนยันยิงข้อเสนอใหม่ให้ช่างที่เปิดรับงาน ว่างจริง และอยู่ในพื้นที่นี้?")) return;
   try{
     await saveJob();
@@ -626,6 +930,7 @@ async function rebroadcastOffer(){
 
 async function cancelJob(){
   if (!CURRENT) return;
+  if (blockReadOnlyMutation()) return;
   if (!confirm("ยืนยันยกเลิกงานนี้?")) return;
   try{
     await apiFetch(`/jobs/${CURRENT.job_id}/cancel`, { method:"POST", body: JSON.stringify({ reason: "admin_cancel" }) });
@@ -637,7 +942,37 @@ async function cancelJob(){
   }
 }
 
-(async function init(){
+window.__CWF_ADMIN_REVIEW_TEST__ = {
+  REVIEW_QUEUE_NOTIFY,
+  ROW_MAP: () => ROW_MAP,
+  setRowMap(rows){
+    ROW_MAP = new Map((rows || []).map((r) => [Number(r.job_id), r]));
+  },
+  queueBucket,
+  isAdminActionAllowed,
+  filterRowsForDisplay,
+  processQueueNotifications,
+  acknowledgeNewJob,
+  renderNotificationSummary,
+  applyReadOnlyMode,
+  loadQueue,
+  loadProposalPanels,
+  escapeHtml,
+  safeExternalHttpUrl,
+  playNewJobSound,
+  claimSharedAdminAlertSound,
+  sharedAdminAlertGate,
+  setCurrent(value){ CURRENT = value; },
+  getCurrent(){ return CURRENT; },
+  openJob,
+  saveJob,
+  dispatchJob,
+  rebroadcastOffer,
+  rebroadcastOfferQuick,
+  cancelJob,
+};
+
+if (!window.__CWF_ADMIN_REVIEW_DISABLE_AUTO_INIT__) (async function init(){
   await loadTechs();
   await loadQueue({ force:true, reason:"init" });
 
@@ -652,8 +987,24 @@ async function cancelJob(){
     }
   }catch(e){ console.warn('auto open job', e); }
 
-  $("btnReload").addEventListener("click", () => loadQueue({ reason:"manual_reload" }));
-  $("filterStatus").addEventListener("change", () => loadQueue({ reason:"filter_change" }));
+  document.addEventListener("click", markAdminInteraction, { capture:true });
+  document.addEventListener("keydown", markAdminInteraction, { capture:true });
+  document.addEventListener("touchstart", markAdminInteraction, { capture:true, passive:true });
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) stopReviewQueuePolling();
+    else resumeReviewQueuePolling("visibilitychange");
+  });
+  window.addEventListener("focus", () => resumeReviewQueuePolling("focus"));
+  window.addEventListener("pageshow", () => resumeReviewQueuePolling("pageshow"));
+  window.addEventListener("pagehide", () => {
+    REVIEW_QUEUE_POLL.stopped = true;
+    stopReviewQueuePolling();
+  });
+  window.addEventListener("beforeunload", stopReviewQueuePolling);
+
+  $("btnReload").addEventListener("click", () => loadQueue({ force:true, reason:"manual_reload" }));
+  $("filterStatus").addEventListener("change", () => loadQueue({ force:true, reason:"filter_change" }));
+  scheduleReviewQueuePolling();
 
   $("btnLoadSlots").addEventListener("click", loadSlots);
   $("btnSave").addEventListener("click", saveJob);

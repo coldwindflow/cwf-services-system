@@ -47,6 +47,7 @@
     .proposal-actions .btn{min-height:38px;padding:8px 10px}
     .approval-alert{margin-top:12px;padding:13px;border-radius:18px;background:linear-gradient(135deg,#fff7ed,#eff6ff);border:1px solid rgba(245,158,11,.30);font-weight:900;color:#0f172a}
     .review-card-hot{border:1px solid rgba(245,158,11,.35)!important;box-shadow:0 18px 44px rgba(15,23,42,.10)!important}
+    .review-card-new{outline:3px solid rgba(34,197,94,.45);background:linear-gradient(180deg,#f0fdf4,#fff)}
   </style>
 </head>
 <body class="theme-2">
@@ -68,6 +69,7 @@
           <option value="all" selected>ทั้งหมด</option>
           <option value="pending">รอตรวจสอบ</option>
           <option value="return">ตีกลับ</option>
+          <option value="waiting">กำลังรอช่างรับ</option>
           <option value="noaccept">ไม่พบช่างรับงาน</option>
           <option value="timeproposal">รอพิจารณาเวลาใหม่</option>
         </select>
@@ -96,6 +98,8 @@
       <div class="muted" id="mSub"></div>
 
       <div class="hr"></div>
+
+      <div id="mReadOnlyNotice" class="proposal-warning" style="display:none;margin-bottom:10px">งานนี้กำลังรอช่างรับ ระบบเปิดให้ดูรายละเอียดเท่านั้น</div>
 
       <div class="form">
         <div class="grid2">
@@ -170,7 +174,7 @@
   </div>
 
   <script src="admin-v2-common.js?v=20260428_allpages_ui1"></script>
-  <script src="admin-review-v2.js?v=20260621_draft_reservation_v1"></script>
-  <script src="admin-review-ai-intake.js?v=ai-booking-intake-customer-cards-v10"></script>
+  <script src="admin-review-v2.js?v=20260707_customer_booking_notify_v3_xss_guard"></script>
+  <script src="admin-review-ai-intake.js?v=ai-booking-intake-customer-cards-v11-admin-alert-gate"></script>
 </body>
 </html>

@@ -15286,6 +15286,7 @@ app.get("/admin/review_queue_v2", requireAdminSoft, async (req, res) => {
 
     // support: status=all (ดูทั้งหมดที่ควร review)
     const allow = ['รอตรวจสอบ', 'pending_review', 'ตีกลับ', 'ไม่พบช่างรับงาน', 'รอพิจารณาเวลาใหม่'];
+    const WAITING_URGENT_STATUS = "\u0e23\u0e2d\u0e0a\u0e48\u0e32\u0e07\u0e22\u0e37\u0e19\u0e22\u0e31\u0e19";
     const wantAll = status.toLowerCase() === 'all';
 
     const params = [];
@@ -15297,13 +15298,21 @@ app.get("/admin/review_queue_v2", requireAdminSoft, async (req, res) => {
     where.push(`COALESCE(booking_mode,'scheduled') IN ('scheduled','','urgent')`);
 
     if (!wantAll) {
-      if (!allow.includes(status)) return res.status(400).json({ error: 'status ไม่ถูกต้อง' });
+      if (!allow.includes(status) && status !== WAITING_URGENT_STATUS) return res.status(400).json({ error: 'status \u0e44\u0e21\u0e48\u0e16\u0e39\u0e01\u0e15\u0e49\u0e2d\u0e07' });
       params.push(status);
-      where.push(`job_status = $${p++}`);
+      const statusParam = `$${p++}`;
+      if (status === WAITING_URGENT_STATUS) {
+        where.push(`job_status = ${statusParam} AND COALESCE(booking_mode,'')='urgent' AND COALESCE(job_source,'')='customer'`);
+      } else {
+        where.push(`job_status = ${statusParam}`);
+      }
     } else {
-      // include statuses ที่ต้อง review
-      where.push(`job_status = ANY($${p++}::text[])`);
+      // Include review statuses, plus only Customer App urgent rows still waiting for technician offers.
       params.push(allow);
+      const allowParam = `$${p++}`;
+      params.push(WAITING_URGENT_STATUS);
+      const waitingReviewParam = `$${p++}`;
+      where.push(`(job_status = ANY(${allowParam}::text[]) OR (job_status = ${waitingReviewParam} AND COALESCE(booking_mode,'')='urgent' AND COALESCE(job_source,'')='customer'))`);
     }
 
     if (q) {
@@ -15312,6 +15321,8 @@ app.get("/admin/review_queue_v2", requireAdminSoft, async (req, res) => {
       p++;
     }
 
+    params.push(WAITING_URGENT_STATUS);
+    const waitingStatusParam = `$${p++}`;
     const sqlWhere = where.length ? `WHERE ${where.join(' AND ')}` : '';
     const r = await pool.query(
       `
@@ -15319,7 +15330,39 @@ app.get("/admin/review_queue_v2", requireAdminSoft, async (req, res) => {
              appointment_datetime, job_status, duration_min, job_price,
              address_text, maps_url, job_zone,
              technician_username, dispatch_mode, booking_mode,
-             created_at
+             created_at,
+             COALESCE((
+               SELECT json_agg(json_build_object(
+                 'item_id', ji.item_id,
+                 'item_name', ji.item_name,
+                 'qty', ji.qty,
+                 'unit_price', ji.unit_price,
+                 'line_total', ji.line_total,
+                 'is_service', ji.is_service,
+                 'assigned_technician_username', ji.assigned_technician_username
+               ) ORDER BY ji.item_id NULLS LAST, ji.item_name)
+               FROM public.job_items ji
+               WHERE ji.job_id=public.jobs.job_id
+             ), '[]'::json) AS items,
+             COALESCE((
+               SELECT SUM(GREATEST(COALESCE(ji.qty,0),0))
+               FROM public.job_items ji
+               WHERE ji.job_id=public.jobs.job_id
+             ),0)::numeric AS service_units,
+             COALESCE((
+               SELECT COUNT(*)::int
+               FROM public.job_offers jo
+               WHERE jo.job_id=public.jobs.job_id
+                 AND jo.status='pending'
+                 AND jo.expires_at >= NOW()
+             ),0)::int AS pending_offer_count,
+             EXISTS (
+               SELECT 1
+               FROM public.job_offer_time_proposals p
+               WHERE p.job_id=public.jobs.job_id
+                 AND p.status='pending'
+             ) AS has_pending_time_proposal,
+             NOT (COALESCE(booking_mode,'')='urgent' AND job_status=${waitingStatusParam}) AS admin_action_required
       FROM public.jobs
       ${sqlWhere}
       ORDER BY created_at DESC
@@ -25149,6 +25192,12 @@ function isCustomerAppUrgentBook(body = {}) {
     String(body.client_app || "").trim().toLowerCase() === "customer_app_v2";
 }
 
+function deriveCustomerScheduledBookingToken(requestKey) {
+  const key = String(requestKey || "").trim();
+  if (!key) return null;
+  return crypto.createHash("sha256").update(`scheduled_v1:${key}`).digest("hex").slice(0, 24);
+}
+
 // Customer App V2 urgent requests are just another entry point into the
 // existing admin urgent offer engine (handleAdminBookV2): this adapter only
 // (a) strips the request down to a customer-safe allowlist and (b) computes
@@ -25223,6 +25272,7 @@ app.post("/public/book", async (req, res) => {
     wash_variant,
     repair_variant,
     services,
+    scheduled_request_key,
     catalog_item_id, // optional: links this booking to the Store catalog item it was booked for
   } = req.body || {};
 
@@ -25259,10 +25309,21 @@ app.post("/public/book", async (req, res) => {
     .map((x) => ({ item_id: Number(x.item_id), qty: Number(x.qty || 1) }))
     .filter((x) => Number.isFinite(x.item_id) && x.item_id > 0 && Number.isFinite(x.qty) && x.qty > 0);
 
-  const token = genToken(12);
+  let token = genToken(12);
   // DURATION_PRICE_V2_PUBLIC_BOOK
   let bm = (booking_mode || "scheduled").toString().trim().toLowerCase();
   const clientApp = (client_app || "").toString().trim().toLowerCase();
+  const scheduledRequestKey = bm === "scheduled" && clientApp === "customer_app_v2"
+    ? String(scheduled_request_key || "").trim()
+    : "";
+  const validScheduledRequestKey = /^[A-Za-z0-9_-]{16,128}$/.test(scheduledRequestKey);
+  if (bm === "scheduled" && clientApp === "customer_app_v2" && !validScheduledRequestKey) {
+    return res.status(400).json({ error: "MISSING_REQUEST_KEY", code: "MISSING_REQUEST_KEY" });
+  }
+  const scheduledDeterministicToken = scheduledRequestKey
+    ? deriveCustomerScheduledBookingToken(scheduledRequestKey)
+    : null;
+  if (scheduledDeterministicToken) token = scheduledDeterministicToken;
   const allowAdminScheduleFallback = allow_admin_schedule_fallback === true || String(allow_admin_schedule_fallback || "").trim() === "true";
   const canUseAdminScheduleFallback = bm === "scheduled" && allowAdminScheduleFallback && clientApp === "customer_app_v2";
   const urgentOfferEnabled = bm === "urgent" && ENABLE_URGENT_FLOW;
@@ -25493,6 +25554,38 @@ console.log("[latlng_parse]", { ok: !!parsedLL });
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+
+    if (scheduledRequestKey && scheduledDeterministicToken) {
+      await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [scheduledRequestKey]);
+      const existing = await client.query(
+        `SELECT job_id, booking_code, booking_token, booking_mode, dispatch_mode,
+                duration_min, job_price
+           FROM public.jobs
+          WHERE booking_token=$1
+            AND job_source='customer'
+            AND COALESCE(booking_mode,'scheduled')='scheduled'
+            AND canceled_at IS NULL
+          LIMIT 1`,
+        [scheduledDeterministicToken]
+      );
+      if (existing.rows[0]) {
+        const row = existing.rows[0];
+        await client.query("COMMIT");
+        return res.json({
+          success: true,
+          replayed: true,
+          job_id: row.job_id,
+          booking_code: row.booking_code,
+          token: row.booking_token,
+          booking_mode: "scheduled",
+          dispatch_mode: row.dispatch_mode || "normal",
+          duration_min: Number(row.duration_min || duration_min_v2 || 0),
+          effective_block_min: effectiveBlockMin(Number(row.duration_min || duration_min_v2 || 0)),
+          travel_buffer_min: TRAVEL_BUFFER_MIN,
+          base_total: Number(row.job_price || 0),
+        });
+      }
+    }
 
     let draftReservationTech = null;
     if (bm === "scheduled" && clientApp === "customer_app_v2") {

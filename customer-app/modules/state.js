@@ -79,6 +79,7 @@
       // Defect 1: all admin-enabled employment types (filtered strictly server-side).
       tech_type: "all",
       selectedSlot: null,
+      scheduled_request_key: "",
       allow_time_proposal: false,
       customer_name: "",
       customer_phone: "",
