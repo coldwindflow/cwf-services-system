@@ -19,6 +19,29 @@ const customerIndex = read("customer-app/index.html");
 const customerSw = read("customer-app/sw.js");
 const customerManifest = read("customer-app/manifest.webmanifest");
 
+const WAITING_URGENT_STATUS = "\u0e23\u0e2d\u0e0a\u0e48\u0e32\u0e07\u0e22\u0e37\u0e19\u0e22\u0e31\u0e19";
+const REVIEW_STATUSES = ["\u0e23\u0e2d\u0e15\u0e23\u0e27\u0e08\u0e2a\u0e2d\u0e1a", "pending_review", "\u0e15\u0e35\u0e01\u0e25\u0e31\u0e1a", "\u0e44\u0e21\u0e48\u0e1e\u0e1a\u0e0a\u0e48\u0e32\u0e07\u0e23\u0e31\u0e1a\u0e07\u0e32\u0e19", "\u0e23\u0e2d\u0e1e\u0e34\u0e08\u0e32\u0e23\u0e13\u0e32\u0e40\u0e27\u0e25\u0e32\u0e43\u0e2b\u0e21\u0e48"];
+
+function simulateReviewQueueRows(rows, status = "all") {
+  const wanted = String(status || "\u0e23\u0e2d\u0e15\u0e23\u0e27\u0e08\u0e2a\u0e2d\u0e1a").trim();
+  const wantAll = wanted.toLowerCase() === "all";
+  return rows
+    .filter((row) => row.canceled_at == null)
+    .filter((row) => ["scheduled", "", "urgent"].includes(String(row.booking_mode ?? "scheduled")))
+    .filter((row) => {
+      const isCustomerUrgentWaiting = row.job_status === WAITING_URGENT_STATUS
+        && String(row.booking_mode || "") === "urgent"
+        && String(row.job_source || "") === "customer";
+      if (wantAll) return REVIEW_STATUSES.includes(row.job_status) || isCustomerUrgentWaiting;
+      if (wanted === WAITING_URGENT_STATUS) return isCustomerUrgentWaiting;
+      return REVIEW_STATUSES.includes(wanted) && row.job_status === wanted;
+    })
+    .map((row) => ({
+      ...row,
+      admin_action_required: !(String(row.booking_mode || "") === "urgent" && row.job_status === WAITING_URGENT_STATUS),
+    }));
+}
+
 function deriveTestScheduledToken(requestKey) {
   return crypto.createHash("sha256").update(`scheduled_v1:${String(requestKey || "").trim()}`).digest("hex").slice(0, 24);
 }
@@ -228,7 +251,8 @@ test("scheduled customer app sends one request key and clears it on new booking 
 
 test("admin review queue includes urgent waiting rows as read-only without offer join duplication", () => {
   assert.match(index, /WAITING_URGENT_STATUS/);
-  assert.match(index, /allow\.push\(WAITING_URGENT_STATUS\)/);
+  assert.doesNotMatch(index, /allow\.push\(WAITING_URGENT_STATUS\)/);
+  assert.match(index, /COALESCE\(booking_mode,''\)='urgent' AND COALESCE\(job_source,''\)='customer'/);
   assert.match(index, /pending_offer_count/);
   assert.match(index, /json_agg\(json_build_object/);
   assert.match(index, /AS items/);
@@ -283,10 +307,34 @@ test("admin review new-job notification uses first-load baseline and one sound p
 
 test("admin/customer frontend cache versions are bumped for booking notification changes", () => {
   assert.match(adminReviewHtml, /admin-review-v2\.js\?v=20260707_customer_booking_notify_v2/);
+  assert.match(adminReviewHtml, /admin-review-ai-intake\.js\?v=ai-booking-intake-customer-cards-v11-admin-alert-gate/);
+  assert.doesNotMatch(adminReviewHtml, /admin-review-ai-intake\.js\?v=ai-booking-intake-customer-cards-v10/);
   assert.match(customerIndex, /bookingScheduled\.js\?v=20260707_booking_admin_notify_v1/);
   assert.match(customerIndex, /state\.js\?v=20260707_booking_admin_notify_v1/);
   assert.match(customerSw, /const BUILD_ID = "20260707_booking_admin_notify_v1"/);
   assert.match(customerManifest, /20260707_booking_admin_notify_v1/);
+});
+
+test("behavior: review queue only includes customer urgent waiting rows while preserving review statuses", () => {
+  const rows = [
+    { job_id: 1, job_status: WAITING_URGENT_STATUS, booking_mode: "urgent", job_source: "customer", canceled_at: null },
+    { job_id: 2, job_status: WAITING_URGENT_STATUS, booking_mode: "urgent", job_source: "admin", canceled_at: null },
+    { job_id: 3, job_status: WAITING_URGENT_STATUS, booking_mode: "scheduled", job_source: "customer", canceled_at: null },
+    { job_id: 4, job_status: "\u0e23\u0e2d\u0e15\u0e23\u0e27\u0e08\u0e2a\u0e2d\u0e1a", booking_mode: "scheduled", job_source: "customer", canceled_at: null },
+    { job_id: 5, job_status: "pending_review", booking_mode: "scheduled", job_source: "customer", canceled_at: null },
+    { job_id: 6, job_status: "\u0e15\u0e35\u0e01\u0e25\u0e31\u0e1a", booking_mode: "urgent", job_source: "customer", canceled_at: null },
+    { job_id: 7, job_status: "\u0e44\u0e21\u0e48\u0e1e\u0e1a\u0e0a\u0e48\u0e32\u0e07\u0e23\u0e31\u0e1a\u0e07\u0e32\u0e19", booking_mode: "urgent", job_source: "customer", canceled_at: null },
+    { job_id: 8, job_status: "\u0e23\u0e2d\u0e1e\u0e34\u0e08\u0e32\u0e23\u0e13\u0e32\u0e40\u0e27\u0e25\u0e32\u0e43\u0e2b\u0e21\u0e48", booking_mode: "urgent", job_source: "customer", canceled_at: null },
+  ];
+  const all = simulateReviewQueueRows(rows, "all");
+  assert.deepEqual(all.map((row) => row.job_id), [1, 4, 5, 6, 7, 8]);
+  assert.equal(all.find((row) => row.job_id === 1).admin_action_required, false);
+  assert.equal(all.some((row) => row.job_id === 2), false);
+  assert.equal(all.some((row) => row.job_id === 3), false);
+
+  const waitingOnly = simulateReviewQueueRows(rows, WAITING_URGENT_STATUS);
+  assert.deepEqual(waitingOnly.map((row) => row.job_id), [1]);
+  assert.equal(waitingOnly[0].admin_action_required, false);
 });
 
 test("behavior: concurrent scheduled requests with the same key create one job and one reservation", async () => {

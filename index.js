@@ -15287,7 +15287,6 @@ app.get("/admin/review_queue_v2", requireAdminSoft, async (req, res) => {
     // support: status=all (ดูทั้งหมดที่ควร review)
     const allow = ['รอตรวจสอบ', 'pending_review', 'ตีกลับ', 'ไม่พบช่างรับงาน', 'รอพิจารณาเวลาใหม่'];
     const WAITING_URGENT_STATUS = "\u0e23\u0e2d\u0e0a\u0e48\u0e32\u0e07\u0e22\u0e37\u0e19\u0e22\u0e31\u0e19";
-    allow.push(WAITING_URGENT_STATUS);
     const wantAll = status.toLowerCase() === 'all';
 
     const params = [];
@@ -15299,13 +15298,21 @@ app.get("/admin/review_queue_v2", requireAdminSoft, async (req, res) => {
     where.push(`COALESCE(booking_mode,'scheduled') IN ('scheduled','','urgent')`);
 
     if (!wantAll) {
-      if (!allow.includes(status)) return res.status(400).json({ error: 'status ไม่ถูกต้อง' });
+      if (!allow.includes(status) && status !== WAITING_URGENT_STATUS) return res.status(400).json({ error: 'status \u0e44\u0e21\u0e48\u0e16\u0e39\u0e01\u0e15\u0e49\u0e2d\u0e07' });
       params.push(status);
-      where.push(`job_status = $${p++}`);
+      const statusParam = `$${p++}`;
+      if (status === WAITING_URGENT_STATUS) {
+        where.push(`job_status = ${statusParam} AND COALESCE(booking_mode,'')='urgent' AND COALESCE(job_source,'')='customer'`);
+      } else {
+        where.push(`job_status = ${statusParam}`);
+      }
     } else {
-      // include statuses ที่ต้อง review
-      where.push(`job_status = ANY($${p++}::text[])`);
+      // Include review statuses, plus only Customer App urgent rows still waiting for technician offers.
       params.push(allow);
+      const allowParam = `$${p++}`;
+      params.push(WAITING_URGENT_STATUS);
+      const waitingReviewParam = `$${p++}`;
+      where.push(`(job_status = ANY(${allowParam}::text[]) OR (job_status = ${waitingReviewParam} AND COALESCE(booking_mode,'')='urgent' AND COALESCE(job_source,'')='customer'))`);
     }
 
     if (q) {
