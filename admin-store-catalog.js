@@ -48,7 +48,6 @@ function modalPricingRisk(payload) {
   if (payload.item_category === "service") {
     if (!payload.job_category) risks.push("MISSING_JOB_TYPE");
     if (!payload.ac_type) risks.push("MISSING_AC_TYPE");
-    if (normal >= 10000 || active >= 10000) risks.push("PRICE_OUTLIER");
   }
   return [...new Set(risks)];
 }

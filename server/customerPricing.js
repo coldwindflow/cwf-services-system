@@ -72,6 +72,13 @@ function rulePrice(value) {
   return Number.isFinite(n) ? money(n) : NaN;
 }
 
+function nonNegativeIntOrNullValue(value) {
+  if (value === null || value === undefined || String(value).trim() === "") return null;
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) return NaN;
+  return Math.round(n);
+}
+
 function positiveIntOrNullValue(value) {
   if (value === null || value === undefined || String(value).trim() === "") return null;
   const n = Number(value);
@@ -85,14 +92,65 @@ function dateTimeOrNull(value) {
   return Number.isFinite(ts) ? ts : NaN;
 }
 
-function catalogLinkFromRule(row = {}) {
-  const itemId = row.linked_catalog_item_id ?? row.catalog_item_id ?? row.item_id ?? null;
-  if (itemId == null) return null;
+function representativeBtuFromRange(btuMin, btuMax) {
+  const hasMin = btuMin !== null && !Number.isNaN(btuMin);
+  const hasMax = btuMax !== null && !Number.isNaN(btuMax);
+  if (hasMin && hasMax) return btuMin > 0 ? btuMin : btuMax;
+  if (hasMin) return btuMin > 0 ? btuMin : 12000;
+  if (hasMax) return btuMax;
+  return 24000;
+}
+
+function canonicalFallbackUnitForRule(row = {}) {
+  const btu_min = nonNegativeIntOrNullValue(row.btu_min);
+  const btu_max = positiveIntOrNullValue(row.btu_max);
+  const line = {
+    job_type: normalizeServiceType(row.job_type || ""),
+    ac_type: normalizeAcType(row.ac_type || ""),
+    wash_variant: normalizeWashVariantLabel(row.wash_variant || ""),
+    btu: representativeBtuFromRange(btu_min, btu_max),
+    machine_count: 1,
+    repair_variant: row.repair_variant || row.repairVariant || "",
+  };
+  return money(pricingHelpers.computeStandardPrice(line));
+}
+
+function emptyCatalogLinkage(status = "verified") {
   return {
-    item_id: itemId,
-    item_category: row.linked_catalog_item_category ?? row.catalog_item_category ?? row.item_category ?? null,
-    job_category: row.linked_catalog_job_category ?? row.catalog_job_category ?? row.job_category ?? null,
-    ac_type: row.linked_catalog_ac_type ?? row.catalog_ac_type ?? row.catalog_item_ac_type ?? null,
+    linked_catalog_item_count: 0,
+    linked_catalog_item_ids: [],
+    linked_catalog_has_product: false,
+    linked_catalog_has_service: false,
+    linked_catalog_service_scopes: [],
+    catalog_linkage_status: status,
+  };
+}
+
+function catalogLinkFromRule(row = {}) {
+  if (row.linked_catalog_item_count != null || row.catalog_linkage_status) {
+    return {
+      linked_catalog_item_count: Number(row.linked_catalog_item_count || 0),
+      linked_catalog_item_ids: Array.isArray(row.linked_catalog_item_ids) ? row.linked_catalog_item_ids : [],
+      linked_catalog_has_product: Boolean(row.linked_catalog_has_product),
+      linked_catalog_has_service: Boolean(row.linked_catalog_has_service),
+      linked_catalog_service_scopes: Array.isArray(row.linked_catalog_service_scopes) ? row.linked_catalog_service_scopes : [],
+      catalog_linkage_status: row.catalog_linkage_status || "verified",
+    };
+  }
+  const itemId = row.linked_catalog_item_id ?? row.catalog_item_id ?? row.item_id ?? null;
+  if (itemId == null) return emptyCatalogLinkage();
+  return {
+    linked_catalog_item_count: 1,
+    linked_catalog_item_ids: [itemId],
+    linked_catalog_has_product: String(row.linked_catalog_item_category ?? row.catalog_item_category ?? row.item_category ?? "").trim().toLowerCase() === "product",
+    linked_catalog_has_service: String(row.linked_catalog_item_category ?? row.catalog_item_category ?? row.item_category ?? "").trim().toLowerCase() === "service",
+    linked_catalog_service_scopes: [{
+      item_id: itemId,
+      item_category: row.linked_catalog_item_category ?? row.catalog_item_category ?? row.item_category ?? null,
+      job_category: row.linked_catalog_job_category ?? row.catalog_job_category ?? row.job_category ?? null,
+      ac_type: row.linked_catalog_ac_type ?? row.catalog_ac_type ?? row.catalog_item_ac_type ?? null,
+    }],
+    catalog_linkage_status: "verified",
   };
 }
 
@@ -106,7 +164,7 @@ function serviceRuleSafety(row = {}, options = {}) {
   const wash_key = normalizeWashKey(wash_variant);
   const normal_price = rulePrice(row.normal_price);
   const active_price = rulePrice(row.active_price);
-  const btu_min = positiveIntOrNullValue(row.btu_min);
+  const btu_min = nonNegativeIntOrNullValue(row.btu_min);
   const btu_max = positiveIntOrNullValue(row.btu_max);
   const machine_min = positiveIntOrNullValue(row.machine_min);
   const machine_max = positiveIntOrNullValue(row.machine_max);
@@ -114,6 +172,7 @@ function serviceRuleSafety(row = {}, options = {}) {
   const toTs = dateTimeOrNull(row.effective_to);
   const priority = Number(row.priority ?? 0);
   const linked = options.linkedCatalogItem || catalogLinkFromRule(row);
+  const fallbackUnit = options.fallbackUnit != null ? Number(options.fallbackUnit) : canonicalFallbackUnitForRule(row);
 
   if (!rawJob) risk.add("MISSING_JOB_TYPE");
   else if (!SUPPORTED_JOB_TYPES.has(job_type)) risk.add("UNSUPPORTED_JOB_TYPE");
@@ -132,21 +191,25 @@ function serviceRuleSafety(row = {}, options = {}) {
   if (!Number.isInteger(priority) || priority < MIN_RULE_PRIORITY || priority > MAX_RULE_PRIORITY) risk.add("INVALID_PRIORITY");
   if (wash_variant && !SUPPORTED_WASH_KEYS.has(wash_key)) risk.add("UNSUPPORTED_WASH_VARIANT");
 
+  if (job_type && ac_type && fallbackUnit <= 0) risk.add("AUTO_PRICING_UNSUPPORTED");
+
   if (linked) {
-    const category = String(linked.item_category || "").trim().toLowerCase();
-    const linkedJob = normalizeServiceType(linked.job_category || "");
-    const linkedAc = normalizeAcType(linked.ac_type || "");
-    if (category === "product") risk.add("PRODUCT_RULE_LEAK");
-    if ((linkedJob && job_type && linkedJob !== job_type) || (linkedAc && ac_type && linkedAc !== ac_type)) {
-      risk.add("CATALOG_SCOPE_MISMATCH");
+    if (linked.catalog_linkage_status === "unverified") risk.add("CATALOG_LINKAGE_UNVERIFIED");
+    if (linked.linked_catalog_has_product) risk.add("PRODUCT_RULE_LEAK");
+    for (const scope of linked.linked_catalog_service_scopes || []) {
+      const category = String(scope.item_category || "").trim().toLowerCase();
+      if (category !== "service") continue;
+      const linkedJob = normalizeServiceType(scope.job_category || "");
+      const linkedAc = normalizeAcType(scope.ac_type || "");
+      if (!linkedJob || !linkedAc || (job_type && linkedJob !== job_type) || (ac_type && linkedAc !== ac_type)) {
+        risk.add("CATALOG_SCOPE_MISMATCH");
+      }
     }
-    if (category === "service" && (!linkedJob || !linkedAc)) risk.add("CATALOG_SCOPE_MISMATCH");
   }
 
-  const fallbackUnit = Number(options.fallbackUnit || 0);
   if (fallbackUnit > 0 && Number.isFinite(normal_price) && Number.isFinite(active_price)) {
     const maxSafeUnit = Math.max(fallbackUnit * 10, 10000);
-    if (normal_price > maxSafeUnit || active_price > maxSafeUnit) risk.add("PRICE_OUTLIER");
+    if (normal_price >= maxSafeUnit || active_price >= maxSafeUnit) risk.add("PRICE_OUTLIER");
   }
 
   const risk_codes = Array.from(risk);
@@ -176,8 +239,14 @@ function serviceRuleSafety(row = {}, options = {}) {
       machine_min: Number.isNaN(machine_min) ? null : machine_min,
       machine_max: Number.isNaN(machine_max) ? null : machine_max,
     },
-    linked_catalog_item_id: linked?.item_id || null,
-    linked_catalog_item_category: linked?.item_category || null,
+    canonical_fallback_unit: fallbackUnit,
+    linked_catalog_item_id: linked?.linked_catalog_item_ids?.[0] || null,
+    linked_catalog_item_category: linked?.linked_catalog_has_product ? "product" : (linked?.linked_catalog_has_service ? "service" : null),
+    linked_catalog_item_count: linked?.linked_catalog_item_count || 0,
+    linked_catalog_item_ids: linked?.linked_catalog_item_ids || [],
+    linked_catalog_has_product: Boolean(linked?.linked_catalog_has_product),
+    linked_catalog_has_service: Boolean(linked?.linked_catalog_has_service),
+    catalog_linkage_status: linked?.catalog_linkage_status || "verified",
   };
 }
 
@@ -282,64 +351,116 @@ async function ensureCustomerPriceBookSchema(db) {
   await db.query(`ALTER TABLE public.job_items ADD COLUMN IF NOT EXISTS customer_price_source TEXT`);
 }
 
-async function loadCandidateRules(db) {
-  let r;
-  try {
-    r = await db.query(`
-      SELECT r.rule_id, r.job_type, r.ac_type, r.wash_variant, r.btu_min, r.btu_max, r.machine_min, r.machine_max,
-             r.normal_price, r.active_price, r.label, r.campaign_name, r.campaign_copy, r.seed_key, r.effective_from, r.effective_to,
-             r.is_active, r.priority, r.created_at, r.updated_at, r.updated_by,
-             ci.item_id AS linked_catalog_item_id,
-             ci.item_category AS linked_catalog_item_category,
-             ci.job_category AS linked_catalog_job_category,
-             ci.ac_type AS linked_catalog_ac_type
-        FROM public.customer_service_price_rules r
-        LEFT JOIN public.catalog_items ci ON ci.price_rule_id = r.rule_id
-       WHERE COALESCE(r.is_active, TRUE)=TRUE
-         AND (r.effective_from IS NULL OR r.effective_from <= NOW())
-         AND (r.effective_to IS NULL OR r.effective_to >= NOW())
-    `);
-  } catch (e) {
-    if (!["42P01", "42703"].includes(String(e && e.code || ""))) throw e;
-    r = await db.query(`
-      SELECT rule_id, job_type, ac_type, wash_variant, btu_min, btu_max, machine_min, machine_max,
-             normal_price, active_price, label, campaign_name, campaign_copy, seed_key, effective_from, effective_to,
-             is_active, priority, created_at, updated_at, updated_by
-        FROM public.customer_service_price_rules
-       WHERE COALESCE(is_active, TRUE)=TRUE
+async function loadRuleRows(db, options = {}) {
+  const where = options.activeOnly
+    ? `WHERE COALESCE(is_active, TRUE)=TRUE
          AND (effective_from IS NULL OR effective_from <= NOW())
-         AND (effective_to IS NULL OR effective_to >= NOW())
-    `);
-  }
+         AND (effective_to IS NULL OR effective_to >= NOW())`
+    : "";
+  const r = await db.query(`
+    SELECT rule_id, job_type, ac_type, wash_variant, btu_min, btu_max, machine_min, machine_max,
+           normal_price, active_price, label, campaign_name, campaign_copy, seed_key, effective_from, effective_to,
+           is_active, priority, created_at, updated_at, updated_by
+      FROM public.customer_service_price_rules
+      ${where}
+     ORDER BY is_active DESC, priority DESC, job_type, ac_type, wash_variant, btu_min NULLS FIRST, rule_id DESC
+  `);
   return r.rows || [];
 }
 
-async function loadAdminRuleRows(db) {
-  try {
-    const r = await db.query(
-      `SELECT r.rule_id, r.job_type, r.ac_type, r.wash_variant, r.btu_min, r.btu_max, r.machine_min, r.machine_max,
-              r.normal_price, r.active_price, r.label, r.campaign_name, r.campaign_copy, r.effective_from, r.effective_to,
-              r.is_active, r.priority, r.created_at, r.updated_at, r.updated_by,
-              ci.item_id AS linked_catalog_item_id,
-              ci.item_category AS linked_catalog_item_category,
-              ci.job_category AS linked_catalog_job_category,
-              ci.ac_type AS linked_catalog_ac_type
-         FROM public.customer_service_price_rules r
-         LEFT JOIN public.catalog_items ci ON ci.price_rule_id = r.rule_id
-        ORDER BY r.is_active DESC, r.priority DESC, r.job_type, r.ac_type, r.wash_variant, r.btu_min NULLS FIRST, r.rule_id DESC`
-    );
-    return r.rows || [];
-  } catch (e) {
-    if (!["42P01", "42703"].includes(String((e && e.code) || ""))) throw e;
-    const r = await db.query(
-      `SELECT rule_id, job_type, ac_type, wash_variant, btu_min, btu_max, machine_min, machine_max,
-              normal_price, active_price, label, campaign_name, campaign_copy, effective_from, effective_to,
-              is_active, priority, created_at, updated_at, updated_by
-         FROM public.customer_service_price_rules
-        ORDER BY is_active DESC, priority DESC, job_type, ac_type, wash_variant, btu_min NULLS FIRST, rule_id DESC`
-    );
-    return r.rows || [];
+function aggregateCatalogLinks(rows = [], fallbackStatus = "verified") {
+  const map = new Map();
+  for (const row of rows || []) {
+    const id = Number(row.price_rule_id);
+    if (!Number.isFinite(id)) continue;
+    const current = map.get(id) || emptyCatalogLinkage("verified");
+    current.linked_catalog_item_count += 1;
+    current.linked_catalog_item_ids.push(row.item_id);
+    const category = String(row.item_category || "").trim().toLowerCase();
+    if (category === "product") current.linked_catalog_has_product = true;
+    if (category === "service") current.linked_catalog_has_service = true;
+    if (category === "service") {
+      current.linked_catalog_service_scopes.push({
+        item_id: row.item_id,
+        item_category: row.item_category,
+        job_category: row.job_category,
+        ac_type: row.ac_type,
+      });
+    }
+    map.set(id, current);
   }
+  map.fallbackStatus = fallbackStatus;
+  return map;
+}
+
+async function loadCatalogLinkageMap(db, ruleIds = []) {
+  const ids = [...new Set((ruleIds || []).map((id) => Number(id)).filter(Number.isFinite))];
+  if (!ids.length) return aggregateCatalogLinks([]);
+  try {
+    const minimal = await db.query(
+      `SELECT item_id, price_rule_id
+         FROM public.catalog_items
+        WHERE price_rule_id = ANY($1::bigint[])`,
+      [ids]
+    );
+    const minimalRows = minimal.rows || [];
+    if (!minimalRows.length) return aggregateCatalogLinks([]);
+    try {
+      const full = await db.query(
+        `SELECT item_id, price_rule_id, item_category, job_category, ac_type
+           FROM public.catalog_items
+          WHERE price_rule_id = ANY($1::bigint[])`,
+        [ids]
+      );
+      return aggregateCatalogLinks(full.rows || []);
+    } catch (e) {
+      if (!["42703"].includes(String((e && e.code) || ""))) throw e;
+      const map = new Map();
+      for (const row of minimalRows) {
+        const id = Number(row.price_rule_id);
+        const current = map.get(id) || emptyCatalogLinkage("unverified");
+        current.catalog_linkage_status = "unverified";
+        current.linked_catalog_item_count += 1;
+        current.linked_catalog_item_ids.push(row.item_id);
+        map.set(id, current);
+      }
+      map.fallbackStatus = "verified";
+      return map;
+    }
+  } catch (e) {
+    const code = String((e && e.code) || "");
+    if (["42P01", "42703"].includes(code)) {
+      return aggregateCatalogLinks([], "absent");
+    }
+    try {
+      console.warn("[customer_pricing] catalog linkage lookup failed, marking rules unverified", { code });
+    } catch (_) {}
+    const map = new Map();
+    for (const id of ids) map.set(id, { ...emptyCatalogLinkage("unverified") });
+    map.fallbackStatus = "unverified";
+    return map;
+  }
+}
+
+function mergeCatalogLinkage(rows = [], linkMap) {
+  const status = linkMap?.fallbackStatus || "verified";
+  return (rows || []).map((row) => {
+    const id = Number(row.rule_id);
+    const linkage = linkMap?.get?.(id) || emptyCatalogLinkage(status);
+    return { ...row, ...linkage };
+  });
+}
+
+async function loadCandidateRules(db) {
+  const rows = await loadRuleRows(db, { activeOnly: true });
+  const linkMap = await loadCatalogLinkageMap(db, rows.map((row) => row.rule_id));
+  return mergeCatalogLinkage(rows, linkMap);
+}
+
+async function loadAdminRuleRows(db) {
+  const rows = await loadRuleRows(db, { activeOnly: false });
+  const linkMap = await loadCatalogLinkageMap(db, rows.map((row) => row.rule_id));
+  return mergeCatalogLinkage(rows, linkMap);
 }
 
 async function resolveLinePrice(line, db) {
@@ -624,6 +745,12 @@ function annotateRuleRisks(rows = []) {
       effective_scope: safety.effective_scope,
       linked_catalog_item_category: safety.linked_catalog_item_category,
       linked_catalog_item_id: safety.linked_catalog_item_id,
+      linked_catalog_item_count: safety.linked_catalog_item_count,
+      linked_catalog_item_ids: safety.linked_catalog_item_ids,
+      linked_catalog_has_product: safety.linked_catalog_has_product,
+      linked_catalog_has_service: safety.linked_catalog_has_service,
+      catalog_linkage_status: safety.catalog_linkage_status,
+      canonical_fallback_unit: safety.canonical_fallback_unit,
       overlaps_with_rule_ids: [],
     };
   });
@@ -631,6 +758,7 @@ function annotateRuleRisks(rows = []) {
     for (let j = i + 1; j < annotated.length; j += 1) {
       const a = annotated[i];
       const b = annotated[j];
+      if (Number(a.rule_id) === Number(b.rule_id)) continue;
       if (!a.is_active || !b.is_active) continue;
       if (Number(a.priority || 0) !== Number(b.priority || 0)) continue;
       if (!a.is_safe_for_service_pricing || !b.is_safe_for_service_pricing) continue;
@@ -653,14 +781,7 @@ function annotateRuleRisks(rows = []) {
 }
 
 function validateServicePriceRuleForWrite(body) {
-  const baseLine = {
-    job_type: normalizeServiceType(body.job_type || ""),
-    ac_type: normalizeAcType(body.ac_type || ""),
-    wash_variant: normalizeWashVariantLabel(body.wash_variant || ""),
-    btu: Number(body.btu_min || body.btu_max || 24000),
-    machine_count: 1,
-  };
-  const fallbackUnit = money(pricingHelpers.computeStandardPrice(baseLine));
+  const fallbackUnit = canonicalFallbackUnitForRule(body);
   const safety = serviceRuleSafety(body, { fallbackUnit });
   return {
     ok: safety.is_safe_for_service_pricing,
@@ -780,6 +901,7 @@ module.exports = {
   boolish,
   cleanRuleBody,
   serviceRuleSafety,
+  canonicalFallbackUnitForRule,
   validateServicePriceRuleForWrite,
   annotateRuleRisks,
 };

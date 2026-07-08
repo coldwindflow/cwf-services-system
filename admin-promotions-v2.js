@@ -33,7 +33,9 @@ const PRICE_RULE_RISK_LABELS = {
   INVALID_DATE_RANGE: 'invalid date range',
   PRODUCT_RULE_LEAK: 'product-linked rule',
   CATALOG_SCOPE_MISMATCH: 'catalog scope mismatch',
+  CATALOG_LINKAGE_UNVERIFIED: 'catalog linkage unverified',
   OVERLAPPING_ACTIVE_RULE: 'overlapping active rule',
+  AUTO_PRICING_UNSUPPORTED: 'auto pricing unsupported',
   INVALID_PRIORITY: 'invalid priority',
   UNSUPPORTED_WASH_VARIANT: 'unsupported wash variant',
 };
@@ -53,7 +55,6 @@ function clientPriceRuleRisks(body){
   if(body.btu_min && body.btu_max && Number(body.btu_min) > Number(body.btu_max)) risks.push('INVALID_BTU_RANGE');
   if(body.effective_from && body.effective_to && Date.parse(body.effective_from) > Date.parse(body.effective_to)) risks.push('INVALID_DATE_RANGE');
   if(!Number.isInteger(Number(body.priority)) || Number(body.priority) < -1000 || Number(body.priority) > 1000) risks.push('INVALID_PRIORITY');
-  if(Number(body.normal_price) >= 10000 || Number(body.active_price) >= 10000) risks.push('PRICE_OUTLIER');
   return [...new Set(risks)];
 }
 
@@ -108,12 +109,17 @@ function priceRuleCard(r){
   const range = `${r.btu_min || 0}${r.btu_max ? `-${r.btu_max}` : '+'} BTU`;
   const promo = r.campaign_name || r.label || '';
   const dates = [dateInputValue(r.effective_from), dateInputValue(r.effective_to)].filter(Boolean).join(' ถึง ');
+  const linkedCount = Number(r.linked_catalog_item_count || 0);
+  const linkMeta = linkedCount
+    ? `Linked catalog: ${linkedCount}${r.linked_catalog_has_product ? ' • product-linked' : ''}${r.catalog_linkage_status && r.catalog_linkage_status !== 'verified' ? ` • ${r.catalog_linkage_status}` : ''}`
+    : (r.catalog_linkage_status && r.catalog_linkage_status !== 'verified' ? `Catalog linkage: ${r.catalog_linkage_status}` : '');
   return `
   <div class="svc-row" style="align-items:flex-start">
     <div class="svc-main" style="flex:1">
       <div class="svc-title"><b>${r.job_type || '-'} / ${r.ac_type || '-'} ${r.wash_variant || ''}</b></div>
       <div class="muted2 mini">${range} • ปกติ ${fmtMoney(r.normal_price)} บาท • ใช้จริง ${fmtMoney(r.active_price)} บาท</div>
       <div class="muted2 mini">${promo ? `แคมเปญ: ${promo} • ` : ''}${dates ? `ช่วงเวลา: ${dates} • ` : ''}priority ${Number(r.priority || 0)} • สถานะ: <b>${active ? 'เปิดใช้' : 'ปิด'}</b></div>
+      ${linkMeta ? `<div class="muted2 mini">${linkMeta}</div>` : ''}
       ${unsafe ? `<div class="muted2 mini" style="color:#991b1b">Risk: ${riskText(risks)}</div>` : ''}
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
