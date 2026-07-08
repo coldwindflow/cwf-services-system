@@ -368,9 +368,9 @@ test("gallery delete and set-primary actions ask for confirmation only on delete
   assert.match(catalogJsSource, /async function onGalleryDelete\(imageId\) \{[\s\S]*?confirm\(.*ลบรูปภาพ/);
 });
 
-test("admin-store-catalog.html script and stylesheet references share a consistent cache-bust build id", () => {
+test("admin-store-catalog.html keeps CSS cache and bumps JS cache for pricing safety", () => {
   assert.match(catalogHtmlSource, /admin-store-catalog\.css\?v=20260702_cat_v2/);
-  assert.match(catalogHtmlSource, /admin-store-catalog\.js\?v=20260702_cat_v2/);
+  assert.match(catalogHtmlSource, /admin-store-catalog\.js\?v=20260708_price_rule_safety_v3/);
 });
 
 test("the item_category field is a service/product dropdown, not free text", () => {

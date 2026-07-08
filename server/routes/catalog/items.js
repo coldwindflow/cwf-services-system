@@ -1,4 +1,4 @@
-const { money, intOrNull, boolish } = require("../../customerPricing");
+const { money, intOrNull, boolish, validateServicePriceRuleForWrite, serviceRuleSafety } = require("../../customerPricing");
 const cloudinaryImageUpload = require("../../lib/cloudinaryImageUpload");
 const customerAvailability = require("../../services/public/customerAvailability");
 const { getBangkokNow, computeJobTiming } = require("../../services/jobTiming");
@@ -25,6 +25,20 @@ function parseOptionalPositiveNumber(value, fieldLabel) {
   if (value === undefined || value === null || value === "") return { ok: true, value: null };
   const n = Number(value);
   if (!Number.isFinite(n) || n <= 0) return { ok: false, error: `${fieldLabel} ต้องเป็นค่าว่างหรือจำนวนบวก` };
+  return { ok: true, value: n };
+}
+
+function parseOptionalNonNegativeInteger(value, fieldLabel) {
+  if (value === undefined || value === null || value === "") return { ok: true, value: null };
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 0) return { ok: false, error: `${fieldLabel} ต้องเป็นค่าว่างหรือจำนวนเต็มตั้งแต่ 0 ขึ้นไป` };
+  return { ok: true, value: n };
+}
+
+function parseOptionalPositiveInteger(value, fieldLabel) {
+  if (value === undefined || value === null || value === "") return { ok: true, value: null };
+  const n = Number(value);
+  if (!Number.isInteger(n) || n <= 0) return { ok: false, error: `${fieldLabel} ต้องเป็นค่าว่างหรือจำนวนเต็มบวก` };
   return { ok: true, value: n };
 }
 
@@ -265,9 +279,9 @@ function validateMergedCatalogItem(merged) {
     else base_price = n;
   }
 
-  const btuMinResult = parseOptionalPositiveNumber(merged.btu_min, "btu_min");
+  const btuMinResult = parseOptionalNonNegativeInteger(merged.btu_min, "btu_min");
   if (!btuMinResult.ok) errors.push(btuMinResult.error);
-  const btuMaxResult = parseOptionalPositiveNumber(merged.btu_max, "btu_max");
+  const btuMaxResult = parseOptionalPositiveInteger(merged.btu_max, "btu_max");
   if (!btuMaxResult.ok) errors.push(btuMaxResult.error);
 
   const btu_min = btuMinResult.ok ? btuMinResult.value : null;
@@ -350,10 +364,40 @@ function validatePricingInput(pricing) {
   };
 }
 
+function validateCatalogPricingScope(pricing, catalogFields) {
+  if (!pricing) return { ok: true };
+  const category = normalizeItemCategory(catalogFields.item_category, catalogFields.booking_mode);
+  if (category === "product" || String(catalogFields.booking_mode || "").trim() === "purchase") {
+    return { ok: true, catalog_only: true };
+  }
+  const candidate = {
+    job_type: catalogFields.job_category,
+    ac_type: catalogFields.ac_type,
+    wash_variant: pricing.wash_variant,
+    btu_min: catalogFields.btu_min,
+    btu_max: catalogFields.btu_max,
+    normal_price: pricing.normal_price,
+    active_price: pricing.active_price,
+    effective_from: pricing.effective_from,
+    effective_to: pricing.effective_to,
+    priority: pricing.priority,
+  };
+  const validation = validateServicePriceRuleForWrite(candidate);
+  if (!validation.ok) {
+    return {
+      ok: false,
+      error: "UNSAFE_SERVICE_PRICE_RULE",
+      risk_codes: validation.risk_codes,
+    };
+  }
+  return { ok: true, catalog_only: false };
+}
+
 const CATALOG_SELECT_WITH_PRICING = `
   SELECT ci.item_id, ci.item_name, ci.item_category, ci.base_price, ci.unit_label, ci.is_active,
          ci.job_category, ci.ac_type, ci.btu_min, ci.btu_max, ci.is_customer_visible,
          ci.image_url, ci.image_public_id, ci.price_rule_id,
+         pr.job_type AS rule_job_type, pr.ac_type AS rule_ac_type,
          pr.normal_price AS rule_normal_price, pr.active_price AS rule_active_price,
          pr.campaign_name AS rule_campaign_name, pr.is_active AS rule_is_active,
          pr.effective_from AS rule_effective_from, pr.effective_to AS rule_effective_to,
@@ -833,6 +877,23 @@ function serializeCatalogDetailRow(row) {
 function serializeAdminCatalogRow(row) {
   const base = serializeCatalogRow(row);
   const hasRule = Boolean(row.price_rule_id);
+  const ruleSafety = hasRule ? serviceRuleSafety({
+    rule_id: row.price_rule_id,
+    job_type: row.rule_job_type || row.job_category,
+    ac_type: row.rule_ac_type || row.ac_type,
+    wash_variant: row.rule_wash_variant,
+    btu_min: row.btu_min,
+    btu_max: row.btu_max,
+    normal_price: row.rule_normal_price,
+    active_price: row.rule_active_price,
+    effective_from: row.rule_effective_from,
+    effective_to: row.rule_effective_to,
+    priority: row.rule_priority,
+    linked_catalog_item_id: row.item_id,
+    linked_catalog_item_category: row.item_category,
+    linked_catalog_job_category: row.job_category,
+    linked_catalog_ac_type: row.ac_type,
+  }) : { risk_codes: [], is_safe_for_service_pricing: true };
   return {
     ...base,
     pricing_normal_price: hasRule ? Number(row.rule_normal_price ?? 0) : null,
@@ -844,6 +905,9 @@ function serializeAdminCatalogRow(row) {
     pricing_is_active: hasRule ? Boolean(row.rule_is_active) : null,
     pricing_wash_variant: hasRule ? (row.rule_wash_variant || null) : null,
     pricing_priority: hasRule ? (row.rule_priority != null ? Number(row.rule_priority) : null) : null,
+    pricing_risk_codes: ruleSafety.risk_codes || [],
+    pricing_is_safe_for_service_pricing: Boolean(ruleSafety.is_safe_for_service_pricing),
+    pricing_catalog_only: hasRule && String(row.item_category || "").toLowerCase() === "product",
     // Raw marketplace fields for the admin Edit form (booking_mode is already on
     // `base` since it's needed for public CTA routing too; this adds the rest).
     long_description: row.long_description || null,
@@ -1171,6 +1235,8 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
     const v = result.value;
     const mv = marketplaceResult.value;
     const hv = hotResult.value;
+    const pricingScopeResult = validateCatalogPricingScope(pricingResult.value, { ...v, booking_mode: mv.booking_mode });
+    if (!pricingScopeResult.ok) return res.status(400).json({ error: pricingScopeResult.error, code: pricingScopeResult.error, risk_codes: pricingScopeResult.risk_codes || [] });
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
@@ -1298,6 +1364,8 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
     const v = result.value;
     const mv = marketplaceResult.value;
     const hv = hotResult.value;
+    const pricingScopeResult = validateCatalogPricingScope(pricingResult.value, { ...v, booking_mode: mv.booking_mode });
+    if (!pricingScopeResult.ok) return res.status(400).json({ error: pricingScopeResult.error, code: pricingScopeResult.error, risk_codes: pricingScopeResult.risk_codes || [] });
     const client = await pool.connect();
     try {
       await client.query("BEGIN");

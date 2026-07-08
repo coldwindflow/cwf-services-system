@@ -31,6 +31,27 @@ function escapeHtml(value) {
     .replace(/"/g, "&quot;");
 }
 
+const CATALOG_PRICE_ONLY_TEXT = "ราคาสินค้าเท่านั้น ไม่ใช้คำนวณค่าบริการ";
+
+function catalogPricingRiskCodes(item) {
+  return Array.isArray(item.pricing_risk_codes) ? item.pricing_risk_codes : [];
+}
+
+function modalPricingRisk(payload) {
+  const risks = [];
+  if (!payload.pricing) return risks;
+  const normal = Number(payload.pricing.normal_price);
+  const active = Number(payload.pricing.active_price);
+  if (!Number.isFinite(normal) || normal <= 0 || !Number.isFinite(active) || active <= 0) risks.push("INVALID_PRICE");
+  if (active > normal) risks.push("ACTIVE_PRICE_ABOVE_NORMAL");
+  if (payload.btu_min !== "" && payload.btu_max !== "" && Number(payload.btu_min) > Number(payload.btu_max)) risks.push("INVALID_BTU_RANGE");
+  if (payload.item_category === "service") {
+    if (!payload.job_category) risks.push("MISSING_JOB_TYPE");
+    if (!payload.ac_type) risks.push("MISSING_AC_TYPE");
+  }
+  return [...new Set(risks)];
+}
+
 function fmtMoney(n) {
   const v = Number(n);
   return Number.isFinite(v) ? v.toLocaleString("th-TH") : "0";
@@ -104,6 +125,7 @@ function ensureCatalogModal() {
         <div class="asc-section">
           <div class="asc-section-title">3) ราคาและโปรโมชั่น</div>
           <div class="asc-warning">${escapeHtml(PRICING_WARNING_TEXT)}</div>
+          <div id="cm_pricing_scope_note" class="muted2 mini">${escapeHtml(CATALOG_PRICE_ONLY_TEXT)}</div>
           <div class="asc-field"><label>ราคาฐาน (Base Price) *</label><input id="cm_base_price" type="number" step="1" min="0" placeholder="ใช้เมื่อยังไม่มีราคาโปรโมชัน"></div>
           <div class="asc-grid2">
             <div class="asc-field"><label>ราคาปกติ (บาท) *</label><input id="cm_normal_price" type="number" step="1" min="0"></div>
@@ -220,7 +242,7 @@ function ensureCatalogModal() {
             <div></div>
           </div>
           <div class="asc-grid2">
-            <div class="asc-field"><label>BTU ต่ำสุด *</label><input id="cm_btu_min" type="number" step="1" min="1" placeholder="ว่าง = ไม่จำกัด"></div>
+            <div class="asc-field"><label>BTU ต่ำสุด *</label><input id="cm_btu_min" type="number" step="1" min="0" placeholder="ว่าง = ไม่จำกัด"></div>
             <div class="asc-field"><label>BTU สูงสุด *</label><input id="cm_btu_max" type="number" step="1" min="1" placeholder="ว่าง = ไม่จำกัด"></div>
           </div>
         </details>
@@ -464,11 +486,11 @@ function validateCatalogModalPayload(payload) {
   if (payload.base_price !== "" && (!Number.isFinite(Number(payload.base_price)) || Number(payload.base_price) < 0)) {
     return "ราคาฐานต้องเป็นตัวเลขตั้งแต่ 0 ขึ้นไป";
   }
-  if (payload.btu_min !== "" && (!Number.isFinite(Number(payload.btu_min)) || Number(payload.btu_min) <= 0)) {
-    return "btu_min ต้องเป็นค่าว่างหรือจำนวนบวก";
+  if (payload.btu_min !== "" && (!Number.isInteger(Number(payload.btu_min)) || Number(payload.btu_min) < 0)) {
+    return "btu_min ต้องเป็นค่าว่างหรือจำนวนเต็มตั้งแต่ 0 ขึ้นไป";
   }
-  if (payload.btu_max !== "" && (!Number.isFinite(Number(payload.btu_max)) || Number(payload.btu_max) <= 0)) {
-    return "btu_max ต้องเป็นค่าว่างหรือจำนวนบวก";
+  if (payload.btu_max !== "" && (!Number.isInteger(Number(payload.btu_max)) || Number(payload.btu_max) <= 0)) {
+    return "btu_max ต้องเป็นค่าว่างหรือจำนวนเต็มบวก";
   }
   if (payload.btu_min !== "" && payload.btu_max !== "" && Number(payload.btu_min) > Number(payload.btu_max)) {
     return "btu_min ต้องไม่มากกว่า btu_max";
@@ -495,6 +517,8 @@ function validateCatalogModalPayload(payload) {
       return "ราคาขายจริงต้องเป็นตัวเลขตั้งแต่ 0 ขึ้นไป";
     }
   }
+  const risks = modalPricingRisk(payload);
+  if (risks.length) return `Rule เสี่ยง: ${risks.join(", ")}`;
   return "";
 }
 
@@ -961,6 +985,8 @@ function catalogItemCard(item) {
   const hasPromo = !!item.has_promo;
   const salePrice = item.display_price != null ? item.display_price : item.base_price;
   const showAsk = !(Number(salePrice) > 0);
+  const riskCodes = catalogPricingRiskCodes(item);
+  const pricingUnsafe = riskCodes.length || item.pricing_is_safe_for_service_pricing === false;
 
   const thumbUrl = catalogItemThumbUrl(item);
   const thumb = thumbUrl
@@ -988,6 +1014,8 @@ function catalogItemCard(item) {
         ${item.booking_mode === "bookable" ? `<span class="asc-badge asc-badge-bookable">จองออนไลน์ได้</span>` : item.booking_mode === "purchase" ? `<span class="asc-badge asc-badge-purchase">สินค้า (ขาย)</span>` : `<span class="asc-badge asc-badge-contact">ติดต่อแอดมิน</span>`}
         ${item.is_featured ? `<span class="asc-badge asc-badge-featured">แนะนำ</span>` : ""}
         ${item.is_hot ? `<span class="asc-badge asc-badge-hot">HOT</span>` : ""}
+        ${item.pricing_catalog_only ? `<span class="asc-badge asc-badge-contact">${escapeHtml(CATALOG_PRICE_ONLY_TEXT)}</span>` : ""}
+        ${pricingUnsafe ? `<span class="asc-badge asc-badge-inactive">Risk: ${escapeHtml(riskCodes.join(", "))}</span>` : ""}
       </div>
     </div>
     <div class="asc-item-actions">
