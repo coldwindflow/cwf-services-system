@@ -20,7 +20,9 @@ function dbWithRules(rows = [], options = {}) {
       if (s.includes("FROM public.catalog_items")) {
         if (fullLinkError && s.includes("item_category")) throw fullLinkError;
         if (failCatalogLinks) throw failCatalogLinks;
-        return { rows: links.map((r) => ({ ...r })) };
+        const ids = Array.isArray(params?.[0]) ? params[0].map((id) => Number(id)) : null;
+        const selected = ids ? links.filter((link) => ids.includes(Number(link.price_rule_id))) : links;
+        return { rows: selected.map((r) => ({ ...r })) };
       }
       return { rows: rows.map((r) => ({ ...r })) };
     },
@@ -225,7 +227,9 @@ function adminRulesPool(rows = [], links = [], options = {}) {
         catalogReads += 1;
         if (options.catalogError) throw options.catalogError;
         if (options.fullLinkError && s.includes("item_category")) throw options.fullLinkError;
-        return { rows: links.map((link) => ({ ...link })) };
+        const ids = Array.isArray(params?.[0]) ? params[0].map((id) => Number(id)) : null;
+        const selected = ids ? links.filter((link) => ids.includes(Number(link.price_rule_id))) : links;
+        return { rows: selected.map((link) => ({ ...link })) };
       }
       return { rows: [] };
     },
@@ -261,6 +265,67 @@ test("POST, PUT, and toggle reject install auto-pricing rules", async () => {
     assert.ok((await post.json()).risk_codes.includes("AUTO_PRICING_UNSUPPORTED"));
     assert.ok((await put.json()).risk_codes.includes("AUTO_PRICING_UNSUPPORTED"));
     assert.ok((await toggle.json()).risk_codes.includes("AUTO_PRICING_UNSUPPORTED"));
+  });
+});
+
+test("PUT and toggle validate catalog reverse linkage before mutating price book rules", async () => {
+  const linkedRule = rule({ rule_id: 72, job_type: "clean", ac_type: "wall", normal_price: 600, active_price: 550 });
+  const mismatchRule = rule({ rule_id: 73, job_type: "clean", ac_type: "wall", normal_price: 600, active_price: 550 });
+  const incompleteRule = rule({ rule_id: 74, job_type: "clean", ac_type: "wall", normal_price: 600, active_price: 550 });
+  const rules = [linkedRule, mismatchRule, incompleteRule];
+  const links = [
+    { price_rule_id: 72, item_id: 1, item_category: "product", job_category: null, ac_type: null },
+    { price_rule_id: 73, item_id: 2, item_category: "service", job_category: "repair", ac_type: "wall" },
+    { price_rule_id: 74, item_id: 3, item_category: "service", job_category: "clean", ac_type: null },
+  ];
+  const pool = adminRulesPool(rules, links);
+  const router = customerPricing.createCustomerPricingRoutes({ pool, requireAdminSoft: (_req, _res, next) => next() });
+  await withServer(router, async (base) => {
+    const productPut = await fetch(`${base}/admin/customer-pricing/rules/72`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(linkedRule) });
+    assert.equal(productPut.status, 400);
+    assert.ok((await productPut.json()).risk_codes.includes("PRODUCT_RULE_LEAK"));
+    assert.equal(pool.state.updated.length, 0);
+
+    const productOn = await fetch(`${base}/admin/customer-pricing/rules/72/toggle`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ is_active: true }) });
+    assert.equal(productOn.status, 400);
+    assert.equal(pool.state.updated.length, 0);
+
+    const productOff = await fetch(`${base}/admin/customer-pricing/rules/72/toggle`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ is_active: false }) });
+    assert.equal(productOff.status, 200);
+    assert.equal(pool.state.updated.length, 1);
+
+    const mismatchPut = await fetch(`${base}/admin/customer-pricing/rules/73`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(mismatchRule) });
+    assert.equal(mismatchPut.status, 400);
+    assert.ok((await mismatchPut.json()).risk_codes.includes("CATALOG_SCOPE_MISMATCH"));
+
+    const mismatchOn = await fetch(`${base}/admin/customer-pricing/rules/73/toggle`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ is_active: true }) });
+    assert.equal(mismatchOn.status, 400);
+
+    const incompletePut = await fetch(`${base}/admin/customer-pricing/rules/74`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(incompleteRule) });
+    assert.equal(incompletePut.status, 400);
+    assert.ok((await incompletePut.json()).risk_codes.includes("CATALOG_SCOPE_MISMATCH"));
+    assert.equal(pool.state.updated.length, 1);
+  });
+});
+
+test("PUT and toggle reject unverified linkage but allow safe direct price book rules", async () => {
+  const unsafeLinked = rule({ rule_id: 75, job_type: "clean", ac_type: "wall", normal_price: 600, active_price: 550 });
+  const safeDirect = rule({ rule_id: 76, job_type: "clean", ac_type: "wall", normal_price: 600, active_price: 550 });
+  const pool = adminRulesPool([unsafeLinked, safeDirect], [{ price_rule_id: 75, item_id: 5 }], { fullLinkError: Object.assign(new Error("missing metadata"), { code: "42703" }) });
+  const router = customerPricing.createCustomerPricingRoutes({ pool, requireAdminSoft: (_req, _res, next) => next() });
+  await withServer(router, async (base) => {
+    const unverifiedPut = await fetch(`${base}/admin/customer-pricing/rules/75`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(unsafeLinked) });
+    assert.equal(unverifiedPut.status, 400);
+    assert.ok((await unverifiedPut.json()).risk_codes.includes("CATALOG_LINKAGE_UNVERIFIED"));
+
+    const unverifiedToggle = await fetch(`${base}/admin/customer-pricing/rules/75/toggle`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ is_active: true }) });
+    assert.equal(unverifiedToggle.status, 400);
+
+    const safePut = await fetch(`${base}/admin/customer-pricing/rules/76`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(safeDirect) });
+    assert.equal(safePut.status, 200);
+
+    const safeToggle = await fetch(`${base}/admin/customer-pricing/rules/76/toggle`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ is_active: true }) });
+    assert.equal(safeToggle.status, 200);
   });
 });
 
@@ -430,6 +495,16 @@ test("catalog product pricing can save but remains catalog-only, while service p
     assert.equal(productBody.pricing_catalog_only, true);
     assert.ok(productBody.pricing_risk_codes.includes("PRODUCT_RULE_LEAK"));
 
+    const productPatch = await fetch(`${base}/admin/catalog/items/${productBody.item_id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ pricing: { normal_price: 99999, active_price: 88888 } }),
+    });
+    assert.equal(productPatch.status, 200);
+    const patchedProduct = await productPatch.json();
+    assert.equal(Number(patchedProduct.display_price), 88888);
+    assert.equal(patchedProduct.pricing_catalog_only, true);
+
     const service = await fetch(`${base}/admin/catalog/items`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -451,8 +526,11 @@ test("admin UI source exposes safety warnings and cache-busted assets", () => {
   assert.match(promoJs, /Linked catalog/);
   assert.doesNotMatch(promoJs, /normal_price\) >= 10000/);
   assert.doesNotMatch(catalogJs, /normal >= 10000/);
+  assert.match(catalogJs, /Number\(payload\.btu_min\) < 0/);
+  assert.doesNotMatch(catalogJs, /Number\(payload\.btu_min\)\) \|\| Number\(payload\.btu_min\) <= 0/);
+  assert.match(catalogJs, /id="cm_btu_min"[^>]*min="0"/);
   assert.match(catalogJs, /ราคาสินค้าเท่านั้น ไม่ใช้คำนวณค่าบริการ/);
   assert.match(catalogJs, /modalPricingRisk/);
   assert.match(promoHtml, /admin-promotions-v2\.js\?v=20260708_price_rule_safety_v2/);
-  assert.match(catalogHtml, /admin-store-catalog\.js\?v=20260708_price_rule_safety_v2/);
+  assert.match(catalogHtml, /admin-store-catalog\.js\?v=20260708_price_rule_safety_v3/);
 });

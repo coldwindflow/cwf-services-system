@@ -28,6 +28,20 @@ function parseOptionalPositiveNumber(value, fieldLabel) {
   return { ok: true, value: n };
 }
 
+function parseOptionalNonNegativeInteger(value, fieldLabel) {
+  if (value === undefined || value === null || value === "") return { ok: true, value: null };
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 0) return { ok: false, error: `${fieldLabel} ต้องเป็นค่าว่างหรือจำนวนเต็มตั้งแต่ 0 ขึ้นไป` };
+  return { ok: true, value: n };
+}
+
+function parseOptionalPositiveInteger(value, fieldLabel) {
+  if (value === undefined || value === null || value === "") return { ok: true, value: null };
+  const n = Number(value);
+  if (!Number.isInteger(n) || n <= 0) return { ok: false, error: `${fieldLabel} ต้องเป็นค่าว่างหรือจำนวนเต็มบวก` };
+  return { ok: true, value: n };
+}
+
 function parseRequiredPositivePrice(value, fieldLabel) {
   if (value === undefined || value === null) {
     return { ok: false, error: `${fieldLabel} ต้องระบุและมากกว่า 0` };
@@ -265,9 +279,9 @@ function validateMergedCatalogItem(merged) {
     else base_price = n;
   }
 
-  const btuMinResult = parseOptionalPositiveNumber(merged.btu_min, "btu_min");
+  const btuMinResult = parseOptionalNonNegativeInteger(merged.btu_min, "btu_min");
   if (!btuMinResult.ok) errors.push(btuMinResult.error);
-  const btuMaxResult = parseOptionalPositiveNumber(merged.btu_max, "btu_max");
+  const btuMaxResult = parseOptionalPositiveInteger(merged.btu_max, "btu_max");
   if (!btuMaxResult.ok) errors.push(btuMaxResult.error);
 
   const btu_min = btuMinResult.ok ? btuMinResult.value : null;

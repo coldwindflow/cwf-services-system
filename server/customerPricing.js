@@ -463,6 +463,26 @@ async function loadAdminRuleRows(db) {
   return mergeCatalogLinkage(rows, linkMap);
 }
 
+async function loadRuleWithCatalogLinkage(db, ruleId) {
+  const r = await db.query(`SELECT * FROM public.customer_service_price_rules WHERE rule_id=$1`, [ruleId]);
+  const row = r.rows?.[0] || null;
+  if (!row) return null;
+  const linkMap = await loadCatalogLinkageMap(db, [row.rule_id]);
+  return mergeCatalogLinkage([row], linkMap)[0] || null;
+}
+
+function mergeRuleLinkageMetadata(candidate, source) {
+  return {
+    ...candidate,
+    linked_catalog_item_count: source?.linked_catalog_item_count || 0,
+    linked_catalog_item_ids: source?.linked_catalog_item_ids || [],
+    linked_catalog_has_product: Boolean(source?.linked_catalog_has_product),
+    linked_catalog_has_service: Boolean(source?.linked_catalog_has_service),
+    linked_catalog_service_scopes: source?.linked_catalog_service_scopes || [],
+    catalog_linkage_status: source?.catalog_linkage_status || "verified",
+  };
+}
+
 async function resolveLinePrice(line, db) {
   const fallbackTotal = money(pricingHelpers.computeStandardPrice(line));
   const qty = Math.max(1, Number(line.machine_count || 1));
@@ -837,8 +857,10 @@ function createCustomerPricingRoutes({ pool, requireAdminSoft }) {
       await ensureCustomerPriceBookSchema(pool);
       const id = Number(req.params.id);
       if (!id) return res.status(400).json({ error: "rule_id ไม่ถูกต้อง" });
+      const existing = await loadRuleWithCatalogLinkage(pool, id);
+      if (!existing) return res.status(404).json({ error: "PRICE_RULE_NOT_FOUND", code: "PRICE_RULE_NOT_FOUND" });
       const b = cleanRuleBody(req.body || {});
-      const validation = validateServicePriceRuleForWrite(b);
+      const validation = validateServicePriceRuleForWrite(mergeRuleLinkageMetadata(b, existing));
       if (!validation.ok) return res.status(400).json({ error: "UNSAFE_SERVICE_PRICE_RULE", code: "UNSAFE_SERVICE_PRICE_RULE", risk_codes: validation.risk_codes });
       b.job_type = validation.normalized.job_type;
       b.ac_type = validation.normalized.ac_type;
@@ -865,8 +887,9 @@ function createCustomerPricingRoutes({ pool, requireAdminSoft }) {
       if (!id) return res.status(400).json({ error: "rule_id ไม่ถูกต้อง" });
       const active = boolish(req.body?.is_active, true);
       if (active) {
-        const existing = await pool.query(`SELECT * FROM public.customer_service_price_rules WHERE rule_id=$1`, [id]);
-        const validation = validateServicePriceRuleForWrite(existing.rows?.[0] || {});
+        const existing = await loadRuleWithCatalogLinkage(pool, id);
+        if (!existing) return res.status(404).json({ error: "PRICE_RULE_NOT_FOUND", code: "PRICE_RULE_NOT_FOUND" });
+        const validation = validateServicePriceRuleForWrite(existing);
         if (!validation.ok) return res.status(400).json({ error: "UNSAFE_SERVICE_PRICE_RULE", code: "UNSAFE_SERVICE_PRICE_RULE", risk_codes: validation.risk_codes });
       }
       await pool.query(`UPDATE public.customer_service_price_rules SET is_active=$2, updated_at=NOW() WHERE rule_id=$1`, [id, active]);

@@ -710,6 +710,35 @@ test("admin POST create rejects btu_min > btu_max", async () => {
   });
 });
 
+test("admin POST create accepts service catalog btu_min zero and rejects unsafe BTU bounds", async () => {
+  const pool = makePool(sampleItems());
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const ok = await fetch(`${base}/admin/catalog/items`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ item_name: "zero btu min", item_category: "service", job_category: "ล้าง", ac_type: "ผนัง", btu_min: 0, btu_max: 12000, base_price: 600 }),
+    });
+    assert.equal(ok.status, 201);
+    const body = await ok.json();
+    assert.equal(body.btu_min, 0);
+    assert.equal(body.btu_max, 12000);
+
+    for (const payload of [
+      { item_name: "bad min", btu_min: -1, btu_max: 12000 },
+      { item_name: "bad max", btu_min: 0, btu_max: 0 },
+      { item_name: "bad range", btu_min: 18000, btu_max: 12000 },
+    ]) {
+      const res = await fetch(`${base}/admin/catalog/items`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      assert.equal(res.status, 400);
+    }
+  });
+});
+
 test("admin POST create succeeds with valid payload and defaults is_customer_visible to false", async () => {
   const pool = makePool(sampleItems());
   const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
@@ -750,6 +779,36 @@ test("admin PATCH update rejects btu_min > btu_max against the merged record", a
       body: JSON.stringify({ btu_min: 99999 }),
     });
     assert.equal(res.status, 400);
+  });
+});
+
+test("admin PATCH preserves existing service catalog btu_min zero when editing name or pricing", async () => {
+  const items = sampleItems();
+  items[0].btu_min = 0;
+  items[0].btu_max = 12000;
+  const pool = makePool(items);
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const rename = await fetch(`${base}/admin/catalog/items/1`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ item_name: "zero min renamed" }),
+    });
+    assert.equal(rename.status, 200);
+    const renamed = await rename.json();
+    assert.equal(renamed.item_name, "zero min renamed");
+    assert.equal(renamed.btu_min, 0);
+
+    const pricing = await fetch(`${base}/admin/catalog/items/1`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pricing: { normal_price: 600, active_price: 550 } }),
+    });
+    assert.equal(pricing.status, 200);
+    const priced = await pricing.json();
+    assert.equal(priced.btu_min, 0);
+    assert.equal(Number(priced.pricing_normal_price), 600);
+    assert.equal(Number(priced.pricing_active_price), 550);
   });
 });
 

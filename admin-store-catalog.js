@@ -242,7 +242,7 @@ function ensureCatalogModal() {
             <div></div>
           </div>
           <div class="asc-grid2">
-            <div class="asc-field"><label>BTU ต่ำสุด *</label><input id="cm_btu_min" type="number" step="1" min="1" placeholder="ว่าง = ไม่จำกัด"></div>
+            <div class="asc-field"><label>BTU ต่ำสุด *</label><input id="cm_btu_min" type="number" step="1" min="0" placeholder="ว่าง = ไม่จำกัด"></div>
             <div class="asc-field"><label>BTU สูงสุด *</label><input id="cm_btu_max" type="number" step="1" min="1" placeholder="ว่าง = ไม่จำกัด"></div>
           </div>
         </details>
@@ -486,11 +486,11 @@ function validateCatalogModalPayload(payload) {
   if (payload.base_price !== "" && (!Number.isFinite(Number(payload.base_price)) || Number(payload.base_price) < 0)) {
     return "ราคาฐานต้องเป็นตัวเลขตั้งแต่ 0 ขึ้นไป";
   }
-  if (payload.btu_min !== "" && (!Number.isFinite(Number(payload.btu_min)) || Number(payload.btu_min) <= 0)) {
-    return "btu_min ต้องเป็นค่าว่างหรือจำนวนบวก";
+  if (payload.btu_min !== "" && (!Number.isInteger(Number(payload.btu_min)) || Number(payload.btu_min) < 0)) {
+    return "btu_min ต้องเป็นค่าว่างหรือจำนวนเต็มตั้งแต่ 0 ขึ้นไป";
   }
-  if (payload.btu_max !== "" && (!Number.isFinite(Number(payload.btu_max)) || Number(payload.btu_max) <= 0)) {
-    return "btu_max ต้องเป็นค่าว่างหรือจำนวนบวก";
+  if (payload.btu_max !== "" && (!Number.isInteger(Number(payload.btu_max)) || Number(payload.btu_max) <= 0)) {
+    return "btu_max ต้องเป็นค่าว่างหรือจำนวนเต็มบวก";
   }
   if (payload.btu_min !== "" && payload.btu_max !== "" && Number(payload.btu_min) > Number(payload.btu_max)) {
     return "btu_min ต้องไม่มากกว่า btu_max";
