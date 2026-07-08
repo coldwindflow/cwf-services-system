@@ -1,7 +1,10 @@
 module.exports = function createDocumentRoutes(deps = {}) {
   const express = require("express");
+  const trackingPrivacy = require("../services/public/trackingPrivacy");
   const router = express.Router();
   const pool = deps.pool || require("../db/pool");
+  const isAdminRequest = deps.isAdminRequest;
+  const docsRateLimiter = deps.docsRateLimiter || null;
   const accountingOwnerSignaturePublicUrl = deps.accountingOwnerSignaturePublicUrl;
   const accountingSignaturePublicUrl = deps.accountingSignaturePublicUrl;
   const accountingOwnerSignerName = deps.accountingOwnerSignerName;
@@ -13,7 +16,7 @@ module.exports = function createDocumentRoutes(deps = {}) {
 
   async function getJobDocData(job_id) {
     const jobR = await pool.query(
-      `SELECT job_id, booking_code, customer_name, customer_phone, job_type, appointment_datetime, address_text, job_price,
+      `SELECT job_id, booking_code, booking_token, customer_name, customer_phone, job_type, appointment_datetime, address_text, job_price,
               paid_at, paid_by, payment_status,
               final_signature_path, final_signature_at
        FROM public.jobs WHERE job_id=$1`,
@@ -276,20 +279,52 @@ module.exports = function createDocumentRoutes(deps = {}) {
     res.send(docHtml("ใบเสนอราคา", data));
   });
 
+  // Job documents carry full customer PII (name, phone, address). A bare
+  // sequential job_id must never be enough to read one: the caller needs the
+  // job's booking_token (?key=..., which the tracking page embeds) or an
+  // authenticated admin session. Failures answer 404 (not 403) so the route
+  // does not confirm which job_ids exist.
+  async function canViewJobDoc(req, data) {
+    const key = String((req.query && req.query.key) || "").trim();
+    // getJobDocData returns { job, items, ... } — the token lives on the job row.
+    const token = data && data.job ? data.job.booking_token : null;
+    if (key && token && trackingPrivacy.timingSafeEqualStr(key, String(token))) {
+      return true;
+    }
+    if (typeof isAdminRequest === "function") {
+      try {
+        if (await isAdminRequest(req)) return true;
+      } catch (_) { /* treated as not admin */ }
+    }
+    return false;
+  }
+
+  function docsRateLimited(req, res) {
+    if (!docsRateLimiter) return false;
+    const rate = docsRateLimiter.check(trackingPrivacy.clientIpKey(req));
+    if (rate.allowed) return false;
+    res.status(429).send("เรียกดูเอกสารถี่เกินไป กรุณารอสักครู่แล้วลองใหม่");
+    return true;
+  }
+
   router.get("/docs/receipt/:job_id", async (req, res) => {
+    if (docsRateLimited(req, res)) return;
     const job_id = Number(req.params.job_id);
     const data = await getJobDocData(job_id);
     if (!data) return res.status(404).send("ไม่พบงาน");
+    if (!(await canViewJobDoc(req, data))) return res.status(404).send("ไม่พบงาน");
     res.setHeader("Content-Type", "text/html; charset=utf-8");
     res.send(docHtml("ใบเสร็จรับเงิน", data));
   });
 
   router.get("/docs/eslip/:job_id", async (req, res) => {
+    if (docsRateLimited(req, res)) return;
     const job_id = Number(req.params.job_id);
     if (!job_id) return res.status(400).send("job_id ไม่ถูกต้อง");
     try {
       const data = await getJobDocData(job_id);
       if (!data) return res.status(404).send("ไม่พบงาน");
+      if (!(await canViewJobDoc(req, data))) return res.status(404).send("ไม่พบงาน");
       const slipR = await pool.query(
         `SELECT public_url
          FROM public.job_photos

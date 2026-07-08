@@ -29,6 +29,7 @@ const pricingHelpers = require("./server/pricing");
 const jobTiming = require("./server/services/jobTiming");
 const urgentPublicAdapter = require("./server/services/urgentPublicAdapter");
 const urgentFinalizer = require("./server/services/urgent/finalizer");
+const trackingPrivacy = require("./server/services/public/trackingPrivacy");
 const customerPricingHelpers = require("./server/customerPricing");
 const customerAuth = require("./server/customerAuth");
 const technicianIncomeHelpers = require("./server/technicianIncome");
@@ -115,6 +116,21 @@ const FLAG_SHOW_TECH_PHONE_ON_TRACKING = envBool("SHOW_TECH_PHONE_ON_TRACKING", 
 const ENABLE_AVAILABILITY_V2 = envBool("ENABLE_AVAILABILITY_V2", true);
 // ✅ Safe toggle: urgent offer flow (public booking + offers)
 const ENABLE_URGENT_FLOW = envBool("ENABLE_URGENT_FLOW", true);
+// 🔒 Customer App booking kill switches — FAIL CLOSED by design: customer
+// self-booking stays OFF until the operator explicitly enables each lane in
+// the environment. When off, /public/book answers 503 with a machine-readable
+// code + LINE contact URL so the app can hand the customer to a human without
+// ever creating a job (no job = no duplicate risk). Admin booking flows are
+// NOT affected by these flags.
+const ENABLE_CUSTOMER_SCHEDULED_BOOKING = envBool("ENABLE_CUSTOMER_SCHEDULED_BOOKING", false);
+const ENABLE_CUSTOMER_URGENT_BOOKING = envBool("ENABLE_CUSTOMER_URGENT_BOOKING", false);
+const CWF_LINE_CONTACT_URL = String(process.env.CWF_LINE_CONTACT_URL || "https://lin.ee/fG1Oq7y").trim();
+// Rate limits for the public tracking lookups (per client IP, per minute).
+// Budgets cover a real customer's polling comfortably while making
+// booking_code/token guessing impractical.
+const publicTrackRateLimiter = trackingPrivacy.createPublicLookupRateLimiter({ windowMs: 60000, max: 30 });
+const publicUrgentStatusRateLimiter = trackingPrivacy.createPublicLookupRateLimiter({ windowMs: 60000, max: 120 });
+const publicDocsRateLimiter = trackingPrivacy.createPublicLookupRateLimiter({ windowMs: 60000, max: 20 });
 const ENABLE_SERVICE_ZONE_FILTER = envBool("ENABLE_SERVICE_ZONE_FILTER", true);
 const ENABLE_PARTNER_DEPOSIT_DEDUCTION = envBool("ENABLE_PARTNER_DEPOSIT_DEDUCTION", true);
 const ENABLE_WEB_PUSH_NOTIFICATIONS = envBool("ENABLE_WEB_PUSH_NOTIFICATIONS", true);
@@ -13052,7 +13068,9 @@ function makeRandomBookingCode() {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // ตัด I,O,0,1
   let out = "";
   for (let i = 0; i < 7; i++) {
-    out += chars[Math.floor(Math.random() * chars.length)];
+    // CSPRNG: the code doubles as a public lookup key, so it must not come
+    // from a predictable PRNG stream.
+    out += chars[crypto.randomInt(chars.length)];
   }
   return `CWF${out}`;
 }
@@ -23726,6 +23744,18 @@ app.get('/admin/accounting/reports/:report_key.csv', requireAccountingPermission
 
 app.use(createDocumentRoutes({
   pool,
+  // Job documents (receipt/e-slip) carry full customer PII. Access requires
+  // the job's booking_token (?key=...) or an authenticated admin session —
+  // a bare sequential job_id must never be enough.
+  isAdminRequest: async (req) => {
+    try {
+      const ctx = await getAuthContext(req, null);
+      return Boolean(ctx && ctx.ok && (ctx.actor.role === "admin" || ctx.actor.role === "super_admin"));
+    } catch (_) {
+      return false;
+    }
+  },
+  docsRateLimiter: publicDocsRateLimiter,
   accountingOwnerSignaturePublicUrl: _accountingOwnerSignaturePublicUrl,
   accountingSignaturePublicUrl: _accountingSignaturePublicUrl,
   accountingOwnerSignerName: _accountingOwnerSignerName,
@@ -25277,6 +25307,15 @@ app.post("/public/book", async (req, res) => {
   } = req.body || {};
 
   if (isCustomerAppUrgentBook(req.body || {})) {
+    // Kill switch (fail closed): reject BEFORE any job/offer work so a closed
+    // lane can never create a job — the app shows the LINE fallback instead.
+    if (!ENABLE_CUSTOMER_URGENT_BOOKING) {
+      return res.status(503).json({
+        error: "ระบบจองด่วนออนไลน์ปิดให้บริการชั่วคราว กรุณาติดต่อแอดมินทาง LINE",
+        code: "URGENT_BOOKING_DISABLED",
+        line_url: CWF_LINE_CONTACT_URL,
+      });
+    }
     return handlePublicCustomerUrgentBook(req, res);
   }
 
@@ -25313,6 +25352,16 @@ app.post("/public/book", async (req, res) => {
   // DURATION_PRICE_V2_PUBLIC_BOOK
   let bm = (booking_mode || "scheduled").toString().trim().toLowerCase();
   const clientApp = (client_app || "").toString().trim().toLowerCase();
+  // Kill switch (fail closed): Customer App scheduled self-booking is off
+  // until explicitly enabled. Reject before any pricing/availability/insert
+  // work so a closed lane can never create a job.
+  if (bm === "scheduled" && clientApp === "customer_app_v2" && !ENABLE_CUSTOMER_SCHEDULED_BOOKING) {
+    return res.status(503).json({
+      error: "ระบบจองคิวออนไลน์ปิดให้บริการชั่วคราว กรุณาติดต่อแอดมินทาง LINE",
+      code: "SCHEDULED_BOOKING_DISABLED",
+      line_url: CWF_LINE_CONTACT_URL,
+    });
+  }
   const scheduledRequestKey = bm === "scheduled" && clientApp === "customer_app_v2"
     ? String(scheduled_request_key || "").trim()
     : "";
@@ -25862,6 +25911,16 @@ app.get("/public/urgent-status", async (req, res) => {
   res.set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
   res.set("Pragma", "no-cache");
   res.set("Expires", "0");
+  // Budget fits the waiting room's 10s polling with headroom, while still
+  // blocking bulk code guessing.
+  const urgentRate = publicUrgentStatusRateLimiter.check(trackingPrivacy.clientIpKey(req));
+  if (!urgentRate.allowed) {
+    return res.status(429).json({
+      error: "เรียกดูสถานะถี่เกินไป กรุณารอสักครู่แล้วลองใหม่",
+      code: "RATE_LIMITED",
+      retry_after_s: urgentRate.retry_after_s,
+    });
+  }
   const q = String(req.query.token || req.query.q || req.query.booking_code || "").trim();
   if (!q) return res.status(400).json({ error: "missing tracking code" });
   try {
@@ -25928,6 +25987,16 @@ app.get("/public/urgent-status", async (req, res) => {
 });
 
 app.get("/public/track", async (req, res) => {
+  // Anti-enumeration: booking codes are short; without a budget an attacker
+  // could sweep the keyspace. Real customers do a handful of lookups a minute.
+  const trackRate = publicTrackRateLimiter.check(trackingPrivacy.clientIpKey(req));
+  if (!trackRate.allowed) {
+    return res.status(429).json({
+      error: "เรียกดูสถานะถี่เกินไป กรุณารอสักครู่แล้วลองใหม่",
+      code: "RATE_LIMITED",
+      retry_after_s: trackRate.retry_after_s,
+    });
+  }
   const q = (req.query.q || req.query.token || req.query.booking_code || "").toString().trim();
   if (!q) return res.status(400).json({ error: "ต้องส่ง q (token หรือ booking_code)" });
 
@@ -26166,7 +26235,12 @@ if (FLAG_SHOW_TECH_TEAM_ON_TRACKING && canShowPublicTechnician) {
     technician_team = [];
   }
 }
-    res.json({
+    // Access level: the long random booking_token = full detail. The short
+    // human-readable booking_code = masked PII only (it leaks too easily to
+    // act as a full credential) — see server/services/public/trackingPrivacy.js.
+    const fullAccess = trackingPrivacy.isFullAccessQuery(q, row);
+    const trackPayload = {
+      access_level: fullAccess ? "token" : "code",
       job_id: row.job_id,
       booking_code: row.booking_code || null,
       booking_token: row.booking_token || null,
@@ -26197,7 +26271,11 @@ if (FLAG_SHOW_TECH_TEAM_ON_TRACKING && canShowPublicTechnician) {
       photos,
       units: publicUnits,
 
-      receipt_url: isDone ? `${origin}/docs/receipt/${row.job_id}` : null,
+      // The receipt document carries full PII, so its link now embeds the
+      // booking_token as an access key (the /docs routes verify it).
+      receipt_url: isDone && row.booking_token
+        ? `${origin}/docs/receipt/${row.job_id}?key=${encodeURIComponent(row.booking_token)}`
+        : null,
 
       review: {
         already_reviewed: !!row.customer_rating,
@@ -26229,7 +26307,8 @@ if (FLAG_SHOW_TECH_TEAM_ON_TRACKING && canShowPublicTechnician) {
 
       // ✅ รายชื่อทีมช่างทั้งหมด (ถ้าเปิด flag) — ใช้ในหน้า Tracking
       technician_team,
-    });
+    };
+    res.json(fullAccess ? trackPayload : trackingPrivacy.redactPublicTrackPayload(trackPayload));
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "ติดตามงานไม่สำเร็จ" });
