@@ -76,7 +76,12 @@
   }
 
   function receiptUrl(data) {
-    const fallback = isDone(data) && data.job_id ? `/docs/receipt/${encodeURIComponent(data.job_id)}` : "";
+    // The receipt document now requires the booking_token as an access key
+    // (?key=...) — a bare job_id link would just 404. Only build the fallback
+    // when we actually hold the token (token-based lookups).
+    const fallback = isDone(data) && data.job_id && data.booking_token
+      ? `/docs/receipt/${encodeURIComponent(data.job_id)}?key=${encodeURIComponent(data.booking_token)}`
+      : "";
     const raw = clean(data.receipt_url);
     if (!raw) return fallback;
 

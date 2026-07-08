@@ -1,6 +1,7 @@
 (function () {
   "use strict";
 
+  console.info("[customer-booking] launch-gate 20260708 loaded");
   const root = window.CWFCustomerAppV2 = window.CWFCustomerAppV2 || {};
   const MAX_ADVANCE_DAYS = 90;
   const STEP_MAX = 3;
@@ -643,7 +644,10 @@
         ${submit.status === "checking_slot" ? root.utils.stateBox("loading", "กำลังตรวจคิวล่าสุด...") : ""}
         ${submit.status === "submitting" ? root.utils.stateBox("loading", "กำลังส่งข้อมูลจอง...") : ""}
         ${submit.status === "error" ? root.utils.stateBox("error", submit.error || "ส่งคำขอจองไม่สำเร็จ") : ""}
-        <button type="button" class="primary-btn wizard-submit-btn" data-action="submit-scheduled" ${pending ? "disabled" : ""}>${pending ? "กำลังตรวจสอบ..." : "ยืนยันส่งคำขอจอง"}</button>
+        ${submit.status === "error" && submit.disabled_line_url ? `
+          <a class="primary-btn line-fallback-btn" href="${root.utils.escapeHtml(submit.disabled_line_url)}" target="_blank" rel="noopener noreferrer">ติดต่อแอดมินทาง LINE</a>
+        ` : ""}
+        ${submit.status === "error" && submit.disabled_line_url ? "" : `<button type="button" class="primary-btn wizard-submit-btn" data-action="submit-scheduled" ${pending ? "disabled" : ""}>${pending ? "กำลังตรวจสอบ..." : "ยืนยันส่งคำขอจอง"}</button>`}
       </section>
     `;
   }
@@ -898,7 +902,7 @@
       scrollToWizardTop(container);
       return;
     }
-    root.state.setScheduledSubmit({ status: "checking_slot", error: "", result: null });
+    root.state.setScheduledSubmit({ status: "checking_slot", error: "", result: null, disabled_line_url: "" });
     paint(container);
     try {
       await revalidateSelectedSlot();
@@ -914,6 +918,21 @@
       paint(container);
       scrollToWizardTop(container);
     } catch (error) {
+      // Kill switch: the booking lane is closed server-side (503 +
+      // SCHEDULED_BOOKING_DISABLED). No job was created, so the LINE hand-off
+      // below cannot duplicate anything. Don't bounce back to the slot step —
+      // retrying won't help until the operator re-enables the lane.
+      if (error?.data?.code === "SCHEDULED_BOOKING_DISABLED") {
+        root.state.setScheduledSubmit({
+          status: "error",
+          error: error.data.error || "ระบบจองคิวออนไลน์ปิดให้บริการชั่วคราว กรุณาติดต่อแอดมินทาง LINE",
+          result: null,
+          disabled_line_url: error.data.line_url || "https://lin.ee/fG1Oq7y",
+        });
+        paint(container);
+        scrollToWizardTop(container);
+        return;
+      }
       root.state.setScheduledSubmit({ status: "error", error: error.message || "ส่งคำขอจองไม่สำเร็จ", result: null });
       if (Number(error.status) === 400 || Number(error.status) === 409) {
         root.state.updateDraft("scheduled", { selectedSlot: null });
