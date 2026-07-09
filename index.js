@@ -25222,11 +25222,6 @@ app.get("/public/availability", async (req, res) => {
   }
 });
 
-function isCustomerAppUrgentBook(body = {}) {
-  return String(body.booking_mode || "").trim().toLowerCase() === "urgent" &&
-    String(body.client_app || "").trim().toLowerCase() === "customer_app_v2";
-}
-
 function deriveCustomerScheduledBookingToken(requestKey) {
   const key = String(requestKey || "").trim();
   if (!key) return null;
@@ -25338,7 +25333,12 @@ app.post("/public/book", async (req, res) => {
     });
   }
 
-  if (isCustomerAppUrgentBook(req.body || {})) {
+  // Every unauthenticated urgent request is a customer request (admin books via
+  // the session-authenticated route, never this one). Route it through the
+  // customer-safe adapter on the CANONICAL booking_mode ALONE — never client_app,
+  // which the caller can drop/forge to skip the sanitiser and reach the raw
+  // urgent engine with attacker-chosen technician/assign fields.
+  if (canonicalBookingMode === "urgent") {
     return handlePublicCustomerUrgentBook(req, res);
   }
 
@@ -25375,11 +25375,16 @@ app.post("/public/book", async (req, res) => {
   // DURATION_PRICE_V2_PUBLIC_BOOK
   let bm = canonicalBookingMode;
   const clientApp = (client_app || "").toString().trim().toLowerCase();
-  const scheduledRequestKey = bm === "scheduled" && clientApp === "customer_app_v2"
+  // Idempotency is CANONICAL: every public scheduled booking must carry a valid
+  // request key, keyed off the canonical booking_mode — never client_app. Gating
+  // this on client_app let an unauthenticated caller drop/forge it to skip the
+  // advisory-lock replay below and mint duplicate jobs. client_app stays only
+  // for telemetry/UX defaults, never for a security/idempotency decision.
+  const scheduledRequestKey = bm === "scheduled"
     ? String(scheduled_request_key || "").trim()
     : "";
   const validScheduledRequestKey = /^[A-Za-z0-9_-]{16,128}$/.test(scheduledRequestKey);
-  if (bm === "scheduled" && clientApp === "customer_app_v2" && !validScheduledRequestKey) {
+  if (bm === "scheduled" && !validScheduledRequestKey) {
     return res.status(400).json({ error: "MISSING_REQUEST_KEY", code: "MISSING_REQUEST_KEY" });
   }
   const scheduledDeterministicToken = scheduledRequestKey
@@ -25387,7 +25392,7 @@ app.post("/public/book", async (req, res) => {
     : null;
   if (scheduledDeterministicToken) token = scheduledDeterministicToken;
   const allowAdminScheduleFallback = allow_admin_schedule_fallback === true || String(allow_admin_schedule_fallback || "").trim() === "true";
-  const canUseAdminScheduleFallback = bm === "scheduled" && allowAdminScheduleFallback && clientApp === "customer_app_v2";
+  const canUseAdminScheduleFallback = bm === "scheduled" && allowAdminScheduleFallback;
   const urgentOfferEnabled = bm === "urgent" && ENABLE_URGENT_FLOW;
   const allowTimeProposal = allow_time_proposal === true
     ? true
@@ -25410,7 +25415,7 @@ app.post("/public/book", async (req, res) => {
   // CWF Spec: conservative duration for schedule/collision
   const duration_min_v2 = computeDurationMinMulti(payloadV2, { source: "public_book", conservative: true });
   if (duration_min_v2 <= 0) return res.status(400).json({ error: "งานประเภทนี้ต้องให้แอดมินกำหนดเวลา (duration)" });
-  if (bm === "scheduled" && clientApp === "customer_app_v2") {
+  if (bm === "scheduled") {
     const startIsoForCutoff = normalizeAppointmentDatetime(appointment_datetime);
     const requestedDate = String(startIsoForCutoff || "").slice(0, 10);
     const requestedStart = String(startIsoForCutoff || "").slice(11, 16);
@@ -25449,11 +25454,13 @@ console.log("[latlng_parse]", { ok: !!parsedLL });
   // Defect 1: Customer App V2 scheduled booking must not be limited to company technicians;
   // it mirrors the public availability query (tech_type=all) and stays strict via the
   // customer_slot_visible + service matrix + monthly calendar gates below.
-  const requestedTechType = bm === "urgent"
-    ? "partner"
-    : (clientApp === "customer_app_v2" ? "all" : "company");
+  // Canonical: every public scheduled booking mirrors the public slot list
+  // (tech_type "all"), never a client_app-derived narrower set. Strictness comes
+  // from the customer_slot_visible + service-matrix + monthly-calendar gates
+  // inside customerAvailability, not from client_app.
+  const requestedTechType = bm === "urgent" ? "partner" : "all";
   try {
-    if (bm === "scheduled" && clientApp === "customer_app_v2") {
+    if (bm === "scheduled") {
       const startIso = normalizeAppointmentDatetime(appointment_datetime);
       const start = String(startIso).slice(11, 16);
       const available = await customerAvailability.hasAvailableStart(
@@ -25469,147 +25476,19 @@ console.log("[latlng_parse]", { ok: !!parsedLL });
       if (!available) {
         return res.status(409).json({ error: "ช่วงเวลานี้เต็มแล้ว กรุณาเลือกเวลาอื่น" });
       }
-    } else {
-    let techs = await listTechniciansByType(requestedTechType, { include_paused: bm === "scheduled" });
-
-    // Customer booking must use the same strict technician boundary as the public slot list.
-    // Only admin-visible technicians whose service matrix matches every requested service are eligible.
-    techs = techs.filter(t => t && t.customer_slot_visible === true);
-    const normalizeJobKey = (s) => {
-      const v = String(s || '').toLowerCase();
-      if (!v) return null;
-      if (v.includes('ติดตั้ง')) return 'install';
-      if (v.includes('ซ่อม')) return 'repair';
-      if (v.includes('ล้าง')) return 'wash';
-      return null;
-    };
-    const normalizeAcKey = (s) => {
-      const v = String(s || '').toLowerCase();
-      if (!v) return null;
-      if (v.includes('ผนัง') || v.includes('wall')) return 'wall';
-      if (v.includes('สี่ทิศ') || v.includes('4') || v.includes('four')) return 'fourway';
-      if (v.includes('แขวน')) return 'hanging';
-      if (v.includes('ใต้ฝ้า') || v.includes('เปลือย') || v.includes('ฝัง')) return 'ceiling';
-      return null;
-    };
-    const normalizeWashKey = (s) => {
-      const v = String(s || '').toLowerCase();
-      if (!v) return null;
-      if (v.includes('ธรรมดา') || v.includes('normal')) return 'normal';
-      if (v.includes('พรีเมียม') || v.includes('premium')) return 'premium';
-      if (v.includes('แขวนคอย') || v.includes('coil')) return 'coil';
-      if (v.includes('ตัดล้าง') || v.includes('overhaul') || v.includes('ใหญ่')) return 'overhaul';
-      return null;
-    };
-    const normalizeRepairKey = (s) => {
-      const v = String(s || '').toLowerCase();
-      if (!v) return null;
-      if (v.includes('à¸£à¸±à¹ˆà¸§') || v.includes('leak')) return 'leak_check';
-      if (v.includes('à¸­à¸°à¹„à¸«à¸¥à¹ˆ') || v.includes('part')) return 'parts';
-      if (v.includes('à¸•à¸£à¸§à¸ˆ') || v.includes('inspect')) return 'inspection';
-      if (v.includes('à¸—à¸±à¹ˆà¸§à¹„à¸›') || v.includes('general')) return 'general';
-      return v.replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '') || null;
-    };
-
-    const requestedServices = (Array.isArray(payloadV2.services) && payloadV2.services.length)
-      ? payloadV2.services
-      : [{
-          job_type: payloadV2.job_type,
-          ac_type: payloadV2.ac_type,
-          wash_variant: payloadV2.wash_variant,
-          repair_variant: payloadV2.repair_variant,
-        }];
-    const rawCriteria = requestedServices
-      .map(s => ({
-        job: normalizeJobKey(s.job_type || payloadV2.job_type),
-        ac: normalizeAcKey(s.ac_type || payloadV2.ac_type),
-        wash: normalizeWashKey(s.wash_variant || payloadV2.wash_variant),
-        repair: normalizeRepairKey(s.repair_variant || payloadV2.repair_variant),
-        repair_variant: String(s.repair_variant || payloadV2.repair_variant || '').trim() || null,
-      }));
-    const hasCompleteCriteria = (c) => Boolean(
-      c && c.job && c.ac &&
-      !(c.job === 'wash' && c.ac === 'wall' && !c.wash) &&
-      !(c.job === 'repair' && !c.repair_variant)
-    );
-    if (!rawCriteria.length || rawCriteria.some(c => !hasCompleteCriteria(c))) {
-      const err = new Error('CUSTOMER_SLOT_SERVICE_CRITERIA_REQUIRED');
-      err.status = 400;
-      throw err;
-    }
-    const listCriteria = rawCriteria;
-
-    const mustTrue = (obj, key) => {
-      if (!key) return true;
-      if (!obj || typeof obj !== 'object') return false;
-      return Boolean(obj[key]);
-    };
-    const hasTrue = (obj, keys) => {
-      if (!obj || typeof obj !== 'object') return false;
-      return (keys || []).filter(Boolean).some((key) => Boolean(obj[key]));
-    };
-    const techMatches = (mx, c) => {
-      if (!mx || typeof mx !== 'object') return false;
-      if (!mustTrue(mx.job_types, c.job)) return false;
-      if (!mustTrue(mx.ac_types, c.ac)) return false;
-      if (c.job === 'wash' && c.ac === 'wall' && !mustTrue(mx.wash_wall_variants, c.wash)) return false;
-      if (c.job === 'repair' && c.repair_variant && !hasTrue(mx.repair_variants, [c.repair, c.repair_variant])) return false;
-      return true;
-    };
-
-    const usernames = techs.map(t => String(t.username));
-    const matrixMap = new Map();
-    try {
-      const rMx = usernames.length
-        ? await pool.query(
-            `SELECT username, matrix_json FROM public.technician_service_matrix WHERE username = ANY($1::text[])`,
-            [usernames]
-          )
-        : { rows: [] };
-      for (const row of (rMx.rows || [])) matrixMap.set(String(row.username), row.matrix_json || {});
-    } catch (e) {
-      console.warn('[public_book] loadServiceMatrixMap failed:', e.message);
-      const err = new Error('CUSTOMER_SLOT_MATRIX_UNAVAILABLE');
-      err.status = 503;
-      throw err;
-    }
-    techs = techs.filter(t => {
-      const u = String(t.username);
-      if (!matrixMap.has(u)) return false;
-      const mx = matrixMap.get(u) || null;
-      return listCriteria.every(c => techMatches(mx, c));
-    });
-    // Timezone-safe: normalize appointment datetime once (Asia/Bangkok)
-    const startIso = normalizeAppointmentDatetime(appointment_datetime);
-    const tMin = toMin(String(startIso).slice(11, 16));
-    let anyFree = false;
-    for (const tech of techs) {
-      // CWF Spec: UI start window is LOCKED 09:00–18:00 (startable time only)
-      if (!(tMin >= toMin('09:00') && tMin < toMin('18:00'))) continue;
-      const ok = await isTechFree(tech.username, startIso, duration_min_v2, null);
-      if (ok) { anyFree = true; break; }
-    }
-    if (!anyFree) {
-      if (bm === "scheduled" && clientApp === "customer_app_v2") {
-        return res.status(409).json({ error: "ช่วงเวลานี้เต็มแล้ว กรุณาเลือกเวลาอื่น" });
-      }
-      if (canUseAdminScheduleFallback || bm === "urgent") {
-        console.warn("[public_book] availability_no_free_slot_continue", { bm, requestedTechType, appointment_datetime, clientApp, allowAdminScheduleFallback });
-      } else {
-        return res.status(409).json({ error: "ช่วงเวลานี้เต็มแล้ว กรุณาเลือกเวลาอื่น" });
-      }
-    }
     }
   } catch (e) {
     console.warn("[public_book] availability_check_fail", { bm, clientApp, err: e.message });
-    if (bm === "scheduled" && clientApp === "customer_app_v2") {
+    // Fail CLOSED for every public scheduled booking — a failed capacity check
+    // must never silently let a booking through (this used to fall open for
+    // non-customer_app_v2 callers, a client_app-dependent weakness).
+    if (bm === "scheduled") {
       const status = Number(e.status || 503);
       const message = status === 400
         ? "ข้อมูลบริการไม่ครบสำหรับตรวจคิว กรุณาเลือกบริการใหม่"
         : "ระบบตรวจคิวช่างยังไม่พร้อม กรุณาลองใหม่อีกครั้ง";
       return res.status(status).json({ error: message });
     }
-    // Preserve legacy callers outside Customer App V2.
   }
 
 
@@ -25650,7 +25529,7 @@ console.log("[latlng_parse]", { ok: !!parsedLL });
     }
 
     let draftReservationTech = null;
-    if (bm === "scheduled" && clientApp === "customer_app_v2") {
+    if (bm === "scheduled") {
       const startIso = normalizeAppointmentDatetime(appointment_datetime);
       draftReservationTech = await customerAvailability.reservePublicCustomerTechnician(
         publicCustomerAvailabilityDeps(client),
@@ -26252,8 +26131,19 @@ if (FLAG_SHOW_TECH_TEAM_ON_TRACKING && canShowPublicTechnician) {
     // human-readable booking_code = masked PII only (it leaks too easily to
     // act as a full credential) — see server/services/public/trackingPrivacy.js.
     const fullAccess = trackingPrivacy.isFullAccessQuery(q, row);
+    // Minimal, non-sensitive eligibility signal so a LEGACY customer (a job with
+    // no booking_token) can still see the review form on a booking_code lookup
+    // and submit code + full phone. It reveals only that a review is possible —
+    // no PII, no token. A tokened job is never legacy-eligible, so it can never
+    // downgrade to the code+phone path.
+    const legacyReviewEligible =
+      !String(row.booking_token || "").trim() &&
+      String(row.job_status || "").trim() === "เสร็จแล้ว" &&
+      !row.customer_rating &&
+      !!row.technician_username;
     const trackPayload = {
       access_level: fullAccess ? "token" : "code",
+      legacy_review_eligible: legacyReviewEligible,
       job_id: row.job_id,
       booking_code: row.booking_code || null,
       booking_token: row.booking_token || null,

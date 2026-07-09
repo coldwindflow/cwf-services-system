@@ -63,6 +63,10 @@ function redactPublicTrackPayload(payload) {
   const source = payload && typeof payload === "object" ? payload : {};
   const out = {
     access_level: "code",
+    // Non-sensitive: whether a LEGACY (tokenless) job can be reviewed via code +
+    // full phone. Reveals only that a review is possible — no PII, no token — so
+    // the tracking UI can offer the legacy review form on a booking_code lookup.
+    legacy_review_eligible: source.legacy_review_eligible === true,
     // The customer typed this in, so echoing it back is not a disclosure.
     booking_code: source.booking_code || null,
     // Status lane — enough to render progress, no PII.
