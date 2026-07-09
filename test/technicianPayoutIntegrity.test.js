@@ -3,6 +3,8 @@ const assert = require("node:assert/strict");
 
 const payoutIntegrity = require("../server/services/technicianPayoutIntegrity");
 const auditScript = require("../scripts/audit-orphan-payout-lines");
+const closeoutAudit = require("../scripts/issue-149-closeout-audit");
+const remediationPlan = require("../scripts/issue-149-remediation-plan");
 
 function normSql(sql) {
   return String(sql || "").replace(/\s+/g, " ").trim();
@@ -455,7 +457,7 @@ test("orphan payout audit is read-only, classifies rows, and normalizes limit", 
   const sql = payoutIntegrity.orphanPayoutLinesAuditSql({ limit: "50.5" });
   assert.match(sql, /SELECT l\.payout_id/);
   assert.match(sql, /classification/);
-  assert.match(sql, /draft\/unpaid-safe-to-review/);
+  assert.match(sql, /draft\/unpaid-safe-to-clean/);
   assert.match(sql, /locked\/paid\/payment-linked-reconciliation-required/);
   assert.match(sql, /LIMIT 50\b/);
   assert.doesNotMatch(sql, /\bUPDATE\b|\bDELETE\b|\bINSERT\b|\bALTER\b|\bDROP\b/i);
@@ -469,4 +471,86 @@ test("orphan payout audit is read-only, classifies rows, and normalizes limit", 
   });
   assert.equal(auditScript.shouldRefuseProductionExecution({ NODE_ENV: "production" }), true);
   assert.equal(auditScript.shouldRefuseProductionExecution({ NODE_ENV: "test" }), false);
+});
+
+test("issue 149 closeout audit targets the June work-month payout ids and production read flag", () => {
+  assert.deepEqual(closeoutAudit.payoutIdsForWorkMonth("2026-06"), ["payout_2026-06_25", "payout_2026-07_10"]);
+  assert.equal(closeoutAudit.classify({
+    period: { status: "draft" },
+    payment: null,
+  }), "draft/unpaid-safe-to-clean");
+  assert.equal(closeoutAudit.classify({
+    period: { status: "locked" },
+    payment: null,
+  }), "locked/paid/payment-linked-reconciliation-required");
+  assert.equal(closeoutAudit.classify({
+    period: { status: "draft" },
+    payment: { payment_id: 12, paid_amount: 0, paid_status: "unpaid" },
+  }), "locked/paid/payment-linked-reconciliation-required");
+  assert.match(closeoutAudit.dryRunText({ technician: "0661479791", workMonth: "2026-06" }), /--allow-production-read/);
+});
+
+test("issue 149 remediation plan emits only targeted cleanup SQL and keeps B rows as reconciliation comments", () => {
+  const plan = remediationPlan.buildPlan({
+    ok: true,
+    technician_username: "0661479791",
+    work_month: "2026-06",
+    payout_ids: ["payout_2026-06_25", "payout_2026-07_10"],
+    current_by_payout: {
+      "payout_2026-06_25": {
+        gross_amount: 1000,
+        adj_total: 100,
+        deposit_deduction_amount: 500,
+        net_amount: 600,
+        paid_amount: 0,
+        period_status: "draft",
+        payment_id: null,
+      },
+    },
+    expected_after_safe_cleanup_by_payout: {
+      "payout_2026-06_25": {
+        expected_gross_amount_after_safe_cleanup: 0,
+        expected_adj_total_after_safe_cleanup: 0,
+        expected_deposit_deduction_amount_after_safe_cleanup: 0,
+        expected_net_amount_after_safe_cleanup: 0,
+      },
+    },
+    orphan_rows: [
+      {
+        classification: "draft/unpaid-safe-to-clean",
+        payout_id: "payout_2026-06_25",
+        technician_username: "0661479791",
+        job_id: "501",
+        line_id: 10,
+        adjustment_ids: [20],
+        orphan_payout_line_amount: 1000,
+        linked_adjustment_amount: 100,
+        deposit_impact: 500,
+        net_impact: 600,
+      },
+      {
+        classification: "locked/paid/payment-linked-reconciliation-required",
+        payout_id: "payout_2026-07_10",
+        technician_username: "0661479791",
+        job_id: "502",
+        payment_id: 30,
+        paid_status: "paid",
+        paid_amount: 900,
+        orphan_payout_line_amount: 900,
+        linked_adjustment_amount: 0,
+        deposit_impact: 0,
+        net_impact: 900,
+      },
+    ],
+  });
+
+  assert.match(plan, /WHERE payout_id='payout_2026-06_25'\s+AND technician_username='0661479791'\s+AND job_id::text='501'/);
+  assert.match(plan, /NOT EXISTS \(SELECT 1 FROM public\.jobs/);
+  assert.match(plan, /before_total payout=payout_2026-06_25 gross=1000 adj=100 deposit=500 net=600/);
+  assert.match(plan, /expected_after_safe_cleanup payout=payout_2026-06_25 gross=0 adj=0 deposit=0 net=0/);
+  assert.match(plan, /expected_after lines=0 total=0, adjustments=0 total=0/);
+  assert.match(plan, /ROLLBACK; -- default safety/);
+  assert.match(plan, /B reconciliation required/);
+  assert.doesNotMatch(plan, /DELETE FROM public\.technician_payout_lines\s*;/);
+  assert.doesNotMatch(plan, /DELETE FROM public\.technician_payout_adjustments\s*;/);
 });

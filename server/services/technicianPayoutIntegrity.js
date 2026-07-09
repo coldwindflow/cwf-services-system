@@ -397,7 +397,7 @@ function orphanClassificationSql() {
            OR COALESCE(pay.paid_status,'') IN ('partial','paid')
            OR pay.paid_at IS NOT NULL
          THEN 'locked/paid/payment-linked-reconciliation-required'
-         ELSE 'draft/unpaid-safe-to-review'
+         ELSE 'draft/unpaid-safe-to-clean'
        END`;
 }
 
