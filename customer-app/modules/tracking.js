@@ -847,8 +847,11 @@
         </section>
       `;
     }
-    const key = data.booking_token || data.booking_code || "";
-    if (!key) return "";
+    // Reviewing is a WRITE that requires the full-access booking_token — a
+    // booking_code lookup (access_level "code") only shows read-only status, so
+    // the review form is hidden there (the server would reject it anyway).
+    const reviewToken = data.access_level === "token" ? (data.booking_token || "") : "";
+    if (!reviewToken) return "";
     return `
       <section class="tracking-extra-card review-form-card">
         <div class="section-head compact">
@@ -856,7 +859,7 @@
           <h2>ให้คะแนนงานนี้</h2>
         </div>
         <form data-review-form>
-          <input type="hidden" name="q" value="${esc(key)}">
+          <input type="hidden" name="booking_token" value="${esc(reviewToken)}">
           <label class="field">
             <span>คะแนน</span>
             <select class="input" name="rating">
