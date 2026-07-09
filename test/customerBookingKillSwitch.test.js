@@ -71,6 +71,36 @@ test("scheduled availability + reservation no longer depend on client_app", () =
   assert.doesNotMatch(bookHandler, /bm === "scheduled" && clientApp === "customer_app_v2"/);
 });
 
+test("scheduled idempotency is payload-bound and checked before the availability gate", () => {
+  // The pre-flight replay lookup must run before the "slot full" availability
+  // check, so a genuine retry replays even though its own job now holds the slot.
+  const preflightIdx = bookHandler.indexOf("Payload-bound idempotency (checked BEFORE the availability gate)");
+  const availabilityIdx = bookHandler.indexOf("customerAvailability.hasAvailableStart");
+  assert.ok(preflightIdx > 0, "pre-flight idempotency block missing");
+  assert.ok(preflightIdx < availabilityIdx, "idempotency replay must precede the availability gate");
+  // Reusing a key with a different payload is a 409, never a silent old-job return.
+  assert.match(bookHandler, /code: "IDEMPOTENCY_KEY_REUSED"/);
+  assert.match(bookHandler, /if \(!isSameScheduledPayload\(prior,/);
+  // The helper compares the material fields (appointment, phone, job type, duration).
+  assert.match(indexSrc, /function isSameScheduledPayload\(jobRow, incoming\)/);
+  assert.match(indexSrc, /const sameAppt =/);
+  assert.match(indexSrc, /const samePhone =/);
+  assert.match(indexSrc, /const sameType =/);
+  assert.match(indexSrc, /const sameDuration =/);
+});
+
+test("legacy customer.html seeds the scheduled request key from a CSPRNG and persists it across reloads", () => {
+  const customerHtml = fs.readFileSync(path.join(REPO_ROOT, "customer.html"), "utf8");
+  // CSPRNG only — never Math.random (the key seeds a booking token).
+  assert.match(customerHtml, /crypto\.randomUUID\(\)/);
+  assert.match(customerHtml, /crypto\.getRandomValues/);
+  assert.doesNotMatch(customerHtml, /Math\.random\(\)[^;]*scheduled_request_key|scheduled_request_key[\s\S]{0,200}Math\.random/);
+  // Survives reload via sessionStorage; cleared on confirmed success.
+  assert.match(customerHtml, /sessionStorage\.getItem\("cwf_sched_key"\)/);
+  assert.match(customerHtml, /sessionStorage\.setItem\("cwf_sched_key"/);
+  assert.match(customerHtml, /sessionStorage\.removeItem\("cwf_sched_key"\)/);
+});
+
 test("each customer flag is referenced only at its declaration and the single gate (admin booking untouched)", () => {
   // Declaration line mentions the name twice (const + env string) + one gate use.
   assert.equal((indexSrc.match(/ENABLE_CUSTOMER_SCHEDULED_BOOKING/g) || []).length, 3);

@@ -509,8 +509,12 @@ async function main() {
     assert(after === before + 1, `expected +1 job, got +${after - before}`);
   });
 
-  // 3) Network drop after server commit -> reload -> resubmit returns the SAME job.
-  await record("S3 reload after submit resumes the same job (idempotent replay)", async () => {
+  // 3) Network drop after server commit -> reload -> resubmit must NOT duplicate.
+  // Under payload-bound idempotency, resubmitting the same request key with the
+  // exact same payload replays the job; re-picking a different slot with the
+  // reused key is correctly refused (409 IDEMPOTENCY_KEY_REUSED). Either way the
+  // DB must hold exactly one job — a reload can never create a duplicate.
+  await record("S3 reload after a committed-but-lost submit never creates a duplicate", async () => {
     const p2 = await ctx.newPage();
     await completeScheduledWizard(p2, APP_URL_A, reloadDay);
     // First submit: forward the EXACT request to the server (it commits), then
@@ -535,21 +539,20 @@ async function main() {
     await tap(p2.locator('[data-action="submit-scheduled"]'));
     await p2.waitForTimeout(4000); // let the server-side booking commit
     const midCount = await jobCountWhere("appointment_datetime::date=$1", [reloadDay]);
+    assert(midCount === 1, `expected 1 committed job after network drop, got ${midCount}`);
     await p2.unroute("**/public/book");
     await p2.reload({ waitUntil: "domcontentloaded" });
     await p2.waitForSelector('[data-action="submit-scheduled"], [data-action="wizard-next"], [data-calendar-date]', { timeout: 25000 });
-    // Draft (incl. scheduled_request_key) survives the reload. Availability is
-    // refetched with a new query key, so the customer re-picks the slot before
-    // resubmitting — the request key is what guarantees the replay.
-    let code = "";
-    for (let attempt = 0; attempt < 3 && !code; attempt += 1) {
+    // The draft (incl. scheduled_request_key) survives the reload. The customer
+    // re-attempts; whether that replays or is refused as a key-reuse, the key is
+    // already bound to the committed job, so no second job can be created.
+    for (let attempt = 0; attempt < 3; attempt += 1) {
       if (await p2.locator('[data-action="submit-scheduled"]').count()) {
         await tap(p2.locator('[data-action="submit-scheduled"]'));
         try {
-          await p2.waitForSelector(".booking-result-card", { timeout: 15000 });
-          code = (await p2.locator(".booking-code-value").textContent() || "").trim();
-          break;
-        } catch (_) { /* bounced back to slot step */ }
+          await p2.waitForSelector(".booking-result-card", { timeout: 8000 });
+          break; // clean replay
+        } catch (_) { /* refused (key reuse) or bounced to slot step */ }
       }
       if (await p2.locator(`[data-calendar-date="${reloadDay}"]`).count()) {
         await pickDateAndSlot(p2, reloadDay);
@@ -560,10 +563,8 @@ async function main() {
       }
       await p2.waitForTimeout(600);
     }
-    assert(/^CWF/.test(code), `expected replayed booking code, got "${code}"`);
     const finalCount = await jobCountWhere("appointment_datetime::date=$1", [reloadDay]);
-    assert(midCount === 1, `expected 1 committed job after network drop, got ${midCount}`);
-    assert(finalCount === 1, `replay must not create a second job (got ${finalCount})`);
+    assert(finalCount === 1, `reload/resubmit must never create a second job (got ${finalCount})`);
     await p2.close();
   });
 
@@ -1048,21 +1049,58 @@ async function main() {
     assert(forged.status === 400 && forged.body?.code === "MISSING_REQUEST_KEY",
       `forged client_app + no key must 400 MISSING_REQUEST_KEY, got ${forged.status}`);
     assert((await jobCountWhere("TRUE")) === before, "keyless scheduled attempts must create 0 jobs");
-    // Same request key, first omitted then forged client_app -> exactly one job.
-    // (The replay re-picks an available slot, exactly like a real reconnect
-    // retry — the deterministic request key, not the slot, guarantees the same
-    // job comes back.)
+    // Same request key + SAME payload, first omitted then forged client_app ->
+    // replays the SAME job (idempotent, independent of client_app). The replay
+    // runs before the availability gate, so it succeeds even though the job now
+    // occupies that slot — exactly the committed-but-response-lost retry case.
     const key = crypto.randomBytes(16).toString("hex");
     const first = await apiBook(BASE_A, scheduledPayload(r2Day, "10:30", { client_app: undefined, scheduled_request_key: key }));
     assert(first.status === 200 && first.body?.job_id, `first canonical scheduled booking failed: HTTP ${first.status} ${JSON.stringify(first.body)}`);
-    const replay = await apiBook(BASE_A, scheduledPayload(r2Day, "13:00", { client_app: "totally_forged", scheduled_request_key: key }));
-    assert(replay.status === 200, `replay with forged client_app must succeed, got ${replay.status} ${JSON.stringify(replay.body)}`);
-    assert(replay.body?.job_id === first.body.job_id, "same request key must replay the SAME job, not mint a new one");
-    const dupCount = await pool.query(
-      `SELECT COUNT(*)::int AS n FROM public.jobs WHERE booking_token=$1`,
-      [require("node:crypto").createHash("sha256").update(`scheduled_v1:${key}`).digest("hex").slice(0, 24)]
-    );
+    const replay = await apiBook(BASE_A, scheduledPayload(r2Day, "10:30", { client_app: "totally_forged", scheduled_request_key: key }));
+    assert(replay.status === 200 && replay.body?.replayed === true, `same-payload replay must succeed, got ${replay.status} ${JSON.stringify(replay.body)}`);
+    assert(replay.body?.job_id === first.body.job_id, "same request key + same payload must replay the SAME job");
+    const detToken = require("node:crypto").createHash("sha256").update(`scheduled_v1:${key}`).digest("hex").slice(0, 24);
+    const dupCount = await pool.query(`SELECT COUNT(*)::int AS n FROM public.jobs WHERE booking_token=$1`, [detToken]);
     assert(dupCount.rows[0].n === 1, `request key must map to exactly one job, got ${dupCount.rows[0].n}`);
+  });
+
+  // S23) Idempotency key is bound to its payload. Reusing the key with a
+  // materially different payload (time, phone) must be rejected with
+  // 409 IDEMPOTENCY_KEY_REUSED — never a silent return of the first job's data,
+  // and never a second job.
+  await record("S23 scheduled: reusing a request key with a different payload is 409 IDEMPOTENCY_KEY_REUSED", async () => {
+    const key = crypto.randomBytes(16).toString("hex");
+    const first = await apiBook(BASE_A, scheduledPayload(r2Day, "13:00", { scheduled_request_key: key, customer_phone: "0855550000" }));
+    assert(first.status === 200 && first.body?.job_id, `seed booking failed: HTTP ${first.status} ${JSON.stringify(first.body)}`);
+    const detToken = require("node:crypto").createHash("sha256").update(`scheduled_v1:${key}`).digest("hex").slice(0, 24);
+    const before = await pool.query(`SELECT COUNT(*)::int AS n FROM public.jobs WHERE booking_token=$1`, [detToken]);
+    // Different appointment time, same key -> reject (before any availability check).
+    const diffTime = await apiBook(BASE_A, scheduledPayload(r2Day, "14:30", { scheduled_request_key: key, customer_phone: "0855550000" }));
+    assert(diffTime.status === 409 && diffTime.body?.code === "IDEMPOTENCY_KEY_REUSED",
+      `different time must 409 IDEMPOTENCY_KEY_REUSED, got ${diffTime.status} ${JSON.stringify(diffTime.body)}`);
+    assert(!diffTime.body?.job_id && !diffTime.body?.booking_code, "409 must not leak the first job's identifiers");
+    // Different phone, same key + same time -> reject.
+    const diffPhone = await apiBook(BASE_A, scheduledPayload(r2Day, "13:00", { scheduled_request_key: key, customer_phone: "0866660000" }));
+    assert(diffPhone.status === 409 && diffPhone.body?.code === "IDEMPOTENCY_KEY_REUSED",
+      `different phone must 409 IDEMPOTENCY_KEY_REUSED, got ${diffPhone.status}`);
+    const after = await pool.query(`SELECT COUNT(*)::int AS n FROM public.jobs WHERE booking_token=$1`, [detToken]);
+    assert(after.rows[0].n === before.rows[0].n && after.rows[0].n === 1, "key reuse must not create additional jobs");
+  });
+
+  // S24) Committed-but-response-lost retry: the first submit commits, its
+  // response is discarded, then the SAME request (same key + same payload) is
+  // replayed — the server returns the existing job and the DB holds exactly one.
+  await record("S24 committed-then-lost response: replaying the same request yields exactly one job", async () => {
+    const key = crypto.randomBytes(16).toString("hex");
+    const payload = scheduledPayload(r2Day, "16:00", { scheduled_request_key: key, customer_phone: "0877770000" });
+    const committed = await apiBook(BASE_A, payload); // commit; pretend the client never saw this response
+    assert(committed.status === 200 && committed.body?.job_id, `initial commit failed: HTTP ${committed.status} ${JSON.stringify(committed.body)}`);
+    const retry = await apiBook(BASE_A, payload); // identical resubmit after "reload"
+    assert(retry.status === 200 && retry.body?.replayed === true, `retry must replay, got ${retry.status} ${JSON.stringify(retry.body)}`);
+    assert(retry.body?.job_id === committed.body.job_id, "retry must resolve to the same job");
+    const detToken = require("node:crypto").createHash("sha256").update(`scheduled_v1:${key}`).digest("hex").slice(0, 24);
+    const n = await pool.query(`SELECT COUNT(*)::int AS n FROM public.jobs WHERE booking_token=$1`, [detToken]);
+    assert(n.rows[0].n === 1, `exactly one job must exist after the lost-response retry, got ${n.rows[0].n}`);
   });
 
   // S20) Urgent routing is CANONICAL — every public urgent request goes through
