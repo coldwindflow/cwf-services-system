@@ -2,7 +2,10 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 
 const payoutIntegrity = require("../server/services/technicianPayoutIntegrity");
+const depositCollections = require("../server/services/technicianDepositCollections");
 const auditScript = require("../scripts/audit-orphan-payout-lines");
+const closeoutAudit = require("../scripts/issue-149-closeout-audit");
+const remediationPlan = require("../scripts/issue-149-remediation-plan");
 
 function normSql(sql) {
   return String(sql || "").replace(/\s+/g, " ").trim();
@@ -274,6 +277,100 @@ function moneyFields(row) {
   };
 }
 
+class FakeCloseoutAuditClient {
+  constructor({ periods = [], jobs = [], lines = [], adjustments = [], payments = [], deposits = [], previews = [], displays = [] } = {}) {
+    this.periods = periods;
+    this.jobs = new Set(jobs.map((id) => String(id)));
+    this.lines = lines;
+    this.adjustments = adjustments;
+    this.payments = payments;
+    this.deposits = deposits;
+    this.previews = previews;
+    this.displays = displays;
+  }
+
+  async query(sql, params = []) {
+    const s = normSql(sql);
+    const rowsForPayouts = (rows, technician, payoutIds) => rows
+      .filter((row) => String(row.technician_username) === String(technician) && payoutIds.includes(String(row.payout_id)));
+    if (s.includes("FROM public.technician_payout_periods")) {
+      const payoutIds = params[0].map(String);
+      return { rows: this.periods.filter((row) => payoutIds.includes(String(row.payout_id))).map((row) => ({ ...row })) };
+    }
+    if (s.includes("FROM public.technician_payout_lines l")) {
+      const [technician, payoutIds] = params;
+      return {
+        rows: rowsForPayouts(this.lines, technician, payoutIds.map(String))
+          .filter((row) => !this.jobs.has(String(row.job_id)))
+          .map((row) => ({ ...row, job_id: String(row.job_id), earn_amount: Number(row.earn_amount || 0) })),
+      };
+    }
+    if (s.includes("FROM public.technician_payout_lines")) {
+      const [technician, payoutIds] = params;
+      return {
+        rows: rowsForPayouts(this.lines, technician, payoutIds.map(String))
+          .map((row) => ({ ...row, job_id: String(row.job_id), earn_amount: Number(row.earn_amount || 0) })),
+      };
+    }
+    if (s.includes("FROM public.technician_payout_adjustments a")) {
+      const [technician, payoutIds] = params;
+      return {
+        rows: rowsForPayouts(this.adjustments, technician, payoutIds.map(String))
+          .filter((row) => row.job_id != null && !this.jobs.has(String(row.job_id)))
+          .map((row) => ({ ...row, job_id: String(row.job_id), adj_amount: Number(row.adj_amount || 0) })),
+      };
+    }
+    if (s.includes("FROM public.technician_payout_adjustments")) {
+      const [technician, payoutIds] = params;
+      return {
+        rows: rowsForPayouts(this.adjustments, technician, payoutIds.map(String))
+          .map((row) => ({ ...row, job_id: row.job_id == null ? null : String(row.job_id), adj_amount: Number(row.adj_amount || 0) })),
+      };
+    }
+    if (s.includes("FROM public.technician_payout_payments")) {
+      const [technician, payoutIds] = params;
+      return { rows: rowsForPayouts(this.payments, technician, payoutIds.map(String)).map((row) => ({ ...row })) };
+    }
+    if (s.includes("FROM public.technician_deposit_ledger")) {
+      const [technician, payoutIds] = params;
+      return { rows: rowsForPayouts(this.deposits, technician, payoutIds.map(String)).map((row) => ({ ...row })) };
+    }
+    if (s.includes("FROM public.job_technician_income_preview")) {
+      const [technician] = params;
+      return {
+        rows: this.previews
+          .filter((row) => String(row.technician_username) === String(technician) && !this.jobs.has(String(row.job_id)))
+          .map((row) => ({ ...row, job_id: String(row.job_id), income_amount: Number(row.income_amount || 0) })),
+      };
+    }
+    if (s.includes("FROM public.technician_job_income_display")) {
+      const [technician] = params;
+      return {
+        rows: this.displays
+          .filter((row) => String(row.technician_username) === String(technician) && !this.jobs.has(String(row.job_id)))
+          .map((row) => ({ ...row, job_id: String(row.job_id), display_amount: Number(row.display_amount || 0) })),
+      };
+    }
+    throw new Error(`Unhandled closeout audit SQL: ${s}`);
+  }
+}
+
+async function summarizeCloseoutWithFakeClient(data) {
+  const original = depositCollections.getProjectedDepositDeductionForPayout;
+  depositCollections.getProjectedDepositDeductionForPayout = async (_client, { gross_amount, adj_total }) => ({
+    deposit_deduction_amount: 0,
+    deposit_projection_reason: Number(gross_amount || 0) + Number(adj_total || 0) > 0 ? "test_no_deduction" : "no_income",
+  });
+  try {
+    return await closeoutAudit.summarizeAudit(new FakeCloseoutAuditClient(data), {
+      technician: "0661479791",
+      workMonth: "2026-06",
+    });
+  } finally {
+    depositCollections.getProjectedDepositDeductionForPayout = original;
+  }
+}
+
 async function assertMutableForPayout(db, jobId, context, calls) {
   calls.push({ jobId, context });
   const impact = await payoutIntegrity.inspectJobPayoutDeleteImpact(db, jobId);
@@ -455,7 +552,7 @@ test("orphan payout audit is read-only, classifies rows, and normalizes limit", 
   const sql = payoutIntegrity.orphanPayoutLinesAuditSql({ limit: "50.5" });
   assert.match(sql, /SELECT l\.payout_id/);
   assert.match(sql, /classification/);
-  assert.match(sql, /draft\/unpaid-safe-to-review/);
+  assert.match(sql, /draft\/unpaid-safe-to-clean/);
   assert.match(sql, /locked\/paid\/payment-linked-reconciliation-required/);
   assert.match(sql, /LIMIT 50\b/);
   assert.doesNotMatch(sql, /\bUPDATE\b|\bDELETE\b|\bINSERT\b|\bALTER\b|\bDROP\b/i);
@@ -469,4 +566,213 @@ test("orphan payout audit is read-only, classifies rows, and normalizes limit", 
   });
   assert.equal(auditScript.shouldRefuseProductionExecution({ NODE_ENV: "production" }), true);
   assert.equal(auditScript.shouldRefuseProductionExecution({ NODE_ENV: "test" }), false);
+});
+
+test("issue 149 closeout audit targets the June work-month payout ids and production read flag", () => {
+  assert.deepEqual(closeoutAudit.payoutIdsForWorkMonth("2026-06"), ["payout_2026-06_25", "payout_2026-07_10"]);
+  assert.equal(closeoutAudit.classify({
+    period: { status: "draft" },
+    payment: null,
+  }), "draft/unpaid-safe-to-clean");
+  assert.equal(closeoutAudit.classify({
+    period: { status: "locked" },
+    payment: null,
+  }), "locked/paid/payment-linked-reconciliation-required");
+  assert.equal(closeoutAudit.classify({
+    period: { status: "draft" },
+    payment: { payment_id: 12, paid_amount: 0, paid_status: "unpaid" },
+  }), "locked/paid/payment-linked-reconciliation-required");
+  assert.match(closeoutAudit.dryRunText({ technician: "0661479791", workMonth: "2026-06" }), /--allow-production-read/);
+});
+
+test("issue 149 closeout summarizeAudit runs with no orphan rows", async () => {
+  const result = await summarizeCloseoutWithFakeClient({
+    periods: [
+      { payout_id: "payout_2026-06_25", status: "draft" },
+      { payout_id: "payout_2026-07_10", status: "draft" },
+    ],
+    jobs: ["501"],
+    lines: [
+      { line_id: 1, payout_id: "payout_2026-06_25", technician_username: "0661479791", job_id: "501", earn_amount: 700 },
+    ],
+    previews: [
+      { id: 1, job_id: "999", technician_username: "0661479791", income_amount: 999 },
+    ],
+    displays: [
+      { id: 2, job_id: "999", technician_username: "0661479791", display_amount: 999 },
+    ],
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.orphan_rows.length, 0);
+  assert.equal(result.totals.orphan_rows, 0);
+  assert.deepEqual(result.cache_orphan_rows.job_technician_income_preview, []);
+  assert.deepEqual(result.cache_orphan_rows.technician_job_income_display, []);
+  assert.equal(result.current_by_payout["payout_2026-06_25"].net_amount, 700);
+});
+
+test("issue 149 closeout summarizeAudit reports draft orphan rows and scoped cache impact", async () => {
+  const result = await summarizeCloseoutWithFakeClient({
+    periods: [
+      { payout_id: "payout_2026-06_25", status: "draft" },
+      { payout_id: "payout_2026-07_10", status: "draft" },
+    ],
+    jobs: [],
+    lines: [
+      { line_id: 11, payout_id: "payout_2026-06_25", technician_username: "0661479791", job_id: "501", earn_amount: 1000 },
+    ],
+    adjustments: [
+      { adj_id: 20, payout_id: "payout_2026-06_25", technician_username: "0661479791", job_id: "501", adj_amount: 100 },
+    ],
+    previews: [
+      { id: 1, job_id: "501", technician_username: "0661479791", income_amount: 1100 },
+      { id: 2, job_id: "999", technician_username: "0661479791", income_amount: 999 },
+    ],
+    displays: [
+      { id: 3, job_id: "501", technician_username: "0661479791", display_amount: 1100 },
+      { id: 4, job_id: "999", technician_username: "0661479791", display_amount: 999 },
+    ],
+  });
+
+  assert.equal(result.orphan_rows.length, 1);
+  assert.equal(result.orphan_rows[0].classification, "draft/unpaid-safe-to-clean");
+  assert.deepEqual(result.orphan_rows[0].line_ids, [11]);
+  assert.equal(result.orphan_rows[0].orphan_payout_line_amount, 1000);
+  assert.equal(result.orphan_rows[0].linked_adjustment_amount, 100);
+  assert.deepEqual(result.orphan_rows[0].adjustment_ids, [20]);
+  assert.deepEqual(result.cache_orphan_rows.job_technician_income_preview.map((row) => row.job_id), ["501"]);
+  assert.deepEqual(result.cache_orphan_rows.technician_job_income_display.map((row) => row.job_id), ["501"]);
+  assert.equal(result.expected_after_safe_cleanup_by_payout["payout_2026-06_25"].expected_gross_amount_after_safe_cleanup, 0);
+  assert.equal(result.expected_after_safe_cleanup_by_payout["payout_2026-06_25"].expected_adj_total_after_safe_cleanup, 0);
+});
+
+test("issue 149 closeout summarizeAudit classifies locked and payment-linked orphans as reconciliation-required", async () => {
+  const result = await summarizeCloseoutWithFakeClient({
+    periods: [
+      { payout_id: "payout_2026-06_25", status: "locked" },
+      { payout_id: "payout_2026-07_10", status: "draft" },
+    ],
+    jobs: [],
+    lines: [
+      { line_id: 21, payout_id: "payout_2026-06_25", technician_username: "0661479791", job_id: "601", earn_amount: 800 },
+      { line_id: 22, payout_id: "payout_2026-07_10", technician_username: "0661479791", job_id: "602", earn_amount: 900 },
+    ],
+    payments: [
+      { payment_id: 30, payout_id: "payout_2026-07_10", technician_username: "0661479791", paid_amount: 0, paid_status: "unpaid", paid_at: null },
+    ],
+  });
+
+  assert.equal(result.orphan_rows.length, 2);
+  assert.deepEqual(result.orphan_rows.map((row) => row.classification), [
+    "locked/paid/payment-linked-reconciliation-required",
+    "locked/paid/payment-linked-reconciliation-required",
+  ]);
+  assert.equal(result.totals.by_classification["locked/paid/payment-linked-reconciliation-required"].rows, 2);
+  assert.equal(result.expected_after_safe_cleanup_by_payout["payout_2026-06_25"].expected_gross_amount_after_safe_cleanup, 800);
+  assert.equal(result.expected_after_safe_cleanup_by_payout["payout_2026-07_10"].expected_gross_amount_after_safe_cleanup, 900);
+});
+
+test("issue 149 closeout summarizeAudit dedupes one linked adjustment across multiple orphan payout lines", async () => {
+  const result = await summarizeCloseoutWithFakeClient({
+    periods: [
+      { payout_id: "payout_2026-06_25", status: "draft" },
+      { payout_id: "payout_2026-07_10", status: "draft" },
+    ],
+    jobs: [],
+    lines: [
+      { line_id: 41, payout_id: "payout_2026-06_25", technician_username: "0661479791", job_id: "701", earn_amount: 600 },
+      { line_id: 42, payout_id: "payout_2026-06_25", technician_username: "0661479791", job_id: "701", earn_amount: 400 },
+    ],
+    adjustments: [
+      { adj_id: 50, payout_id: "payout_2026-06_25", technician_username: "0661479791", job_id: "701", adj_amount: 100 },
+    ],
+  });
+
+  assert.equal(result.orphan_rows.length, 1);
+  assert.equal(result.orphan_rows[0].line_id, null);
+  assert.deepEqual(result.orphan_rows[0].line_ids, [41, 42]);
+  assert.deepEqual(result.orphan_rows[0].adjustment_ids, [50]);
+  assert.equal(result.orphan_rows[0].orphan_payout_line_amount, 1000);
+  assert.equal(result.orphan_rows[0].linked_adjustment_amount, 100);
+  assert.equal(result.totals.linked_adjustment_amount, 100);
+  assert.equal(result.totals.net_impact, 1100);
+  assert.equal(result.expected_after_safe_cleanup_by_payout["payout_2026-06_25"].expected_gross_amount_after_safe_cleanup, 0);
+  assert.equal(result.expected_after_safe_cleanup_by_payout["payout_2026-06_25"].expected_adj_total_after_safe_cleanup, 0);
+});
+
+test("issue 149 remediation plan emits only targeted cleanup SQL and keeps B rows as reconciliation comments", () => {
+  const plan = remediationPlan.buildPlan({
+    ok: true,
+    technician_username: "0661479791",
+    work_month: "2026-06",
+    payout_ids: ["payout_2026-06_25", "payout_2026-07_10"],
+    current_by_payout: {
+      "payout_2026-06_25": {
+        gross_amount: 1000,
+        adj_total: 100,
+        deposit_deduction_amount: 500,
+        net_amount: 600,
+        paid_amount: 0,
+        period_status: "draft",
+        payment_id: null,
+      },
+    },
+    expected_after_safe_cleanup_by_payout: {
+      "payout_2026-06_25": {
+        expected_gross_amount_after_safe_cleanup: 0,
+        expected_adj_total_after_safe_cleanup: 0,
+        expected_deposit_deduction_amount_after_safe_cleanup: 0,
+        expected_net_amount_after_safe_cleanup: 0,
+      },
+    },
+    orphan_rows: [
+      {
+        classification: "draft/unpaid-safe-to-clean",
+        payout_id: "payout_2026-06_25",
+        technician_username: "0661479791",
+        job_id: "501",
+        line_id: null,
+        line_ids: [10, 11],
+        adjustment_ids: [20],
+        orphan_payout_line_amount: 1000,
+        linked_adjustment_amount: 100,
+        deposit_impact: 500,
+        net_impact: 600,
+      },
+      {
+        classification: "locked/paid/payment-linked-reconciliation-required",
+        payout_id: "payout_2026-07_10",
+        technician_username: "0661479791",
+        job_id: "502",
+        payment_id: 30,
+        paid_status: "paid",
+        paid_amount: 900,
+        orphan_payout_line_amount: 900,
+        linked_adjustment_amount: 0,
+        deposit_impact: 0,
+        net_impact: 900,
+      },
+    ],
+  });
+
+  assert.match(plan, /WHERE payout_id='payout_2026-06_25'\s+AND technician_username='0661479791'\s+AND job_id::text='501'/);
+  assert.match(plan, /NOT EXISTS \(SELECT 1 FROM public\.jobs/);
+  assert.match(plan, /pg_advisory_xact_lock\(hashtext\('issue-149-remediation:payout_2026-06_25:0661479791'\)\)/);
+  assert.match(plan, /FOR UPDATE/);
+  assert.match(plan, /lower\(COALESCE\(v_period_status,'draft'\)\) <> 'draft'/);
+  assert.match(plan, /pay\.payment_id IS NOT NULL/);
+  assert.match(plan, /COALESCE\(pay\.paid_amount,0\) <> 0/);
+  assert.match(plan, /COALESCE\(pay\.paid_status,''\) <> ''/);
+  assert.match(plan, /pay\.paid_at IS NOT NULL/);
+  assert.match(plan, /IF v_line_count <> 2 OR v_line_total <> 1000::numeric THEN/);
+  assert.match(plan, /IF v_adjustment_count <> 1 OR v_adjustment_total <> 100::numeric THEN/);
+  assert.match(plan, /RAISE EXCEPTION 'Issue 149 cleanup blocked: payout line mismatch/);
+  assert.match(plan, /RAISE EXCEPTION 'Issue 149 cleanup blocked: adjustment mismatch/);
+  assert.match(plan, /before_total payout=payout_2026-06_25 gross=1000 adj=100 deposit=500 net=600/);
+  assert.match(plan, /expected_after_safe_cleanup payout=payout_2026-06_25 gross=0 adj=0 deposit=0 net=0/);
+  assert.match(plan, /expected_after lines=0 total=0, adjustments=0 total=0/);
+  assert.match(plan, /ROLLBACK; -- default safety/);
+  assert.match(plan, /B reconciliation required/);
+  assert.doesNotMatch(plan, /DELETE FROM public\.technician_payout_lines\s*;/);
+  assert.doesNotMatch(plan, /DELETE FROM public\.technician_payout_adjustments\s*;/);
 });

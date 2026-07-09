@@ -1,7 +1,7 @@
 
 
-// CWF Technician App Stable fix12: force real 20-row history page + cache-bust marker
-window.__CWF_TECH_APP_VERSION__ = "20260622_urgent_offer_session_v1";
+// CWF Technician App: payout no-pay status display fix
+window.__CWF_TECH_APP_VERSION__ = "20260710_payout_no_pay_status_v1";
 try { console.info('[CWF_TECH_APP_VERSION]', window.__CWF_TECH_APP_VERSION__); } catch (_) {}
 
 // ✅ งานปัจจุบัน: งานล่วงหน้า (sub-tab)
@@ -1235,7 +1235,7 @@ function setPushUi(state, text) {
 
 async function ensureServiceWorkerForPush() {
   if (!('serviceWorker' in navigator)) throw new Error('เครื่องนี้ไม่รองรับ Service Worker');
-  const reg = await navigator.serviceWorker.register('/sw.js?v=20260622_urgent_offer_session_v1', { updateViaCache: 'none' });
+  const reg = await navigator.serviceWorker.register('/sw.js?v=20260710_payout_no_pay_status_v1', { updateViaCache: 'none' });
   try { await navigator.serviceWorker.ready; } catch (_) {}
   return reg;
 }
@@ -1610,6 +1610,7 @@ function _incomeMonthRangeText(data){
 }
 
 function _incomePeriodStatusTH(p){
+  if (_payoutPaymentDisplayStatusTH(p) === 'ไม่มียอดจ่าย') return 'ไม่มียอดจ่าย';
   const paid = String(p?.paid_status || '').toLowerCase();
   const st = String(p?.status || '').toLowerCase();
   if (paid === 'paid' || st === 'paid') return 'จ่ายแล้ว';
@@ -2423,6 +2424,23 @@ function _paidStatusTH(status){
   const map = { unpaid:'รอจ่าย', partial:'จ่ายบางส่วน', paid:'จ่ายแล้ว', hold:'ระงับยอด', disputed:'มีปัญหา', cancelled:'ยกเลิก' };
   return map[s] || s || '-';
 }
+function _payoutPaymentDisplayStatusTH(payout){
+  const p = (payout && typeof payout === 'object') ? payout : { paid_status: payout };
+  const paidStatus = String(p.paid_status || '').trim().toLowerCase();
+  const net = Number(p.net_amount ?? p.total_amount ?? p.payout_month_net_amount ?? p.payout_month_amount ?? 0);
+  const paid = Number(p.paid_amount || 0);
+  const remainingRaw = p.remaining_amount;
+  const remaining = Number(remainingRaw == null ? Math.max(0, net - paid) : remainingRaw);
+  const eps = 0.0001;
+  if (Number.isFinite(net) && Number.isFinite(remaining) && net <= eps && remaining <= eps) return 'ไม่มียอดจ่าย';
+  if (['hold','disputed','cancelled'].includes(paidStatus)) return _paidStatusTH(paidStatus);
+  if (Number.isFinite(net) && net > eps) {
+    if (Number.isFinite(paid) && paid <= eps) return 'รอจ่าย';
+    if (Number.isFinite(remaining) && remaining > eps) return 'จ่ายบางส่วน';
+    return 'จ่ายแล้ว';
+  }
+  return _paidStatusTH(paidStatus || 'unpaid');
+}
 
 
 function _thaiMonthOptionLabel(ym){
@@ -2501,7 +2519,7 @@ function renderTechPayoutPeriods(list){
     const dep = formatBaht(p.deposit_deduction_amount||0);
     const total = formatBaht(p.net_amount||p.total_amount||0);
     const rem = formatBaht(p.remaining_amount||0);
-    const paySt = _safeText(_paidStatusTH(p.paid_status||'unpaid'));
+    const paySt = _safeText(_payoutPaymentDisplayStatusTH(p));
     const status = _safeText(_payoutStatusTH(p.status||'draft'));
     const active = (__cwfPayoutActiveId===p.payout_id);
     return `<button type="button" class="tr" style="width:100%;text-align:left;padding:12px;border-radius:18px;border:1px solid rgba(15,23,42,0.10);margin-bottom:10px;cursor:pointer;background:#fff;${active?'outline:2px solid rgba(11,75,179,0.35)':''}" onclick="window.openTechPayoutDetail('${id}')"><div class="row" style="justify-content:space-between;gap:10px;align-items:flex-start"><div><b>${String(p.period_type)==='25'?'ช่วง 1–15':'ช่วง 16–สิ้นเดือน'}</b><div class="muted" style="margin-top:4px">งานปิด ${st} - ${en} • ${_payoutCycleLabel(p)}</div><div class="muted" style="margin-top:4px">สถานะงวด: ${status} • จ่าย: ${paySt}</div></div><div style="text-align:right"><b style="font-size:18px;color:#0B2E6D">${total}</b><div class="muted" style="margin-top:4px">ก่อนหัก ${gross}</div><div class="muted" style="margin-top:3px">หักประกัน ${dep} • คงเหลือ ${rem}</div></div></div></button>`;
@@ -2525,7 +2543,7 @@ async function openTechPayoutDetail(payout_id){
     const gross = formatBaht(data.gross_amount||0), dep = formatBaht(data.deposit_deduction_amount||0), total = formatBaht(data.net_amount||data.total_amount||0), paid = formatBaht(data.paid_amount||0), rem = formatBaht(data.remaining_amount||0);
     const depTarget = formatBaht(data.deposit_target_amount||0), depCollected = formatBaht(data.deposit_collected_total||0), depRemaining = formatBaht(data.deposit_remaining_amount||0);
     const period = (__cwfPayoutCache.payouts||[]).find(x=>String(x.payout_id)===id) || {};
-    const type = _safeText(data.period_type || period.period_type || ''), st = _fmtDateTH(data.period_start || period.period_start), en = _fmtDateTH(data.period_end || period.period_end), paySt = _safeText(_paidStatusTH(data.paid_status||'unpaid'));
+    const type = _safeText(data.period_type || period.period_type || ''), st = _fmtDateTH(data.period_start || period.period_start), en = _fmtDateTH(data.period_end || period.period_end), paySt = _safeText(_payoutPaymentDisplayStatusTH(data));
     if (techPayoutModalTitleEl) techPayoutModalTitleEl.textContent = _payoutCycleLabel({ period_type: type, payout_id: id });
     if (techPayoutModalSubEl) techPayoutModalSubEl.textContent = `${id} • ${st} - ${en} • ${paySt}`;
     if (techPayoutModalSummaryEl) techPayoutModalSummaryEl.innerHTML = `<div class="payout-kpi"><div class="k">รายได้ก่อนหัก</div><div class="v">${gross}</div></div><div class="payout-kpi"><div class="k">หักเงินประกัน</div><div class="v">${dep}</div></div><div class="payout-kpi net"><div class="k">ยอดสุทธิในงวด</div><div class="v">${total}</div></div><div class="payout-kpi"><div class="k">จ่ายแล้ว</div><div class="v">${paid}</div></div><div class="payout-kpi"><div class="k">คงเหลือ</div><div class="v">${rem}</div></div><div class="payout-kpi"><div class="k">เงินประกันสะสม</div><div class="v">${depCollected}</div></div><div class="payout-kpi"><div class="k">เงินประกันคงเหลือ</div><div class="v">${depRemaining}</div></div><div class="payout-kpi"><div class="k">เป้าหมายประกัน</div><div class="v">${depTarget}</div></div>`;
