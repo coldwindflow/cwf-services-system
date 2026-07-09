@@ -51,35 +51,36 @@ function shortenAddress(text, keepChars = 24) {
   return `${value.slice(0, keepChars)}…`;
 }
 
-// Redact a fully-built /public/track response payload for booking_code-based
-// lookups. Never mutates the input. Field LIST stays identical so existing
-// clients keep rendering — values are masked or nulled.
+// Build the response for a booking_code lookup with an explicit ALLOWLIST
+// (not a blacklist). A booking code is a short, shareable identifier, so a code
+// lookup returns only the minimum needed to answer "what state is my job in?"
+// plus a masked confirmation value. Anything not named here — customer_name,
+// exact/partial address, GPS, maps link, sequential job_id, technician notes,
+// job/unit photos, unit location/checklist data, cancel reason, review/complaint
+// text, receipt link, the booking_token, technician identity, and ANY field
+// added in future — is dropped by construction. Full detail requires the token.
 function redactPublicTrackPayload(payload) {
   const source = payload && typeof payload === "object" ? payload : {};
-  const redacted = { ...source };
-
-  // The token is the full-access credential — echoing it back to a
-  // booking_code caller would be privilege escalation.
-  redacted.booking_token = null;
-  redacted.customer_phone = maskPhone(source.customer_phone);
-  redacted.address_text = shortenAddress(source.address_text);
-  redacted.maps_url = null;
-  redacted.gps_latitude = null;
-  redacted.gps_longitude = null;
-  // Receipt documents carry full PII — token holders only.
-  redacted.receipt_url = null;
-
-  if (source.technician && typeof source.technician === "object") {
-    redacted.technician = { ...source.technician, phone: null };
-  }
-  if (Array.isArray(source.technician_team)) {
-    redacted.technician_team = source.technician_team.map((member) =>
-      member && typeof member === "object" ? { ...member, phone: null } : member
-    );
-  }
-
-  redacted.access_level = "code";
-  return redacted;
+  const out = {
+    access_level: "code",
+    // The customer typed this in, so echoing it back is not a disclosure.
+    booking_code: source.booking_code || null,
+    // Status lane — enough to render progress, no PII.
+    job_status: source.job_status || null,
+    booking_mode: source.booking_mode || null,
+    dispatch_mode: source.dispatch_mode || null,
+    appointment_datetime: source.appointment_datetime || null,
+    duration_min: source.duration_min == null ? null : source.duration_min,
+    // Progress signals (timestamps only — no free-text reasons).
+    travel_started_at: source.travel_started_at || null,
+    checkin_at: source.checkin_at || null,
+    started_at: source.started_at || null,
+    finished_at: source.finished_at || null,
+    canceled_at: source.canceled_at || null,
+    // A masked confirmation aid so the customer recognises their own booking.
+    customer_phone: maskPhone(source.customer_phone),
+  };
+  return out;
 }
 
 // Fixed-window in-memory rate limiter with an LRU cap so the map can never
@@ -116,12 +117,24 @@ function createPublicLookupRateLimiter(options = {}) {
   return { check, _size: () => hits.size };
 }
 
-// Per-client key: first hop of X-Forwarded-For when present (we sit behind a
-// proxy in production), otherwise the socket address.
+// Per-client key. IMPORTANT: never read the raw X-Forwarded-For header — the
+// leftmost hop is fully attacker-controlled, so trusting it lets a caller mint
+// a fresh identity (and a fresh rate-limit budget) on every request. Instead we
+// use Express's req.ip, which is derived under the app's explicit
+// `trust proxy` setting (1 = a single front proxy, e.g. Render). With that
+// config an attacker can only prepend XFF entries to the left of the proxy's
+// appended client IP, so req.ip stays the real client address. Fall back to the
+// socket peer only when Express did not resolve an ip.
+//
+// NOTE: this limiter is PER PROCESS (in-memory). Behind multiple app instances
+// the effective budget is per-instance; it is a brute-force speed bump, not a
+// distributed quota. A shared store (e.g. Redis) would be needed for a global
+// guarantee across instances.
 function clientIpKey(req) {
-  const fwd = String((req && req.headers && req.headers["x-forwarded-for"]) || "").split(",")[0].trim();
-  if (fwd) return fwd;
-  return String((req && (req.ip || (req.socket && req.socket.remoteAddress))) || "unknown");
+  const ip = req && typeof req.ip === "string" ? req.ip.trim() : "";
+  if (ip) return ip;
+  const socketIp = req && req.socket && req.socket.remoteAddress;
+  return String(socketIp || "unknown");
 }
 
 module.exports = {

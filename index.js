@@ -131,6 +131,11 @@ const CWF_LINE_CONTACT_URL = String(process.env.CWF_LINE_CONTACT_URL || "https:/
 const publicTrackRateLimiter = trackingPrivacy.createPublicLookupRateLimiter({ windowMs: 60000, max: 30 });
 const publicUrgentStatusRateLimiter = trackingPrivacy.createPublicLookupRateLimiter({ windowMs: 60000, max: 120 });
 const publicDocsRateLimiter = trackingPrivacy.createPublicLookupRateLimiter({ windowMs: 60000, max: 20 });
+// Public review is a WRITE gated by an identifier, so it gets two independent
+// budgets: per trusted client IP, and per booking code/token (so one job's code
+// can't be hammered from many IPs). Both must pass.
+const publicReviewIpRateLimiter = trackingPrivacy.createPublicLookupRateLimiter({ windowMs: 60000, max: 15 });
+const publicReviewKeyRateLimiter = trackingPrivacy.createPublicLookupRateLimiter({ windowMs: 600000, max: 8 });
 const ENABLE_SERVICE_ZONE_FILTER = envBool("ENABLE_SERVICE_ZONE_FILTER", true);
 const ENABLE_PARTNER_DEPOSIT_DEDUCTION = envBool("ENABLE_PARTNER_DEPOSIT_DEDUCTION", true);
 const ENABLE_WEB_PUSH_NOTIFICATIONS = envBool("ENABLE_WEB_PUSH_NOTIFICATIONS", true);
@@ -25306,16 +25311,34 @@ app.post("/public/book", async (req, res) => {
     catalog_item_id, // optional: links this booking to the Store catalog item it was booked for
   } = req.body || {};
 
+  // 🔒 Kill switch (fail closed) — CANONICAL GATE. /public/book is entirely
+  // unauthenticated, so the gate keys off the canonical booking_mode ONLY.
+  // client_app is attacker-controlled and MUST NOT be a security boundary:
+  // gating on it would let a request drop/forge client_app and slip past.
+  // This runs before urgent routing, pricing, idempotency, insert, and offer
+  // dispatch, so a closed lane can never create a job/offer. Admin bookings use
+  // the session-authenticated /admin route, never this one. Unknown modes are
+  // rejected outright (no fall-through).
+  const canonicalBookingMode = String(booking_mode || "scheduled").trim().toLowerCase();
+  if (canonicalBookingMode !== "scheduled" && canonicalBookingMode !== "urgent") {
+    return res.status(400).json({ error: "ประเภทการจองไม่ถูกต้อง", code: "UNKNOWN_BOOKING_MODE" });
+  }
+  if (canonicalBookingMode === "urgent" && !ENABLE_CUSTOMER_URGENT_BOOKING) {
+    return res.status(503).json({
+      error: "ระบบจองด่วนออนไลน์ปิดให้บริการชั่วคราว กรุณาติดต่อแอดมินทาง LINE",
+      code: "URGENT_BOOKING_DISABLED",
+      line_url: CWF_LINE_CONTACT_URL,
+    });
+  }
+  if (canonicalBookingMode === "scheduled" && !ENABLE_CUSTOMER_SCHEDULED_BOOKING) {
+    return res.status(503).json({
+      error: "ระบบจองคิวออนไลน์ปิดให้บริการชั่วคราว กรุณาติดต่อแอดมินทาง LINE",
+      code: "SCHEDULED_BOOKING_DISABLED",
+      line_url: CWF_LINE_CONTACT_URL,
+    });
+  }
+
   if (isCustomerAppUrgentBook(req.body || {})) {
-    // Kill switch (fail closed): reject BEFORE any job/offer work so a closed
-    // lane can never create a job — the app shows the LINE fallback instead.
-    if (!ENABLE_CUSTOMER_URGENT_BOOKING) {
-      return res.status(503).json({
-        error: "ระบบจองด่วนออนไลน์ปิดให้บริการชั่วคราว กรุณาติดต่อแอดมินทาง LINE",
-        code: "URGENT_BOOKING_DISABLED",
-        line_url: CWF_LINE_CONTACT_URL,
-      });
-    }
     return handlePublicCustomerUrgentBook(req, res);
   }
 
@@ -25350,18 +25373,8 @@ app.post("/public/book", async (req, res) => {
 
   let token = genToken(12);
   // DURATION_PRICE_V2_PUBLIC_BOOK
-  let bm = (booking_mode || "scheduled").toString().trim().toLowerCase();
+  let bm = canonicalBookingMode;
   const clientApp = (client_app || "").toString().trim().toLowerCase();
-  // Kill switch (fail closed): Customer App scheduled self-booking is off
-  // until explicitly enabled. Reject before any pricing/availability/insert
-  // work so a closed lane can never create a job.
-  if (bm === "scheduled" && clientApp === "customer_app_v2" && !ENABLE_CUSTOMER_SCHEDULED_BOOKING) {
-    return res.status(503).json({
-      error: "ระบบจองคิวออนไลน์ปิดให้บริการชั่วคราว กรุณาติดต่อแอดมินทาง LINE",
-      code: "SCHEDULED_BOOKING_DISABLED",
-      line_url: CWF_LINE_CONTACT_URL,
-    });
-  }
   const scheduledRequestKey = bm === "scheduled" && clientApp === "customer_app_v2"
     ? String(scheduled_request_key || "").trim()
     : "";
@@ -26323,50 +26336,87 @@ if (FLAG_SHOW_TECH_TEAM_ON_TRACKING && canShowPublicTechnician) {
 // - จำกัด 1 รีวิวต่อ 1 job_id
 // =======================================
 app.post("/public/review", async (req, res) => {
-  const { q, booking_code, token, rating, review_text, complaint_text } = req.body || {};
-  const key = (q || booking_code || token || "").toString().trim();
-  const star = Number(rating);
+  // A public WRITE authorised by a booking identifier. Policy:
+  //   - A job that HAS a booking_token requires the EXACT token (the short,
+  //     shareable booking_code alone is NOT a write credential — see the
+  //     tracking privacy split). No downgrade to code+phone for tokened jobs.
+  //   - A LEGACY job with no booking_token may be reviewed via booking_code +
+  //     the customer's FULL phone (exact match after digit-normalisation),
+  //     still requiring the job to be completed and not yet reviewed.
+  // Every authorisation/eligibility failure returns the SAME generic error so
+  // the endpoint never reveals whether the code, phone, or status was the
+  // mismatch. Rate limited per client IP and per identifier. No PII/token in
+  // any response.
+  const GENERIC_REVIEW_ERROR = "ไม่สามารถส่งรีวิวได้ กรุณาตรวจสอบเลข/สถานะงานและข้อมูลยืนยันอีกครั้ง";
+  const body = req.body || {};
+  const token = String(body.token || body.booking_token || "").trim();
+  const code = String(body.booking_code || body.q || "").trim();
+  const phoneDigits = String(body.customer_phone || "").replace(/\D/g, "");
+  const star = Number(body.rating);
+  const review_text = (body.review_text || "").toString().trim() || null;
+  const complaint_text = (body.complaint_text || "").toString().trim() || null;
 
-  if (!key) return res.status(400).json({ error: "ต้องส่ง booking_code หรือ token" });
-  if (!Number.isFinite(star) || star < 1 || star > 5) return res.status(400).json({ error: "rating ต้องอยู่ระหว่าง 1-5" });
+  if (!publicReviewIpRateLimiter.check(trackingPrivacy.clientIpKey(req)).allowed) {
+    return res.status(429).json({ error: "ส่งรีวิวถี่เกินไป กรุณารอสักครู่", code: "RATE_LIMITED" });
+  }
+  if (!Number.isFinite(star) || star < 1 || star > 5) {
+    return res.status(400).json({ error: "rating ต้องอยู่ระหว่าง 1-5" });
+  }
+  if (!token && !code) {
+    return res.status(400).json({ error: GENERIC_REVIEW_ERROR });
+  }
+  // Per-identifier budget (defends one job's code against many-IP hammering).
+  const identifierKey = token ? `t:${token}` : `c:${code}`;
+  if (!publicReviewKeyRateLimiter.check(identifierKey).allowed) {
+    return res.status(429).json({ error: "ส่งรีวิวถี่เกินไป กรุณารอสักครู่", code: "RATE_LIMITED" });
+  }
 
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
 
-    const jr = await client.query(
-      `SELECT job_id, job_status, technician_username, customer_rating
-       FROM public.jobs
-       WHERE booking_code=$1 OR booking_token=$1
-       LIMIT 1
-       FOR UPDATE`,
-      [key]
-    );
+    // Look the job up by exactly one credential path — never `code OR token`,
+    // which would let a code match a tokened job.
+    let jr;
+    if (token) {
+      jr = await client.query(
+        `SELECT job_id, job_status, technician_username, customer_rating, booking_token, customer_phone
+           FROM public.jobs WHERE booking_token=$1 LIMIT 1 FOR UPDATE`,
+        [token]
+      );
+    } else {
+      jr = await client.query(
+        `SELECT job_id, job_status, technician_username, customer_rating, booking_token, customer_phone
+           FROM public.jobs WHERE booking_code=$1 LIMIT 1 FOR UPDATE`,
+        [code]
+      );
+    }
 
-    if (!jr.rows.length) throw new Error("ไม่พบงาน");
     const job = jr.rows[0];
+    // All authorisation failures collapse to one generic 400 (no oracle).
+    const deny = () => { const e = new Error(GENERIC_REVIEW_ERROR); e.generic = true; throw e; };
+    if (!job) deny();
 
-    if (String(job.job_status || "").trim() !== "เสร็จแล้ว") {
-      throw new Error("งานยังไม่ปิด ไม่สามารถให้คะแนนได้");
+    const jobHasToken = Boolean(String(job.booking_token || "").trim());
+    if (token) {
+      // Token path already authorised by the exact-token WHERE clause.
+    } else {
+      // Legacy code path: only for jobs that genuinely have no token, and only
+      // with the full phone matching exactly.
+      if (jobHasToken) deny();
+      const jobPhoneDigits = String(job.customer_phone || "").replace(/\D/g, "");
+      if (!phoneDigits || phoneDigits.length < 9 || jobPhoneDigits !== phoneDigits) deny();
     }
-    if (job.customer_rating) {
-      throw new Error("งานนี้ให้คะแนนไปแล้ว");
-    }
-    if (!job.technician_username) {
-      throw new Error("งานนี้ยังไม่มีช่างรับงาน");
-    }
+
+    if (String(job.job_status || "").trim() !== "เสร็จแล้ว") deny();
+    if (job.customer_rating) deny();
+    if (!job.technician_username) deny();
 
     await client.query(
       `INSERT INTO public.technician_reviews (job_id, technician_username, rating, review_text, complaint_text)
        VALUES ($1,$2,$3,$4,$5)
        ON CONFLICT (job_id) DO NOTHING`,
-      [
-        job.job_id,
-        job.technician_username,
-        Math.round(star),
-        (review_text || "").toString().trim() || null,
-        (complaint_text || "").toString().trim() || null,
-      ]
+      [job.job_id, job.technician_username, Math.round(star), review_text, complaint_text]
     );
 
     await client.query(
@@ -26376,12 +26426,7 @@ app.post("/public/review", async (req, res) => {
            customer_complaint=$3,
            reviewed_at=NOW()
        WHERE job_id=$4`,
-      [
-        Math.round(star),
-        (review_text || "").toString().trim() || null,
-        (complaint_text || "").toString().trim() || null,
-        job.job_id,
-      ]
+      [Math.round(star), review_text, complaint_text, job.job_id]
     );
 
     // ✅ อัปเดตคะแนนเฉลี่ยลงโปรไฟล์ (เก็บในคอลัมน์ rating)
@@ -26401,10 +26446,15 @@ app.post("/public/review", async (req, res) => {
     );
 
     await client.query("COMMIT");
-    res.json({ success: true, avg_rating: avg });
+    // No PII, token, or per-job confirmation data in the response.
+    res.json({ success: true });
   } catch (e) {
     await client.query("ROLLBACK");
-    res.status(400).json({ error: e.message || "ส่งรีวิวไม่สำเร็จ" });
+    // Generic authorisation/eligibility failures never reveal the mismatch;
+    // only a genuine unexpected server error is a 500.
+    if (e && e.generic) return res.status(400).json({ error: e.message });
+    console.error("[public/review] failed", e && e.message);
+    return res.status(400).json({ error: "ไม่สามารถส่งรีวิวได้ กรุณาตรวจสอบเลข/สถานะงานและข้อมูลยืนยันอีกครั้ง" });
   } finally {
     client.release();
   }

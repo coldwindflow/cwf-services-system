@@ -271,19 +271,11 @@ module.exports = function createDocumentRoutes(deps = {}) {
   </body></html>`;
   }
 
-  router.get("/docs/quote/:job_id", async (req, res) => {
-    const job_id = Number(req.params.job_id);
-    const data = await getJobDocData(job_id);
-    if (!data) return res.status(404).send("ไม่พบงาน");
-    res.setHeader("Content-Type", "text/html; charset=utf-8");
-    res.send(docHtml("ใบเสนอราคา", data));
-  });
-
-  // Job documents carry full customer PII (name, phone, address). A bare
-  // sequential job_id must never be enough to read one: the caller needs the
-  // job's booking_token (?key=..., which the tracking page embeds) or an
-  // authenticated admin session. Failures answer 404 (not 403) so the route
-  // does not confirm which job_ids exist.
+  // Job documents (quote / receipt / e-slip) carry full customer PII (name,
+  // phone, address, price). A bare sequential job_id must never be enough to
+  // read one: the caller needs the job's booking_token (?key=..., which the
+  // tracking page embeds) or an authenticated admin session. Denials answer 404
+  // (not 403) so the route is not an existence oracle for job_ids.
   async function canViewJobDoc(req, data) {
     const key = String((req.query && req.query.key) || "").trim();
     // getJobDocData returns { job, items, ... } — the token lives on the job row.
@@ -307,24 +299,46 @@ module.exports = function createDocumentRoutes(deps = {}) {
     return true;
   }
 
-  router.get("/docs/receipt/:job_id", async (req, res) => {
-    if (docsRateLimited(req, res)) return;
-    const job_id = Number(req.params.job_id);
-    const data = await getJobDocData(job_id);
-    if (!data) return res.status(404).send("ไม่พบงาน");
-    if (!(await canViewJobDoc(req, data))) return res.status(404).send("ไม่พบงาน");
+  // The token travels in the query string, so keep sensitive docs out of
+  // caches, referrers, and search indexes.
+  function setSensitiveDocHeaders(res) {
+    res.setHeader("Cache-Control", "private, no-store, max-age=0");
+    res.setHeader("Referrer-Policy", "no-referrer");
+    res.setHeader("X-Robots-Tag", "noindex, nofollow");
     res.setHeader("Content-Type", "text/html; charset=utf-8");
+  }
+
+  // One gate for every PII-bearing job document. Returns the doc data when the
+  // caller is authorised, otherwise sends the appropriate 404/429 and null.
+  async function loadAuthorizedJobDoc(req, res) {
+    if (docsRateLimited(req, res)) return null;
+    const job_id = Number(req.params.job_id);
+    if (!job_id) { res.status(404).send("ไม่พบงาน"); return null; }
+    const data = await getJobDocData(job_id);
+    if (!data) { res.status(404).send("ไม่พบงาน"); return null; }
+    if (!(await canViewJobDoc(req, data))) { res.status(404).send("ไม่พบงาน"); return null; }
+    return data;
+  }
+
+  router.get("/docs/quote/:job_id", async (req, res) => {
+    const data = await loadAuthorizedJobDoc(req, res);
+    if (!data) return;
+    setSensitiveDocHeaders(res);
+    res.send(docHtml("ใบเสนอราคา", data));
+  });
+
+  router.get("/docs/receipt/:job_id", async (req, res) => {
+    const data = await loadAuthorizedJobDoc(req, res);
+    if (!data) return;
+    setSensitiveDocHeaders(res);
     res.send(docHtml("ใบเสร็จรับเงิน", data));
   });
 
   router.get("/docs/eslip/:job_id", async (req, res) => {
-    if (docsRateLimited(req, res)) return;
-    const job_id = Number(req.params.job_id);
-    if (!job_id) return res.status(400).send("job_id ไม่ถูกต้อง");
     try {
-      const data = await getJobDocData(job_id);
-      if (!data) return res.status(404).send("ไม่พบงาน");
-      if (!(await canViewJobDoc(req, data))) return res.status(404).send("ไม่พบงาน");
+      const data = await loadAuthorizedJobDoc(req, res);
+      if (!data) return;
+      const job_id = Number(req.params.job_id);
       const slipR = await pool.query(
         `SELECT public_url
          FROM public.job_photos
@@ -334,7 +348,7 @@ module.exports = function createDocumentRoutes(deps = {}) {
         [job_id]
       );
       const slipUrl = slipR.rows?.[0]?.public_url || null;
-      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      setSensitiveDocHeaders(res);
       res.send(eSlipHtml(data, slipUrl));
     } catch (e) {
       console.error(e);
