@@ -9008,52 +9008,16 @@ async function _computeTechnicianPayoutMonthTotal(username, ym = ''){
   try {
     const parsed = _parsePayoutMonthYm(ym);
     const defs = _workMonthPayoutPeriodDefs(parsed.y, parsed.m).map((def) => _payoutPeriodDefForSummary(def, parsed.ym));
-    const periods = [];
-    let grossTotal = 0;
-    let netTotal = 0;
-    for (const def of defs) {
-      const summary = await _buildTechnicianPayoutPeriodSummary(def, tech);
-      grossTotal += Number(summary.gross_amount || 0);
-      netTotal += Number(summary.net_amount || 0);
-      periods.push({
-        payout_id: summary.payout_id,
-        period_type: summary.period_type,
-        label_ym: summary.label_ym,
-        work_month: parsed.ym,
-        period_start: summary.period_start,
-        period_end: summary.period_end,
-        period_end_display: summary.period_end_display || _periodEndDisplayIso(def.endEx),
-        period_effective_end: summary.period_end,
-        source: summary.source,
-        mode: summary.status === 'draft' ? 'live_or_projected_period' : 'stored_locked_or_paid_period',
-        status: summary.status,
-        gross_amount: summary.gross_amount,
-        adj_total: summary.adj_total,
-        deposit_deduction_amount: summary.deposit_deduction_amount,
-        net_amount: summary.net_amount,
-        paid_amount: summary.paid_amount,
-        paid_status: summary.paid_status,
-        remaining_amount: summary.remaining_amount,
-        payout_month_amount: summary.gross_amount,
-        payout_month_net_amount: summary.net_amount,
-        jobs_count: summary.lines_count,
-      });
-    }
-    grossTotal = _money(grossTotal);
-    netTotal = _money(netTotal);
-    return {
-      payout_month: parsed.ym,
-      work_month: parsed.ym,
-      payout_month_total: grossTotal,
-      payout_month_net_total: netTotal,
-      payout_month_policy: 'work_month_1_15_and_16_end_payout_net',
-      monthly_income_display_amount: netTotal,
-      monthly_income_display_label: parsed.ym,
-      monthly_income_period_start: defs[0].start.toISOString(),
-      monthly_income_period_end: defs[1].endEx.toISOString(),
-      monthly_income_period_end_display: _periodEndDisplayIso(defs[1].endEx),
-      periods,
-    };
+    return await technicianPayoutIntegrity.buildTechnicianPayoutMonthTotal({
+      periods: defs,
+      technicianUsername: tech,
+      payoutMonth: parsed.ym,
+      buildPeriodSummary: (period, username) => _buildTechnicianPayoutPeriodSummary(period, username),
+      normalizeMoney: _money,
+      monthlyIncomePeriodStart: defs[0].start.toISOString(),
+      monthlyIncomePeriodEnd: defs[1].endEx.toISOString(),
+      monthlyIncomePeriodEndDisplay: _periodEndDisplayIso(defs[1].endEx),
+    });
   } catch (e) {
     console.error('_computeTechnicianPayoutMonthTotal', e);
     return { payout_month_total: 0, payout_month_net_total: 0, payout_month: '', work_month: '', periods: [] };
@@ -9969,46 +9933,11 @@ app.get('/tech/payouts', requireTechnicianSession, async (req, res) => {
       periods = _recentPeriods(6, _bkkNow());
     }
 
-    const rows = [];
-    for (const p of periods) {
-      const summary = await _buildTechnicianPayoutPeriodSummary(_payoutPeriodDefForSummary(p, p.work_month || ''), tech);
-      rows.push({
-        payout_id: summary.payout_id,
-        period_type: summary.period_type,
-        period_start: summary.period_start,
-        period_end: summary.period_end,
-        period_end_display: summary.period_end_display,
-        status: summary.status,
-        source: summary.source,
-        gross_amount: summary.gross_amount,
-        adj_total: summary.adj_total,
-        deposit_deduction_amount: summary.deposit_deduction_amount,
-        net_amount: summary.net_amount,
-        paid_amount: summary.paid_amount,
-        paid_status: summary.paid_status,
-        remaining_amount: summary.remaining_amount,
-        deposit_existing_collect_amount: summary.deposit_existing_collect_amount,
-        deposit_existing_collect_exists: summary.deposit_existing_collect_exists,
-        deposit_projected: summary.deposit_projected,
-        deposit_projection_reason: summary.deposit_projection_reason,
-        deposit_target_amount: summary.deposit_target_amount,
-        deposit_collected_total: summary.deposit_collected_total,
-        deposit_collected_total_projected: summary.deposit_collected_total_projected,
-        deposit_remaining_amount: summary.deposit_remaining_amount,
-        deposit_remaining_amount_projected: summary.deposit_remaining_amount_projected,
-        deposit_is_required: summary.deposit_is_required,
-        deposit_payment_paid_amount: summary.deposit_payment_paid_amount,
-        deposit_payment_paid_status: summary.deposit_payment_paid_status,
-        deposit_payment_paid_at: summary.deposit_payment_paid_at,
-        latest_deposit_deduction: summary.latest_deposit_deduction,
-        lines_count: summary.lines_count,
-        paid_at: summary.paid_at,
-        slip_url: summary.slip_url,
-      });
-    }
-
-    // sort latest first by period_start
-    rows.sort((a, b) => new Date(b.period_start).getTime() - new Date(a.period_start).getTime());
+    const rows = await technicianPayoutIntegrity.buildTechnicianPayoutRows({
+      periods: periods.map((p) => _payoutPeriodDefForSummary(p, p.work_month || '')),
+      technicianUsername: tech,
+      buildPeriodSummary: (period, username) => _buildTechnicianPayoutPeriodSummary(period, username),
+    });
     return res.json({ ok: true, username: tech, payouts: rows });
   } catch (e) {
     console.error('GET /tech/payouts', e);
@@ -15045,90 +14974,95 @@ app.delete("/admin/jobs/:job_id", requireAdminSoft, async (req, res) => {
       return res.status(404).json({ error: "ไม่พบงาน" });
     }
 
-    await _assertJobMutableForPayout(client, jobId, 'admin_delete_job_primary');
-    const payoutCleanup = await technicianPayoutIntegrity.cleanupDraftJobPayoutRows(client, jobId);
+    const deleteRelatedRows = async (_db, hardDeleteJobId) => {
+      // delete related tables (best-effort)
+      // IMPORTANT: In Postgres, any error inside a transaction aborts the whole transaction.
+      // So we MUST wrap each best-effort delete with SAVEPOINT.
+      let _sp_i = 0;
+      const deleteFrom = async (sql, params) => {
+        const sp = `sp_del_${++_sp_i}`;
+        try {
+          await client.query(`SAVEPOINT ${sp}`);
+          await client.query(sql, params);
+          await client.query(`RELEASE SAVEPOINT ${sp}`);
+        } catch (e) {
+          try { await client.query(`ROLLBACK TO SAVEPOINT ${sp}`); } catch(_e) {}
+          try { await client.query(`RELEASE SAVEPOINT ${sp}`); } catch(_e) {}
+          console.warn("[admin_delete_job] skip", e.message);
+        }
+      };
 
-// delete related tables (best-effort)
-// IMPORTANT: In Postgres, any error inside a transaction aborts the whole transaction.
-// So we MUST wrap each best-effort delete with SAVEPOINT.
-let _sp_i = 0;
-const deleteFrom = async (sql, params) => {
-  const sp = `sp_del_${++_sp_i}`;
-  try {
-    await client.query(`SAVEPOINT ${sp}`);
-    await client.query(sql, params);
-    await client.query(`RELEASE SAVEPOINT ${sp}`);
-  } catch (e) {
-    try { await client.query(`ROLLBACK TO SAVEPOINT ${sp}`); } catch(_e) {}
-    try { await client.query(`RELEASE SAVEPOINT ${sp}`); } catch(_e) {}
-    console.warn("[admin_delete_job] skip", e.message);
-  }
-};
+      // delete children first (FK-safe)
+      await deleteFrom(`DELETE FROM public.job_photo_metadata WHERE job_id=$1`, [hardDeleteJobId]);
+      await deleteFrom(`DELETE FROM public.job_photos WHERE job_id=$1`, [hardDeleteJobId]);
+      await deleteFrom(`DELETE FROM public.job_updates_v2 WHERE job_id=$1`, [hardDeleteJobId]);
+      await deleteFrom(`DELETE FROM public.job_team_members WHERE job_id=$1`, [hardDeleteJobId]);
+      await deleteFrom(`DELETE FROM public.job_assignments WHERE job_id=$1`, [hardDeleteJobId]);
+      await deleteFrom(`DELETE FROM public.job_offer_recipients WHERE job_id=$1`, [hardDeleteJobId]);
+      await deleteFrom(`DELETE FROM public.job_offers WHERE job_id=$1`, [hardDeleteJobId]);
 
-// delete children first (FK-safe)
-await deleteFrom(`DELETE FROM public.job_photo_metadata WHERE job_id=$1`, [jobId]);
-await deleteFrom(`DELETE FROM public.job_photos WHERE job_id=$1`, [jobId]);
-await deleteFrom(`DELETE FROM public.job_updates_v2 WHERE job_id=$1`, [jobId]);
-await deleteFrom(`DELETE FROM public.job_team_members WHERE job_id=$1`, [jobId]);
-await deleteFrom(`DELETE FROM public.job_assignments WHERE job_id=$1`, [jobId]);
-await deleteFrom(`DELETE FROM public.job_offer_recipients WHERE job_id=$1`, [jobId]);
-await deleteFrom(`DELETE FROM public.job_offers WHERE job_id=$1`, [jobId]);
+      // v2 pricing/items/promotions (some deployments have these tables + FK to jobs)
+      await deleteFrom(`DELETE FROM public.job_items WHERE job_id=$1`, [hardDeleteJobId]);
+      await deleteFrom(`DELETE FROM public.job_promotions WHERE job_id=$1`, [hardDeleteJobId]);
+      await deleteFrom(`DELETE FROM public.job_pricing_requests WHERE job_id=$1`, [hardDeleteJobId]);
+      // reviews can reference job_id as well
+      await deleteFrom(`DELETE FROM public.technician_reviews WHERE job_id=$1`, [hardDeleteJobId]);
 
-// v2 pricing/items/promotions (some deployments have these tables + FK to jobs)
-await deleteFrom(`DELETE FROM public.job_items WHERE job_id=$1`, [jobId]);
-await deleteFrom(`DELETE FROM public.job_promotions WHERE job_id=$1`, [jobId]);
-await deleteFrom(`DELETE FROM public.job_pricing_requests WHERE job_id=$1`, [jobId]);
-// reviews can reference job_id as well
-await deleteFrom(`DELETE FROM public.technician_reviews WHERE job_id=$1`, [jobId]);
+      // -----------------------------------------------------------------
+      // Dynamic cleanup (no regression):
+      // Some production DBs may have extra tables referencing jobs(job_id).
+      // If we miss one FK, deleting from jobs will fail with 23503.
+      // So we proactively scan FK references and best-effort delete rows.
+      // -----------------------------------------------------------------
+      const quoteIdent = (s) => {
+        const v = String(s || '');
+        return '"' + v.replace(/"/g, '""') + '"';
+      };
 
-// -----------------------------------------------------------------
-// Dynamic cleanup (no regression):
-// Some production DBs may have extra tables referencing jobs(job_id).
-// If we miss one FK, deleting from jobs will fail with 23503.
-// So we proactively scan FK references and best-effort delete rows.
-// -----------------------------------------------------------------
-const quoteIdent = (s) => {
-  const v = String(s || '');
-  return '"' + v.replace(/"/g, '""') + '"';
-};
+      try {
+        const fk = await client.query(
+          `
+          SELECT
+            con.conrelid::regclass::text AS rel,
+            att.attname AS col
+          FROM pg_constraint con
+          JOIN pg_class rel ON rel.oid = con.conrelid
+          JOIN pg_namespace nsp ON nsp.oid = rel.relnamespace
+          JOIN unnest(con.conkey) WITH ORDINALITY AS ck(attnum, ord) ON TRUE
+          JOIN pg_attribute att ON att.attrelid = con.conrelid AND att.attnum = ck.attnum
+          WHERE con.contype = 'f'
+            AND con.confrelid = 'public.jobs'::regclass
+            AND nsp.nspname = 'public'
+            AND att.attname = 'job_id'
+          GROUP BY con.conrelid, att.attname
+          ORDER BY rel;
+          `
+        );
+        for (const row of (fk.rows || [])) {
+          const rel = String(row.rel || '').trim();
+          if (!rel) continue;
+          // rel is already schema-qualified text (e.g. public.some_table)
+          const parts = rel.split('.');
+          if (parts.length !== 2) continue;
+          const tbl = `${quoteIdent(parts[0])}.${quoteIdent(parts[1])}`;
+          // skip the parent table
+          if (parts[1] === 'jobs') continue;
+          await deleteFrom(`DELETE FROM ${tbl} WHERE job_id=$1`, [hardDeleteJobId]);
+        }
+      } catch (e) {
+        console.warn('[admin_delete_job] fk scan skipped', e.message);
+      }
+    };
 
-try {
-  const fk = await client.query(
-    `
-    SELECT
-      con.conrelid::regclass::text AS rel,
-      att.attname AS col
-    FROM pg_constraint con
-    JOIN pg_class rel ON rel.oid = con.conrelid
-    JOIN pg_namespace nsp ON nsp.oid = rel.relnamespace
-    JOIN unnest(con.conkey) WITH ORDINALITY AS ck(attnum, ord) ON TRUE
-    JOIN pg_attribute att ON att.attrelid = con.conrelid AND att.attnum = ck.attnum
-    WHERE con.contype = 'f'
-      AND con.confrelid = 'public.jobs'::regclass
-      AND nsp.nspname = 'public'
-      AND att.attname = 'job_id'
-    GROUP BY con.conrelid, att.attname
-    ORDER BY rel;
-    `
-  );
-  for (const row of (fk.rows || [])) {
-    const rel = String(row.rel || '').trim();
-    if (!rel) continue;
-    // rel is already schema-qualified text (e.g. public.some_table)
-    const parts = rel.split('.');
-    if (parts.length !== 2) continue;
-    const tbl = `${quoteIdent(parts[0])}.${quoteIdent(parts[1])}`;
-    // skip the parent table
-    if (parts[1] === 'jobs') continue;
-    await deleteFrom(`DELETE FROM ${tbl} WHERE job_id=$1`, [jobId]);
-  }
-} catch (e) {
-  console.warn('[admin_delete_job] fk scan skipped', e.message);
-}
-
-const dr = await client.query(`DELETE FROM public.jobs WHERE job_id=$1`, [jobId]);
+    const hardDelete = await technicianPayoutIntegrity.runJobHardDeletePayoutFlow({
+      db: client,
+      jobId,
+      context: 'admin_delete_job_primary',
+      assertJobMutableForPayout: _assertJobMutableForPayout,
+      deleteRelatedRows,
+    });
     await client.query("COMMIT");
-    return res.json({ ok: true, deleted: dr.rowCount || 0, payout_cleanup: payoutCleanup });
+    return res.json({ ok: true, deleted: hardDelete.deleted || 0, payout_cleanup: hardDelete.payout_cleanup });
   } catch (e) {
     try { await client.query("ROLLBACK"); } catch(_e) {}
     console.error("/admin/jobs/:job_id delete error:", e);
@@ -16486,27 +16420,31 @@ app.delete('/admin/jobs/:job_id', requireAdminSoft, async (req, res) => {
       return res.status(404).json({ ok:false, error:'job not found' });
     }
 
-    // 🔒 Phase 5: do not allow delete if job affects locked/paid payout
-    await _assertJobMutableForPayout(client, job_id, 'admin_delete_job');
-    const payoutCleanup = await technicianPayoutIntegrity.cleanupDraftJobPayoutRows(client, job_id);
+    const deleteRelatedRows = async (_db, hardDeleteJobId) => {
+      // child tables (fail-safe: some DB might miss tables in older deploys)
+      const safeDel = async (sql, params) => {
+        try { await client.query(sql, params); } catch(e){ console.warn('[admin_delete_job] ignore', e.message); }
+      };
 
-    // child tables (fail-safe: some DB might miss tables in older deploys)
-    const safeDel = async (sql, params) => {
-      try { await client.query(sql, params); } catch(e){ console.warn('[admin_delete_job] ignore', e.message); }
+      await safeDel(`DELETE FROM public.job_photos WHERE job_id=$1`, [hardDeleteJobId]);
+      await safeDel(`DELETE FROM public.job_updates_v2 WHERE job_id=$1`, [hardDeleteJobId]);
+      await safeDel(`DELETE FROM public.job_offers WHERE job_id=$1`, [hardDeleteJobId]);
+      await safeDel(`DELETE FROM public.job_team_members WHERE job_id=$1`, [hardDeleteJobId]);
+      await safeDel(`DELETE FROM public.job_assignments WHERE job_id=$1`, [hardDeleteJobId]);
+      await safeDel(`DELETE FROM public.job_promotions WHERE job_id=$1`, [hardDeleteJobId]);
+      await safeDel(`DELETE FROM public.job_items WHERE job_id=$1`, [hardDeleteJobId]);
     };
 
-    await safeDel(`DELETE FROM public.job_photos WHERE job_id=$1`, [job_id]);
-    await safeDel(`DELETE FROM public.job_updates_v2 WHERE job_id=$1`, [job_id]);
-    await safeDel(`DELETE FROM public.job_offers WHERE job_id=$1`, [job_id]);
-    await safeDel(`DELETE FROM public.job_team_members WHERE job_id=$1`, [job_id]);
-    await safeDel(`DELETE FROM public.job_assignments WHERE job_id=$1`, [job_id]);
-    await safeDel(`DELETE FROM public.job_promotions WHERE job_id=$1`, [job_id]);
-    await safeDel(`DELETE FROM public.job_items WHERE job_id=$1`, [job_id]);
-
-    await client.query(`DELETE FROM public.jobs WHERE job_id=$1`, [job_id]);
+    const hardDelete = await technicianPayoutIntegrity.runJobHardDeletePayoutFlow({
+      db: client,
+      jobId: job_id,
+      context: 'admin_delete_job',
+      assertJobMutableForPayout: _assertJobMutableForPayout,
+      deleteRelatedRows,
+    });
 
     await client.query('COMMIT');
-    return res.json({ ok:true, payout_cleanup: payoutCleanup });
+    return res.json({ ok:true, deleted: hardDelete.deleted || 0, payout_cleanup: hardDelete.payout_cleanup });
   } catch (e) {
     try { await client.query('ROLLBACK'); } catch(_){}
     console.error('[admin_delete_job] error', e);
@@ -17565,10 +17503,12 @@ app.delete("/jobs/:job_id/admin-delete", requireAdminSoft, async (req, res) => {
       throw new Error(`ต้องยืนยันด้วย booking_code (${code}) หรือพิมพ์ DELETE`);
     }
 
-    await _assertJobMutableForPayout(client, job_id, 'legacy_admin_delete_job');
-    const payoutCleanup = await technicianPayoutIntegrity.cleanupDraftJobPayoutRows(client, job_id);
-
-    await client.query(`DELETE FROM public.jobs WHERE job_id=$1`, [job_id]);
+    const hardDelete = await technicianPayoutIntegrity.runJobHardDeletePayoutFlow({
+      db: client,
+      jobId: job_id,
+      context: 'legacy_admin_delete_job',
+      assertJobMutableForPayout: _assertJobMutableForPayout,
+    });
 
     // server log (at least)
     try {
@@ -17577,7 +17517,7 @@ app.delete("/jobs/:job_id/admin-delete", requireAdminSoft, async (req, res) => {
     } catch (e) {}
 
     await client.query("COMMIT");
-    res.json({ success: true, payout_cleanup: payoutCleanup });
+    res.json({ success: true, deleted: hardDelete.deleted || 0, payout_cleanup: hardDelete.payout_cleanup });
   } catch (e) {
     await client.query("ROLLBACK");
     res.status(Number(e.statusCode || e.status || 400)).json({

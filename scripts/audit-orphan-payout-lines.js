@@ -1,18 +1,20 @@
 "use strict";
 
-const { orphanPayoutLinesAuditSql } = require("../server/services/technicianPayoutIntegrity");
+const { orphanPayoutLinesAuditSql, positiveInteger } = require("../server/services/technicianPayoutIntegrity");
 
 function parseArgs(argv = process.argv.slice(2)) {
   const args = new Set(argv);
   const limitArg = argv.find((x) => /^--limit=/.test(x));
-  const limit = limitArg ? Number(limitArg.split("=")[1]) : 200;
   return {
     run: args.has("--run"),
     json: args.has("--json"),
-    allowProductionRead: args.has("--allow-production-read"),
     apply: args.has("--apply"),
-    limit: Number.isFinite(limit) ? limit : 200,
+    limit: positiveInteger(limitArg ? limitArg.split("=")[1] : 200, 200, 10000),
   };
+}
+
+function shouldRefuseProductionExecution(env = process.env) {
+  return String(env.NODE_ENV || "").toLowerCase() === "production";
 }
 
 async function main() {
@@ -31,8 +33,8 @@ async function main() {
     return;
   }
 
-  if (String(process.env.NODE_ENV || "").toLowerCase() === "production" && !opts.allowProductionRead) {
-    console.error("Refusing production read without --allow-production-read.");
+  if (shouldRefuseProductionExecution()) {
+    console.error("Refusing production execution. This read-only audit must run only against a non-production copy.");
     process.exitCode = 2;
     return;
   }
@@ -59,5 +61,6 @@ if (require.main === module) {
 
 module.exports = {
   parseArgs,
+  shouldRefuseProductionExecution,
   orphanPayoutLinesAuditSql,
 };
