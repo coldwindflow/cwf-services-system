@@ -55,6 +55,7 @@ const { ensurePayoutPeriodAndSnapshotForPayment } = require("./server/services/t
 const { buildAccountingPayoutCalendar, isPeriodCutoffClosed } = require("./server/services/technicianPayoutPeriods");
 const accountingPayoutAdjustments = require("./server/services/accountingPayoutAdjustments");
 const technicianDepositCollections = require("./server/services/technicianDepositCollections");
+const technicianPayoutIntegrity = require("./server/services/technicianPayoutIntegrity");
 const { createTechnicianCashCollectionService } = require("./server/services/technicianCashCollections");
 const { createTechnicianDeductionPayoutApplyService } = require("./server/services/technicianDeductionPayoutApply");
 const createAdminReworkDeductionsHelpers = require("./server/helpers/adminReworkDeductionsHelpers");
@@ -9001,63 +9002,43 @@ function _workMonthPayoutPeriodDefs(y, m){
   return [p25, p10];
 }
 
+function _payoutPeriodDefForSummary(def, workMonth = ''){
+  return {
+    ...def,
+    payout_id: def.payout_id || `payout_${def.label_ym}_${def.period_type}`,
+    work_month: workMonth || def.work_month || '',
+    period_end_display: _periodEndDisplayIso(def.endEx || def.period_end),
+  };
+}
+
+async function _buildTechnicianPayoutPeriodSummary(period, tech, db = pool){
+  return technicianPayoutIntegrity.buildTechnicianPayoutPeriodSummary({
+    db,
+    period,
+    technicianUsername: tech,
+    loadPayoutLinesForTech: _loadPayoutLinesForTech,
+    getProjectedDepositDeductionForPayout: technicianDepositCollections.getProjectedDepositDeductionForPayout,
+    paidStatus: _paidStatus,
+    normalizeMoney: _money,
+  });
+}
+
 async function _computeTechnicianPayoutMonthTotal(username, ym = ''){
   const tech = String(username || '').trim();
   if (!tech) return { payout_month_total: 0, payout_month_net_total: 0, payout_month: '', work_month: '', periods: [] };
   try {
     const parsed = _parsePayoutMonthYm(ym);
-    const nowUtc = new Date();
-    const defs = _workMonthPayoutPeriodDefs(parsed.y, parsed.m);
-    const periods = [];
-    let total = 0;
-    for (const def of defs) {
-      const periodEnd = def.endEx;
-      const effectiveEnd = nowUtc < periodEnd ? nowUtc : periodEnd;
-      let lines = [];
-      let amount = 0;
-      if (effectiveEnd > def.start) {
-        lines = await _computeTechLinesInRange(tech, def.start, effectiveEnd, {
-          payout_id: `payout_${def.label_ym}_${def.period_type}`,
-          period_type: def.period_type,
-          label_ym: def.label_ym,
-          work_month: parsed.ym,
-        });
-        amount = _money((lines || []).reduce((sum, line) => sum + Number(line.earn_amount || 0), 0));
-      }
-      total += amount;
-      periods.push({
-        payout_id: `payout_${def.label_ym}_${def.period_type}`,
-        period_type: def.period_type,
-        label_ym: def.label_ym,
-        work_month: parsed.ym,
-        period_start: def.start.toISOString(),
-        period_end: def.endEx.toISOString(),
-        period_end_display: _periodEndDisplayIso(def.endEx),
-        period_effective_end: effectiveEnd.toISOString(),
-        source: 'live_completed_jobs',
-        mode: effectiveEnd < def.endEx ? 'current_period_to_date' : 'full_period',
-        gross_amount: amount,
-        adj_total: 0,
-        deposit_deduction_amount: 0,
-        payout_month_amount: amount,
-        payout_month_net_amount: amount,
-        jobs_count: (lines || []).length,
-      });
-    }
-    total = _money(total);
-    return {
-      payout_month: parsed.ym,
-      work_month: parsed.ym,
-      payout_month_total: total,
-      payout_month_net_total: total,
-      payout_month_policy: 'work_month_1_15_and_16_end_live_completed_jobs',
-      monthly_income_display_amount: total,
-      monthly_income_display_label: parsed.ym,
-      monthly_income_period_start: defs[0].start.toISOString(),
-      monthly_income_period_end: defs[1].endEx.toISOString(),
-      monthly_income_period_end_display: _periodEndDisplayIso(defs[1].endEx),
-      periods,
-    };
+    const defs = _workMonthPayoutPeriodDefs(parsed.y, parsed.m).map((def) => _payoutPeriodDefForSummary(def, parsed.ym));
+    return await technicianPayoutIntegrity.buildTechnicianPayoutMonthTotal({
+      periods: defs,
+      technicianUsername: tech,
+      payoutMonth: parsed.ym,
+      buildPeriodSummary: (period, username) => _buildTechnicianPayoutPeriodSummary(period, username),
+      normalizeMoney: _money,
+      monthlyIncomePeriodStart: defs[0].start.toISOString(),
+      monthlyIncomePeriodEnd: defs[1].endEx.toISOString(),
+      monthlyIncomePeriodEndDisplay: _periodEndDisplayIso(defs[1].endEx),
+    });
   } catch (e) {
     console.error('_computeTechnicianPayoutMonthTotal', e);
     return { payout_month_total: 0, payout_month_net_total: 0, payout_month: '', work_month: '', periods: [] };
@@ -9973,103 +9954,11 @@ app.get('/tech/payouts', requireTechnicianSession, async (req, res) => {
       periods = _recentPeriods(6, _bkkNow());
     }
 
-    const rows = [];
-    for (const p of periods) {
-      // 1) meta/status จากตาราง period ถ้ามี
-      const metaQ = await pool.query(
-        `SELECT payout_id, status, period_start, period_end
-           FROM public.technician_payout_periods
-          WHERE payout_id=$1
-          LIMIT 1`,
-        [p.payout_id]
-      );
-      const meta = metaQ.rows[0] || null;
-      const status = meta?.status || 'draft';
-      const period_start = meta?.period_start || p.start.toISOString();
-      const period_end = meta?.period_end || p.endEx.toISOString();
-
-      // 2) gross: ถ้ามี lines ใน DB ใช้ DB ก่อน (เร็ว) ไม่งั้นคำนวณสดเฉพาะช่วงนั้น
-      const hasLinesQ = await pool.query(
-        `SELECT COUNT(*)::int AS c
-           FROM public.technician_payout_lines
-          WHERE payout_id=$1 AND technician_username=$2`,
-        [p.payout_id, tech]
-      );
-      const hasLines = Number(hasLinesQ.rows[0]?.c || 0) > 0;
-
-      let gross_amount = 0;
-      let lines_count = 0;
-
-      if (hasLines && _payoutCanUseStoredLines(status)) {
-        const g = await pool.query(
-          `SELECT COALESCE(SUM(earn_amount),0) AS gross_amount, COUNT(*)::int AS lines_count
-             FROM public.technician_payout_lines
-            WHERE payout_id=$1 AND technician_username=$2`,
-          [p.payout_id, tech]
-        );
-        gross_amount = Number(g.rows[0]?.gross_amount || 0);
-        lines_count = Number(g.rows[0]?.lines_count || 0);
-      } else {
-        const calcLines = await _computeTechLinesInRange(tech, p.start, p.endEx, { payout_id: p.payout_id, period_type: p.period_type, label_ym: p.label_ym });
-        gross_amount = calcLines.reduce((a, it) => a + Number(it.earn_amount || 0), 0);
-        lines_count = calcLines.length;
-      }
-
-      // 3) adjustments + payments (Phase 2)
-      const adjQ = await pool.query(
-        `SELECT COALESCE(SUM(adj_amount),0) AS adj_total
-           FROM public.technician_payout_adjustments
-          WHERE payout_id=$1 AND technician_username=$2`,
-        [p.payout_id, tech]
-      );
-      const adj_total = Number(adjQ.rows[0]?.adj_total || 0);
-
-      const payQ = await pool.query(
-        `SELECT COALESCE(paid_amount,0) AS paid_amount, COALESCE(paid_status,'unpaid') AS paid_status, paid_at, slip_url
-           FROM public.technician_payout_payments
-          WHERE payout_id=$1 AND technician_username=$2
-          LIMIT 1`,
-        [p.payout_id, tech]
-      );
-      const payment = payQ.rows[0] || null;
-      const paid_amount = Number(payment?.paid_amount || 0);
-      const paid_status = String(payment?.paid_status || (paid_amount > 0 ? 'partial' : 'unpaid'));
-
-      const deposit = await technicianDepositCollections.getProjectedDepositDeductionForPayout(pool, {
-        payout_id: p.payout_id,
-        technician_username: tech,
-        gross_amount,
-        adj_total,
-        period_status: status,
-      });
-      const deposit_deduction_amount = _money(deposit.deposit_deduction_amount || 0);
-      const net_amount = _money(gross_amount + adj_total - deposit_deduction_amount);
-      const remaining_amount = _money(net_amount - paid_amount);
-      const paid_status_calc = _paidStatus(net_amount, paid_amount);
-
-      rows.push({
-        payout_id: p.payout_id,
-        period_type: p.period_type,
-        period_start,
-        period_end,
-        status,
-        gross_amount,
-        adj_total,
-        deposit_deduction_amount,
-        net_amount,
-        paid_amount,
-        paid_status: paid_status_calc,
-        remaining_amount,
-        ...deposit,
-        latest_deposit_deduction: deposit_deduction_amount,
-        lines_count,
-        paid_at: payment?.paid_at || null,
-        slip_url: payment?.slip_url || null,
-      });
-    }
-
-    // sort latest first by period_start
-    rows.sort((a, b) => new Date(b.period_start).getTime() - new Date(a.period_start).getTime());
+    const rows = await technicianPayoutIntegrity.buildTechnicianPayoutRows({
+      periods: periods.map((p) => _payoutPeriodDefForSummary(p, p.work_month || '')),
+      technicianUsername: tech,
+      buildPeriodSummary: (period, username) => _buildTechnicianPayoutPeriodSummary(period, username),
+    });
     return res.json({ ok: true, username: tech, payouts: rows });
   } catch (e) {
     console.error('GET /tech/payouts', e);
@@ -10088,60 +9977,14 @@ app.get('/tech/payouts/:payout_id', requireTechnicianSession, async (req, res) =
 
     const bounds = _periodBoundsForYm(parsed.type, parsed.y, parsed.m);
 
-    // meta/status จาก period ถ้ามี (ไม่มีก็ถือว่า draft)
-    const metaQ = await pool.query(
-      `SELECT payout_id, status, period_start, period_end
-         FROM public.technician_payout_periods
-        WHERE payout_id=$1
-        LIMIT 1`,
-      [payout_id]
-    );
-    const meta = metaQ.rows[0] || null;
-    const status = meta?.status || 'draft';
-
-    // v10: draft/unpaid period detail must recompute live from contract engine.
-    // Stored payout_lines are trusted only after locked/paid to avoid showing old 350/1400 rows.
-    const loadedLines = await _loadPayoutLinesForTech({
+    const summary = await _buildTechnicianPayoutPeriodSummary({
       payout_id,
-      tech,
-      status,
-      start: bounds.start,
-      endEx: bounds.endEx,
       period_type: bounds.period_type,
       label_ym: bounds.label_ym,
-    });
-    let lines = loadedLines.lines || [];
-
-    const adjQ = await pool.query(
-      `SELECT adj_id, job_id, adj_amount, reason, created_at
-         FROM public.technician_payout_adjustments
-        WHERE payout_id=$1 AND technician_username=$2
-        ORDER BY created_at ASC, adj_id ASC`,
-      [payout_id, tech]
-    );
-
-    const payQ = await pool.query(
-      `SELECT paid_amount, paid_status, paid_at, slip_url, note
-         FROM public.technician_payout_payments
-        WHERE payout_id=$1 AND technician_username=$2
-        LIMIT 1`,
-      [payout_id, tech]
-    );
-
-    const gross = (lines || []).reduce((a, it) => a + Number(it.earn_amount || 0), 0);
-    const adj_total = (adjQ.rows || []).reduce((a, it) => a + Number(it.adj_amount || 0), 0);
-    const deposit = await technicianDepositCollections.getProjectedDepositDeductionForPayout(pool, {
-      payout_id,
-      technician_username: tech,
-      gross_amount: gross,
-      adj_total,
-      period_status: status,
-    });
-    const deposit_deduction_amount = _money(deposit.deposit_deduction_amount || 0);
-    const net = _money(gross + adj_total - deposit_deduction_amount);
-    const payment = payQ.rows[0] || null;
-    const paid_amount = Number(payment?.paid_amount || 0);
-    const remaining = _money(net - paid_amount);
+      start: bounds.start,
+      endEx: bounds.endEx,
+    }, tech);
+    const lines = summary.lines || [];
 
     const profile = await _getTechProfile(tech);
     const wrQ = await pool.query(
@@ -10164,24 +10007,36 @@ app.get('/tech/payouts/:payout_id', requireTechnicianSession, async (req, res) =
         daily_wage_amount: Number(profile.daily_wage_amount || 0),
         monthly_salary_amount: Number(profile.monthly_salary_amount || 0),
       } : null,
-      status,
-      source: loadedLines.source,
+      status: summary.status,
+      source: summary.source,
       period_type: parsed.type,
-      period_start: meta?.period_start || bounds.start.toISOString(),
-      period_end: meta?.period_end || bounds.endEx.toISOString(),
-      gross_amount: gross,
-      adj_total,
-      deposit_deduction_amount,
-      net_amount: net,
-      paid_amount,
-      paid_status: _paidStatus(net, paid_amount),
-      remaining_amount: remaining,
-      ...deposit,
-      latest_deposit_deduction: deposit_deduction_amount,
-      payment,
+      period_start: summary.period_start || bounds.start.toISOString(),
+      period_end: summary.period_end || bounds.endEx.toISOString(),
+      gross_amount: summary.gross_amount,
+      adj_total: summary.adj_total,
+      deposit_deduction_amount: summary.deposit_deduction_amount,
+      net_amount: summary.net_amount,
+      paid_amount: summary.paid_amount,
+      paid_status: summary.paid_status,
+      remaining_amount: summary.remaining_amount,
+      deposit_existing_collect_amount: summary.deposit_existing_collect_amount,
+      deposit_existing_collect_exists: summary.deposit_existing_collect_exists,
+      deposit_projected: summary.deposit_projected,
+      deposit_projection_reason: summary.deposit_projection_reason,
+      deposit_target_amount: summary.deposit_target_amount,
+      deposit_collected_total: summary.deposit_collected_total,
+      deposit_collected_total_projected: summary.deposit_collected_total_projected,
+      deposit_remaining_amount: summary.deposit_remaining_amount,
+      deposit_remaining_amount_projected: summary.deposit_remaining_amount_projected,
+      deposit_is_required: summary.deposit_is_required,
+      deposit_payment_paid_amount: summary.deposit_payment_paid_amount,
+      deposit_payment_paid_status: summary.deposit_payment_paid_status,
+      deposit_payment_paid_at: summary.deposit_payment_paid_at,
+      latest_deposit_deduction: summary.latest_deposit_deduction,
+      payment: summary.payment,
       withdraw_request,
-      adjustments: adjQ.rows || [],
-      total_amount: net,
+      adjustments: summary.adjustments || [],
+      total_amount: summary.net_amount,
       lines
     });
   } catch (e) {
@@ -15134,7 +14989,7 @@ app.delete("/admin/jobs/:job_id", requireAdminSoft, async (req, res) => {
     await client.query("BEGIN");
 
     const jr = await client.query(
-      `SELECT job_id, booking_code FROM public.jobs WHERE job_id=$1 LIMIT 1`,
+      `SELECT job_id, booking_code FROM public.jobs WHERE job_id=$1 LIMIT 1 FOR UPDATE`,
       [jobId]
     );
     if (!jr.rows?.length) {
@@ -15142,92 +14997,104 @@ app.delete("/admin/jobs/:job_id", requireAdminSoft, async (req, res) => {
       return res.status(404).json({ error: "ไม่พบงาน" });
     }
 
+    const deleteRelatedRows = async (_db, hardDeleteJobId) => {
+      // delete related tables (best-effort)
+      // IMPORTANT: In Postgres, any error inside a transaction aborts the whole transaction.
+      // So we MUST wrap each best-effort delete with SAVEPOINT.
+      let _sp_i = 0;
+      const deleteFrom = async (sql, params) => {
+        const sp = `sp_del_${++_sp_i}`;
+        try {
+          await client.query(`SAVEPOINT ${sp}`);
+          await client.query(sql, params);
+          await client.query(`RELEASE SAVEPOINT ${sp}`);
+        } catch (e) {
+          try { await client.query(`ROLLBACK TO SAVEPOINT ${sp}`); } catch(_e) {}
+          try { await client.query(`RELEASE SAVEPOINT ${sp}`); } catch(_e) {}
+          console.warn("[admin_delete_job] skip", e.message);
+        }
+      };
 
-// delete related tables (best-effort)
-// IMPORTANT: In Postgres, any error inside a transaction aborts the whole transaction.
-// So we MUST wrap each best-effort delete with SAVEPOINT.
-let _sp_i = 0;
-const deleteFrom = async (sql, params) => {
-  const sp = `sp_del_${++_sp_i}`;
-  try {
-    await client.query(`SAVEPOINT ${sp}`);
-    await client.query(sql, params);
-    await client.query(`RELEASE SAVEPOINT ${sp}`);
-  } catch (e) {
-    try { await client.query(`ROLLBACK TO SAVEPOINT ${sp}`); } catch(_e) {}
-    try { await client.query(`RELEASE SAVEPOINT ${sp}`); } catch(_e) {}
-    console.warn("[admin_delete_job] skip", e.message);
-  }
-};
+      // delete children first (FK-safe)
+      await deleteFrom(`DELETE FROM public.job_photo_metadata WHERE job_id=$1`, [hardDeleteJobId]);
+      await deleteFrom(`DELETE FROM public.job_photos WHERE job_id=$1`, [hardDeleteJobId]);
+      await deleteFrom(`DELETE FROM public.job_updates_v2 WHERE job_id=$1`, [hardDeleteJobId]);
+      await deleteFrom(`DELETE FROM public.job_team_members WHERE job_id=$1`, [hardDeleteJobId]);
+      await deleteFrom(`DELETE FROM public.job_assignments WHERE job_id=$1`, [hardDeleteJobId]);
+      await deleteFrom(`DELETE FROM public.job_offer_recipients WHERE job_id=$1`, [hardDeleteJobId]);
+      await deleteFrom(`DELETE FROM public.job_offers WHERE job_id=$1`, [hardDeleteJobId]);
 
-// delete children first (FK-safe)
-await deleteFrom(`DELETE FROM public.job_photo_metadata WHERE job_id=$1`, [jobId]);
-await deleteFrom(`DELETE FROM public.job_photos WHERE job_id=$1`, [jobId]);
-await deleteFrom(`DELETE FROM public.job_updates_v2 WHERE job_id=$1`, [jobId]);
-await deleteFrom(`DELETE FROM public.job_team_members WHERE job_id=$1`, [jobId]);
-await deleteFrom(`DELETE FROM public.job_assignments WHERE job_id=$1`, [jobId]);
-await deleteFrom(`DELETE FROM public.job_offer_recipients WHERE job_id=$1`, [jobId]);
-await deleteFrom(`DELETE FROM public.job_offers WHERE job_id=$1`, [jobId]);
+      // v2 pricing/items/promotions (some deployments have these tables + FK to jobs)
+      await deleteFrom(`DELETE FROM public.job_items WHERE job_id=$1`, [hardDeleteJobId]);
+      await deleteFrom(`DELETE FROM public.job_promotions WHERE job_id=$1`, [hardDeleteJobId]);
+      await deleteFrom(`DELETE FROM public.job_pricing_requests WHERE job_id=$1`, [hardDeleteJobId]);
+      // reviews can reference job_id as well
+      await deleteFrom(`DELETE FROM public.technician_reviews WHERE job_id=$1`, [hardDeleteJobId]);
 
-// v2 pricing/items/promotions (some deployments have these tables + FK to jobs)
-await deleteFrom(`DELETE FROM public.job_items WHERE job_id=$1`, [jobId]);
-await deleteFrom(`DELETE FROM public.job_promotions WHERE job_id=$1`, [jobId]);
-await deleteFrom(`DELETE FROM public.job_pricing_requests WHERE job_id=$1`, [jobId]);
-// reviews can reference job_id as well
-await deleteFrom(`DELETE FROM public.technician_reviews WHERE job_id=$1`, [jobId]);
+      // -----------------------------------------------------------------
+      // Dynamic cleanup (no regression):
+      // Some production DBs may have extra tables referencing jobs(job_id).
+      // If we miss one FK, deleting from jobs will fail with 23503.
+      // So we proactively scan FK references and best-effort delete rows.
+      // -----------------------------------------------------------------
+      const quoteIdent = (s) => {
+        const v = String(s || '');
+        return '"' + v.replace(/"/g, '""') + '"';
+      };
 
-// -----------------------------------------------------------------
-// Dynamic cleanup (no regression):
-// Some production DBs may have extra tables referencing jobs(job_id).
-// If we miss one FK, deleting from jobs will fail with 23503.
-// So we proactively scan FK references and best-effort delete rows.
-// -----------------------------------------------------------------
-const quoteIdent = (s) => {
-  const v = String(s || '');
-  return '"' + v.replace(/"/g, '""') + '"';
-};
+      try {
+        const fk = await client.query(
+          `
+          SELECT
+            con.conrelid::regclass::text AS rel,
+            att.attname AS col
+          FROM pg_constraint con
+          JOIN pg_class rel ON rel.oid = con.conrelid
+          JOIN pg_namespace nsp ON nsp.oid = rel.relnamespace
+          JOIN unnest(con.conkey) WITH ORDINALITY AS ck(attnum, ord) ON TRUE
+          JOIN pg_attribute att ON att.attrelid = con.conrelid AND att.attnum = ck.attnum
+          WHERE con.contype = 'f'
+            AND con.confrelid = 'public.jobs'::regclass
+            AND nsp.nspname = 'public'
+            AND att.attname = 'job_id'
+          GROUP BY con.conrelid, att.attname
+          ORDER BY rel;
+          `
+        );
+        for (const row of (fk.rows || [])) {
+          const rel = String(row.rel || '').trim();
+          if (!rel) continue;
+          // rel is already schema-qualified text (e.g. public.some_table)
+          const parts = rel.split('.');
+          if (parts.length !== 2) continue;
+          const tbl = `${quoteIdent(parts[0])}.${quoteIdent(parts[1])}`;
+          // skip the parent table
+          if (parts[1] === 'jobs') continue;
+          await deleteFrom(`DELETE FROM ${tbl} WHERE job_id=$1`, [hardDeleteJobId]);
+        }
+      } catch (e) {
+        console.warn('[admin_delete_job] fk scan skipped', e.message);
+      }
+    };
 
-try {
-  const fk = await client.query(
-    `
-    SELECT
-      con.conrelid::regclass::text AS rel,
-      att.attname AS col
-    FROM pg_constraint con
-    JOIN pg_class rel ON rel.oid = con.conrelid
-    JOIN pg_namespace nsp ON nsp.oid = rel.relnamespace
-    JOIN unnest(con.conkey) WITH ORDINALITY AS ck(attnum, ord) ON TRUE
-    JOIN pg_attribute att ON att.attrelid = con.conrelid AND att.attnum = ck.attnum
-    WHERE con.contype = 'f'
-      AND con.confrelid = 'public.jobs'::regclass
-      AND nsp.nspname = 'public'
-      AND att.attname = 'job_id'
-    GROUP BY con.conrelid, att.attname
-    ORDER BY rel;
-    `
-  );
-  for (const row of (fk.rows || [])) {
-    const rel = String(row.rel || '').trim();
-    if (!rel) continue;
-    // rel is already schema-qualified text (e.g. public.some_table)
-    const parts = rel.split('.');
-    if (parts.length !== 2) continue;
-    const tbl = `${quoteIdent(parts[0])}.${quoteIdent(parts[1])}`;
-    // skip the parent table
-    if (parts[1] === 'jobs') continue;
-    await deleteFrom(`DELETE FROM ${tbl} WHERE job_id=$1`, [jobId]);
-  }
-} catch (e) {
-  console.warn('[admin_delete_job] fk scan skipped', e.message);
-}
-
-const dr = await client.query(`DELETE FROM public.jobs WHERE job_id=$1`, [jobId]);
+    const hardDelete = await technicianPayoutIntegrity.runJobHardDeletePayoutFlow({
+      db: client,
+      jobId,
+      context: 'admin_delete_job_primary',
+      assertJobMutableForPayout: _assertJobMutableForPayout,
+      deleteRelatedRows,
+    });
     await client.query("COMMIT");
-    return res.json({ ok: true, deleted: dr.rowCount || 0 });
+    return res.json({ ok: true, deleted: hardDelete.deleted || 0, payout_cleanup: hardDelete.payout_cleanup });
   } catch (e) {
     try { await client.query("ROLLBACK"); } catch(_e) {}
     console.error("/admin/jobs/:job_id delete error:", e);
-    return res.status(500).json({ error: e.message || "ลบงานไม่สำเร็จ" });
+    return res.status(Number(e.statusCode || e.status || 500)).json({
+      error: e.message || "ลบงานไม่สำเร็จ",
+      code: e.code || undefined,
+      payout_id: e.payout_id || undefined,
+      details: e.details || undefined,
+    });
   } finally {
     client.release();
   }
@@ -16567,7 +16434,8 @@ app.delete('/admin/jobs/:job_id', requireAdminSoft, async (req, res) => {
 
     const chk = await client.query(
       `SELECT job_id, booking_code, technician_username, appointment_datetime
-         FROM public.jobs WHERE job_id=$1`,
+         FROM public.jobs WHERE job_id=$1
+         FOR UPDATE`,
       [job_id]
     );
     if (!chk.rows || !chk.rows.length) {
@@ -16575,30 +16443,40 @@ app.delete('/admin/jobs/:job_id', requireAdminSoft, async (req, res) => {
       return res.status(404).json({ ok:false, error:'job not found' });
     }
 
-    // 🔒 Phase 5: do not allow delete if job affects locked/paid payout
-    await _assertJobMutableForPayout(client, job_id, 'admin_delete_job');
+    const deleteRelatedRows = async (_db, hardDeleteJobId) => {
+      // child tables (fail-safe: some DB might miss tables in older deploys)
+      const safeDel = async (sql, params) => {
+        try { await client.query(sql, params); } catch(e){ console.warn('[admin_delete_job] ignore', e.message); }
+      };
 
-    // child tables (fail-safe: some DB might miss tables in older deploys)
-    const safeDel = async (sql, params) => {
-      try { await client.query(sql, params); } catch(e){ console.warn('[admin_delete_job] ignore', e.message); }
+      await safeDel(`DELETE FROM public.job_photos WHERE job_id=$1`, [hardDeleteJobId]);
+      await safeDel(`DELETE FROM public.job_updates_v2 WHERE job_id=$1`, [hardDeleteJobId]);
+      await safeDel(`DELETE FROM public.job_offers WHERE job_id=$1`, [hardDeleteJobId]);
+      await safeDel(`DELETE FROM public.job_team_members WHERE job_id=$1`, [hardDeleteJobId]);
+      await safeDel(`DELETE FROM public.job_assignments WHERE job_id=$1`, [hardDeleteJobId]);
+      await safeDel(`DELETE FROM public.job_promotions WHERE job_id=$1`, [hardDeleteJobId]);
+      await safeDel(`DELETE FROM public.job_items WHERE job_id=$1`, [hardDeleteJobId]);
     };
 
-    await safeDel(`DELETE FROM public.job_photos WHERE job_id=$1`, [job_id]);
-    await safeDel(`DELETE FROM public.job_updates_v2 WHERE job_id=$1`, [job_id]);
-    await safeDel(`DELETE FROM public.job_offers WHERE job_id=$1`, [job_id]);
-    await safeDel(`DELETE FROM public.job_team_members WHERE job_id=$1`, [job_id]);
-    await safeDel(`DELETE FROM public.job_assignments WHERE job_id=$1`, [job_id]);
-    await safeDel(`DELETE FROM public.job_promotions WHERE job_id=$1`, [job_id]);
-    await safeDel(`DELETE FROM public.job_items WHERE job_id=$1`, [job_id]);
-
-    await client.query(`DELETE FROM public.jobs WHERE job_id=$1`, [job_id]);
+    const hardDelete = await technicianPayoutIntegrity.runJobHardDeletePayoutFlow({
+      db: client,
+      jobId: job_id,
+      context: 'admin_delete_job',
+      assertJobMutableForPayout: _assertJobMutableForPayout,
+      deleteRelatedRows,
+    });
 
     await client.query('COMMIT');
-    return res.json({ ok:true });
+    return res.json({ ok:true, deleted: hardDelete.deleted || 0, payout_cleanup: hardDelete.payout_cleanup });
   } catch (e) {
     try { await client.query('ROLLBACK'); } catch(_){}
     console.error('[admin_delete_job] error', e);
-    return res.status(500).json({ ok:false, error:'delete failed' });
+    return res.status(Number(e.statusCode || e.status || 500)).json({
+      ok:false,
+      error: e.code || e.message || 'delete failed',
+      message: e.message || undefined,
+      details: e.details || undefined,
+    });
   } finally {
     client.release();
   }
@@ -17648,7 +17526,12 @@ app.delete("/jobs/:job_id/admin-delete", requireAdminSoft, async (req, res) => {
       throw new Error(`ต้องยืนยันด้วย booking_code (${code}) หรือพิมพ์ DELETE`);
     }
 
-    await client.query(`DELETE FROM public.jobs WHERE job_id=$1`, [job_id]);
+    const hardDelete = await technicianPayoutIntegrity.runJobHardDeletePayoutFlow({
+      db: client,
+      jobId: job_id,
+      context: 'legacy_admin_delete_job',
+      assertJobMutableForPayout: _assertJobMutableForPayout,
+    });
 
     // server log (at least)
     try {
@@ -17657,10 +17540,14 @@ app.delete("/jobs/:job_id/admin-delete", requireAdminSoft, async (req, res) => {
     } catch (e) {}
 
     await client.query("COMMIT");
-    res.json({ success: true });
+    res.json({ success: true, deleted: hardDelete.deleted || 0, payout_cleanup: hardDelete.payout_cleanup });
   } catch (e) {
     await client.query("ROLLBACK");
-    res.status(400).json({ error: e.message || "ลบงานไม่สำเร็จ" });
+    res.status(Number(e.statusCode || e.status || 400)).json({
+      error: e.message || "ลบงานไม่สำเร็จ",
+      code: e.code || undefined,
+      details: e.details || undefined,
+    });
   } finally {
     client.release();
   }
