@@ -128,6 +128,26 @@ test("technician payout display status maps payable states without mutating paid
   assert.deepEqual(Array.from(statuses), ["ไม่มียอดจ่าย", "รอจ่าย", "จ่ายบางส่วน", "จ่ายแล้ว"]);
 });
 
+test("technician payout display status preserves exceptional paid_status values unless the period has no payable amount", () => {
+  const { run } = createAppSandbox();
+  const result = run(`({
+    hold: _payoutPaymentDisplayStatusTH({ net_amount: 1000, paid_amount: 0, remaining_amount: 1000, paid_status: "hold" }),
+    holdExpected: _paidStatusTH("hold"),
+    disputed: _payoutPaymentDisplayStatusTH({ net_amount: 1000, paid_amount: 400, remaining_amount: 600, paid_status: "disputed" }),
+    disputedExpected: _paidStatusTH("disputed"),
+    cancelled: _payoutPaymentDisplayStatusTH({ net_amount: 1000, paid_amount: 1000, remaining_amount: 0, paid_status: "cancelled" }),
+    cancelledExpected: _paidStatusTH("cancelled"),
+    noPay: _payoutPaymentDisplayStatusTH({ net_amount: 0, paid_amount: 0, remaining_amount: 0, paid_status: "hold" }),
+    noPayExpected: _payoutPaymentDisplayStatusTH({ net_amount: 0, paid_amount: 0, remaining_amount: 0, paid_status: "unpaid" })
+  })`);
+
+  assert.equal(result.hold, result.holdExpected);
+  assert.equal(result.disputed, result.disputedExpected);
+  assert.equal(result.cancelled, result.cancelledExpected);
+  assert.equal(result.noPay, result.noPayExpected);
+  assert.notEqual(result.noPay, result.holdExpected);
+});
+
 test("technician payout list renders no-pay and payable statuses from the same display rule", () => {
   const { run, elements } = createAppSandbox();
   run(`renderTechPayoutPeriods([

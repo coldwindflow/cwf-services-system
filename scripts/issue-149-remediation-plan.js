@@ -42,6 +42,8 @@ function groupSafeRows(rows) {
         job_id: row.job_id,
         line_ids: [],
         adjustment_ids: [],
+        _lineIdSet: new Set(),
+        _adjustmentIdSet: new Set(),
         orphan_payout_line_amount: 0,
         linked_adjustment_amount: 0,
         deposit_impact: 0,
@@ -49,27 +51,130 @@ function groupSafeRows(rows) {
       });
     }
     const g = groups.get(key);
-    if (row.line_id != null) g.line_ids.push(row.line_id);
+    const rowLineIds = Array.isArray(row.line_ids) ? row.line_ids : [row.line_id];
+    for (const id of rowLineIds) {
+      if (id != null && !g._lineIdSet.has(id)) {
+        g._lineIdSet.add(id);
+        g.line_ids.push(id);
+      }
+    }
+    let hasNewAdjustment = false;
     for (const id of row.adjustment_ids || []) {
-      if (id != null && !g.adjustment_ids.includes(id)) g.adjustment_ids.push(id);
+      if (id != null && !g._adjustmentIdSet.has(id)) {
+        g._adjustmentIdSet.add(id);
+        g.adjustment_ids.push(id);
+        hasNewAdjustment = true;
+      }
     }
     g.orphan_payout_line_amount = money(g.orphan_payout_line_amount + Number(row.orphan_payout_line_amount || 0));
-    g.linked_adjustment_amount = money(g.linked_adjustment_amount + Number(row.linked_adjustment_amount || 0));
+    if (!Array.isArray(row.adjustment_ids) || row.adjustment_ids.length === 0 || hasNewAdjustment) {
+      g.linked_adjustment_amount = money(g.linked_adjustment_amount + Number(row.linked_adjustment_amount || 0));
+    }
     g.deposit_impact = money(g.deposit_impact + Number(row.deposit_impact || 0));
     g.net_impact = money(g.net_impact + Number(row.net_impact || 0));
   }
-  return [...groups.values()];
+  return [...groups.values()].map((group) => {
+    const { _lineIdSet, _adjustmentIdSet, ...clean } = group;
+    return clean;
+  });
 }
 
 function cleanupSqlForGroup(group) {
   const pid = sqlString(group.payout_id);
   const tech = sqlString(group.technician_username);
   const job = sqlString(group.job_id);
+  const expectedLineCount = Number(group.line_ids.length || 0);
+  const expectedAdjustmentCount = Number(group.adjustment_ids.length || 0);
+  const expectedLineTotal = money(group.orphan_payout_line_amount);
+  const expectedAdjustmentTotal = money(group.linked_adjustment_amount);
   return `
 -- A cleanup candidate: payout_id=${group.payout_id}, technician=${group.technician_username}, job_id=${group.job_id}
 -- before_count expected lines=${group.line_ids.length}, adjustments=${group.adjustment_ids.length}
--- before_total line=${money(group.orphan_payout_line_amount)}, adjustment=${money(group.linked_adjustment_amount)}, deposit_impact=${money(group.deposit_impact)}, net_impact=${money(group.net_impact)}
+-- before_total line=${expectedLineTotal}, adjustment=${expectedAdjustmentTotal}, deposit_impact=${money(group.deposit_impact)}, net_impact=${money(group.net_impact)}
 -- expected_after lines=0 total=0, adjustments=0 total=0 for this orphan job
+DO $$
+DECLARE
+  v_period_status text;
+  v_payment_count integer;
+  v_line_count integer;
+  v_line_total numeric;
+  v_adjustment_count integer;
+  v_adjustment_total numeric;
+BEGIN
+  PERFORM pg_advisory_xact_lock(hashtext('issue-149-remediation:${group.payout_id}:${group.technician_username}'));
+
+  SELECT p.status
+    INTO v_period_status
+    FROM public.technician_payout_periods p
+   WHERE p.payout_id=${pid}
+   FOR UPDATE;
+
+  IF v_period_status IS NOT NULL AND lower(COALESCE(v_period_status,'draft')) <> 'draft' THEN
+    RAISE EXCEPTION 'Issue 149 cleanup blocked: payout % status changed to %', ${pid}, v_period_status;
+  END IF;
+
+  PERFORM 1
+    FROM public.technician_payout_payments pay
+   WHERE pay.payout_id=${pid}
+     AND pay.technician_username=${tech}
+     AND (
+       pay.payment_id IS NOT NULL
+       OR COALESCE(pay.paid_amount,0) <> 0
+       OR COALESCE(pay.paid_status,'') <> ''
+       OR pay.paid_at IS NOT NULL
+     )
+   FOR UPDATE;
+
+  GET DIAGNOSTICS v_payment_count = ROW_COUNT;
+  IF v_payment_count > 0 THEN
+    RAISE EXCEPTION 'Issue 149 cleanup blocked: payment row now exists for payout %, technician %', ${pid}, ${tech};
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM public.jobs j WHERE j.job_id::text=${job}) THEN
+    RAISE EXCEPTION 'Issue 149 cleanup blocked: job % exists again', ${job};
+  END IF;
+
+  PERFORM 1
+    FROM public.technician_payout_lines l
+   WHERE l.payout_id=${pid}
+     AND l.technician_username=${tech}
+     AND l.job_id::text=${job}
+   FOR UPDATE;
+
+  SELECT COUNT(*)::integer, COALESCE(SUM(earn_amount),0)::numeric
+    INTO v_line_count, v_line_total
+    FROM public.technician_payout_lines l
+   WHERE l.payout_id=${pid}
+     AND l.technician_username=${tech}
+     AND l.job_id::text=${job}
+     AND NOT EXISTS (SELECT 1 FROM public.jobs j WHERE j.job_id::text=${job});
+
+  IF v_line_count <> ${expectedLineCount} OR v_line_total <> ${expectedLineTotal}::numeric THEN
+    RAISE EXCEPTION 'Issue 149 cleanup blocked: payout line mismatch for payout %, job %; expected count %, total %, got count %, total %',
+      ${pid}, ${job}, ${expectedLineCount}, ${expectedLineTotal}::numeric, v_line_count, v_line_total;
+  END IF;
+
+  PERFORM 1
+    FROM public.technician_payout_adjustments a
+   WHERE a.payout_id=${pid}
+     AND a.technician_username=${tech}
+     AND a.job_id::text=${job}
+   FOR UPDATE;
+
+  SELECT COUNT(*)::integer, COALESCE(SUM(adj_amount),0)::numeric
+    INTO v_adjustment_count, v_adjustment_total
+    FROM public.technician_payout_adjustments a
+   WHERE a.payout_id=${pid}
+     AND a.technician_username=${tech}
+     AND a.job_id::text=${job}
+     AND NOT EXISTS (SELECT 1 FROM public.jobs j WHERE j.job_id::text=${job});
+
+  IF v_adjustment_count <> ${expectedAdjustmentCount} OR v_adjustment_total <> ${expectedAdjustmentTotal}::numeric THEN
+    RAISE EXCEPTION 'Issue 149 cleanup blocked: adjustment mismatch for payout %, job %; expected count %, total %, got count %, total %',
+      ${pid}, ${job}, ${expectedAdjustmentCount}, ${expectedAdjustmentTotal}::numeric, v_adjustment_count, v_adjustment_total;
+  END IF;
+END $$;
+
 SELECT 'before_lines' AS check_name, COUNT(*)::int AS count, COALESCE(SUM(earn_amount),0)::numeric AS total
   FROM public.technician_payout_lines
  WHERE payout_id=${pid}
@@ -88,6 +193,22 @@ DELETE FROM public.technician_payout_adjustments
  WHERE payout_id=${pid}
    AND technician_username=${tech}
    AND job_id::text=${job}
+   AND NOT EXISTS (
+     SELECT 1 FROM public.technician_payout_periods p
+      WHERE p.payout_id=${pid}
+        AND lower(COALESCE(p.status,'draft')) <> 'draft'
+   )
+   AND NOT EXISTS (
+     SELECT 1 FROM public.technician_payout_payments pay
+      WHERE pay.payout_id=${pid}
+        AND pay.technician_username=${tech}
+        AND (
+          pay.payment_id IS NOT NULL
+          OR COALESCE(pay.paid_amount,0) <> 0
+          OR COALESCE(pay.paid_status,'') <> ''
+          OR pay.paid_at IS NOT NULL
+        )
+   )
    AND NOT EXISTS (SELECT 1 FROM public.jobs j WHERE j.job_id::text=${job})
  RETURNING adj_id, payout_id, technician_username, job_id, adj_amount;
 
@@ -95,18 +216,66 @@ DELETE FROM public.technician_payout_lines
  WHERE payout_id=${pid}
    AND technician_username=${tech}
    AND job_id::text=${job}
+   AND NOT EXISTS (
+     SELECT 1 FROM public.technician_payout_periods p
+      WHERE p.payout_id=${pid}
+        AND lower(COALESCE(p.status,'draft')) <> 'draft'
+   )
+   AND NOT EXISTS (
+     SELECT 1 FROM public.technician_payout_payments pay
+      WHERE pay.payout_id=${pid}
+        AND pay.technician_username=${tech}
+        AND (
+          pay.payment_id IS NOT NULL
+          OR COALESCE(pay.paid_amount,0) <> 0
+          OR COALESCE(pay.paid_status,'') <> ''
+          OR pay.paid_at IS NOT NULL
+        )
+   )
    AND NOT EXISTS (SELECT 1 FROM public.jobs j WHERE j.job_id::text=${job})
  RETURNING line_id, payout_id, technician_username, job_id, earn_amount;
 
 DELETE FROM public.job_technician_income_preview
  WHERE technician_username=${tech}
    AND job_id::text=${job}
+   AND NOT EXISTS (
+     SELECT 1 FROM public.technician_payout_periods p
+      WHERE p.payout_id=${pid}
+        AND lower(COALESCE(p.status,'draft')) <> 'draft'
+   )
+   AND NOT EXISTS (
+     SELECT 1 FROM public.technician_payout_payments pay
+      WHERE pay.payout_id=${pid}
+        AND pay.technician_username=${tech}
+        AND (
+          pay.payment_id IS NOT NULL
+          OR COALESCE(pay.paid_amount,0) <> 0
+          OR COALESCE(pay.paid_status,'') <> ''
+          OR pay.paid_at IS NOT NULL
+        )
+   )
    AND NOT EXISTS (SELECT 1 FROM public.jobs j WHERE j.job_id::text=${job})
  RETURNING id, job_id, technician_username, income_amount;
 
 DELETE FROM public.technician_job_income_display
  WHERE technician_username=${tech}
    AND job_id::text=${job}
+   AND NOT EXISTS (
+     SELECT 1 FROM public.technician_payout_periods p
+      WHERE p.payout_id=${pid}
+        AND lower(COALESCE(p.status,'draft')) <> 'draft'
+   )
+   AND NOT EXISTS (
+     SELECT 1 FROM public.technician_payout_payments pay
+      WHERE pay.payout_id=${pid}
+        AND pay.technician_username=${tech}
+        AND (
+          pay.payment_id IS NOT NULL
+          OR COALESCE(pay.paid_amount,0) <> 0
+          OR COALESCE(pay.paid_status,'') <> ''
+          OR pay.paid_at IS NOT NULL
+        )
+   )
    AND NOT EXISTS (SELECT 1 FROM public.jobs j WHERE j.job_id::text=${job})
  RETURNING id, job_id, technician_username, display_amount;
 

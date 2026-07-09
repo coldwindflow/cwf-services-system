@@ -204,6 +204,10 @@ function groupKey(payoutId, technician) {
   return `${payoutId}::${technician}`;
 }
 
+function orphanJobKey(row) {
+  return `${row.payout_id}::${row.technician_username}::${row.job_id}`;
+}
+
 async function summarizeAudit(client, { technician, workMonth }) {
   const payoutIds = payoutIdsForWorkMonth(workMonth);
   const data = await loadRows(client, technician, payoutIds);
@@ -212,14 +216,10 @@ async function summarizeAudit(client, { technician, workMonth }) {
 
   const orphanAdjustmentsByJob = new Map();
   for (const adj of data.orphanAdjustments) {
-    const key = `${adj.payout_id}::${adj.job_id}`;
+    const key = orphanJobKey(adj);
     if (!orphanAdjustmentsByJob.has(key)) orphanAdjustmentsByJob.set(key, []);
     orphanAdjustmentsByJob.get(key).push(adj);
   }
-
-  const targetOrphanJobIds = new Set(orphanRows.map((row) => String(row.job_id)));
-  const targetPreviewCache = data.previewCache.filter((row) => targetOrphanJobIds.has(String(row.job_id)));
-  const targetDisplayCache = data.displayCache.filter((row) => targetOrphanJobIds.has(String(row.job_id)));
 
   const allLinesByPayout = new Map();
   for (const line of data.lines) {
@@ -261,31 +261,47 @@ async function summarizeAudit(client, { technician, workMonth }) {
   }
 
   const orphanRows = [];
+  const orphanLineGroups = new Map();
   for (const line of data.orphanLines) {
-    const period = periods.get(line.payout_id) || { payout_id: line.payout_id, status: "draft" };
-    const payment = payments.get(groupKey(line.payout_id, line.technician_username)) || null;
-    const linkedAdjustments = orphanAdjustmentsByJob.get(`${line.payout_id}::${line.job_id}`) || [];
-    const linkedAdjustmentAmount = sumRows(linkedAdjustments, "adj_amount");
+    const key = orphanJobKey(line);
+    if (!orphanLineGroups.has(key)) {
+      orphanLineGroups.set(key, {
+        row_type: "payout_line_group",
+        technician_username: line.technician_username,
+        job_id: line.job_id,
+        payout_id: line.payout_id,
+        line_ids: [],
+        orphan_payout_line_amount: 0,
+      });
+    }
+    const group = orphanLineGroups.get(key);
+    if (line.line_id != null && !group.line_ids.includes(line.line_id)) group.line_ids.push(line.line_id);
+    group.orphan_payout_line_amount = money(group.orphan_payout_line_amount + Number(line.earn_amount || 0));
+  }
+  for (const group of orphanLineGroups.values()) {
+    const period = periods.get(group.payout_id) || { payout_id: group.payout_id, status: "draft" };
+    const payment = payments.get(groupKey(group.payout_id, group.technician_username)) || null;
+    const linkedAdjustments = orphanAdjustmentsByJob.get(orphanJobKey(group)) || [];
+    const adjustmentIds = [...new Set(linkedAdjustments.map((row) => row.adj_id).filter((id) => id != null))];
+    const linkedAdjustmentAmount = sumRows(linkedAdjustments.filter((row, index, arr) =>
+      row.adj_id == null || arr.findIndex((other) => other.adj_id === row.adj_id) === index
+    ), "adj_amount");
     orphanRows.push({
-      row_type: "payout_line",
-      technician_username: line.technician_username,
-      job_id: line.job_id,
-      payout_id: line.payout_id,
-      line_id: line.line_id,
-      adjustment_ids: linkedAdjustments.map((row) => row.adj_id),
+      ...group,
+      line_id: group.line_ids.length === 1 ? group.line_ids[0] : null,
+      adjustment_ids: adjustmentIds,
       period_status: period.status || "draft",
       payment_id: payment?.payment_id || null,
       paid_status: payment?.paid_status || "",
       paid_amount: money(payment?.paid_amount || 0),
-      orphan_payout_line_amount: money(line.earn_amount),
       linked_adjustment_amount: linkedAdjustmentAmount,
       classification: classify({ period, payment }),
     });
   }
 
-  const lineJobKeys = new Set(data.orphanLines.map((line) => `${line.payout_id}::${line.job_id}`));
+  const lineJobKeys = new Set(data.orphanLines.map(orphanJobKey));
   for (const adj of data.orphanAdjustments) {
-    const key = `${adj.payout_id}::${adj.job_id}`;
+    const key = orphanJobKey(adj);
     if (lineJobKeys.has(key)) continue;
     const period = periods.get(adj.payout_id) || { payout_id: adj.payout_id, status: "draft" };
     const payment = payments.get(groupKey(adj.payout_id, adj.technician_username)) || null;
@@ -305,6 +321,10 @@ async function summarizeAudit(client, { technician, workMonth }) {
       classification: classify({ period, payment }),
     });
   }
+
+  const targetOrphanJobIds = new Set(orphanRows.map((row) => String(row.job_id)));
+  const targetPreviewCache = data.previewCache.filter((row) => targetOrphanJobIds.has(String(row.job_id)));
+  const targetDisplayCache = data.displayCache.filter((row) => targetOrphanJobIds.has(String(row.job_id)));
 
   const safeByPayout = new Map();
   for (const row of orphanRows.filter((r) => r.classification === "draft/unpaid-safe-to-clean")) {

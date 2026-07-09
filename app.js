@@ -2426,18 +2426,20 @@ function _paidStatusTH(status){
 }
 function _payoutPaymentDisplayStatusTH(payout){
   const p = (payout && typeof payout === 'object') ? payout : { paid_status: payout };
+  const paidStatus = String(p.paid_status || '').trim().toLowerCase();
   const net = Number(p.net_amount ?? p.total_amount ?? p.payout_month_net_amount ?? p.payout_month_amount ?? 0);
   const paid = Number(p.paid_amount || 0);
   const remainingRaw = p.remaining_amount;
   const remaining = Number(remainingRaw == null ? Math.max(0, net - paid) : remainingRaw);
   const eps = 0.0001;
   if (Number.isFinite(net) && Number.isFinite(remaining) && net <= eps && remaining <= eps) return 'ไม่มียอดจ่าย';
+  if (['hold','disputed','cancelled'].includes(paidStatus)) return _paidStatusTH(paidStatus);
   if (Number.isFinite(net) && net > eps) {
     if (Number.isFinite(paid) && paid <= eps) return 'รอจ่าย';
     if (Number.isFinite(remaining) && remaining > eps) return 'จ่ายบางส่วน';
     return 'จ่ายแล้ว';
   }
-  return _paidStatusTH(p.paid_status || 'unpaid');
+  return _paidStatusTH(paidStatus || 'unpaid');
 }
 
 
