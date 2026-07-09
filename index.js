@@ -25115,6 +25115,24 @@ function deriveCustomerScheduledBookingToken(requestKey) {
   return crypto.createHash("sha256").update(`scheduled_v1:${key}`).digest("hex").slice(0, 24);
 }
 
+// A scheduled request key is bound to the booking it first created. On replay we
+// only return the existing job when the material payload matches; a key reused
+// with a different appointment, phone, service type, or computed duration is a
+// key-reuse error (never a silent return of the old job's data).
+function isSameScheduledPayload(jobRow, incoming) {
+  const apptTime = (v) => {
+    const t = new Date(v).getTime();
+    return Number.isFinite(t) ? t : NaN;
+  };
+  const storedAppt = apptTime(jobRow.appointment_datetime);
+  const incomingAppt = apptTime(normalizeAppointmentDatetime(incoming.appointment_datetime));
+  const sameAppt = Number.isFinite(storedAppt) && Number.isFinite(incomingAppt) && storedAppt === incomingAppt;
+  const samePhone = String(jobRow.customer_phone || "").replace(/\D/g, "") === String(incoming.customer_phone || "").replace(/\D/g, "");
+  const sameType = String(jobRow.job_type || "").trim() === String(incoming.job_type || "").trim();
+  const sameDuration = Number(jobRow.duration_min || 0) === Number(incoming.duration_min || 0);
+  return sameAppt && samePhone && sameType && sameDuration;
+}
+
 // Customer App V2 urgent requests are just another entry point into the
 // existing admin urgent offer engine (handleAdminBookV2): this adapter only
 // (a) strips the request down to a customer-safe allowlist and (b) computes
@@ -25345,6 +25363,59 @@ console.log("[latlng_parse]", { ok: !!parsedLL });
   // (tech_type "all"), never a client_app-derived narrower set. Strictness comes
   // from the customer_slot_visible + service-matrix + monthly-calendar gates
   // inside customerAvailability, not from client_app.
+  // Payload-bound idempotency (checked BEFORE the availability gate): a genuine
+  // retry of the same request must replay its existing job even though that job
+  // now occupies the slot — so the replay lookup cannot sit behind the "slot
+  // full" check. Reusing the key with a materially different payload is rejected
+  // with 409 (no mutation, no old-job data leaked).
+  if (bm === "scheduled" && scheduledRequestKey && scheduledDeterministicToken) {
+    const idem = await pool.connect();
+    let prior = null;
+    try {
+      await idem.query("BEGIN");
+      await idem.query("SELECT pg_advisory_xact_lock(hashtext($1))", [scheduledRequestKey]);
+      const r = await idem.query(
+        `SELECT job_id, booking_code, booking_token, dispatch_mode, duration_min, job_price,
+                appointment_datetime, customer_phone, job_type
+           FROM public.jobs
+          WHERE booking_token=$1
+            AND job_source='customer'
+            AND COALESCE(booking_mode,'scheduled')='scheduled'
+            AND canceled_at IS NULL
+          LIMIT 1`,
+        [scheduledDeterministicToken]
+      );
+      await idem.query("COMMIT");
+      prior = r.rows[0] || null;
+    } catch (e) {
+      try { await idem.query("ROLLBACK"); } catch (_) {}
+      throw e;
+    } finally {
+      idem.release();
+    }
+    if (prior) {
+      if (!isSameScheduledPayload(prior, { appointment_datetime, customer_phone, job_type, duration_min: duration_min_v2 })) {
+        return res.status(409).json({
+          error: "คำขอนี้ถูกใช้ไปแล้วกับการจองอื่น กรุณาเริ่มการจองใหม่",
+          code: "IDEMPOTENCY_KEY_REUSED",
+        });
+      }
+      return res.json({
+        success: true,
+        replayed: true,
+        job_id: prior.job_id,
+        booking_code: prior.booking_code,
+        token: prior.booking_token,
+        booking_mode: "scheduled",
+        dispatch_mode: prior.dispatch_mode || "normal",
+        duration_min: Number(prior.duration_min || duration_min_v2 || 0),
+        effective_block_min: effectiveBlockMin(Number(prior.duration_min || duration_min_v2 || 0)),
+        travel_buffer_min: TRAVEL_BUFFER_MIN,
+        base_total: Number(prior.job_price || 0),
+      });
+    }
+  }
+
   const requestedTechType = bm === "urgent" ? "partner" : "all";
   try {
     if (bm === "scheduled") {
@@ -25387,7 +25458,7 @@ console.log("[latlng_parse]", { ok: !!parsedLL });
       await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [scheduledRequestKey]);
       const existing = await client.query(
         `SELECT job_id, booking_code, booking_token, booking_mode, dispatch_mode,
-                duration_min, job_price
+                duration_min, job_price, appointment_datetime, customer_phone, job_type
            FROM public.jobs
           WHERE booking_token=$1
             AND job_source='customer'
@@ -25397,8 +25468,16 @@ console.log("[latlng_parse]", { ok: !!parsedLL });
         [scheduledDeterministicToken]
       );
       if (existing.rows[0]) {
+        // Race safety net: a concurrent request with the same key committed first.
+        // Same payload -> replay; different payload -> key-reuse 409 (no mutation).
         const row = existing.rows[0];
         await client.query("COMMIT");
+        if (!isSameScheduledPayload(row, { appointment_datetime, customer_phone, job_type, duration_min: duration_min_v2 })) {
+          return res.status(409).json({
+            error: "คำขอนี้ถูกใช้ไปแล้วกับการจองอื่น กรุณาเริ่มการจองใหม่",
+            code: "IDEMPOTENCY_KEY_REUSED",
+          });
+        }
         return res.json({
           success: true,
           replayed: true,
