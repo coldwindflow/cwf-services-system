@@ -10,46 +10,45 @@ const indexSrc = fs.readFileSync(path.join(REPO_ROOT, "index.js"), "utf8");
 const scheduledSrc = fs.readFileSync(path.join(REPO_ROOT, "customer-app", "modules", "bookingScheduled.js"), "utf8");
 const urgentSrc = fs.readFileSync(path.join(REPO_ROOT, "customer-app", "modules", "bookingUrgent.js"), "utf8");
 
-// The customer self-booking lanes must FAIL CLOSED: OFF unless the operator
-// explicitly enables them in the environment. When off, /public/book answers
-// 503 with a machine-readable code + LINE URL BEFORE any job work, so a closed
-// lane can never create a job (and therefore never a duplicate).
+// The /public/book source (handler body only) for gate-ordering assertions.
+const bookHandler = indexSrc.slice(indexSrc.indexOf('app.post("/public/book"'));
 
 test("both kill switches exist and default to OFF (fail closed)", () => {
   assert.match(indexSrc, /const ENABLE_CUSTOMER_SCHEDULED_BOOKING = envBool\("ENABLE_CUSTOMER_SCHEDULED_BOOKING", false\);/);
   assert.match(indexSrc, /const ENABLE_CUSTOMER_URGENT_BOOKING = envBool\("ENABLE_CUSTOMER_URGENT_BOOKING", false\);/);
 });
 
-test("scheduled gate rejects customer_app_v2 scheduled bookings with 503 + code + LINE url before any booking work", () => {
-  const gate = indexSrc.match(/if \(bm === "scheduled" && clientApp === "customer_app_v2" && !ENABLE_CUSTOMER_SCHEDULED_BOOKING\) \{[\s\S]*?\n  \}/);
-  assert.ok(gate, "scheduled kill-switch gate not found");
-  assert.match(gate[0], /status\(503\)/);
-  assert.match(gate[0], /SCHEDULED_BOOKING_DISABLED/);
-  assert.match(gate[0], /line_url: CWF_LINE_CONTACT_URL/);
-  // The gate must run before the request-key/idempotency/insert pipeline.
-  const gateIndex = indexSrc.indexOf("SCHEDULED_BOOKING_DISABLED");
-  const insertIndex = indexSrc.indexOf("deriveCustomerScheduledBookingToken(scheduledRequestKey)");
-  assert.ok(gateIndex > 0 && insertIndex > 0 && gateIndex < insertIndex, "gate must precede booking pipeline");
-});
-
-test("urgent gate rejects customer urgent bookings with 503 + code + LINE url before the urgent handler", () => {
-  const gate = indexSrc.match(/if \(isCustomerAppUrgentBook\(req\.body \|\| \{\}\)\) \{[\s\S]*?return handlePublicCustomerUrgentBook\(req, res\);\n  \}/);
-  assert.ok(gate, "urgent branch not found");
-  assert.match(gate[0], /!ENABLE_CUSTOMER_URGENT_BOOKING/);
-  assert.match(gate[0], /URGENT_BOOKING_DISABLED/);
+test("the kill-switch gate keys off the canonical booking_mode, NOT the attacker-controlled client_app", () => {
+  const gate = bookHandler.match(/const canonicalBookingMode = String\(booking_mode[\s\S]*?SCHEDULED_BOOKING_DISABLED[\s\S]*?\n  \}/);
+  assert.ok(gate, "canonical kill-switch gate not found");
+  // The whole gate block must not mention client_app — it is not a boundary.
+  assert.doesNotMatch(gate[0], /client_app|clientApp/);
+  assert.match(gate[0], /canonicalBookingMode === "urgent" && !ENABLE_CUSTOMER_URGENT_BOOKING/);
+  assert.match(gate[0], /canonicalBookingMode === "scheduled" && !ENABLE_CUSTOMER_SCHEDULED_BOOKING/);
   assert.match(gate[0], /status\(503\)/);
   assert.match(gate[0], /line_url: CWF_LINE_CONTACT_URL/);
-  // Reject BEFORE handlePublicCustomerUrgentBook is invoked.
-  assert.ok(gate[0].indexOf("URGENT_BOOKING_DISABLED") < gate[0].indexOf("handlePublicCustomerUrgentBook(req, res)"));
 });
 
-test("admin booking is not gated by the customer kill switches", () => {
-  // The flags are referenced only at the declaration (name appears twice on
-  // that line: const + env var string) and at the single public customer gate.
-  const scheduledUses = indexSrc.match(/ENABLE_CUSTOMER_SCHEDULED_BOOKING/g) || [];
-  const urgentUses = indexSrc.match(/ENABLE_CUSTOMER_URGENT_BOOKING/g) || [];
-  assert.equal(scheduledUses.length, 3); // declaration (x2) + gate
-  assert.equal(urgentUses.length, 3); // declaration (x2) + gate
+test("an unknown booking mode is rejected outright (no fall-through)", () => {
+  assert.match(bookHandler, /canonicalBookingMode !== "scheduled" && canonicalBookingMode !== "urgent"/);
+  assert.match(bookHandler, /code: "UNKNOWN_BOOKING_MODE"/);
+});
+
+test("the gate runs BEFORE urgent routing, request-key derivation, and any insert", () => {
+  const gateIdx = bookHandler.indexOf("canonicalBookingMode");
+  const urgentRouteIdx = bookHandler.indexOf("isCustomerAppUrgentBook(req.body");
+  const tokenIdx = bookHandler.indexOf("deriveCustomerScheduledBookingToken(scheduledRequestKey)");
+  const insertIdx = bookHandler.indexOf("INSERT INTO public.jobs");
+  assert.ok(gateIdx > 0, "gate missing");
+  assert.ok(gateIdx < urgentRouteIdx, "gate must precede urgent routing");
+  assert.ok(gateIdx < tokenIdx, "gate must precede request-key derivation");
+  assert.ok(gateIdx < insertIdx, "gate must precede the job insert");
+});
+
+test("each customer flag is referenced only at its declaration and the single gate (admin booking untouched)", () => {
+  // Declaration line mentions the name twice (const + env string) + one gate use.
+  assert.equal((indexSrc.match(/ENABLE_CUSTOMER_SCHEDULED_BOOKING/g) || []).length, 3);
+  assert.equal((indexSrc.match(/ENABLE_CUSTOMER_URGENT_BOOKING/g) || []).length, 3);
 });
 
 test("the LINE contact URL is configurable with a safe default", () => {
@@ -62,7 +61,6 @@ test("scheduled wizard shows the LINE hand-off (and hides retry) when the lane i
   assert.match(scheduledSrc, /SCHEDULED_BOOKING_DISABLED/);
   assert.match(scheduledSrc, /disabled_line_url/);
   assert.match(scheduledSrc, /ติดต่อแอดมินทาง LINE/);
-  // When disabled, the submit button is replaced (retrying a closed lane is pointless).
   assert.match(scheduledSrc, /submit\.status === "error" && submit\.disabled_line_url \? "" : `<button type="button" class="primary-btn wizard-submit-btn"/);
 });
 
@@ -76,4 +74,34 @@ test("urgent review shows the LINE hand-off (and hides confirm) when the lane is
 test("cache-bust markers are present for the changed booking modules", () => {
   assert.match(scheduledSrc, /\[customer-booking\] launch-gate 20260708 loaded/);
   assert.match(urgentSrc, /\[customer-urgent\] launch-gate 20260708 loaded/);
+});
+
+// ---------- P0-5: /public/review write authorisation ----------
+
+const reviewStart = indexSrc.indexOf('app.post("/public/review"');
+const reviewHandler = indexSrc.slice(reviewStart, indexSrc.indexOf("\napp.", reviewStart + 10));
+
+test("public review looks up by exactly one credential path — never `code OR token`", () => {
+  assert.doesNotMatch(reviewHandler, /WHERE booking_code=\$1 OR booking_token=\$1/);
+  assert.match(reviewHandler, /WHERE booking_token=\$1 LIMIT 1 FOR UPDATE/);
+  assert.match(reviewHandler, /WHERE booking_code=\$1 LIMIT 1 FOR UPDATE/);
+});
+
+test("a tokened job cannot be reviewed via the legacy code+phone path (no downgrade)", () => {
+  assert.match(reviewHandler, /const jobHasToken = Boolean\(String\(job\.booking_token \|\| ""\)\.trim\(\)\)/);
+  assert.match(reviewHandler, /if \(jobHasToken\) deny\(\);/);
+  // Legacy path requires a full exact phone match.
+  assert.match(reviewHandler, /jobPhoneDigits !== phoneDigits/);
+});
+
+test("public review is dual rate-limited (IP + identifier) and returns no PII/token", () => {
+  assert.match(reviewHandler, /publicReviewIpRateLimiter\.check\(trackingPrivacy\.clientIpKey\(req\)\)/);
+  assert.match(reviewHandler, /publicReviewKeyRateLimiter\.check\(identifierKey\)/);
+  assert.match(reviewHandler, /res\.json\(\{ success: true \}\)/);
+  assert.doesNotMatch(reviewHandler, /avg_rating: avg/);
+});
+
+test("public review collapses all authz/eligibility failures to one generic error", () => {
+  assert.match(reviewHandler, /GENERIC_REVIEW_ERROR/);
+  assert.match(reviewHandler, /const deny = \(\) => \{[\s\S]*?e\.generic = true; throw e; \};/);
 });

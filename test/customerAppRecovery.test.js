@@ -2038,7 +2038,12 @@ function renderTracking(root, data) {
   return container.innerHTML;
 }
 
+// A token-level lookup (the app received the long booking_token at booking
+// time): access_level "token" travels alongside it. The legacy technician
+// review form is a WRITE and only renders on token access — see the P0-5
+// tracking privacy split — so these done-job fixtures carry it explicitly.
 const DONE_JOB_BASE = {
+  access_level: "token",
   booking_token: "TOK1", booking_code: "BK1", job_status: "เสร็จแล้ว", finished_at: "2026-06-20T10:00:00Z",
 };
 

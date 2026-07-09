@@ -134,6 +134,18 @@ async function createDatabase() {
       try { await db.query(alter); } catch (_) { /* table not in scope — fine */ }
     }
   }
+  // Boot also creates the indexes several features rely on — notably the UNIQUE
+  // index that backs `ON CONFLICT (job_id)` in /public/review. Replay every
+  // `CREATE [UNIQUE] INDEX IF NOT EXISTS` the app declares so those code paths
+  // behave exactly as they do in production.
+  for (const srcFile of ["index.js", path.join("server", "customerPricing.js")]) {
+    const src = fs.readFileSync(path.join(REPO_ROOT, srcFile), "utf8");
+    const indexes = src.match(/CREATE (?:UNIQUE )?INDEX IF NOT EXISTS [^`;]+/g) || [];
+    for (const idx of indexes) {
+      if (idx.includes("${")) continue;
+      try { await db.query(idx); } catch (_) { /* target table not in scope — fine */ }
+    }
+  }
   // Finally, replay the repo's additive migration files (idempotent) so
   // migration-managed columns (catalog marketplace, price-rule links, ...)
   // exist exactly as production got them.
@@ -153,6 +165,29 @@ async function dropDatabase() {
   await admin.end();
 }
 
+// SAFETY: neutralise every outbound integration so a scenario that creates a
+// real job can NEVER message a customer, dispatch to a real technician, or hit
+// a third party — even if the runner's shell/.env holds production secrets.
+// dotenv does not overwrite already-present keys, so setting these to "" (they
+// are "present") blocks a repo .env from re-injecting real values.
+const OUTBOUND_KILL_ENV = {
+  // LINE messaging / admin targets
+  LINE_BOT_CHANNEL_ACCESS_TOKEN: "", LINE_CHANNEL_ACCESS_TOKEN: "", LINE_MESSAGING_CHANNEL_ACCESS_TOKEN: "",
+  LINE_CHANNEL_SECRET: "", LINE_CHANNEL_ID: "", LINE_ADMIN_GROUP_ID: "", LINE_ADMIN_USER_ID: "",
+  PARTNER_ADMIN_LINE_TARGETS: "", PARTNER_LINE_NOTIFY_ENABLED: "false",
+  // Web push
+  ENABLE_WEB_PUSH_NOTIFICATIONS: "false", WEB_PUSH_PUBLIC_KEY: "", WEB_PUSH_PRIVATE_KEY: "",
+  VAPID_PUBLIC_KEY: "", VAPID_PRIVATE_KEY: "",
+  // Payments — must never reach Omise from a booking E2E
+  OMISE_SECRET_KEY: "", OMISE_PUBLIC_KEY: "", OMISE_WEBHOOK_SECRET: "",
+  // AI / other third parties
+  OPENAI_API_KEY: "", ANTHROPIC_API_KEY: "",
+  // Cloud media
+  CLOUDINARY_URL: "", CLOUDINARY_CLOUD_NAME: "", CLOUDINARY_API_KEY: "", CLOUDINARY_API_SECRET: "",
+  // Explicit test marker
+  CWF_E2E_TEST_MODE: "1", NODE_ENV: "test",
+};
+
 function bootApp(port, extraEnv = {}) {
   const logFile = path.join(__dirname, `app-${port}.log`);
   const out = fs.openSync(logFile, "w");
@@ -160,6 +195,7 @@ function bootApp(port, extraEnv = {}) {
     cwd: REPO_ROOT,
     env: {
       ...process.env,
+      ...OUTBOUND_KILL_ENV,
       DB_HOST: PG.host, DB_PORT: String(PG.port), DB_USER: PG.user,
       DB_PASSWORD: PG.password, DB_NAME,
       PORT: String(port),
@@ -172,6 +208,36 @@ function bootApp(port, extraEnv = {}) {
   });
   children.push(child);
   return child;
+}
+
+// Refuse to run against anything that looks like a real database unless the
+// operator explicitly opts in — this harness CREATEs and DROPs its database.
+function assertSafeTarget() {
+  const localHosts = new Set(["127.0.0.1", "localhost", "::1", "0.0.0.0"]);
+  if (localHosts.has(PG.host) || process.env.E2E_ALLOW_REMOTE === "1") return;
+  throw new Error(
+    `Refusing to run booking E2E against non-local PostgreSQL host "${PG.host}". ` +
+    `This harness creates and DROPs its own database. Set E2E_ALLOW_REMOTE=1 only for a disposable staging DB.`
+  );
+}
+
+// The harness tolerates individual schema statements failing (many app tables
+// are unrelated to booking), but the booking scenarios are meaningless if the
+// core tables are missing. Fail loudly instead of "passing" on a thin schema.
+async function assertCoreSchema() {
+  const required = [
+    "jobs", "job_offers", "job_items", "job_promotions",
+    "technician_service_matrix", "technician_monthly_work_calendar",
+    "catalog_items", "customer_service_price_rules", "auth_sessions",
+    "users", "technician_profiles",
+  ];
+  const r = await pool.query(
+    `SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_name = ANY($1::text[])`,
+    [required]
+  );
+  const present = new Set(r.rows.map((x) => x.table_name));
+  const missing = required.filter((t) => !present.has(t));
+  if (missing.length) throw new Error(`core booking schema incomplete — missing tables: ${missing.join(", ")}`);
 }
 
 async function waitForReady(base, { timeoutMs = 90000 } = {}) {
@@ -344,7 +410,8 @@ function scheduledPayload(ymd, start, overrides = {}) {
 // ------------------------------------------------------------- scenarios ----
 
 async function main() {
-  log(`E2E database: ${DB_NAME} on ${PG.host}:${PG.port}`);
+  assertSafeTarget();
+  log(`E2E database: ${DB_NAME} on ${PG.host}:${PG.port} (outbound integrations disabled)`);
   const adminPool = new Client({ ...PG, database: "postgres" });
   await adminPool.connect();
   await adminPool.query("SELECT 1");
@@ -352,6 +419,7 @@ async function main() {
 
   await createDatabase();
   pool = new Pool({ ...PG, database: DB_NAME, max: 5 });
+  await assertCoreSchema();
 
   log("booting app A (booking enabled) + app B (booking disabled)...");
   bootApp(PORT_A, {});
@@ -647,11 +715,24 @@ async function main() {
     // through the real module against the same database to avoid a flaky wait.
     const finalizer = require(path.join(REPO_ROOT, "server", "services", "urgent", "finalizer"));
     await finalizer.autoFinalizeUrgentJobs(pool);
-    const after = await pool.query(`SELECT job_status, canceled_at FROM public.jobs WHERE job_id=$1`, [jobId]);
+    const after = await pool.query(`SELECT job_status, canceled_at, booking_code FROM public.jobs WHERE job_id=$1`, [jobId]);
     assert(after.rows[0].canceled_at === null, "urgent job must not be canceled/lost");
     assert(String(after.rows[0].job_status || "").length > 0, "urgent job lost its status");
     const offers = await pool.query(`SELECT status FROM public.job_offers WHERE job_id=$1`, [jobId]);
     assert(offers.rows.every((o) => o.status !== "pending"), "expired offers must not stay pending");
+    // The reviewer requires positive proof the abandoned job is recoverable by
+    // admin — assert it actually surfaces in the admin review queue (the same
+    // data feed admin-review-v2.html renders), keyed by the real admin session.
+    const abandonedCode = after.rows[0].booking_code;
+    const queueRes = await fetch(`${BASE_A}/admin/review_queue_v2?status=all&limit=500`, {
+      headers: { cookie: `cwf_session=${adminSession}` },
+    });
+    assert(queueRes.status === 200, `admin review queue must load, got ${queueRes.status}`);
+    const queue = await queueRes.json();
+    assert(Array.isArray(queue.rows), "admin review queue payload malformed");
+    const found = queue.rows.find((row) => row.booking_code === abandonedCode);
+    assert(found, `no-accept urgent job ${abandonedCode} missing from admin review queue`);
+    assert(found.job_id === jobId, "admin review queue row mismatched job_id");
   });
 
   // 10) Admin sees the new bookings in the review queue.
@@ -675,10 +756,12 @@ async function main() {
     // code lookup -> masked
     const red = await (await fetch(`${BASE_A}/public/track?q=${encodeURIComponent(bookingCode1)}`)).json();
     assert(red.access_level === "code", "code lookup should be limited access");
-    assert(red.booking_token === null, "code lookup must not echo the token");
+    // The allowlist drops these by construction, so they are absent (undefined)
+    // rather than explicitly null — either way they must not carry a value.
+    assert(red.booking_token == null, "code lookup must not echo the token");
     assert(String(red.customer_phone || "").includes("5678") && !String(red.customer_phone).includes("0812345678"), "phone must be masked");
-    assert(red.gps_latitude === null && red.maps_url === null, "GPS/maps must be hidden");
-    assert(red.receipt_url === null, "receipt link must be hidden for code lookups");
+    assert(red.gps_latitude == null && red.maps_url == null, "GPS/maps must be hidden");
+    assert(red.receipt_url == null, "receipt link must be hidden for code lookups");
     // In-browser: tracking page renders for the customer.
     const p = await ctx.newPage();
     await p.goto(`${APP_URL_A}#tracking`, { waitUntil: "domcontentloaded" });
@@ -778,6 +861,173 @@ async function main() {
     assert(bare.status === 404, `bare job_id receipt must 404, got ${bare.status}`);
     const keyed = await fetch(`${BASE_A}/docs/receipt/${job_id}?key=${encodeURIComponent(booking_token)}`, { headers: { "x-forwarded-for": "203.0.113.51" } });
     assert(keyed.status === 200, `keyed receipt must 200, got ${keyed.status}`);
+  });
+
+  // ---------------- negative / bypass probes (reviewer-requested) ----------
+
+  // S14) The kill switch must gate on the canonical booking_mode, never on the
+  // attacker-supplied client_app. Forging client_app (or omitting it) must NOT
+  // reopen a closed lane, an unknown mode must be rejected outright, and zero
+  // jobs may be created on the disabled instance across every attempt.
+  await record("S14 kill switch cannot be bypassed by forging/omitting client_app", async () => {
+    const before = await jobCountWhere("TRUE");
+    const forgedApps = ["admin_console", "internal", "", "customer_app_v2", "cwf_admin"];
+    for (const app of forgedApps) {
+      const sched = await apiBook(BASE_B, scheduledPayload(tomorrow, "10:30", { client_app: app }));
+      assert(sched.status === 503 && sched.body?.code === "SCHEDULED_BOOKING_DISABLED",
+        `scheduled lane bypassed with client_app=${JSON.stringify(app)} (HTTP ${sched.status})`);
+      const urgent = await apiBook(BASE_B, {
+        customer_name: "bypass", customer_phone: "0810000000", job_type: "ล้างแอร์",
+        appointment_datetime: new Date().toISOString(), address_text: "z",
+        booking_mode: "urgent", client_app: app,
+        urgent_request_key: crypto.randomBytes(16).toString("hex"),
+        ac_type: "ผนัง", btu: 12000, machine_count: 1, wash_variant: "ล้างธรรมดา",
+      });
+      assert(urgent.status === 503 && urgent.body?.code === "URGENT_BOOKING_DISABLED",
+        `urgent lane bypassed with client_app=${JSON.stringify(app)} (HTTP ${urgent.status})`);
+    }
+    // A client_app with no booking_mode still defaults to scheduled (closed).
+    const noMode = await apiBook(BASE_B, scheduledPayload(tomorrow, "11:00", { client_app: "admin", booking_mode: undefined }));
+    assert(noMode.status === 503, `missing booking_mode must default to the closed scheduled lane, got ${noMode.status}`);
+    // An unknown booking_mode is rejected, not silently routed anywhere.
+    const bogus = await apiBook(BASE_B, scheduledPayload(tomorrow, "11:30", { booking_mode: "wholesale" }));
+    assert(bogus.status === 400 && bogus.body?.code === "UNKNOWN_BOOKING_MODE",
+      `unknown booking_mode must 400, got ${bogus.status}`);
+    // Even on the OPEN instance an unknown mode must not create a job.
+    const bogusOpen = await apiBook(BASE_A, scheduledPayload(tomorrow, "11:45", { booking_mode: "wholesale" }));
+    assert(bogusOpen.status === 400 && bogusOpen.body?.code === "UNKNOWN_BOOKING_MODE",
+      `unknown booking_mode must 400 on the open instance too, got ${bogusOpen.status}`);
+    const after = await jobCountWhere("TRUE");
+    assert(after === before, `bypass probes leaked ${after - before} job(s)`);
+  });
+
+  // S15) The public-lookup rate limiter must key off the proxy-derived req.ip
+  // (the nearest trusted hop), NOT the raw first X-Forwarded-For token. Rotate
+  // the attacker-controlled LEFT-most XFF entry on every request while pinning
+  // the nearest-hop entry: a limiter that trusted the raw first token would see
+  // a fresh key each time and never trip. It must still answer 429.
+  await record("S15 rotating a spoofed X-Forwarded-For does not bypass the rate limit", async () => {
+    const pinnedHop = "203.0.113.222"; // the entry the trusted proxy would append
+    let got429 = false;
+    for (let i = 0; i < 45 && !got429; i += 1) {
+      const spoof = `10.9.${i}.${(i * 7) % 255}`; // rotates every request
+      const res = await fetch(`${BASE_A}/public/track?q=CWFSPOOF${i}`, {
+        headers: { "x-forwarded-for": `${spoof}, ${pinnedHop}` },
+      });
+      if (res.status === 429) got429 = true;
+    }
+    assert(got429, "rate limit never tripped — a rotating spoofed XFF bypassed it");
+  });
+
+  // S16) A booking_code lookup is a minimal allowlist. Beyond the phone-masking
+  // already checked in S11, prove the sensitive fields are absent by
+  // construction — name, address, internal job_id, technician notes, photos,
+  // unit data, cancel reason, and any review text must never appear.
+  await record("S16 booking_code lookup leaks no name/address/job_id/notes/photos/units/review", async () => {
+    const red = await (await fetch(`${BASE_A}/public/track?q=${encodeURIComponent(bookingCode1)}`,
+      { headers: { "x-forwarded-for": "198.51.100.7" } })).json();
+    assert(red.access_level === "code", "expected a limited (code) lookup");
+    const forbidden = [
+      "customer_name", "customer_fullname", "name",
+      "address_text", "address", "address_prefix", "maps_url", "gps_latitude", "gps_longitude",
+      "job_id", "id",
+      "technician_note", "technician_notes", "notes", "note", "admin_note",
+      "photos", "job_photos", "photo_urls",
+      "units", "job_items", "items", "machine_count", "unit_data",
+      "cancel_reason", "canceled_reason",
+      "customer_review", "review_text", "customer_complaint", "complaint_text",
+      "technician_username", "technician_name", "receipt_url",
+    ];
+    const leaked = forbidden.filter((k) => red[k] !== undefined && red[k] !== null);
+    assert(leaked.length === 0, `booking_code lookup leaked fields: ${leaked.join(", ")}`);
+    // Positive: it still returns the minimal, useful status surface.
+    assert(red.booking_code === bookingCode1, "code lookup must echo the booking_code");
+    assert(typeof red.job_status === "string", "code lookup must return a status");
+  });
+
+  // S17) /public/review is a WRITE. A tokened job must NOT be reviewable via the
+  // short booking_code (no downgrade); only the exact booking_token authorises.
+  // A genuine legacy job (no token) may still be reviewed via code + full phone,
+  // and a wrong phone is denied — with the same generic error either way.
+  await record("S17 review write: code denied on tokened job, token accepted; legacy code+phone still works", async () => {
+    const jr = await pool.query(`SELECT job_id, customer_phone FROM public.jobs WHERE booking_code=$1`, [bookingCode1]);
+    const tokenJobId = jr.rows[0].job_id;
+    const tokenPhone = jr.rows[0].customer_phone;
+    // Make the tokened job reviewable (completed, has a technician, unreviewed).
+    await pool.query(
+      `UPDATE public.jobs SET job_status='เสร็จแล้ว', finished_at=NOW(),
+              technician_username='tech_a', customer_rating=NULL, reviewed_at=NULL
+       WHERE job_id=$1`, [tokenJobId]);
+    await pool.query(`DELETE FROM public.technician_reviews WHERE job_id=$1`, [tokenJobId]);
+
+    const postReview = (payload, ip) => fetch(`${BASE_A}/public/review`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-forwarded-for": ip },
+      body: JSON.stringify(payload),
+    }).then(async (r) => ({ status: r.status, body: await r.json().catch(() => null) }));
+
+    // (a) Downgrade attempt: booking_code + phone on a TOKENED job -> denied.
+    const downgrade = await postReview(
+      { booking_code: bookingCode1, customer_phone: tokenPhone, rating: 5, review_text: "bypass" }, "198.51.100.20");
+    assert(downgrade.status !== 200 && !downgrade.body?.success,
+      `tokened job must reject code+phone review, got HTTP ${downgrade.status}`);
+    const afterDowngrade = await pool.query(`SELECT customer_rating FROM public.jobs WHERE job_id=$1`, [tokenJobId]);
+    assert(afterDowngrade.rows[0].customer_rating === null, "downgrade attempt must not write a review");
+
+    // (b) Exact token authorises the write.
+    const tokened = await postReview({ booking_token: bookingToken1, rating: 5, review_text: "ดีมาก" }, "198.51.100.21");
+    assert(tokened.status === 200 && tokened.body?.success === true, `token review must succeed, got HTTP ${tokened.status}`);
+    // Response must not leak PII/token/confirmation beyond {success:true}.
+    assert(Object.keys(tokened.body).join(",") === "success", `review response leaked keys: ${Object.keys(tokened.body)}`);
+    const reviewed = await pool.query(`SELECT customer_rating FROM public.jobs WHERE job_id=$1`, [tokenJobId]);
+    assert(Number(reviewed.rows[0].customer_rating) === 5, "token review did not persist");
+    // Replaying the token review on an already-reviewed job is denied.
+    const replay = await postReview({ booking_token: bookingToken1, rating: 1 }, "198.51.100.22");
+    assert(replay.status !== 200 && !replay.body?.success, "already-reviewed job must reject a second review");
+
+    // (c) Legacy job (no token) remains reviewable via code + FULL phone.
+    const spare = await pool.query(
+      `SELECT job_id, booking_code FROM public.jobs
+        WHERE booking_token IS NOT NULL AND booking_code <> $1 AND booking_code IS NOT NULL
+        ORDER BY job_id DESC LIMIT 1`, [bookingCode1]);
+    if (spare.rows.length) {
+      const legacyId = spare.rows[0].job_id;
+      const legacyCode = spare.rows[0].booking_code;
+      const legacyPhone = "0870000009";
+      await pool.query(
+        `UPDATE public.jobs SET booking_token=NULL, job_status='เสร็จแล้ว', finished_at=NOW(),
+                technician_username='tech_a', customer_phone=$2, customer_rating=NULL, reviewed_at=NULL
+         WHERE job_id=$1`, [legacyId, legacyPhone]);
+      await pool.query(`DELETE FROM public.technician_reviews WHERE job_id=$1`, [legacyId]);
+      // Wrong phone -> denied.
+      const wrongPhone = await postReview(
+        { booking_code: legacyCode, customer_phone: "0899999999", rating: 4 }, "198.51.100.23");
+      assert(wrongPhone.status !== 200 && !wrongPhone.body?.success, "legacy review with wrong phone must be denied");
+      // Correct full phone -> accepted.
+      const legacyOk = await postReview(
+        { booking_code: legacyCode, customer_phone: legacyPhone, rating: 4, review_text: "legacy ok" }, "198.51.100.24");
+      assert(legacyOk.status === 200 && legacyOk.body?.success === true,
+        `legacy code+phone review must succeed, got HTTP ${legacyOk.status}`);
+    }
+  });
+
+  // S18) The quote document is gated identically to the receipt: a bare
+  // sequential job_id 404s, the booking_token key unlocks it, and the response
+  // carries the private/no-store/no-index headers.
+  await record("S18 quote route: bare job_id 404s, booking_token key unlocks it with sensitive headers", async () => {
+    const r = await pool.query(`SELECT job_id, booking_token FROM public.jobs WHERE booking_code=$1`, [bookingCode1]);
+    const { job_id, booking_token } = r.rows[0];
+    const bare = await fetch(`${BASE_A}/docs/quote/${job_id}`, { headers: { "x-forwarded-for": "198.51.100.30" } });
+    assert(bare.status === 404, `bare job_id quote must 404, got ${bare.status}`);
+    const keyed = await fetch(`${BASE_A}/docs/quote/${job_id}?key=${encodeURIComponent(booking_token)}`,
+      { headers: { "x-forwarded-for": "198.51.100.31" } });
+    assert(keyed.status === 200, `keyed quote must 200, got ${keyed.status}`);
+    assert(/no-store/.test(keyed.headers.get("cache-control") || ""), "quote missing Cache-Control: no-store");
+    assert(/noindex/.test(keyed.headers.get("x-robots-tag") || ""), "quote missing X-Robots-Tag: noindex");
+    assert((keyed.headers.get("referrer-policy") || "") === "no-referrer", "quote missing Referrer-Policy: no-referrer");
+    // A wrong key is indistinguishable from a missing one (404, no oracle).
+    const wrong = await fetch(`${BASE_A}/docs/quote/${job_id}?key=deadbeef`, { headers: { "x-forwarded-for": "198.51.100.32" } });
+    assert(wrong.status === 404, `wrong key must 404, got ${wrong.status}`);
   });
 
   await browser.close();
