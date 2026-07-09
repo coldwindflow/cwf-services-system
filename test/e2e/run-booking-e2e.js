@@ -441,8 +441,9 @@ async function main() {
   const multiDay = ymdBangkok(5);
   const retryDay = ymdBangkok(6);
   const reloadDay = ymdBangkok(7);
+  const r2Day = ymdBangkok(8); // round-2 canonical-protection probes (headroom for replay)
 
-  await seedTechnician("tech_a", { date: [tomorrow, dayAfter, multiDay, reloadDay], maxJobs: 3, maxUnits: 9 });
+  await seedTechnician("tech_a", { date: [tomorrow, dayAfter, multiDay, reloadDay, r2Day], maxJobs: 3, maxUnits: 9 });
   await seedTechnician("tech_solo", { date: [raceDay, staleDay, retryDay], maxJobs: 1, maxUnits: 5 });
   await seedTechnician("tech_partner", { employment: "partner", date: [today, tomorrow], urgentOk: true });
   await seedTechnician("tech_partner2", { employment: "partner", date: [today, tomorrow], urgentOk: true });
@@ -1028,6 +1029,145 @@ async function main() {
     // A wrong key is indistinguishable from a missing one (404, no oracle).
     const wrong = await fetch(`${BASE_A}/docs/quote/${job_id}?key=deadbeef`, { headers: { "x-forwarded-for": "198.51.100.32" } });
     assert(wrong.status === 404, `wrong key must 404, got ${wrong.status}`);
+  });
+
+  // ---------- second review round: client_app is not a security boundary ----
+
+  // S19) With booking lanes ON, scheduled protection must be CANONICAL — keyed
+  // off booking_mode, not client_app. A forged/omitted client_app with no
+  // request key is rejected with zero mutation, and the same request key
+  // replays to a single job regardless of client_app.
+  await record("S19 scheduled: canonical request-key/idempotency cannot be bypassed by forging client_app", async () => {
+    const before = await jobCountWhere("TRUE");
+    // No request key + omitted client_app -> reject, no job.
+    const omitted = await apiBook(BASE_A, scheduledPayload(r2Day, "10:00", { client_app: undefined, scheduled_request_key: undefined }));
+    assert(omitted.status === 400 && omitted.body?.code === "MISSING_REQUEST_KEY",
+      `omitted client_app + no key must 400 MISSING_REQUEST_KEY, got ${omitted.status}`);
+    // No request key + forged client_app -> still reject.
+    const forged = await apiBook(BASE_A, scheduledPayload(r2Day, "10:00", { client_app: "admin_console", scheduled_request_key: undefined }));
+    assert(forged.status === 400 && forged.body?.code === "MISSING_REQUEST_KEY",
+      `forged client_app + no key must 400 MISSING_REQUEST_KEY, got ${forged.status}`);
+    assert((await jobCountWhere("TRUE")) === before, "keyless scheduled attempts must create 0 jobs");
+    // Same request key, first omitted then forged client_app -> exactly one job.
+    // (The replay re-picks an available slot, exactly like a real reconnect
+    // retry — the deterministic request key, not the slot, guarantees the same
+    // job comes back.)
+    const key = crypto.randomBytes(16).toString("hex");
+    const first = await apiBook(BASE_A, scheduledPayload(r2Day, "10:30", { client_app: undefined, scheduled_request_key: key }));
+    assert(first.status === 200 && first.body?.job_id, `first canonical scheduled booking failed: HTTP ${first.status} ${JSON.stringify(first.body)}`);
+    const replay = await apiBook(BASE_A, scheduledPayload(r2Day, "13:00", { client_app: "totally_forged", scheduled_request_key: key }));
+    assert(replay.status === 200, `replay with forged client_app must succeed, got ${replay.status} ${JSON.stringify(replay.body)}`);
+    assert(replay.body?.job_id === first.body.job_id, "same request key must replay the SAME job, not mint a new one");
+    const dupCount = await pool.query(
+      `SELECT COUNT(*)::int AS n FROM public.jobs WHERE booking_token=$1`,
+      [require("node:crypto").createHash("sha256").update(`scheduled_v1:${key}`).digest("hex").slice(0, 24)]
+    );
+    assert(dupCount.rows[0].n === 1, `request key must map to exactly one job, got ${dupCount.rows[0].n}`);
+  });
+
+  // S20) Urgent routing is CANONICAL — every public urgent request goes through
+  // the customer-safe adapter on booking_mode alone. A forged/omitted client_app
+  // (with attacker-chosen technician/assign fields) must be sanitised, not
+  // reach the raw urgent engine, and must dedupe on the request key.
+  await record("S20 urgent: forged/omitted client_app is still sanitised through the safe adapter", async () => {
+    const urgentKey = crypto.randomBytes(16).toString("hex");
+    const attack = {
+      customer_name: "ด่วนปลอม", customer_phone: "0844444444",
+      job_type: "ล้าง", appointment_datetime: new Date().toISOString(),
+      address_text: "88/8 เขตสวนหลวง กรุงเทพฯ", booking_mode: "urgent",
+      // NO client_app — the sanitiser must still engage on the canonical mode.
+      urgent_request_key: urgentKey,
+      ac_type: "ผนัง", btu: 12000, machine_count: 1, wash_variant: "ล้างธรรมดา",
+      // Attacker-chosen fields that the customer allowlist must strip:
+      technician_username: "tech_partner", assign_mode: "manual",
+      dispatch_mode: "normal", tech_type: "company", team_members: ["tech_partner2"],
+    };
+    const res = await apiBook(BASE_A, attack);
+    assert(res.status === 200 && res.body?.job_id, `urgent with no client_app must still book via adapter, got ${res.status}`);
+    const jobId = res.body.job_id;
+    const row = await pool.query(
+      `SELECT booking_mode, dispatch_mode, technician_username FROM public.jobs WHERE job_id=$1`, [jobId]);
+    assert(row.rows[0].booking_mode === "urgent", "must persist as urgent");
+    assert(row.rows[0].dispatch_mode === "offer", "attacker dispatch_mode must be overridden to offer");
+    assert(!row.rows[0].technician_username, "attacker-supplied technician must be stripped (offer engine assigns)");
+    const offers = await pool.query(`SELECT technician_username FROM public.job_offers WHERE job_id=$1`, [jobId]);
+    assert(offers.rows.every((o) => ["tech_partner", "tech_partner2"].includes(o.technician_username)),
+      "offers must target zoned partners via the engine, not an attacker choice");
+    // Dedup on the request key: replaying the same forged request makes no 2nd job.
+    await apiBook(BASE_A, attack);
+    const cnt = await pool.query(
+      `SELECT COUNT(*)::int AS n FROM public.jobs WHERE booking_mode='urgent' AND customer_phone='0844444444'`);
+    assert(cnt.rows[0].n === 1, `urgent request key must dedupe, got ${cnt.rows[0].n} jobs`);
+  });
+
+  // S21) A LEGACY customer (job with no booking_token) must be able to review
+  // through the real tracking UI: a booking_code lookup shows a phone-entry
+  // form, a wrong phone is rejected, the right phone succeeds — and a tokened
+  // job opened by code must NOT offer the legacy form (no downgrade).
+  await record("S21 legacy customer reviews via the tracking UI (phone form); tokened job shows no legacy form", async () => {
+    const spare = await pool.query(
+      `SELECT job_id, booking_code FROM public.jobs
+        WHERE booking_token IS NOT NULL AND booking_code IS NOT NULL AND booking_code <> $1
+        ORDER BY job_id ASC LIMIT 1`, [bookingCode1]);
+    assert(spare.rows.length, "no spare job to convert to a legacy (tokenless) job");
+    const legacyId = spare.rows[0].job_id;
+    const legacyCode = spare.rows[0].booking_code;
+    const legacyPhone = "0876543210";
+    await pool.query(
+      `UPDATE public.jobs SET booking_token=NULL, job_status='เสร็จแล้ว', finished_at=NOW(),
+              technician_username='tech_a', customer_phone=$2, customer_rating=NULL, reviewed_at=NULL
+       WHERE job_id=$1`, [legacyId, legacyPhone]);
+    await pool.query(`DELETE FROM public.technician_reviews WHERE job_id=$1`, [legacyId]);
+
+    const p = await ctx.newPage();
+    const openLookup = async () => {
+      await p.goto(`${APP_URL_A}#tracking`, { waitUntil: "domcontentloaded" });
+      await p.locator("#tracking-code").fill(legacyCode);
+      await tap(p.locator('[data-action="track-read"]'));
+      // The review form lives in the "aftercare" tab panel — activate it first.
+      await p.waitForSelector('[data-tracking-view="aftercare"]', { timeout: 15000 });
+      await tap(p.locator('[data-tracking-view="aftercare"]').first());
+      await p.waitForSelector('[data-review-form] input[name="customer_phone"]', { timeout: 15000 });
+    };
+    await openLookup();
+    // Wrong phone -> rejected, nothing written.
+    await p.locator('[data-review-form] input[name="customer_phone"]').fill("0800000000");
+    await tap(p.locator('[data-review-form] button[type="submit"]'));
+    await p.waitForTimeout(2500);
+    let rating = await pool.query(`SELECT customer_rating FROM public.jobs WHERE job_id=$1`, [legacyId]);
+    assert(rating.rows[0].customer_rating === null, "legacy review with wrong phone must not persist");
+    // Correct phone -> success.
+    if (!(await p.locator('[data-review-form] input[name="customer_phone"]').count())) await openLookup();
+    await p.locator('[data-review-form] input[name="customer_phone"]').fill(legacyPhone);
+    await tap(p.locator('[data-review-form] button[type="submit"]'));
+    await p.waitForTimeout(3000);
+    rating = await pool.query(`SELECT customer_rating FROM public.jobs WHERE job_id=$1`, [legacyId]);
+    assert(Number(rating.rows[0].customer_rating) >= 1, "legacy review with the correct phone must persist");
+    await p.close();
+
+    // A tokened job opened by its short code is never legacy-eligible.
+    const red = await (await fetch(`${BASE_A}/public/track?q=${encodeURIComponent(bookingCode1)}`,
+      { headers: { "x-forwarded-for": "198.51.100.40" } })).json();
+    assert(red.legacy_review_eligible === false, "a tokened job must never be legacy-review-eligible via code");
+  });
+
+  // S22) Rate-limit buckets are per VERIFIED client, proving the app resolves
+  // req.ip under trust proxy (not a shared socket IP). Exhaust client A; a
+  // different verified client B must still get through. If trust proxy were off,
+  // both would share the 127.0.0.1 socket bucket and B would already be 429.
+  await record("S22 rate-limit buckets are per verified client IP (trust proxy resolves req.ip)", async () => {
+    const clientA = "203.0.113.240";
+    const clientB = "203.0.113.241";
+    let aLimited = false;
+    for (let i = 0; i < 45 && !aLimited; i += 1) {
+      const res = await fetch(`${BASE_A}/public/track?q=CWFA${i}`, {
+        headers: { "x-forwarded-for": `10.0.0.9, ${clientA}` } });
+      if (res.status === 429) aLimited = true;
+    }
+    assert(aLimited, "client A never hit its own rate limit");
+    const bRes = await fetch(`${BASE_A}/public/track?q=CWFB1`, {
+      headers: { "x-forwarded-for": `10.0.0.9, ${clientB}` } });
+    assert(bRes.status !== 429, `client B must have its own bucket (trust proxy off would 429), got ${bRes.status}`);
   });
 
   await browser.close();

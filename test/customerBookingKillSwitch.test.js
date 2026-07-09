@@ -36,13 +36,39 @@ test("an unknown booking mode is rejected outright (no fall-through)", () => {
 
 test("the gate runs BEFORE urgent routing, request-key derivation, and any insert", () => {
   const gateIdx = bookHandler.indexOf("canonicalBookingMode");
-  const urgentRouteIdx = bookHandler.indexOf("isCustomerAppUrgentBook(req.body");
+  const urgentRouteIdx = bookHandler.indexOf("return handlePublicCustomerUrgentBook");
   const tokenIdx = bookHandler.indexOf("deriveCustomerScheduledBookingToken(scheduledRequestKey)");
   const insertIdx = bookHandler.indexOf("INSERT INTO public.jobs");
   assert.ok(gateIdx > 0, "gate missing");
   assert.ok(gateIdx < urgentRouteIdx, "gate must precede urgent routing");
   assert.ok(gateIdx < tokenIdx, "gate must precede request-key derivation");
   assert.ok(gateIdx < insertIdx, "gate must precede the job insert");
+});
+
+// ---------- client_app is NOT a security boundary (canonical protections) ----
+
+test("urgent routing keys off the canonical booking_mode, not client_app", () => {
+  // Every public urgent request must reach the customer-safe adapter on mode
+  // alone — an unauthenticated caller must not be able to drop/forge client_app
+  // to skip the sanitiser and hit the raw urgent engine.
+  assert.match(bookHandler, /if \(canonicalBookingMode === "urgent"\) \{\s*\n\s*return handlePublicCustomerUrgentBook\(req, res\);/);
+  assert.doesNotMatch(bookHandler, /if \(isCustomerAppUrgentBook\(req\.body/);
+});
+
+test("scheduled request-key/idempotency is required for ALL scheduled bookings, not gated on client_app", () => {
+  // The key is read + required on the canonical booking_mode, never client_app.
+  assert.match(bookHandler, /const scheduledRequestKey = bm === "scheduled"\s*\n\s*\? String\(scheduled_request_key/);
+  assert.match(bookHandler, /if \(bm === "scheduled" && !validScheduledRequestKey\) \{/);
+  assert.doesNotMatch(bookHandler, /clientApp === "customer_app_v2" && !validScheduledRequestKey/);
+  // The idempotency replay itself keys only off the request key, not client_app.
+  assert.match(bookHandler, /if \(scheduledRequestKey && scheduledDeterministicToken\) \{/);
+});
+
+test("scheduled availability + reservation no longer depend on client_app", () => {
+  // The customer availability check and the technician reservation gate on the
+  // canonical scheduled mode, so a forged/omitted client_app cannot downgrade
+  // to a weaker (or missing) capacity path.
+  assert.doesNotMatch(bookHandler, /bm === "scheduled" && clientApp === "customer_app_v2"/);
 });
 
 test("each customer flag is referenced only at its declaration and the single gate (admin booking untouched)", () => {

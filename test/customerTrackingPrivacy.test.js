@@ -60,8 +60,8 @@ function richPayload() {
 
 // Fields a booking_code lookup is ALLOWED to return — everything else must be absent.
 const ALLOWED_CODE_KEYS = new Set([
-  "access_level", "booking_code", "job_status", "booking_mode", "dispatch_mode",
-  "appointment_datetime", "duration_min",
+  "access_level", "legacy_review_eligible", "booking_code", "job_status",
+  "booking_mode", "dispatch_mode", "appointment_datetime", "duration_min",
   "travel_started_at", "checkin_at", "started_at", "finished_at", "canceled_at",
   "customer_phone",
 ]);
@@ -87,6 +87,16 @@ test("a brand-new sensitive field added upstream does NOT leak through code reda
   const payload = { ...richPayload(), some_future_pii_field: "secret home code 1234" };
   const redacted = trackingPrivacy.redactPublicTrackPayload(payload);
   assert.equal(redacted.some_future_pii_field, undefined);
+});
+
+test("legacy_review_eligible passes through as a non-sensitive boolean (default false, no token leak)", () => {
+  // Absent upstream -> false, never undefined/truthy by accident.
+  assert.equal(trackingPrivacy.redactPublicTrackPayload(richPayload()).legacy_review_eligible, false);
+  // Explicit true is surfaced so the UI can offer the legacy phone form...
+  const eligible = trackingPrivacy.redactPublicTrackPayload({ ...richPayload(), legacy_review_eligible: true });
+  assert.equal(eligible.legacy_review_eligible, true);
+  // ...but it must never carry the token alongside it.
+  assert.equal(eligible.booking_token, undefined);
 });
 
 test("maskPhone handles empty/short values safely", () => {
