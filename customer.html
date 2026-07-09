@@ -1320,6 +1320,19 @@ async function book(){
     ...payload
   };
 
+  // Scheduled bookings now carry a canonical idempotency key on every submit
+  // (the server requires it for all public scheduled requests). Keep the SAME
+  // key across retries of the same attempt so a network timeout can safely
+  // replay instead of creating a duplicate; a confirmed success clears it.
+  if (!urgent) {
+    if (!window.__cwfSchedKey) {
+      window.__cwfSchedKey = (window.crypto && crypto.randomUUID)
+        ? crypto.randomUUID().replace(/-/g, "")
+        : (Date.now().toString(36) + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)).slice(0, 32);
+    }
+    body.scheduled_request_key = window.__cwfSchedKey;
+  }
+
   const confirmBtn = document.getElementById('confirm_btn');
   if(confirmBtn){ confirmBtn.disabled = true; confirmBtn.textContent = '⏳ กำลังจอง...'; }
 
@@ -1334,6 +1347,7 @@ async function book(){
     return data;
   })
   .then(data=>{
+    window.__cwfSchedKey = null; // booking confirmed — next attempt gets a fresh key
     const box = document.getElementById("result");
     const token = data.token;
     const code = data.booking_code || token || '';

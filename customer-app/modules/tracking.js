@@ -847,19 +847,37 @@
         </section>
       `;
     }
-    // Reviewing is a WRITE that requires the full-access booking_token — a
-    // booking_code lookup (access_level "code") only shows read-only status, so
-    // the review form is hidden there (the server would reject it anyway).
+    // Reviewing is a WRITE. Two authorised shapes, mirroring the server policy:
+    //  - token lookup (access_level "token"): the exact booking_token authorises,
+    //    posted as a hidden field. No PII entry needed.
+    //  - LEGACY job with no booking_token: a booking_code lookup exposes a
+    //    minimal `legacy_review_eligible` flag; the customer proves ownership by
+    //    typing their FULL phone, posted as booking_code + customer_phone.
+    // A tokened job accessed by code is NOT legacy-eligible, so it never shows
+    // the legacy form (the server would reject a downgrade anyway).
     const reviewToken = data.access_level === "token" ? (data.booking_token || "") : "";
-    if (!reviewToken) return "";
+    const legacyEligible = !reviewToken && data.legacy_review_eligible === true;
+    if (!reviewToken && !legacyEligible) return "";
+    const credentialFields = reviewToken
+      ? `<input type="hidden" name="booking_token" value="${esc(reviewToken)}">`
+      : `<input type="hidden" name="booking_code" value="${esc(data.booking_code || "")}">
+          <label class="field">
+            <span>เบอร์โทรที่ใช้จอง (ยืนยันตัวตน)</span>
+            <input class="input" type="tel" name="customer_phone" inputmode="numeric"
+                   autocomplete="tel" placeholder="เช่น 0812345678" required>
+          </label>`;
+    const legacyHint = legacyEligible
+      ? `<p class="muted">กรอกเบอร์โทรที่ใช้จองงานนี้เพื่อยืนยันตัวตนก่อนรีวิว</p>`
+      : "";
     return `
       <section class="tracking-extra-card review-form-card">
         <div class="section-head compact">
           <span class="section-kicker">Review</span>
           <h2>ให้คะแนนงานนี้</h2>
         </div>
+        ${legacyHint}
         <form data-review-form>
-          <input type="hidden" name="booking_token" value="${esc(reviewToken)}">
+          ${credentialFields}
           <label class="field">
             <span>คะแนน</span>
             <select class="input" name="rating">
