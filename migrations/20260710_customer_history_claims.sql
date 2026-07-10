@@ -21,8 +21,10 @@ CREATE TABLE IF NOT EXISTS public.customer_history_claims (
     CHECK (claim_method IN ('booking_code_phone')),
   CONSTRAINT customer_history_claims_phone_norm_not_blank
     CHECK (length(btrim(phone_norm)) > 0),
+  CONSTRAINT customer_history_claims_phone_norm_canonical_check
+    CHECK (phone_norm ~ '^0[0-9]{8,9}$'),
   CONSTRAINT customer_history_claims_phone_last4_check
-    CHECK (phone_last4 ~ '^[0-9]{4}$')
+    CHECK (phone_last4 ~ '^[0-9]{4}$' AND phone_last4 = right(phone_norm, 4))
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS ux_customer_history_claims_active_phone

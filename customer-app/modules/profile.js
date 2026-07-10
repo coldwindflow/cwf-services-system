@@ -115,12 +115,12 @@
             <button class="secondary-btn" type="button" data-history-refresh ${loading ? "disabled" : ""}>โหลดประวัติ</button>
           </div>
         </form>
-        ${renderHistorySummary({ claimed, items, locations, loading, error: h.error || h.locationsError })}
+        ${renderHistorySummary({ claimed, items, locations, loading, error: h.error || h.locationsError, detail: h.detail, detailStatus: h.detailStatus, detailError: h.detailError })}
       </section>
     `;
   }
 
-  function renderHistorySummary({ claimed, items, locations, loading, error }) {
+  function renderHistorySummary({ claimed, items, locations, loading, error, detail, detailStatus, detailError }) {
     if (loading) return `<div class="state-box">กำลังโหลดประวัติ...</div>`;
     if (error) return `<div class="state-box is-error">${root.utils.escapeHtml(error)}</div>`;
     if (!claimed) return `<p class="muted">เชื่อมประวัติก่อนเพื่อดูงานเดิมและเลือกสถานที่ที่เคยใช้บริการ</p>`;
@@ -141,19 +141,41 @@
         `).join("")
       : `<p class="muted">ยังไม่พบสถานที่จากประวัติงานที่เชื่อมแล้ว</p>`;
     const historyHtml = items.length
-      ? items.slice(0, 8).map((item) => `
+      ? items.slice(0, 8).map((item, index) => `
           <div class="data-row">
-            <strong>${root.utils.escapeHtml(item.booking_code || "งานเดิม")}</strong>
-            <span>${root.utils.escapeHtml(`${item.appointment_datetime || "-"} • ${item.job_status || "-"}`)}</span>
+            <div>
+              <strong>${root.utils.escapeHtml(item.booking_code || "งานเดิม")}</strong>
+              <span>${root.utils.escapeHtml(`${item.appointment_datetime || "-"} • ${item.job_status || "-"}`)}</span>
+            </div>
+            <button class="secondary-btn" type="button" data-history-detail-index="${index}">ดูรายละเอียด</button>
           </div>
         `).join("")
       : `<p class="muted">ยังไม่พบประวัติงานที่แสดงได้</p>`;
+    const detailHtml = detailStatus === "loading"
+      ? `<div class="state-box">กำลังโหลดรายละเอียด...</div>`
+      : detailError
+        ? `<div class="state-box is-error">${root.utils.escapeHtml(detailError)}</div>`
+        : detail
+          ? `
+            <div class="address-status-card has-address">
+              <span class="address-status-icon">${root.utils.icon("pin", 20)}</span>
+              <div>
+                <strong>${root.utils.escapeHtml(detail.booking_code || "รายละเอียดงาน")}</strong>
+                <p>${root.utils.escapeHtml(`${detail.appointment_datetime || "-"} • ${detail.job_status || "-"}`)}</p>
+                <p>${root.utils.escapeHtml(detail.service_summary || "-")}</p>
+                <p>${root.utils.escapeHtml(detail.address_text || "-")}</p>
+                <p class="muted">${root.utils.escapeHtml(`ราคา ${detail.job_price == null ? "-" : detail.job_price} • ${detail.customer_phone_masked || ""}`)}</p>
+              </div>
+            </div>
+          `
+          : "";
     return `
       <div class="profile-history-summary">
         <div class="section-head section-head-compact"><h2>สถานที่ที่เคยใช้บริการ</h2></div>
         <div class="profile-location-list">${locationHtml}</div>
         <div class="section-head section-head-compact"><h2>ประวัติบริการ</h2></div>
         <div>${historyHtml}</div>
+        ${detailHtml ? `<div class="section-head section-head-compact"><h2>รายละเอียดงาน</h2></div><div>${detailHtml}</div>` : ""}
       </div>
     `;
   }
@@ -221,6 +243,7 @@
             claimStatus: "success",
             claimError: "",
             claimSuccess: "เชื่อมประวัติสำเร็จ",
+            claimBookingCode: "",
             claimed: true,
           });
           await loadHistoryData(container);
@@ -253,6 +276,29 @@
         const loc = (root.state.customerHistory?.locations || [])[index];
         if (!root.state.applyHistoryLocation(target, loc)) return;
         root.utils.routeTo(target === "urgent" ? "urgent" : "scheduled");
+      });
+    });
+
+    const detailButtons = typeof container?.querySelectorAll === "function"
+      ? container.querySelectorAll("[data-history-detail-index]")
+      : [];
+    detailButtons.forEach((button) => {
+      if (button.dataset.bound === "1") return;
+      button.dataset.bound = "1";
+      button.addEventListener("click", async () => {
+        const index = Number(button.getAttribute("data-history-detail-index"));
+        const item = (root.state.customerHistory?.items || [])[index];
+        const jobRef = item && item.job_ref;
+        if (!jobRef || !root.api?.loadCustomerHistoryDetail) return;
+        root.state.setCustomerHistory({ detailStatus: "loading", detailError: "", detail: null });
+        paintHistory(container);
+        try {
+          const detailData = await root.api.loadCustomerHistoryDetail(jobRef);
+          root.state.setCustomerHistory({ detailStatus: "success", detailError: "", detail: detailData?.item || null });
+        } catch (_) {
+          root.state.setCustomerHistory({ detailStatus: "error", detailError: "โหลดรายละเอียดงานไม่สำเร็จ", detail: null });
+        }
+        paintHistory(container);
       });
     });
   }

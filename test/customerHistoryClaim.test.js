@@ -13,7 +13,7 @@ const history = require("../server/services/public/customerHistory");
 
 const REPO_ROOT = path.resolve(__dirname, "..");
 
-function makePool({ jobs = [], claims = [], hasClaims = true, hasCustomerSub = true, failInsert = false } = {}) {
+function makePool({ jobs = [], claims = [], hasClaims = true, hasCustomerSub = true, failInsert = false, uniqueConflictClaim = null } = {}) {
   const state = {
     jobs: jobs.map((x) => ({ ...x })),
     claims: claims.map((x) => ({ ...x })),
@@ -21,6 +21,7 @@ function makePool({ jobs = [], claims = [], hasClaims = true, hasCustomerSub = t
     hasClaims,
     hasCustomerSub,
     failInsert,
+    uniqueConflictClaim,
   };
   async function query(sql, params = []) {
     const s = String(sql);
@@ -37,6 +38,11 @@ function makePool({ jobs = [], claims = [], hasClaims = true, hasCustomerSub = t
     if (/FROM public\.customer_history_claims/.test(s) && /WHERE phone_norm=\$1/.test(s)) {
       return { rows: state.claims.filter((c) => c.phone_norm === params[0] && !c.revoked_at).slice(0, 1) };
     }
+    if (/phone_norm=\$1 OR proof_job_id=\$2/.test(s)) {
+      return {
+        rows: state.claims.filter((c) => !c.revoked_at && (c.phone_norm === params[0] || String(c.proof_job_id) === String(params[1]))).slice(0, 1),
+      };
+    }
     if (/UPDATE public\.customer_history_claims/.test(s)) {
       const found = state.claims.find((c) => c.claim_id === params[0]);
       if (found) found.last_verified_at = "now";
@@ -47,6 +53,20 @@ function makePool({ jobs = [], claims = [], hasClaims = true, hasCustomerSub = t
     }
     if (/INSERT INTO public\.customer_history_claims/.test(s)) {
       if (state.failInsert) throw new Error("db unavailable");
+      if (state.uniqueConflictClaim) {
+        if (!state.claims.some((c) => c.claim_id === state.uniqueConflictClaim.claim_id)) {
+          state.claims.push({ ...state.uniqueConflictClaim });
+        }
+        const error = new Error("duplicate key value violates unique constraint");
+        error.code = "23505";
+        throw error;
+      }
+      const duplicate = state.claims.find((c) => !c.revoked_at && (c.phone_norm === params[1] || String(c.proof_job_id) === String(params[3])));
+      if (duplicate) {
+        const error = new Error("duplicate key value violates unique constraint");
+        error.code = "23505";
+        throw error;
+      }
       state.claims.push({
         claim_id: state.claims.length + 1,
         customer_sub: params[0],
@@ -177,6 +197,7 @@ test("claim succeeds, retries by same account are idempotent, and other accounts
       body: JSON.stringify({ phone: "+66812345678", booking_code: " cwfabc123 " }),
     });
     assert.equal(first.status, 200);
+    assert.equal(first.headers.get("cache-control"), "private, no-store");
     assert.equal(pool.state.claims.length, 1);
     assert.equal(pool.state.claims[0].phone_norm, "0812345678");
     const second = await fetch(`${base}/public/customer-history/claim`, {
@@ -199,6 +220,97 @@ test("claim succeeds, retries by same account are idempotent, and other accounts
   });
 });
 
+test("concurrent claim requests return replay for same account and generic failure for a different account", async () => {
+  const samePool = makePool({ jobs: [LEGACY_JOB] });
+  await withServer({ pool: samePool, sub: "line:u1" }, async (base) => {
+    const body = JSON.stringify({ phone: "0812345678", booking_code: "CWFABC123" });
+    const responses = await Promise.all([
+      fetch(`${base}/public/customer-history/claim`, { method: "POST", headers: { "content-type": "application/json" }, body }),
+      fetch(`${base}/public/customer-history/claim`, { method: "POST", headers: { "content-type": "application/json" }, body }),
+    ]);
+    assert.deepEqual(responses.map((res) => res.status).sort(), [200, 200]);
+    const payloads = await Promise.all(responses.map(json));
+    assert.equal(payloads.filter((x) => x.replayed).length, 1);
+    assert.equal(samePool.state.claims.length, 1);
+  });
+
+  const differentPool = makePool({ jobs: [LEGACY_JOB] });
+  const app = express();
+  app.use(express.json());
+  app.use("/u1", createCustomerHistoryRoutes({
+    pool: differentPool,
+    requireCustomerJwt: requireCustomerJwtFor("line:u1"),
+    getSecret: () => "test-secret",
+    logger: { warn() {} },
+  }));
+  app.use("/u2", createCustomerHistoryRoutes({
+    pool: differentPool,
+    requireCustomerJwt: requireCustomerJwtFor("google:u2"),
+    getSecret: () => "test-secret",
+    logger: { warn() {} },
+  }));
+  const server = http.createServer(app);
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const body = JSON.stringify({ phone: "0812345678", booking_code: "CWFABC123" });
+    const responses = await Promise.all([
+      fetch(`${base}/u1/public/customer-history/claim`, { method: "POST", headers: { "content-type": "application/json" }, body }),
+      fetch(`${base}/u2/public/customer-history/claim`, { method: "POST", headers: { "content-type": "application/json" }, body }),
+    ]);
+    const statuses = responses.map((res) => res.status).sort();
+    assert.deepEqual(statuses, [200, 400]);
+    const payloads = await Promise.all(responses.map(json));
+    assert.ok(payloads.some((x) => x.error === "CLAIM_FAILED"));
+    assert.equal(differentPool.state.claims.length, 1);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("unique races resolve to replay for same account or generic failure for another account", async () => {
+  const sameAccountPool = makePool({
+    jobs: [LEGACY_JOB],
+    uniqueConflictClaim: {
+      claim_id: 1,
+      customer_sub: "line:u1",
+      phone_norm: "0812345678",
+      phone_last4: "5678",
+      proof_job_id: 101,
+    },
+  });
+  await withServer({ pool: sameAccountPool, sub: "line:u1" }, async (base) => {
+    const res = await fetch(`${base}/public/customer-history/claim`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ phone: "0812345678", booking_code: "CWFABC123" }),
+    });
+    assert.equal(res.status, 200);
+    assert.equal((await json(res)).replayed, true);
+    assert.equal(sameAccountPool.state.claims.length, 1);
+  });
+
+  const otherAccountPool = makePool({
+    jobs: [LEGACY_JOB],
+    uniqueConflictClaim: {
+      claim_id: 1,
+      customer_sub: "line:other",
+      phone_norm: "0812345678",
+      phone_last4: "5678",
+      proof_job_id: 101,
+    },
+  });
+  await withServer({ pool: otherAccountPool, sub: "line:u1" }, async (base) => {
+    const res = await fetch(`${base}/public/customer-history/claim`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ phone: "0812345678", booking_code: "CWFABC123" }),
+    });
+    assert.equal(res.status, 400);
+    assert.equal((await json(res)).error, "CLAIM_FAILED");
+  });
+});
+
 test("revoked claim does not authorize history and history rejects phone query", async () => {
   const pool = makePool({
     jobs: [LEGACY_JOB],
@@ -209,6 +321,7 @@ test("revoked claim does not authorize history and history rejects phone query",
     assert.equal(phoneQuery.status, 400);
     const res = await fetch(`${base}/public/customer-history`);
     assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "private, no-store");
     const body = await json(res);
     assert.equal(body.claimed, false);
     assert.deepEqual(body.items, []);
@@ -233,6 +346,7 @@ test("history and detail use opaque refs and do not return token, raw job_id, or
     }
     const detail = await fetch(`${base}/public/customer-history/${encodeURIComponent(item.job_ref)}`);
     assert.equal(detail.status, 200);
+    assert.equal(detail.headers.get("cache-control"), "private, no-store");
     const detailBody = await json(detail);
     for (const forbidden of ["booking_token", "job_id", "technician_note", "customer_note", "claim_id", "proof_job_id"]) {
       assert.equal(detailBody.item[forbidden], undefined);
@@ -278,11 +392,16 @@ test("locations group exact duplicates but keep ambiguous locations separate", a
   await withServer({ pool }, async (base) => {
     const res = await fetch(`${base}/public/customer-history/locations`);
     assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "private, no-store");
     const body = await json(res);
     assert.equal(body.auto_select, false);
     assert.equal(body.has_multiple_locations, true);
     assert.equal(body.locations.length, 2);
     assert.ok(body.locations.some((x) => x.job_count === 2));
+    for (const loc of body.locations) {
+      assert.equal(loc.sample_booking_code, undefined);
+      assert.equal(loc.location_ref, undefined);
+    }
   });
 });
 
@@ -290,7 +409,8 @@ test("migration stores no raw booking code and uses BIGINT-compatible proof_job_
   const sql = fs.readFileSync(path.join(REPO_ROOT, "migrations", "20260710_customer_history_claims.sql"), "utf8");
   assert.match(sql, /proof_job_id BIGINT NOT NULL REFERENCES public\.jobs\(job_id\)/);
   assert.doesNotMatch(sql, /proof_booking_code/i);
-  assert.match(sql, /phone_last4 ~ '\^\[0-9\]\{4\}\$'/);
+  assert.match(sql, /phone_norm ~ '\^0\[0-9\]\{8,9\}\$'/);
+  assert.match(sql, /phone_last4 ~ '\^\[0-9\]\{4\}\$' AND phone_last4 = right\(phone_norm, 4\)/);
 });
 
 function makeBrowserContext({ fetchImpl } = {}) {
@@ -326,11 +446,13 @@ test("Customer App API and state support claim/history without phone query or au
   const root = loadModule(context, "customer-app/modules/api.js");
   await root.api.claimCustomerHistory({ phone: "081", booking_code: "CWF1" });
   await root.api.loadCustomerHistory();
+  await root.api.loadCustomerHistoryDetail("opaque.ref");
   await root.api.loadCustomerHistoryLocations();
   assert.equal(calls[0].url, "https://app.example.test/public/customer-history/claim");
   assert.deepEqual(JSON.parse(calls[0].options.body), { phone: "081", booking_code: "CWF1" });
   assert.equal(calls[1].url, "https://app.example.test/public/customer-history");
-  assert.equal(calls[2].url, "https://app.example.test/public/customer-history/locations");
+  assert.equal(calls[2].url, "https://app.example.test/public/customer-history/opaque.ref");
+  assert.equal(calls[3].url, "https://app.example.test/public/customer-history/locations");
   assert.doesNotMatch(calls.map((x) => x.url).join("\n"), /phone=/);
 
   const stateContext = makeBrowserContext();
@@ -341,8 +463,88 @@ test("Customer App API and state support claim/history without phone query or au
   assert.equal(stateRoot.state.draft.scheduled.job_zone, "Zone A");
 });
 
+test("Customer App profile opens history detail with opaque job_ref and clears claim booking code after success", async () => {
+  const context = makeBrowserContext();
+  const root = context.window.CWFCustomerAppV2;
+  root.utils = {
+    escapeHtml(value) {
+      return String(value == null ? "" : value).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
+    },
+    icon() { return ""; },
+    routeTo() {},
+  };
+  const detailCalls = [];
+  root.api = {
+    async claimCustomerHistory() { return { ok: true }; },
+    async loadCustomerHistory() { return { claimed: true, items: root.state.customerHistory.items }; },
+    async loadCustomerHistoryLocations() { return { claimed: true, locations: [] }; },
+    async loadCustomerHistoryDetail(jobRef) {
+      detailCalls.push(jobRef);
+      return { item: { booking_code: "CWFABC123", job_status: "done", job_price: 1200, customer_phone_masked: "**** 5678" } };
+    },
+  };
+  root.auth = {
+    renderLoginPanel() { return ""; },
+    displayName() { return "Customer"; },
+    loadCustomer() { return Promise.resolve(); },
+  };
+  root.ui = { supportButtons() { return ""; } };
+  root.router = { refresh() {} };
+  root.state = {
+    authStatus: "success",
+    currentRoute: "profile",
+    customer: { logged_in: true, profile: {} },
+    profileAddressForm: {},
+    customerHistory: {
+      claimed: true,
+      items: [{ job_ref: "opaque.ref", booking_code: "CWFABC123", appointment_datetime: "2026-07-01", job_status: "done" }],
+      locations: [],
+      claimBookingCode: "CWFABC123",
+    },
+    setCustomerHistory(patch) { this.customerHistory = { ...this.customerHistory, ...patch }; },
+  };
+
+  const listeners = [];
+  const container = {
+    _html: "",
+    set innerHTML(value) { this._html = String(value); },
+    get innerHTML() { return this._html; },
+    querySelector(selector) {
+      if (selector === "[data-profile-history]") {
+        return {
+          set innerHTML(value) { container._html = String(value); },
+          get innerHTML() { return container._html; },
+        };
+      }
+      return null;
+    },
+    querySelectorAll(selector) {
+      if (selector !== "[data-history-detail-index]") return [];
+      const matches = [...this._html.matchAll(/data-history-detail-index="([0-9]+)"/g)];
+      return matches.map((m) => ({
+        dataset: {},
+        getAttribute(name) { return name === "data-history-detail-index" ? m[1] : null; },
+        addEventListener(_event, handler) { listeners.push(handler); },
+      }));
+    },
+  };
+
+  loadModule(context, "customer-app/modules/profile.js");
+  root.profile.render(container);
+  assert.equal(listeners.length, 1);
+  await listeners[0]();
+  assert.deepEqual(detailCalls, ["opaque.ref"]);
+  assert.equal(root.state.customerHistory.detail.booking_code, "CWFABC123");
+  assert.equal(root.state.customerHistory.detail.job_id, undefined);
+
+  const submitState = { claimStatus: "saving", claimBookingCode: "CWFABC123" };
+  root.state.setCustomerHistory = (patch) => Object.assign(submitState, patch);
+  root.state.setCustomerHistory({ claimStatus: "success", claimBookingCode: "", claimed: true });
+  assert.equal(submitState.claimBookingCode, "");
+});
+
 test("Customer App cache version is bumped consistently", () => {
-  const expected = "20260710_legacy_claim_v1";
+  const expected = "20260710_legacy_claim_v2";
   for (const file of [
     "customer-app/index.html",
     "customer-app/sw.js",

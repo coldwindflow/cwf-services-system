@@ -18,6 +18,11 @@ function createCustomerHistoryRoutes(deps = {}) {
   const subLimiter = trackingPrivacy.createPublicLookupRateLimiter({ windowMs: 10 * 60 * 1000, max: 12, maxKeys: 5000 });
   const proofLimiter = trackingPrivacy.createPublicLookupRateLimiter({ windowMs: 10 * 60 * 1000, max: 6, maxKeys: 5000 });
 
+  router.use("/public/customer-history", (_req, res, next) => {
+    res.set("Cache-Control", "private, no-store");
+    next();
+  });
+
   function secret() {
     return String(getSecret() || "").trim();
   }
@@ -38,6 +43,22 @@ function createCustomerHistoryRoutes(deps = {}) {
       error: history.GENERIC_CLAIM_ERROR,
       message: "ไม่สามารถยืนยันประวัติงานได้ กรุณาตรวจสอบข้อมูลอีกครั้ง",
     });
+  }
+
+  async function resolveClaimUniqueRace(customerSub, phone, proofJobId) {
+    const r = await pool.query(
+      `SELECT claim_id, customer_sub, phone_norm, phone_last4, proof_job_id
+         FROM public.customer_history_claims
+        WHERE revoked_at IS NULL
+          AND (phone_norm=$1 OR proof_job_id=$2)
+        ORDER BY claimed_at ASC
+        LIMIT 1`,
+      [phone.phone_norm, proofJobId]
+    );
+    const row = r.rows?.[0] || null;
+    if (!row) return { replayed: false, failed: true };
+    if (String(row.customer_sub) !== customerSub) return { replayed: false, failed: true };
+    return { replayed: true, failed: false, phone_last4: row.phone_last4 || phone.phone_last4 };
   }
 
   async function authorizedContext(db, customerSub) {
@@ -64,6 +85,7 @@ function createCustomerHistoryRoutes(deps = {}) {
     }
 
     const client = await pool.connect();
+    let proofJobId = null;
     try {
       await client.query("BEGIN");
       const ready = await history.schemaReady(client);
@@ -88,6 +110,7 @@ function createCustomerHistoryRoutes(deps = {}) {
         await client.query("ROLLBACK");
         return genericClaimFailure(res);
       }
+      proofJobId = job.job_id;
 
       const existingPhone = await client.query(
         `SELECT claim_id, customer_sub
@@ -137,6 +160,15 @@ function createCustomerHistoryRoutes(deps = {}) {
       return res.json({ ok: true, claimed: true, phone_last4: phone.phone_last4 });
     } catch (error) {
       try { await client.query("ROLLBACK"); } catch (_) {}
+      if (error && error.code === "23505") {
+        try {
+          const resolved = await resolveClaimUniqueRace(customerSub, phone, proofJobId);
+          if (resolved.replayed) {
+            return res.json({ ok: true, claimed: true, replayed: true, phone_last4: resolved.phone_last4 });
+          }
+        } catch (_) {}
+        return genericClaimFailure(res);
+      }
       logger.warn?.("[customer_history_claim] failed", { code: error.code || error.message || "error" });
       return res.status(error.status || 500).json({ error: error.status === 503 ? "CUSTOMER_HISTORY_SCHEMA_NOT_READY" : "CLAIM_FAILED" });
     } finally {

@@ -150,13 +150,11 @@ function groupLocations(rows) {
     const key = locationKey(row);
     if (!byKey.has(key)) {
       byKey.set(key, {
-        location_ref: b64url(crypto.createHash("sha256").update(`location\0${key}`).digest()).slice(0, 24),
         address_text: address,
         maps_url: compactText(row.maps_url) || null,
         job_zone: compactText(row.job_zone) || null,
         job_count: 0,
         last_seen_at: null,
-        sample_booking_code: row.booking_code || null,
         auto_select: false,
       });
     }
@@ -165,7 +163,6 @@ function groupLocations(rows) {
     const seen = row.last_seen_at || row.appointment_datetime || row.finished_at || null;
     if (seen && (!item.last_seen_at || String(seen) > String(item.last_seen_at))) {
       item.last_seen_at = seen;
-      item.sample_booking_code = row.booking_code || item.sample_booking_code || null;
     }
   }
   return [...byKey.values()].sort((a, b) => String(b.last_seen_at || "").localeCompare(String(a.last_seen_at || "")));
