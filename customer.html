@@ -1320,6 +1320,33 @@ async function book(){
     ...payload
   };
 
+  // Scheduled bookings carry a canonical idempotency key on every submit (the
+  // server requires it and derives the booking token from it). The key must:
+  //   - survive a reload / network recovery, so a committed-but-lost submit
+  //     replays instead of creating a duplicate -> persisted in sessionStorage;
+  //   - come only from a CSPRNG (never Math.random), since it seeds a token;
+  //   - be cleared on a confirmed success so the next attempt is a fresh key.
+  if (!urgent) {
+    let schedKey = "";
+    try { schedKey = sessionStorage.getItem("cwf_sched_key") || ""; } catch (_) { schedKey = window.__cwfSchedKey || ""; }
+    if (!schedKey) {
+      if (window.crypto && crypto.randomUUID) {
+        schedKey = crypto.randomUUID().replace(/-/g, "");
+      } else if (window.crypto && crypto.getRandomValues) {
+        const buf = new Uint8Array(16);
+        crypto.getRandomValues(buf);
+        schedKey = Array.from(buf).map(b => b.toString(16).padStart(2, "0")).join("");
+      } else {
+        // No CSPRNG -> refuse rather than seed a booking token from a predictable PRNG.
+        alert("เบราว์เซอร์นี้ไม่รองรับการจองอย่างปลอดภัย กรุณาอัปเดตเบราว์เซอร์แล้วลองใหม่");
+        return;
+      }
+      try { sessionStorage.setItem("cwf_sched_key", schedKey); } catch (_) {}
+      window.__cwfSchedKey = schedKey;
+    }
+    body.scheduled_request_key = schedKey;
+  }
+
   const confirmBtn = document.getElementById('confirm_btn');
   if(confirmBtn){ confirmBtn.disabled = true; confirmBtn.textContent = '⏳ กำลังจอง...'; }
 
@@ -1334,6 +1361,9 @@ async function book(){
     return data;
   })
   .then(data=>{
+    // Booking confirmed — clear the persisted key so the next attempt is fresh.
+    window.__cwfSchedKey = null;
+    try { sessionStorage.removeItem("cwf_sched_key"); } catch (_) {}
     const box = document.getElementById("result");
     const token = data.token;
     const code = data.booking_code || token || '';

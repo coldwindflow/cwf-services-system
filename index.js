@@ -29,6 +29,7 @@ const pricingHelpers = require("./server/pricing");
 const jobTiming = require("./server/services/jobTiming");
 const urgentPublicAdapter = require("./server/services/urgentPublicAdapter");
 const urgentFinalizer = require("./server/services/urgent/finalizer");
+const trackingPrivacy = require("./server/services/public/trackingPrivacy");
 const customerPricingHelpers = require("./server/customerPricing");
 const customerAuth = require("./server/customerAuth");
 const technicianIncomeHelpers = require("./server/technicianIncome");
@@ -116,6 +117,26 @@ const FLAG_SHOW_TECH_PHONE_ON_TRACKING = envBool("SHOW_TECH_PHONE_ON_TRACKING", 
 const ENABLE_AVAILABILITY_V2 = envBool("ENABLE_AVAILABILITY_V2", true);
 // ✅ Safe toggle: urgent offer flow (public booking + offers)
 const ENABLE_URGENT_FLOW = envBool("ENABLE_URGENT_FLOW", true);
+// 🔒 Customer App booking kill switches — FAIL CLOSED by design: customer
+// self-booking stays OFF until the operator explicitly enables each lane in
+// the environment. When off, /public/book answers 503 with a machine-readable
+// code + LINE contact URL so the app can hand the customer to a human without
+// ever creating a job (no job = no duplicate risk). Admin booking flows are
+// NOT affected by these flags.
+const ENABLE_CUSTOMER_SCHEDULED_BOOKING = envBool("ENABLE_CUSTOMER_SCHEDULED_BOOKING", false);
+const ENABLE_CUSTOMER_URGENT_BOOKING = envBool("ENABLE_CUSTOMER_URGENT_BOOKING", false);
+const CWF_LINE_CONTACT_URL = String(process.env.CWF_LINE_CONTACT_URL || "https://lin.ee/fG1Oq7y").trim();
+// Rate limits for the public tracking lookups (per client IP, per minute).
+// Budgets cover a real customer's polling comfortably while making
+// booking_code/token guessing impractical.
+const publicTrackRateLimiter = trackingPrivacy.createPublicLookupRateLimiter({ windowMs: 60000, max: 30 });
+const publicUrgentStatusRateLimiter = trackingPrivacy.createPublicLookupRateLimiter({ windowMs: 60000, max: 120 });
+const publicDocsRateLimiter = trackingPrivacy.createPublicLookupRateLimiter({ windowMs: 60000, max: 20 });
+// Public review is a WRITE gated by an identifier, so it gets two independent
+// budgets: per trusted client IP, and per booking code/token (so one job's code
+// can't be hammered from many IPs). Both must pass.
+const publicReviewIpRateLimiter = trackingPrivacy.createPublicLookupRateLimiter({ windowMs: 60000, max: 15 });
+const publicReviewKeyRateLimiter = trackingPrivacy.createPublicLookupRateLimiter({ windowMs: 600000, max: 8 });
 const ENABLE_SERVICE_ZONE_FILTER = envBool("ENABLE_SERVICE_ZONE_FILTER", true);
 const ENABLE_PARTNER_DEPOSIT_DEDUCTION = envBool("ENABLE_PARTNER_DEPOSIT_DEDUCTION", true);
 const ENABLE_WEB_PUSH_NOTIFICATIONS = envBool("ENABLE_WEB_PUSH_NOTIFICATIONS", true);
@@ -12907,7 +12928,9 @@ function makeRandomBookingCode() {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // ตัด I,O,0,1
   let out = "";
   for (let i = 0; i < 7; i++) {
-    out += chars[Math.floor(Math.random() * chars.length)];
+    // CSPRNG: the code doubles as a public lookup key, so it must not come
+    // from a predictable PRNG stream.
+    out += chars[crypto.randomInt(chars.length)];
   }
   return `CWF${out}`;
 }
@@ -23613,6 +23636,18 @@ app.get('/admin/accounting/reports/:report_key.csv', requireAccountingPermission
 
 app.use(createDocumentRoutes({
   pool,
+  // Job documents (receipt/e-slip) carry full customer PII. Access requires
+  // the job's booking_token (?key=...) or an authenticated admin session —
+  // a bare sequential job_id must never be enough.
+  isAdminRequest: async (req) => {
+    try {
+      const ctx = await getAuthContext(req, null);
+      return Boolean(ctx && ctx.ok && (ctx.actor.role === "admin" || ctx.actor.role === "super_admin"));
+    } catch (_) {
+      return false;
+    }
+  },
+  docsRateLimiter: publicDocsRateLimiter,
   accountingOwnerSignaturePublicUrl: _accountingOwnerSignaturePublicUrl,
   accountingSignaturePublicUrl: _accountingSignaturePublicUrl,
   accountingOwnerSignerName: _accountingOwnerSignerName,
@@ -25074,15 +25109,113 @@ app.get("/public/availability", async (req, res) => {
   }
 });
 
-function isCustomerAppUrgentBook(body = {}) {
-  return String(body.booking_mode || "").trim().toLowerCase() === "urgent" &&
-    String(body.client_app || "").trim().toLowerCase() === "customer_app_v2";
-}
-
 function deriveCustomerScheduledBookingToken(requestKey) {
   const key = String(requestKey || "").trim();
   if (!key) return null;
   return crypto.createHash("sha256").update(`scheduled_v1:${key}`).digest("hex").slice(0, 24);
+}
+
+// A scheduled request key is bound to the booking it first created. On replay we
+// only return the existing job when the FULL canonical material payload matches;
+// a key reused with any different material field is a key-reuse error, never a
+// silent return of the old job's data. "Material" = every persisted field that
+// defines the booking contract: appointment, contact, place, and the canonical
+// service composition (from job_items, which also carries price).
+function normalizedBookingScalar(value) {
+  return String(value == null ? "" : value).trim();
+}
+
+// Canonical, order-independent signature of a set of line items. line_total
+// captures unit price × qty, so BTU/variant/qty/price changes all shift it.
+function bookingLineSignature(rows) {
+  return (rows || [])
+    .map((it) => `${normalizedBookingScalar(it.item_name)}#${Number(it.qty || 0)}#${Number(it.line_total || 0)}`)
+    .sort()
+    .join("|");
+}
+
+async function loadStoredBookingLineSignature(db, jobId) {
+  const r = await db.query(
+    `SELECT item_name, qty, line_total FROM public.job_items WHERE job_id=$1`,
+    [jobId]
+  );
+  return bookingLineSignature(r.rows);
+}
+
+// Rebuild the incoming service + extra lines with the SAME normalizer used to
+// create a booking, so an identical service payload yields an identical
+// signature (and any material change yields a different one). Read-only.
+async function buildIncomingBookingLineSignature(db, payloadV2, itemIdQty, standardPrice) {
+  let computed = [];
+  let total = Number(standardPrice || 0);
+  const serviceLines = await customerPricingHelpers.buildCustomerServiceLineItemsFromPayload(
+    (payloadV2.services && Array.isArray(payloadV2.services))
+      ? payloadV2
+      : {
+          ...payloadV2,
+          services: [{
+            job_type: payloadV2.job_type,
+            ac_type: payloadV2.ac_type,
+            btu: payloadV2.btu,
+            machine_count: payloadV2.machine_count,
+            wash_variant: payloadV2.wash_variant,
+            repair_variant: payloadV2.repair_variant,
+          }],
+        },
+    db
+  );
+  if (serviceLines.length) {
+    computed = computed.concat(serviceLines);
+  } else if (total > 0) {
+    computed.push({ item_name: `ค่าบริการมาตรฐาน (${payloadV2.job_type || "-"})`, qty: 1, line_total: total });
+  }
+  if (itemIdQty && itemIdQty.length) {
+    const ids = itemIdQty.map((x) => x.item_id);
+    const catR = await db.query(
+      `SELECT item_id, item_name, base_price FROM public.catalog_items
+        WHERE is_active=TRUE AND is_customer_visible=TRUE AND item_id = ANY($1::bigint[])`,
+      [ids]
+    );
+    const map = new Map(catR.rows.map((row) => [Number(row.item_id), row]));
+    for (const x of itemIdQty) {
+      const it = map.get(Number(x.item_id));
+      if (!it) continue;
+      const qty = Number(x.qty);
+      computed.push({ item_name: it.item_name, qty, line_total: qty * Number(it.base_price || 0) });
+    }
+  }
+  return bookingLineSignature(computed);
+}
+
+// Scalar material fields persisted on the jobs row (everything but the service
+// lines, which are compared via the signature above).
+function scheduledScalarsMatch(jobRow, incoming) {
+  const apptTime = (v) => {
+    const t = new Date(v).getTime();
+    return Number.isFinite(t) ? t : NaN;
+  };
+  const a = apptTime(jobRow.appointment_datetime);
+  const b = apptTime(normalizeAppointmentDatetime(incoming.appointment_datetime));
+  if (!(Number.isFinite(a) && Number.isFinite(b) && a === b)) return false;
+  if (normalizedBookingScalar(jobRow.customer_phone).replace(/\D/g, "") !== normalizedBookingScalar(incoming.customer_phone).replace(/\D/g, "")) return false;
+  if (normalizedBookingScalar(jobRow.customer_name) !== normalizedBookingScalar(incoming.customer_name)) return false;
+  if (normalizedBookingScalar(jobRow.address_text) !== normalizedBookingScalar(incoming.address_text)) return false;
+  if (normalizedBookingScalar(jobRow.maps_url) !== normalizedBookingScalar(incoming.maps_url)) return false;
+  if (normalizedBookingScalar(jobRow.job_zone) !== normalizedBookingScalar(incoming.job_zone)) return false;
+  if (normalizedBookingScalar(jobRow.job_type) !== normalizedBookingScalar(incoming.job_type)) return false;
+  if (normalizedBookingScalar(jobRow.customer_note) !== normalizedBookingScalar(incoming.customer_note)) return false;
+  if (Boolean(jobRow.allow_time_proposal) !== Boolean(incoming.allow_time_proposal)) return false;
+  if (Number(jobRow.duration_min || 0) !== Number(incoming.duration_min || 0)) return false;
+  return true;
+}
+
+// Full canonical match = scalar fields + service-line signature. Used identically
+// by the pre-flight replay and the in-transaction race path.
+async function scheduledPayloadMatchesExisting(db, jobRow, incoming) {
+  if (!scheduledScalarsMatch(jobRow, incoming)) return false;
+  const storedSig = await loadStoredBookingLineSignature(db, jobRow.job_id);
+  const incomingSig = await buildIncomingBookingLineSignature(db, incoming.payloadV2, incoming.itemIdQty, incoming.standardPrice);
+  return storedSig === incomingSig;
 }
 
 // Customer App V2 urgent requests are just another entry point into the
@@ -25163,7 +25296,39 @@ app.post("/public/book", async (req, res) => {
     catalog_item_id, // optional: links this booking to the Store catalog item it was booked for
   } = req.body || {};
 
-  if (isCustomerAppUrgentBook(req.body || {})) {
+  // 🔒 Kill switch (fail closed) — CANONICAL GATE. /public/book is entirely
+  // unauthenticated, so the gate keys off the canonical booking_mode ONLY.
+  // client_app is attacker-controlled and MUST NOT be a security boundary:
+  // gating on it would let a request drop/forge client_app and slip past.
+  // This runs before urgent routing, pricing, idempotency, insert, and offer
+  // dispatch, so a closed lane can never create a job/offer. Admin bookings use
+  // the session-authenticated /admin route, never this one. Unknown modes are
+  // rejected outright (no fall-through).
+  const canonicalBookingMode = String(booking_mode || "scheduled").trim().toLowerCase();
+  if (canonicalBookingMode !== "scheduled" && canonicalBookingMode !== "urgent") {
+    return res.status(400).json({ error: "ประเภทการจองไม่ถูกต้อง", code: "UNKNOWN_BOOKING_MODE" });
+  }
+  if (canonicalBookingMode === "urgent" && !ENABLE_CUSTOMER_URGENT_BOOKING) {
+    return res.status(503).json({
+      error: "ระบบจองด่วนออนไลน์ปิดให้บริการชั่วคราว กรุณาติดต่อแอดมินทาง LINE",
+      code: "URGENT_BOOKING_DISABLED",
+      line_url: CWF_LINE_CONTACT_URL,
+    });
+  }
+  if (canonicalBookingMode === "scheduled" && !ENABLE_CUSTOMER_SCHEDULED_BOOKING) {
+    return res.status(503).json({
+      error: "ระบบจองคิวออนไลน์ปิดให้บริการชั่วคราว กรุณาติดต่อแอดมินทาง LINE",
+      code: "SCHEDULED_BOOKING_DISABLED",
+      line_url: CWF_LINE_CONTACT_URL,
+    });
+  }
+
+  // Every unauthenticated urgent request is a customer request (admin books via
+  // the session-authenticated route, never this one). Route it through the
+  // customer-safe adapter on the CANONICAL booking_mode ALONE — never client_app,
+  // which the caller can drop/forge to skip the sanitiser and reach the raw
+  // urgent engine with attacker-chosen technician/assign fields.
+  if (canonicalBookingMode === "urgent") {
     return handlePublicCustomerUrgentBook(req, res);
   }
 
@@ -25198,13 +25363,18 @@ app.post("/public/book", async (req, res) => {
 
   let token = genToken(12);
   // DURATION_PRICE_V2_PUBLIC_BOOK
-  let bm = (booking_mode || "scheduled").toString().trim().toLowerCase();
+  let bm = canonicalBookingMode;
   const clientApp = (client_app || "").toString().trim().toLowerCase();
-  const scheduledRequestKey = bm === "scheduled" && clientApp === "customer_app_v2"
+  // Idempotency is CANONICAL: every public scheduled booking must carry a valid
+  // request key, keyed off the canonical booking_mode — never client_app. Gating
+  // this on client_app let an unauthenticated caller drop/forge it to skip the
+  // advisory-lock replay below and mint duplicate jobs. client_app stays only
+  // for telemetry/UX defaults, never for a security/idempotency decision.
+  const scheduledRequestKey = bm === "scheduled"
     ? String(scheduled_request_key || "").trim()
     : "";
   const validScheduledRequestKey = /^[A-Za-z0-9_-]{16,128}$/.test(scheduledRequestKey);
-  if (bm === "scheduled" && clientApp === "customer_app_v2" && !validScheduledRequestKey) {
+  if (bm === "scheduled" && !validScheduledRequestKey) {
     return res.status(400).json({ error: "MISSING_REQUEST_KEY", code: "MISSING_REQUEST_KEY" });
   }
   const scheduledDeterministicToken = scheduledRequestKey
@@ -25212,7 +25382,7 @@ app.post("/public/book", async (req, res) => {
     : null;
   if (scheduledDeterministicToken) token = scheduledDeterministicToken;
   const allowAdminScheduleFallback = allow_admin_schedule_fallback === true || String(allow_admin_schedule_fallback || "").trim() === "true";
-  const canUseAdminScheduleFallback = bm === "scheduled" && allowAdminScheduleFallback && clientApp === "customer_app_v2";
+  const canUseAdminScheduleFallback = bm === "scheduled" && allowAdminScheduleFallback;
   const urgentOfferEnabled = bm === "urgent" && ENABLE_URGENT_FLOW;
   const allowTimeProposal = allow_time_proposal === true
     ? true
@@ -25235,7 +25405,7 @@ app.post("/public/book", async (req, res) => {
   // CWF Spec: conservative duration for schedule/collision
   const duration_min_v2 = computeDurationMinMulti(payloadV2, { source: "public_book", conservative: true });
   if (duration_min_v2 <= 0) return res.status(400).json({ error: "งานประเภทนี้ต้องให้แอดมินกำหนดเวลา (duration)" });
-  if (bm === "scheduled" && clientApp === "customer_app_v2") {
+  if (bm === "scheduled") {
     const startIsoForCutoff = normalizeAppointmentDatetime(appointment_datetime);
     const requestedDate = String(startIsoForCutoff || "").slice(0, 10);
     const requestedStart = String(startIsoForCutoff || "").slice(11, 16);
@@ -25274,11 +25444,73 @@ console.log("[latlng_parse]", { ok: !!parsedLL });
   // Defect 1: Customer App V2 scheduled booking must not be limited to company technicians;
   // it mirrors the public availability query (tech_type=all) and stays strict via the
   // customer_slot_visible + service matrix + monthly calendar gates below.
-  const requestedTechType = bm === "urgent"
-    ? "partner"
-    : (clientApp === "customer_app_v2" ? "all" : "company");
+  // Canonical: every public scheduled booking mirrors the public slot list
+  // (tech_type "all"), never a client_app-derived narrower set. Strictness comes
+  // from the customer_slot_visible + service-matrix + monthly-calendar gates
+  // inside customerAvailability, not from client_app.
+  // Payload-bound idempotency (checked BEFORE the availability gate): a genuine
+  // retry of the same request must replay its existing job even though that job
+  // now occupies the slot — so the replay lookup cannot sit behind the "slot
+  // full" check. Reusing the key with a materially different payload is rejected
+  // with 409 (no mutation, no old-job data leaked).
+  if (bm === "scheduled" && scheduledRequestKey && scheduledDeterministicToken) {
+    const idem = await pool.connect();
+    let prior = null;
+    try {
+      await idem.query("BEGIN");
+      await idem.query("SELECT pg_advisory_xact_lock(hashtext($1))", [scheduledRequestKey]);
+      const r = await idem.query(
+        `SELECT job_id, booking_code, booking_token, dispatch_mode, duration_min, job_price,
+                appointment_datetime, customer_phone, customer_name, address_text, maps_url,
+                job_zone, job_type, customer_note, allow_time_proposal
+           FROM public.jobs
+          WHERE booking_token=$1
+            AND job_source='customer'
+            AND COALESCE(booking_mode,'scheduled')='scheduled'
+            AND canceled_at IS NULL
+          LIMIT 1`,
+        [scheduledDeterministicToken]
+      );
+      await idem.query("COMMIT");
+      prior = r.rows[0] || null;
+    } catch (e) {
+      try { await idem.query("ROLLBACK"); } catch (_) {}
+      throw e;
+    } finally {
+      idem.release();
+    }
+    if (prior) {
+      const incomingBooking = {
+        appointment_datetime, customer_phone, customer_name, address_text, maps_url,
+        job_zone, job_type, customer_note, allow_time_proposal: allowTimeProposal,
+        duration_min: duration_min_v2, payloadV2, itemIdQty, standardPrice: standard_price,
+      };
+      if (!(await scheduledPayloadMatchesExisting(pool, prior, incomingBooking))) {
+        // Same key, materially different booking. No mutation, no identifiers/PII.
+        return res.status(409).json({
+          error: "คำขอนี้ถูกใช้ไปแล้วกับการจองอื่น กรุณาเริ่มการจองใหม่",
+          code: "IDEMPOTENCY_KEY_REUSED",
+        });
+      }
+      return res.json({
+        success: true,
+        replayed: true,
+        job_id: prior.job_id,
+        booking_code: prior.booking_code,
+        token: prior.booking_token,
+        booking_mode: "scheduled",
+        dispatch_mode: prior.dispatch_mode || "normal",
+        duration_min: Number(prior.duration_min || duration_min_v2 || 0),
+        effective_block_min: effectiveBlockMin(Number(prior.duration_min || duration_min_v2 || 0)),
+        travel_buffer_min: TRAVEL_BUFFER_MIN,
+        base_total: Number(prior.job_price || 0),
+      });
+    }
+  }
+
+  const requestedTechType = bm === "urgent" ? "partner" : "all";
   try {
-    if (bm === "scheduled" && clientApp === "customer_app_v2") {
+    if (bm === "scheduled") {
       const startIso = normalizeAppointmentDatetime(appointment_datetime);
       const start = String(startIso).slice(11, 16);
       const available = await customerAvailability.hasAvailableStart(
@@ -25294,147 +25526,19 @@ console.log("[latlng_parse]", { ok: !!parsedLL });
       if (!available) {
         return res.status(409).json({ error: "ช่วงเวลานี้เต็มแล้ว กรุณาเลือกเวลาอื่น" });
       }
-    } else {
-    let techs = await listTechniciansByType(requestedTechType, { include_paused: bm === "scheduled" });
-
-    // Customer booking must use the same strict technician boundary as the public slot list.
-    // Only admin-visible technicians whose service matrix matches every requested service are eligible.
-    techs = techs.filter(t => t && t.customer_slot_visible === true);
-    const normalizeJobKey = (s) => {
-      const v = String(s || '').toLowerCase();
-      if (!v) return null;
-      if (v.includes('ติดตั้ง')) return 'install';
-      if (v.includes('ซ่อม')) return 'repair';
-      if (v.includes('ล้าง')) return 'wash';
-      return null;
-    };
-    const normalizeAcKey = (s) => {
-      const v = String(s || '').toLowerCase();
-      if (!v) return null;
-      if (v.includes('ผนัง') || v.includes('wall')) return 'wall';
-      if (v.includes('สี่ทิศ') || v.includes('4') || v.includes('four')) return 'fourway';
-      if (v.includes('แขวน')) return 'hanging';
-      if (v.includes('ใต้ฝ้า') || v.includes('เปลือย') || v.includes('ฝัง')) return 'ceiling';
-      return null;
-    };
-    const normalizeWashKey = (s) => {
-      const v = String(s || '').toLowerCase();
-      if (!v) return null;
-      if (v.includes('ธรรมดา') || v.includes('normal')) return 'normal';
-      if (v.includes('พรีเมียม') || v.includes('premium')) return 'premium';
-      if (v.includes('แขวนคอย') || v.includes('coil')) return 'coil';
-      if (v.includes('ตัดล้าง') || v.includes('overhaul') || v.includes('ใหญ่')) return 'overhaul';
-      return null;
-    };
-    const normalizeRepairKey = (s) => {
-      const v = String(s || '').toLowerCase();
-      if (!v) return null;
-      if (v.includes('à¸£à¸±à¹ˆà¸§') || v.includes('leak')) return 'leak_check';
-      if (v.includes('à¸­à¸°à¹„à¸«à¸¥à¹ˆ') || v.includes('part')) return 'parts';
-      if (v.includes('à¸•à¸£à¸§à¸ˆ') || v.includes('inspect')) return 'inspection';
-      if (v.includes('à¸—à¸±à¹ˆà¸§à¹„à¸›') || v.includes('general')) return 'general';
-      return v.replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '') || null;
-    };
-
-    const requestedServices = (Array.isArray(payloadV2.services) && payloadV2.services.length)
-      ? payloadV2.services
-      : [{
-          job_type: payloadV2.job_type,
-          ac_type: payloadV2.ac_type,
-          wash_variant: payloadV2.wash_variant,
-          repair_variant: payloadV2.repair_variant,
-        }];
-    const rawCriteria = requestedServices
-      .map(s => ({
-        job: normalizeJobKey(s.job_type || payloadV2.job_type),
-        ac: normalizeAcKey(s.ac_type || payloadV2.ac_type),
-        wash: normalizeWashKey(s.wash_variant || payloadV2.wash_variant),
-        repair: normalizeRepairKey(s.repair_variant || payloadV2.repair_variant),
-        repair_variant: String(s.repair_variant || payloadV2.repair_variant || '').trim() || null,
-      }));
-    const hasCompleteCriteria = (c) => Boolean(
-      c && c.job && c.ac &&
-      !(c.job === 'wash' && c.ac === 'wall' && !c.wash) &&
-      !(c.job === 'repair' && !c.repair_variant)
-    );
-    if (!rawCriteria.length || rawCriteria.some(c => !hasCompleteCriteria(c))) {
-      const err = new Error('CUSTOMER_SLOT_SERVICE_CRITERIA_REQUIRED');
-      err.status = 400;
-      throw err;
-    }
-    const listCriteria = rawCriteria;
-
-    const mustTrue = (obj, key) => {
-      if (!key) return true;
-      if (!obj || typeof obj !== 'object') return false;
-      return Boolean(obj[key]);
-    };
-    const hasTrue = (obj, keys) => {
-      if (!obj || typeof obj !== 'object') return false;
-      return (keys || []).filter(Boolean).some((key) => Boolean(obj[key]));
-    };
-    const techMatches = (mx, c) => {
-      if (!mx || typeof mx !== 'object') return false;
-      if (!mustTrue(mx.job_types, c.job)) return false;
-      if (!mustTrue(mx.ac_types, c.ac)) return false;
-      if (c.job === 'wash' && c.ac === 'wall' && !mustTrue(mx.wash_wall_variants, c.wash)) return false;
-      if (c.job === 'repair' && c.repair_variant && !hasTrue(mx.repair_variants, [c.repair, c.repair_variant])) return false;
-      return true;
-    };
-
-    const usernames = techs.map(t => String(t.username));
-    const matrixMap = new Map();
-    try {
-      const rMx = usernames.length
-        ? await pool.query(
-            `SELECT username, matrix_json FROM public.technician_service_matrix WHERE username = ANY($1::text[])`,
-            [usernames]
-          )
-        : { rows: [] };
-      for (const row of (rMx.rows || [])) matrixMap.set(String(row.username), row.matrix_json || {});
-    } catch (e) {
-      console.warn('[public_book] loadServiceMatrixMap failed:', e.message);
-      const err = new Error('CUSTOMER_SLOT_MATRIX_UNAVAILABLE');
-      err.status = 503;
-      throw err;
-    }
-    techs = techs.filter(t => {
-      const u = String(t.username);
-      if (!matrixMap.has(u)) return false;
-      const mx = matrixMap.get(u) || null;
-      return listCriteria.every(c => techMatches(mx, c));
-    });
-    // Timezone-safe: normalize appointment datetime once (Asia/Bangkok)
-    const startIso = normalizeAppointmentDatetime(appointment_datetime);
-    const tMin = toMin(String(startIso).slice(11, 16));
-    let anyFree = false;
-    for (const tech of techs) {
-      // CWF Spec: UI start window is LOCKED 09:00–18:00 (startable time only)
-      if (!(tMin >= toMin('09:00') && tMin < toMin('18:00'))) continue;
-      const ok = await isTechFree(tech.username, startIso, duration_min_v2, null);
-      if (ok) { anyFree = true; break; }
-    }
-    if (!anyFree) {
-      if (bm === "scheduled" && clientApp === "customer_app_v2") {
-        return res.status(409).json({ error: "ช่วงเวลานี้เต็มแล้ว กรุณาเลือกเวลาอื่น" });
-      }
-      if (canUseAdminScheduleFallback || bm === "urgent") {
-        console.warn("[public_book] availability_no_free_slot_continue", { bm, requestedTechType, appointment_datetime, clientApp, allowAdminScheduleFallback });
-      } else {
-        return res.status(409).json({ error: "ช่วงเวลานี้เต็มแล้ว กรุณาเลือกเวลาอื่น" });
-      }
-    }
     }
   } catch (e) {
     console.warn("[public_book] availability_check_fail", { bm, clientApp, err: e.message });
-    if (bm === "scheduled" && clientApp === "customer_app_v2") {
+    // Fail CLOSED for every public scheduled booking — a failed capacity check
+    // must never silently let a booking through (this used to fall open for
+    // non-customer_app_v2 callers, a client_app-dependent weakness).
+    if (bm === "scheduled") {
       const status = Number(e.status || 503);
       const message = status === 400
         ? "ข้อมูลบริการไม่ครบสำหรับตรวจคิว กรุณาเลือกบริการใหม่"
         : "ระบบตรวจคิวช่างยังไม่พร้อม กรุณาลองใหม่อีกครั้ง";
       return res.status(status).json({ error: message });
     }
-    // Preserve legacy callers outside Customer App V2.
   }
 
 
@@ -25446,7 +25550,8 @@ console.log("[latlng_parse]", { ok: !!parsedLL });
       await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [scheduledRequestKey]);
       const existing = await client.query(
         `SELECT job_id, booking_code, booking_token, booking_mode, dispatch_mode,
-                duration_min, job_price
+                duration_min, job_price, appointment_datetime, customer_phone, customer_name,
+                address_text, maps_url, job_zone, job_type, customer_note, allow_time_proposal
            FROM public.jobs
           WHERE booking_token=$1
             AND job_source='customer'
@@ -25456,8 +25561,22 @@ console.log("[latlng_parse]", { ok: !!parsedLL });
         [scheduledDeterministicToken]
       );
       if (existing.rows[0]) {
+        // Race safety net: a concurrent request with the same key committed first.
+        // Same canonical payload -> replay; any material difference -> key-reuse 409
+        // (no mutation, no identifiers/PII). Same comparison as the pre-flight path.
         const row = existing.rows[0];
         await client.query("COMMIT");
+        const incomingBooking = {
+          appointment_datetime, customer_phone, customer_name, address_text, maps_url,
+          job_zone, job_type, customer_note, allow_time_proposal: allowTimeProposal,
+          duration_min: duration_min_v2, payloadV2, itemIdQty, standardPrice: standard_price,
+        };
+        if (!(await scheduledPayloadMatchesExisting(pool, row, incomingBooking))) {
+          return res.status(409).json({
+            error: "คำขอนี้ถูกใช้ไปแล้วกับการจองอื่น กรุณาเริ่มการจองใหม่",
+            code: "IDEMPOTENCY_KEY_REUSED",
+          });
+        }
         return res.json({
           success: true,
           replayed: true,
@@ -25475,7 +25594,7 @@ console.log("[latlng_parse]", { ok: !!parsedLL });
     }
 
     let draftReservationTech = null;
-    if (bm === "scheduled" && clientApp === "customer_app_v2") {
+    if (bm === "scheduled") {
       const startIso = normalizeAppointmentDatetime(appointment_datetime);
       draftReservationTech = await customerAvailability.reservePublicCustomerTechnician(
         publicCustomerAvailabilityDeps(client),
@@ -25749,6 +25868,16 @@ app.get("/public/urgent-status", async (req, res) => {
   res.set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
   res.set("Pragma", "no-cache");
   res.set("Expires", "0");
+  // Budget fits the waiting room's 10s polling with headroom, while still
+  // blocking bulk code guessing.
+  const urgentRate = publicUrgentStatusRateLimiter.check(trackingPrivacy.clientIpKey(req));
+  if (!urgentRate.allowed) {
+    return res.status(429).json({
+      error: "เรียกดูสถานะถี่เกินไป กรุณารอสักครู่แล้วลองใหม่",
+      code: "RATE_LIMITED",
+      retry_after_s: urgentRate.retry_after_s,
+    });
+  }
   const q = String(req.query.token || req.query.q || req.query.booking_code || "").trim();
   if (!q) return res.status(400).json({ error: "missing tracking code" });
   try {
@@ -25815,6 +25944,16 @@ app.get("/public/urgent-status", async (req, res) => {
 });
 
 app.get("/public/track", async (req, res) => {
+  // Anti-enumeration: booking codes are short; without a budget an attacker
+  // could sweep the keyspace. Real customers do a handful of lookups a minute.
+  const trackRate = publicTrackRateLimiter.check(trackingPrivacy.clientIpKey(req));
+  if (!trackRate.allowed) {
+    return res.status(429).json({
+      error: "เรียกดูสถานะถี่เกินไป กรุณารอสักครู่แล้วลองใหม่",
+      code: "RATE_LIMITED",
+      retry_after_s: trackRate.retry_after_s,
+    });
+  }
   const q = (req.query.q || req.query.token || req.query.booking_code || "").toString().trim();
   if (!q) return res.status(400).json({ error: "ต้องส่ง q (token หรือ booking_code)" });
 
@@ -26053,7 +26192,23 @@ if (FLAG_SHOW_TECH_TEAM_ON_TRACKING && canShowPublicTechnician) {
     technician_team = [];
   }
 }
-    res.json({
+    // Access level: the long random booking_token = full detail. The short
+    // human-readable booking_code = masked PII only (it leaks too easily to
+    // act as a full credential) — see server/services/public/trackingPrivacy.js.
+    const fullAccess = trackingPrivacy.isFullAccessQuery(q, row);
+    // Minimal, non-sensitive eligibility signal so a LEGACY customer (a job with
+    // no booking_token) can still see the review form on a booking_code lookup
+    // and submit code + full phone. It reveals only that a review is possible —
+    // no PII, no token. A tokened job is never legacy-eligible, so it can never
+    // downgrade to the code+phone path.
+    const legacyReviewEligible =
+      !String(row.booking_token || "").trim() &&
+      String(row.job_status || "").trim() === "เสร็จแล้ว" &&
+      !row.customer_rating &&
+      !!row.technician_username;
+    const trackPayload = {
+      access_level: fullAccess ? "token" : "code",
+      legacy_review_eligible: legacyReviewEligible,
       job_id: row.job_id,
       booking_code: row.booking_code || null,
       booking_token: row.booking_token || null,
@@ -26084,7 +26239,11 @@ if (FLAG_SHOW_TECH_TEAM_ON_TRACKING && canShowPublicTechnician) {
       photos,
       units: publicUnits,
 
-      receipt_url: isDone ? `${origin}/docs/receipt/${row.job_id}` : null,
+      // The receipt document carries full PII, so its link now embeds the
+      // booking_token as an access key (the /docs routes verify it).
+      receipt_url: isDone && row.booking_token
+        ? `${origin}/docs/receipt/${row.job_id}?key=${encodeURIComponent(row.booking_token)}`
+        : null,
 
       review: {
         already_reviewed: !!row.customer_rating,
@@ -26116,7 +26275,8 @@ if (FLAG_SHOW_TECH_TEAM_ON_TRACKING && canShowPublicTechnician) {
 
       // ✅ รายชื่อทีมช่างทั้งหมด (ถ้าเปิด flag) — ใช้ในหน้า Tracking
       technician_team,
-    });
+    };
+    res.json(fullAccess ? trackPayload : trackingPrivacy.redactPublicTrackPayload(trackPayload));
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "ติดตามงานไม่สำเร็จ" });
@@ -26131,50 +26291,87 @@ if (FLAG_SHOW_TECH_TEAM_ON_TRACKING && canShowPublicTechnician) {
 // - จำกัด 1 รีวิวต่อ 1 job_id
 // =======================================
 app.post("/public/review", async (req, res) => {
-  const { q, booking_code, token, rating, review_text, complaint_text } = req.body || {};
-  const key = (q || booking_code || token || "").toString().trim();
-  const star = Number(rating);
+  // A public WRITE authorised by a booking identifier. Policy:
+  //   - A job that HAS a booking_token requires the EXACT token (the short,
+  //     shareable booking_code alone is NOT a write credential — see the
+  //     tracking privacy split). No downgrade to code+phone for tokened jobs.
+  //   - A LEGACY job with no booking_token may be reviewed via booking_code +
+  //     the customer's FULL phone (exact match after digit-normalisation),
+  //     still requiring the job to be completed and not yet reviewed.
+  // Every authorisation/eligibility failure returns the SAME generic error so
+  // the endpoint never reveals whether the code, phone, or status was the
+  // mismatch. Rate limited per client IP and per identifier. No PII/token in
+  // any response.
+  const GENERIC_REVIEW_ERROR = "ไม่สามารถส่งรีวิวได้ กรุณาตรวจสอบเลข/สถานะงานและข้อมูลยืนยันอีกครั้ง";
+  const body = req.body || {};
+  const token = String(body.token || body.booking_token || "").trim();
+  const code = String(body.booking_code || body.q || "").trim();
+  const phoneDigits = String(body.customer_phone || "").replace(/\D/g, "");
+  const star = Number(body.rating);
+  const review_text = (body.review_text || "").toString().trim() || null;
+  const complaint_text = (body.complaint_text || "").toString().trim() || null;
 
-  if (!key) return res.status(400).json({ error: "ต้องส่ง booking_code หรือ token" });
-  if (!Number.isFinite(star) || star < 1 || star > 5) return res.status(400).json({ error: "rating ต้องอยู่ระหว่าง 1-5" });
+  if (!publicReviewIpRateLimiter.check(trackingPrivacy.clientIpKey(req)).allowed) {
+    return res.status(429).json({ error: "ส่งรีวิวถี่เกินไป กรุณารอสักครู่", code: "RATE_LIMITED" });
+  }
+  if (!Number.isFinite(star) || star < 1 || star > 5) {
+    return res.status(400).json({ error: "rating ต้องอยู่ระหว่าง 1-5" });
+  }
+  if (!token && !code) {
+    return res.status(400).json({ error: GENERIC_REVIEW_ERROR });
+  }
+  // Per-identifier budget (defends one job's code against many-IP hammering).
+  const identifierKey = token ? `t:${token}` : `c:${code}`;
+  if (!publicReviewKeyRateLimiter.check(identifierKey).allowed) {
+    return res.status(429).json({ error: "ส่งรีวิวถี่เกินไป กรุณารอสักครู่", code: "RATE_LIMITED" });
+  }
 
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
 
-    const jr = await client.query(
-      `SELECT job_id, job_status, technician_username, customer_rating
-       FROM public.jobs
-       WHERE booking_code=$1 OR booking_token=$1
-       LIMIT 1
-       FOR UPDATE`,
-      [key]
-    );
+    // Look the job up by exactly one credential path — never `code OR token`,
+    // which would let a code match a tokened job.
+    let jr;
+    if (token) {
+      jr = await client.query(
+        `SELECT job_id, job_status, technician_username, customer_rating, booking_token, customer_phone
+           FROM public.jobs WHERE booking_token=$1 LIMIT 1 FOR UPDATE`,
+        [token]
+      );
+    } else {
+      jr = await client.query(
+        `SELECT job_id, job_status, technician_username, customer_rating, booking_token, customer_phone
+           FROM public.jobs WHERE booking_code=$1 LIMIT 1 FOR UPDATE`,
+        [code]
+      );
+    }
 
-    if (!jr.rows.length) throw new Error("ไม่พบงาน");
     const job = jr.rows[0];
+    // All authorisation failures collapse to one generic 400 (no oracle).
+    const deny = () => { const e = new Error(GENERIC_REVIEW_ERROR); e.generic = true; throw e; };
+    if (!job) deny();
 
-    if (String(job.job_status || "").trim() !== "เสร็จแล้ว") {
-      throw new Error("งานยังไม่ปิด ไม่สามารถให้คะแนนได้");
+    const jobHasToken = Boolean(String(job.booking_token || "").trim());
+    if (token) {
+      // Token path already authorised by the exact-token WHERE clause.
+    } else {
+      // Legacy code path: only for jobs that genuinely have no token, and only
+      // with the full phone matching exactly.
+      if (jobHasToken) deny();
+      const jobPhoneDigits = String(job.customer_phone || "").replace(/\D/g, "");
+      if (!phoneDigits || phoneDigits.length < 9 || jobPhoneDigits !== phoneDigits) deny();
     }
-    if (job.customer_rating) {
-      throw new Error("งานนี้ให้คะแนนไปแล้ว");
-    }
-    if (!job.technician_username) {
-      throw new Error("งานนี้ยังไม่มีช่างรับงาน");
-    }
+
+    if (String(job.job_status || "").trim() !== "เสร็จแล้ว") deny();
+    if (job.customer_rating) deny();
+    if (!job.technician_username) deny();
 
     await client.query(
       `INSERT INTO public.technician_reviews (job_id, technician_username, rating, review_text, complaint_text)
        VALUES ($1,$2,$3,$4,$5)
        ON CONFLICT (job_id) DO NOTHING`,
-      [
-        job.job_id,
-        job.technician_username,
-        Math.round(star),
-        (review_text || "").toString().trim() || null,
-        (complaint_text || "").toString().trim() || null,
-      ]
+      [job.job_id, job.technician_username, Math.round(star), review_text, complaint_text]
     );
 
     await client.query(
@@ -26184,12 +26381,7 @@ app.post("/public/review", async (req, res) => {
            customer_complaint=$3,
            reviewed_at=NOW()
        WHERE job_id=$4`,
-      [
-        Math.round(star),
-        (review_text || "").toString().trim() || null,
-        (complaint_text || "").toString().trim() || null,
-        job.job_id,
-      ]
+      [Math.round(star), review_text, complaint_text, job.job_id]
     );
 
     // ✅ อัปเดตคะแนนเฉลี่ยลงโปรไฟล์ (เก็บในคอลัมน์ rating)
@@ -26209,10 +26401,15 @@ app.post("/public/review", async (req, res) => {
     );
 
     await client.query("COMMIT");
-    res.json({ success: true, avg_rating: avg });
+    // No PII, token, or per-job confirmation data in the response.
+    res.json({ success: true });
   } catch (e) {
     await client.query("ROLLBACK");
-    res.status(400).json({ error: e.message || "ส่งรีวิวไม่สำเร็จ" });
+    // Generic authorisation/eligibility failures never reveal the mismatch;
+    // only a genuine unexpected server error is a 500.
+    if (e && e.generic) return res.status(400).json({ error: e.message });
+    console.error("[public/review] failed", e && e.message);
+    return res.status(400).json({ error: "ไม่สามารถส่งรีวิวได้ กรุณาตรวจสอบเลข/สถานะงานและข้อมูลยืนยันอีกครั้ง" });
   } finally {
     client.release();
   }

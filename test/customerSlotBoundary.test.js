@@ -30,46 +30,50 @@ test("Admin-hidden or unset technicians cannot produce customer slots", () => {
   assert.match(listTechnicians, /p\.customer_slot_visible AS customer_slot_visible/);
   assert.doesNotMatch(listTechnicians, /COALESCE\(p\.customer_slot_visible,\s*TRUE\) AS customer_slot_visible/);
   assert.match(availability, /t\.customer_slot_visible === true/);
-  assert.match(booking, /t\.customer_slot_visible === true/);
+  // Booking enforces the SAME visibility by delegating to the shared
+  // customerAvailability engine (reservePublicCustomerTechnician / hasAvailableStart
+  // both filter on customer_slot_visible === true), not a duplicated inline filter.
+  assert.match(booking, /customerAvailability\.(hasAvailableStart|reservePublicCustomerTechnician)/);
 });
 
 test("Public availability never falls back to all technicians", () => {
   assert.match(listTechnicians, /allow_type_fallback/);
   assert.match(listTechnicians, /\(r\.rows \|\| \[\]\)\.length === 0 && allow_type_fallback/);
   assert.match(availability, /listTechniciansByType\(tech_type,\s*\{ include_paused: true,\s*allow_type_fallback: forced \}\)/);
-  assert.match(booking, /listTechniciansByType\(requestedTechType,\s*\{ include_paused: bm === "scheduled" \}\)/);
+  // Booking runs through the customer availability engine (no allow_type_fallback),
+  // so it can never widen its candidate pool to all technicians.
+  assert.doesNotMatch(booking, /allow_type_fallback/);
 });
 
+// Per-criterion eligibility (job/ac/wash/repair) and fail-closed matrix handling
+// now live in ONE place: the customerAvailability engine that BOTH
+// /public/availability_v2 and /public/book call. Booking delegates to it instead
+// of duplicating the matrix filter inline, so the field-level behaviour is
+// asserted against the availability handler here and against the engine directly
+// in customerEligibilityTechType.test.js.
 test("Visible technician with wrong job type produces no customer slot", () => {
   assert.match(availability, /matrix\.job_types/);
-  assert.match(booking, /mx\.job_types/);
 });
 
 test("Visible technician with wrong AC type produces no customer slot", () => {
   assert.match(availability, /matrix\.ac_types/);
-  assert.match(booking, /mx\.ac_types/);
 });
 
 test("Visible technician with wrong wall wash variant produces no customer slot", () => {
   assert.match(availability, /matrix\.wash_wall_variants/);
-  assert.match(booking, /mx\.wash_wall_variants/);
 });
 
 test("Visible technician with wrong repair variant produces no customer slot", () => {
   assert.match(availability, /normalizeRepairKey/);
   assert.match(availability, /matrix\.repair_variants/);
-  assert.match(booking, /normalizeRepairKey/);
-  assert.match(booking, /mx\.repair_variants/);
 });
 
 test("Missing Service Matrix fails closed", () => {
   assert.match(availability, /if \(!matrixMap\.has\(u\)\) return false/);
-  assert.match(booking, /if \(!matrixMap\.has\(u\)\) return false/);
 });
 
 test("Malformed Service Matrix fails closed", () => {
   assert.match(availability, /if \(!matrix \|\| typeof matrix !== 'object'\) return false/);
-  assert.match(booking, /if \(!mx \|\| typeof mx !== 'object'\) return false/);
 });
 
 test("Eligible public availability slots are anonymous", () => {
@@ -104,17 +108,21 @@ test("Slot unavailable after selection returns 409", () => {
 });
 
 test("Slot from wrong or incomplete service payload is rejected before booking", () => {
-  assert.match(booking, /CUSTOMER_SLOT_SERVICE_CRITERIA_REQUIRED/);
-  assert.match(booking, /rawCriteria\.some\(c => !hasCompleteCriteria\(c\)\)/);
+  // An incomplete/mismatched service payload yields no eligible technician in the
+  // shared engine, so booking is rejected at the availability gate (409) before
+  // any insert — the engine's strict matrix match is the single boundary.
+  assert.match(booking, /customerAvailability\.hasAvailableStart/);
+  assert.match(booking, /return res\.status\(409\)/);
 });
 
 test("Availability and booking use the same eligibility boundary", () => {
-  for (const token of ["normalizeJobKey", "normalizeAcKey", "normalizeWashKey", "normalizeRepairKey"]) {
-    assert.match(availability, new RegExp(token));
-    assert.match(booking, new RegExp(token));
-  }
+  // Both surfaces resolve eligibility through the SAME customerAvailability engine
+  // — availability via its slot query, booking via hasAvailableStart +
+  // reservePublicCustomerTechnician — so they cannot diverge.
+  assert.match(availability, /normalizeRepairKey/);
   assert.match(availability, /techMatchesAllCriteriaStrict/);
-  assert.match(booking, /listCriteria\.every\(c => techMatches\(mx, c\)\)/);
+  assert.match(booking, /customerAvailability\.hasAvailableStart/);
+  assert.match(booking, /customerAvailability\.reservePublicCustomerTechnician/);
 });
 
 test("Existing Admin availability fallback remains admin-only", () => {

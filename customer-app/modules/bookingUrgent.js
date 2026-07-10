@@ -1,6 +1,7 @@
 (function () {
   "use strict";
 
+  console.info("[customer-urgent] launch-gate 20260708 loaded");
   const root = window.CWFCustomerAppV2 = window.CWFCustomerAppV2 || {};
 
   // Correct urgent flow:
@@ -287,7 +288,9 @@
         <div class="notice is-urgent">เมื่อกดส่งคำขอ ระบบจะแสดง Waiting Room สำหรับคิวด่วน งานยังไม่ยืนยันจนกว่าจะมีช่างพาร์ทเนอร์รับหรือแอดมินยืนยัน</div>
         ${flow.error ? `<div class="state-box is-error">${root.utils.escapeHtml(flow.error)}</div>` : ""}
         <div class="button-row">
-          <button class="primary-btn btn-shine" type="button" data-urgent-action="confirm" ${submitting ? "disabled" : ""}>${submitting ? "กำลังส่งคำขอ..." : "ส่งคำขอคิวด่วน"}</button>
+          ${flow.disabled_line_url
+            ? `<a class="primary-btn line-fallback-btn" href="${root.utils.escapeHtml(flow.disabled_line_url)}" target="_blank" rel="noopener noreferrer">ติดต่อแอดมินทาง LINE</a>`
+            : `<button class="primary-btn btn-shine" type="button" data-urgent-action="confirm" ${submitting ? "disabled" : ""}>${submitting ? "กำลังส่งคำขอ..." : "ส่งคำขอคิวด่วน"}</button>`}
           <button class="secondary-btn" type="button" data-urgent-action="back-form" ${submitting ? "disabled" : ""}>กลับไปแก้ไข</button>
         </div>
       </section>
@@ -394,7 +397,7 @@
   async function submitUrgent(container) {
     if (submitInFlight || root.state.urgentFlow.status === "submitting") return;
     submitInFlight = true;
-    root.state.setUrgentFlow({ step: "review", status: "submitting", error: "", result: null });
+    root.state.setUrgentFlow({ step: "review", status: "submitting", error: "", result: null, disabled_line_url: "" });
     paint(container);
     try {
       const result = await root.api.submitUrgentRequest(buildSubmitPayload());
@@ -405,7 +408,21 @@
       paint(container);
     } catch (error) {
       submitInFlight = false;
-      root.state.setUrgentFlow({ step: "review", status: "error", error: error.message || "ส่งคำขอคิวด่วนไม่สำเร็จ", result: null });
+      // Kill switch: urgent lane closed server-side (503 +
+      // URGENT_BOOKING_DISABLED). No job/offer was created — hand the customer
+      // to LINE instead of letting them retry a closed lane.
+      if (error?.data?.code === "URGENT_BOOKING_DISABLED") {
+        root.state.setUrgentFlow({
+          step: "review",
+          status: "error",
+          error: error.data.error || "ระบบจองด่วนออนไลน์ปิดให้บริการชั่วคราว กรุณาติดต่อแอดมินทาง LINE",
+          result: null,
+          disabled_line_url: error.data.line_url || "https://lin.ee/fG1Oq7y",
+        });
+        paint(container);
+        return;
+      }
+      root.state.setUrgentFlow({ step: "review", status: "error", error: error.message || "ส่งคำขอคิวด่วนไม่สำเร็จ", result: null, disabled_line_url: "" });
       paint(container);
     }
   }

@@ -76,7 +76,12 @@
   }
 
   function receiptUrl(data) {
-    const fallback = isDone(data) && data.job_id ? `/docs/receipt/${encodeURIComponent(data.job_id)}` : "";
+    // The receipt document now requires the booking_token as an access key
+    // (?key=...) — a bare job_id link would just 404. Only build the fallback
+    // when we actually hold the token (token-based lookups).
+    const fallback = isDone(data) && data.job_id && data.booking_token
+      ? `/docs/receipt/${encodeURIComponent(data.job_id)}?key=${encodeURIComponent(data.booking_token)}`
+      : "";
     const raw = clean(data.receipt_url);
     if (!raw) return fallback;
 
@@ -842,16 +847,37 @@
         </section>
       `;
     }
-    const key = data.booking_token || data.booking_code || "";
-    if (!key) return "";
+    // Reviewing is a WRITE. Two authorised shapes, mirroring the server policy:
+    //  - token lookup (access_level "token"): the exact booking_token authorises,
+    //    posted as a hidden field. No PII entry needed.
+    //  - LEGACY job with no booking_token: a booking_code lookup exposes a
+    //    minimal `legacy_review_eligible` flag; the customer proves ownership by
+    //    typing their FULL phone, posted as booking_code + customer_phone.
+    // A tokened job accessed by code is NOT legacy-eligible, so it never shows
+    // the legacy form (the server would reject a downgrade anyway).
+    const reviewToken = data.access_level === "token" ? (data.booking_token || "") : "";
+    const legacyEligible = !reviewToken && data.legacy_review_eligible === true;
+    if (!reviewToken && !legacyEligible) return "";
+    const credentialFields = reviewToken
+      ? `<input type="hidden" name="booking_token" value="${esc(reviewToken)}">`
+      : `<input type="hidden" name="booking_code" value="${esc(data.booking_code || "")}">
+          <label class="field">
+            <span>เบอร์โทรที่ใช้จอง (ยืนยันตัวตน)</span>
+            <input class="input" type="tel" name="customer_phone" inputmode="numeric"
+                   autocomplete="tel" placeholder="เช่น 0812345678" required>
+          </label>`;
+    const legacyHint = legacyEligible
+      ? `<p class="muted">กรอกเบอร์โทรที่ใช้จองงานนี้เพื่อยืนยันตัวตนก่อนรีวิว</p>`
+      : "";
     return `
       <section class="tracking-extra-card review-form-card">
         <div class="section-head compact">
           <span class="section-kicker">Review</span>
           <h2>ให้คะแนนงานนี้</h2>
         </div>
+        ${legacyHint}
         <form data-review-form>
-          <input type="hidden" name="q" value="${esc(key)}">
+          ${credentialFields}
           <label class="field">
             <span>คะแนน</span>
             <select class="input" name="rating">

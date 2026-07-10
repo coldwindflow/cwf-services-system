@@ -236,7 +236,7 @@ test("Customer App build id is consistent across shell and service worker", () =
   const sw = read("customer-app/sw.js");
   const app = read("customer-app/assets/customer-app.js");
   const manifest = read("customer-app/manifest.webmanifest");
-  const build = "20260707_booking_admin_notify_v1";
+  const build = "20260709_review_legacy_v1";
 
   assert.match(index, new RegExp(`customer-app\\.css\\?v=${build}`));
   assert.match(index, new RegExp(`modules\\/api\\.js\\?v=${build}`));
@@ -254,7 +254,7 @@ test("Customer App build id is consistent across shell and service worker", () =
 test("store module is loaded in index.html and precached in the service worker app shell", () => {
   const index = read("customer-app/index.html");
   const sw = read("customer-app/sw.js");
-  const build = "20260707_booking_admin_notify_v1";
+  const build = "20260709_review_legacy_v1";
 
   assert.match(index, new RegExp(`modules/store\\.js\\?v=${build}`));
   assert.match(sw, /`\.\/modules\/store\.js\?v=\$\{BUILD_ID\}`/);
@@ -2038,7 +2038,12 @@ function renderTracking(root, data) {
   return container.innerHTML;
 }
 
+// A token-level lookup (the app received the long booking_token at booking
+// time): access_level "token" travels alongside it. The legacy technician
+// review form is a WRITE and only renders on token access — see the P0-5
+// tracking privacy split — so these done-job fixtures carry it explicitly.
 const DONE_JOB_BASE = {
+  access_level: "token",
   booking_token: "TOK1", booking_code: "BK1", job_status: "เสร็จแล้ว", finished_at: "2026-06-20T10:00:00Z",
 };
 
