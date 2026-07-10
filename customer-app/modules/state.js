@@ -132,6 +132,20 @@
     homeActiveJob: { status: "idle", data: null, error: "" },
     addressPrefill: { status: "idle", scopes: {}, error: "" },
     profileAddressForm: { editing: false, status: "idle", error: "", success: "" },
+    customerHistory: {
+      claimStatus: "idle",
+      claimError: "",
+      claimSuccess: "",
+      claimPhone: "",
+      claimBookingCode: "",
+      status: "idle",
+      error: "",
+      claimed: false,
+      items: [],
+      locationsStatus: "idle",
+      locationsError: "",
+      locations: [],
+    },
     scheduledWizard: {
       step: 1,
       maxStep: MAX_SCHEDULED_STEP,
@@ -300,6 +314,12 @@
         ...(patch || {}),
       };
     },
+    setCustomerHistory(patch) {
+      this.customerHistory = {
+        ...(this.customerHistory || {}),
+        ...(patch || {}),
+      };
+    },
     savedAddress() {
       const profile = this.customer && this.customer.logged_in ? (this.customer.profile || {}) : {};
       return {
@@ -348,6 +368,21 @@
           ...(patch || {}),
         },
       };
+    },
+    applyHistoryLocation(scope, location) {
+      const loc = location || {};
+      const patch = {
+        address_text: String(loc.address_text || "").trim(),
+        maps_url: String(loc.maps_url || "").trim(),
+        job_zone: String(loc.job_zone || "").trim(),
+      };
+      if (!patch.address_text) return false;
+      this.updateDraft(scope, patch);
+      this.addressPrefill.scopes = {
+        ...(this.addressPrefill.scopes || {}),
+        [scope]: true,
+      };
+      return true;
     },
     setScheduledWizard(patch) {
       this.scheduledWizard = {

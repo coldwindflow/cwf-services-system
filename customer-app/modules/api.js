@@ -75,6 +75,28 @@
       });
     },
 
+    async claimCustomerHistory(payload) {
+      return requestJson("/public/customer-history/claim", {
+        method: "POST",
+        body: {
+          phone: String((payload && payload.phone) || "").trim(),
+          booking_code: String((payload && payload.booking_code) || "").trim(),
+        },
+      });
+    },
+
+    async loadCustomerHistory() {
+      return requestJson("/public/customer-history", { cache: "no-store" });
+    },
+
+    async loadCustomerHistoryDetail(jobRef) {
+      return requestJson(`/public/customer-history/${encodeURIComponent(String(jobRef || ""))}`, { cache: "no-store" });
+    },
+
+    async loadCustomerHistoryLocations() {
+      return requestJson("/public/customer-history/locations", { cache: "no-store" });
+    },
+
     async previewPricing(payload) {
       return requestJson("/public/pricing_preview", {
         method: "POST",
