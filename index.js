@@ -25116,21 +25116,106 @@ function deriveCustomerScheduledBookingToken(requestKey) {
 }
 
 // A scheduled request key is bound to the booking it first created. On replay we
-// only return the existing job when the material payload matches; a key reused
-// with a different appointment, phone, service type, or computed duration is a
-// key-reuse error (never a silent return of the old job's data).
-function isSameScheduledPayload(jobRow, incoming) {
+// only return the existing job when the FULL canonical material payload matches;
+// a key reused with any different material field is a key-reuse error, never a
+// silent return of the old job's data. "Material" = every persisted field that
+// defines the booking contract: appointment, contact, place, and the canonical
+// service composition (from job_items, which also carries price).
+function normalizedBookingScalar(value) {
+  return String(value == null ? "" : value).trim();
+}
+
+// Canonical, order-independent signature of a set of line items. line_total
+// captures unit price × qty, so BTU/variant/qty/price changes all shift it.
+function bookingLineSignature(rows) {
+  return (rows || [])
+    .map((it) => `${normalizedBookingScalar(it.item_name)}#${Number(it.qty || 0)}#${Number(it.line_total || 0)}`)
+    .sort()
+    .join("|");
+}
+
+async function loadStoredBookingLineSignature(db, jobId) {
+  const r = await db.query(
+    `SELECT item_name, qty, line_total FROM public.job_items WHERE job_id=$1`,
+    [jobId]
+  );
+  return bookingLineSignature(r.rows);
+}
+
+// Rebuild the incoming service + extra lines with the SAME normalizer used to
+// create a booking, so an identical service payload yields an identical
+// signature (and any material change yields a different one). Read-only.
+async function buildIncomingBookingLineSignature(db, payloadV2, itemIdQty, standardPrice) {
+  let computed = [];
+  let total = Number(standardPrice || 0);
+  const serviceLines = await customerPricingHelpers.buildCustomerServiceLineItemsFromPayload(
+    (payloadV2.services && Array.isArray(payloadV2.services))
+      ? payloadV2
+      : {
+          ...payloadV2,
+          services: [{
+            job_type: payloadV2.job_type,
+            ac_type: payloadV2.ac_type,
+            btu: payloadV2.btu,
+            machine_count: payloadV2.machine_count,
+            wash_variant: payloadV2.wash_variant,
+            repair_variant: payloadV2.repair_variant,
+          }],
+        },
+    db
+  );
+  if (serviceLines.length) {
+    computed = computed.concat(serviceLines);
+  } else if (total > 0) {
+    computed.push({ item_name: `ค่าบริการมาตรฐาน (${payloadV2.job_type || "-"})`, qty: 1, line_total: total });
+  }
+  if (itemIdQty && itemIdQty.length) {
+    const ids = itemIdQty.map((x) => x.item_id);
+    const catR = await db.query(
+      `SELECT item_id, item_name, base_price FROM public.catalog_items
+        WHERE is_active=TRUE AND is_customer_visible=TRUE AND item_id = ANY($1::bigint[])`,
+      [ids]
+    );
+    const map = new Map(catR.rows.map((row) => [Number(row.item_id), row]));
+    for (const x of itemIdQty) {
+      const it = map.get(Number(x.item_id));
+      if (!it) continue;
+      const qty = Number(x.qty);
+      computed.push({ item_name: it.item_name, qty, line_total: qty * Number(it.base_price || 0) });
+    }
+  }
+  return bookingLineSignature(computed);
+}
+
+// Scalar material fields persisted on the jobs row (everything but the service
+// lines, which are compared via the signature above).
+function scheduledScalarsMatch(jobRow, incoming) {
   const apptTime = (v) => {
     const t = new Date(v).getTime();
     return Number.isFinite(t) ? t : NaN;
   };
-  const storedAppt = apptTime(jobRow.appointment_datetime);
-  const incomingAppt = apptTime(normalizeAppointmentDatetime(incoming.appointment_datetime));
-  const sameAppt = Number.isFinite(storedAppt) && Number.isFinite(incomingAppt) && storedAppt === incomingAppt;
-  const samePhone = String(jobRow.customer_phone || "").replace(/\D/g, "") === String(incoming.customer_phone || "").replace(/\D/g, "");
-  const sameType = String(jobRow.job_type || "").trim() === String(incoming.job_type || "").trim();
-  const sameDuration = Number(jobRow.duration_min || 0) === Number(incoming.duration_min || 0);
-  return sameAppt && samePhone && sameType && sameDuration;
+  const a = apptTime(jobRow.appointment_datetime);
+  const b = apptTime(normalizeAppointmentDatetime(incoming.appointment_datetime));
+  if (!(Number.isFinite(a) && Number.isFinite(b) && a === b)) return false;
+  if (normalizedBookingScalar(jobRow.customer_phone).replace(/\D/g, "") !== normalizedBookingScalar(incoming.customer_phone).replace(/\D/g, "")) return false;
+  if (normalizedBookingScalar(jobRow.customer_name) !== normalizedBookingScalar(incoming.customer_name)) return false;
+  if (normalizedBookingScalar(jobRow.address_text) !== normalizedBookingScalar(incoming.address_text)) return false;
+  if (normalizedBookingScalar(jobRow.maps_url) !== normalizedBookingScalar(incoming.maps_url)) return false;
+  if (normalizedBookingScalar(jobRow.job_zone) !== normalizedBookingScalar(incoming.job_zone)) return false;
+  if (normalizedBookingScalar(jobRow.job_type) !== normalizedBookingScalar(incoming.job_type)) return false;
+  if (normalizedBookingScalar(jobRow.customer_note) !== normalizedBookingScalar(incoming.customer_note)) return false;
+  if (Boolean(jobRow.allow_time_proposal) !== Boolean(incoming.allow_time_proposal)) return false;
+  if (Number(jobRow.duration_min || 0) !== Number(incoming.duration_min || 0)) return false;
+  return true;
+}
+
+// Full canonical match = scalar fields + service-line signature. Used identically
+// by the pre-flight replay and the in-transaction race path.
+async function scheduledPayloadMatchesExisting(db, jobRow, incoming) {
+  if (!scheduledScalarsMatch(jobRow, incoming)) return false;
+  const storedSig = await loadStoredBookingLineSignature(db, jobRow.job_id);
+  const incomingSig = await buildIncomingBookingLineSignature(db, incoming.payloadV2, incoming.itemIdQty, incoming.standardPrice);
+  return storedSig === incomingSig;
 }
 
 // Customer App V2 urgent requests are just another entry point into the
@@ -25376,7 +25461,8 @@ console.log("[latlng_parse]", { ok: !!parsedLL });
       await idem.query("SELECT pg_advisory_xact_lock(hashtext($1))", [scheduledRequestKey]);
       const r = await idem.query(
         `SELECT job_id, booking_code, booking_token, dispatch_mode, duration_min, job_price,
-                appointment_datetime, customer_phone, job_type
+                appointment_datetime, customer_phone, customer_name, address_text, maps_url,
+                job_zone, job_type, customer_note, allow_time_proposal
            FROM public.jobs
           WHERE booking_token=$1
             AND job_source='customer'
@@ -25394,7 +25480,13 @@ console.log("[latlng_parse]", { ok: !!parsedLL });
       idem.release();
     }
     if (prior) {
-      if (!isSameScheduledPayload(prior, { appointment_datetime, customer_phone, job_type, duration_min: duration_min_v2 })) {
+      const incomingBooking = {
+        appointment_datetime, customer_phone, customer_name, address_text, maps_url,
+        job_zone, job_type, customer_note, allow_time_proposal: allowTimeProposal,
+        duration_min: duration_min_v2, payloadV2, itemIdQty, standardPrice: standard_price,
+      };
+      if (!(await scheduledPayloadMatchesExisting(pool, prior, incomingBooking))) {
+        // Same key, materially different booking. No mutation, no identifiers/PII.
         return res.status(409).json({
           error: "คำขอนี้ถูกใช้ไปแล้วกับการจองอื่น กรุณาเริ่มการจองใหม่",
           code: "IDEMPOTENCY_KEY_REUSED",
@@ -25458,7 +25550,8 @@ console.log("[latlng_parse]", { ok: !!parsedLL });
       await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [scheduledRequestKey]);
       const existing = await client.query(
         `SELECT job_id, booking_code, booking_token, booking_mode, dispatch_mode,
-                duration_min, job_price, appointment_datetime, customer_phone, job_type
+                duration_min, job_price, appointment_datetime, customer_phone, customer_name,
+                address_text, maps_url, job_zone, job_type, customer_note, allow_time_proposal
            FROM public.jobs
           WHERE booking_token=$1
             AND job_source='customer'
@@ -25469,10 +25562,16 @@ console.log("[latlng_parse]", { ok: !!parsedLL });
       );
       if (existing.rows[0]) {
         // Race safety net: a concurrent request with the same key committed first.
-        // Same payload -> replay; different payload -> key-reuse 409 (no mutation).
+        // Same canonical payload -> replay; any material difference -> key-reuse 409
+        // (no mutation, no identifiers/PII). Same comparison as the pre-flight path.
         const row = existing.rows[0];
         await client.query("COMMIT");
-        if (!isSameScheduledPayload(row, { appointment_datetime, customer_phone, job_type, duration_min: duration_min_v2 })) {
+        const incomingBooking = {
+          appointment_datetime, customer_phone, customer_name, address_text, maps_url,
+          job_zone, job_type, customer_note, allow_time_proposal: allowTimeProposal,
+          duration_min: duration_min_v2, payloadV2, itemIdQty, standardPrice: standard_price,
+        };
+        if (!(await scheduledPayloadMatchesExisting(pool, row, incomingBooking))) {
           return res.status(409).json({
             error: "คำขอนี้ถูกใช้ไปแล้วกับการจองอื่น กรุณาเริ่มการจองใหม่",
             code: "IDEMPOTENCY_KEY_REUSED",

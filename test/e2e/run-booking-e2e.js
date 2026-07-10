@@ -1083,6 +1083,27 @@ async function main() {
     const diffPhone = await apiBook(BASE_A, scheduledPayload(r2Day, "13:00", { scheduled_request_key: key, customer_phone: "0866660000" }));
     assert(diffPhone.status === 409 && diffPhone.body?.code === "IDEMPOTENCY_KEY_REUSED",
       `different phone must 409 IDEMPOTENCY_KEY_REUSED, got ${diffPhone.status}`);
+    // Different service composition (BTU / AC type / qty) at the SAME time -> reject,
+    // even though the computed duration could match. These are caught by the
+    // canonical job_items signature, not by duration.
+    const diffBtu = await apiBook(BASE_A, scheduledPayload(r2Day, "13:00", { scheduled_request_key: key, customer_phone: "0855550000", btu: 18000 }));
+    assert(diffBtu.status === 409 && diffBtu.body?.code === "IDEMPOTENCY_KEY_REUSED",
+      `different BTU must 409 IDEMPOTENCY_KEY_REUSED, got ${diffBtu.status} ${JSON.stringify(diffBtu.body)}`);
+    const diffQty = await apiBook(BASE_A, scheduledPayload(r2Day, "13:00", { scheduled_request_key: key, customer_phone: "0855550000", machine_count: 2 }));
+    assert(diffQty.status === 409 && diffQty.body?.code === "IDEMPOTENCY_KEY_REUSED",
+      `different machine_count must 409 IDEMPOTENCY_KEY_REUSED, got ${diffQty.status} ${JSON.stringify(diffQty.body)}`);
+    // Different place (address) -> reject.
+    const diffAddr = await apiBook(BASE_A, scheduledPayload(r2Day, "13:00", { scheduled_request_key: key, customer_phone: "0855550000", address_text: "99/99 ที่อยู่ใหม่ กทม" }));
+    assert(diffAddr.status === 409 && diffAddr.body?.code === "IDEMPOTENCY_KEY_REUSED",
+      `different address must 409 IDEMPOTENCY_KEY_REUSED, got ${diffAddr.status}`);
+    // None of the 409s leaked identifiers, and none created a job.
+    for (const r of [diffTime, diffPhone, diffBtu, diffQty, diffAddr]) {
+      assert(!r.body?.job_id && !r.body?.booking_code && !r.body?.token, "409 must not leak the first job's identifiers");
+    }
+    // The EXACT same canonical payload still replays the same job.
+    const exact = await apiBook(BASE_A, scheduledPayload(r2Day, "13:00", { scheduled_request_key: key, customer_phone: "0855550000" }));
+    assert(exact.status === 200 && exact.body?.replayed === true && exact.body?.job_id === first.body.job_id,
+      `exact same payload must replay the same job, got ${exact.status} ${JSON.stringify(exact.body)}`);
     const after = await pool.query(`SELECT COUNT(*)::int AS n FROM public.jobs WHERE booking_token=$1`, [detToken]);
     assert(after.rows[0].n === before.rows[0].n && after.rows[0].n === 1, "key reuse must not create additional jobs");
   });

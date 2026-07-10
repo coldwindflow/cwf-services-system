@@ -80,13 +80,29 @@ test("scheduled idempotency is payload-bound and checked before the availability
   assert.ok(preflightIdx < availabilityIdx, "idempotency replay must precede the availability gate");
   // Reusing a key with a different payload is a 409, never a silent old-job return.
   assert.match(bookHandler, /code: "IDEMPOTENCY_KEY_REUSED"/);
-  assert.match(bookHandler, /if \(!isSameScheduledPayload\(prior,/);
-  // The helper compares the material fields (appointment, phone, job type, duration).
-  assert.match(indexSrc, /function isSameScheduledPayload\(jobRow, incoming\)/);
-  assert.match(indexSrc, /const sameAppt =/);
-  assert.match(indexSrc, /const samePhone =/);
-  assert.match(indexSrc, /const sameType =/);
-  assert.match(indexSrc, /const sameDuration =/);
+  // Both the pre-flight and the in-transaction race path use the SAME full match.
+  assert.equal((bookHandler.match(/scheduledPayloadMatchesExisting\(pool, /g) || []).length, 2);
+});
+
+test("idempotency payload comparison covers every canonical material field", () => {
+  // Scalars persisted on the jobs row.
+  assert.match(indexSrc, /function scheduledScalarsMatch\(jobRow, incoming\)/);
+  for (const field of ["customer_phone", "customer_name", "address_text", "maps_url", "job_zone", "job_type", "customer_note", "allow_time_proposal", "duration_min"]) {
+    assert.match(indexSrc, new RegExp(field), `scalar comparison must include ${field}`);
+  }
+  // The service composition (AC type/variant/BTU/qty/price) is compared via the
+  // canonical job_items signature, built with the SAME normalizer as a real booking.
+  assert.match(indexSrc, /function bookingLineSignature\(rows\)/);
+  assert.match(indexSrc, /loadStoredBookingLineSignature/);
+  assert.match(indexSrc, /buildIncomingBookingLineSignature/);
+  assert.match(indexSrc, /customerPricingHelpers\.buildCustomerServiceLineItemsFromPayload/);
+  // The full match = scalars + line signature.
+  assert.match(indexSrc, /async function scheduledPayloadMatchesExisting\(db, jobRow, incoming\)/);
+  assert.match(indexSrc, /storedSig === incomingSig/);
+  // The pre-flight replay lookup still precedes the availability gate.
+  const preflightIdx = bookHandler.indexOf("Payload-bound idempotency (checked BEFORE the availability gate)");
+  const availabilityIdx = bookHandler.indexOf("customerAvailability.hasAvailableStart");
+  assert.ok(preflightIdx > 0 && preflightIdx < availabilityIdx, "idempotency replay must precede the availability gate");
 });
 
 test("legacy customer.html seeds the scheduled request key from a CSPRNG and persists it across reloads", () => {
