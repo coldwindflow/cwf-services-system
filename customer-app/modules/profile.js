@@ -77,11 +77,189 @@
     `;
   }
 
+  function historyState() {
+    return root.state.customerHistory || {};
+  }
+
+  function renderHistoryClaimPanel() {
+    const h = historyState();
+    const items = Array.isArray(h.items) ? h.items : [];
+    const locations = Array.isArray(h.locations) ? h.locations : [];
+    const claimed = h.claimed === true;
+    const loading = h.status === "loading" || h.locationsStatus === "loading";
+    return `
+      <section class="card profile-history-card">
+        <div class="section-head">
+          <h2>เชื่อมประวัติลูกค้าเก่า</h2>
+          <p class="muted">ไม่มี OTP ระบบใช้เบอร์โทรเต็มและ Booking Code จากงานเดิมเพื่อยืนยันประวัติ</p>
+        </div>
+        <form class="profile-history-claim-form" data-history-claim-form>
+          <div class="form-grid">
+            <div class="field">
+              <label for="history-phone">เบอร์โทรเดิม</label>
+              <input id="history-phone" class="input" name="phone" inputmode="tel" autocomplete="tel"
+                value="${root.utils.escapeHtml(h.claimPhone || "")}" placeholder="081-234-5678">
+            </div>
+            <div class="field">
+              <label for="history-booking-code">Booking Code</label>
+              <input id="history-booking-code" class="input" name="booking_code" autocapitalize="characters"
+                value="${root.utils.escapeHtml(h.claimBookingCode || "")}" placeholder="CWF...">
+            </div>
+          </div>
+          ${h.claimError ? `<div class="state-box is-error">${root.utils.escapeHtml(h.claimError)}</div>` : ""}
+          ${h.claimSuccess ? `<div class="state-box is-success">${root.utils.escapeHtml(h.claimSuccess)}</div>` : ""}
+          <div class="button-row">
+            <button class="primary-btn" type="submit" ${h.claimStatus === "saving" ? "disabled" : ""}>
+              ${h.claimStatus === "saving" ? "กำลังตรวจสอบ..." : "เชื่อมประวัติ"}
+            </button>
+            <button class="secondary-btn" type="button" data-history-refresh ${loading ? "disabled" : ""}>โหลดประวัติ</button>
+          </div>
+        </form>
+        ${renderHistorySummary({ claimed, items, locations, loading, error: h.error || h.locationsError })}
+      </section>
+    `;
+  }
+
+  function renderHistorySummary({ claimed, items, locations, loading, error }) {
+    if (loading) return `<div class="state-box">กำลังโหลดประวัติ...</div>`;
+    if (error) return `<div class="state-box is-error">${root.utils.escapeHtml(error)}</div>`;
+    if (!claimed) return `<p class="muted">เชื่อมประวัติก่อนเพื่อดูงานเดิมและเลือกสถานที่ที่เคยใช้บริการ</p>`;
+    const locationHtml = locations.length
+      ? locations.map((loc, index) => `
+          <div class="address-status-card has-address">
+            <span class="address-status-icon">${root.utils.icon("pin", 20)}</span>
+            <div>
+              <strong>${root.utils.escapeHtml(loc.job_zone || "สถานที่เดิม")}</strong>
+              <p>${root.utils.escapeHtml(loc.address_text || "-")}</p>
+              <p class="muted">${root.utils.escapeHtml(`${loc.job_count || 1} งาน • ล่าสุด ${loc.last_seen_at || "-"}`)}</p>
+              <div class="button-row">
+                <button class="secondary-btn" type="button" data-history-location-index="${index}" data-history-location-target="scheduled">ใช้จองล่วงหน้า</button>
+                <button class="secondary-btn" type="button" data-history-location-index="${index}" data-history-location-target="urgent">ใช้จองด่วน</button>
+              </div>
+            </div>
+          </div>
+        `).join("")
+      : `<p class="muted">ยังไม่พบสถานที่จากประวัติงานที่เชื่อมแล้ว</p>`;
+    const historyHtml = items.length
+      ? items.slice(0, 8).map((item) => `
+          <div class="data-row">
+            <strong>${root.utils.escapeHtml(item.booking_code || "งานเดิม")}</strong>
+            <span>${root.utils.escapeHtml(`${item.appointment_datetime || "-"} • ${item.job_status || "-"}`)}</span>
+          </div>
+        `).join("")
+      : `<p class="muted">ยังไม่พบประวัติงานที่แสดงได้</p>`;
+    return `
+      <div class="profile-history-summary">
+        <div class="section-head section-head-compact"><h2>สถานที่ที่เคยใช้บริการ</h2></div>
+        <div class="profile-location-list">${locationHtml}</div>
+        <div class="section-head section-head-compact"><h2>ประวัติบริการ</h2></div>
+        <div>${historyHtml}</div>
+      </div>
+    `;
+  }
+
+  async function loadHistoryData(container) {
+    if (!root.state.customer?.logged_in || !root.api?.loadCustomerHistory) return;
+    root.state.setCustomerHistory({ status: "loading", locationsStatus: "loading", error: "", locationsError: "" });
+    paintHistory(container);
+    try {
+      const [historyData, locationsData] = await Promise.all([
+        root.api.loadCustomerHistory(),
+        root.api.loadCustomerHistoryLocations(),
+      ]);
+      root.state.setCustomerHistory({
+        status: "success",
+        locationsStatus: "success",
+        claimed: !!(historyData?.claimed || locationsData?.claimed),
+        items: Array.isArray(historyData?.items) ? historyData.items : [],
+        locations: Array.isArray(locationsData?.locations) ? locationsData.locations : [],
+        error: "",
+        locationsError: "",
+      });
+    } catch (error) {
+      const message = error?.status === 503
+        ? "ระบบประวัติลูกค้ายังไม่พร้อมใช้งาน"
+        : (error?.message || "โหลดประวัติไม่สำเร็จ");
+      root.state.setCustomerHistory({ status: "error", locationsStatus: "error", error: message, locationsError: message });
+    }
+    paintHistory(container);
+  }
+
+  function paintHistory(container) {
+    const mount = container?.querySelector("[data-profile-history]");
+    if (!mount) return;
+    mount.innerHTML = renderHistoryClaimPanel();
+    bindHistory(container);
+  }
+
   function paintAddress(container) {
     const mount = container?.querySelector("[data-profile-address]");
     if (!mount) return;
     mount.innerHTML = renderServiceAddress();
     bindAddress(container);
+  }
+
+  function bindHistory(container) {
+    const form = container?.querySelector("[data-history-claim-form]");
+    if (form && form.dataset.bound !== "1") {
+      form.dataset.bound = "1";
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const phone = String(form.elements.phone.value || "").trim();
+        const bookingCode = String(form.elements.booking_code.value || "").trim();
+        root.state.setCustomerHistory({
+          claimStatus: "saving",
+          claimError: "",
+          claimSuccess: "",
+          claimPhone: phone,
+          claimBookingCode: bookingCode,
+        });
+        paintHistory(container);
+        try {
+          await root.api.claimCustomerHistory({ phone, booking_code: bookingCode });
+          root.state.setCustomerHistory({
+            claimStatus: "success",
+            claimError: "",
+            claimSuccess: "เชื่อมประวัติสำเร็จ",
+            claimed: true,
+          });
+          await loadHistoryData(container);
+        } catch (_) {
+          root.state.setCustomerHistory({
+            claimStatus: "error",
+            claimError: "ไม่สามารถยืนยันประวัติงานได้ กรุณาตรวจสอบข้อมูลอีกครั้ง",
+            claimSuccess: "",
+          });
+          paintHistory(container);
+        }
+      });
+    }
+
+    const refresh = container?.querySelector("[data-history-refresh]");
+    if (refresh && refresh.dataset.bound !== "1") {
+      refresh.dataset.bound = "1";
+      refresh.addEventListener("click", () => loadHistoryData(container));
+    }
+
+    const locationButtons = typeof container?.querySelectorAll === "function"
+      ? container.querySelectorAll("[data-history-location-index]")
+      : [];
+    locationButtons.forEach((button) => {
+      if (button.dataset.bound === "1") return;
+      button.dataset.bound = "1";
+      button.addEventListener("click", () => {
+        const index = Number(button.getAttribute("data-history-location-index"));
+        const target = button.getAttribute("data-history-location-target") === "urgent" ? "urgent" : "scheduled";
+        const loc = (root.state.customerHistory?.locations || [])[index];
+        if (!root.state.applyHistoryLocation(target, loc)) return;
+        root.utils.routeTo(target === "urgent" ? "urgent" : "scheduled");
+      });
+    });
+  }
+
+  function bindProfile(container) {
+    bindAddress(container);
+    bindHistory(container);
   }
 
   function bindAddress(container) {
@@ -183,6 +361,8 @@
           <div data-profile-address>${renderServiceAddress()}</div>
         </section>
 
+        <div data-profile-history>${renderHistoryClaimPanel()}</div>
+
         <section class="card profile-action-card">
           <div class="section-head"><h2>เมนูใช้งาน</h2></div>
           <div class="profile-action-grid">
@@ -195,7 +375,8 @@
       </section>
     `;
     root.auth.loadCustomer(container);
-    bindAddress(container);
+    bindProfile(container);
+    loadHistoryData(container);
     root.auth.bindAvatarFallbacks?.(container);
   }
 

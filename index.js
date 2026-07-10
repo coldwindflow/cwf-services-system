@@ -46,6 +46,7 @@ const createCatalogItemRoutes = require("./server/routes/catalog/items");
 const createCatalogReviewRoutes = require("./server/routes/catalog/reviews");
 const { createHomepageRoutes, CONFIG_KEY: HOMEPAGE_CONFIG_KEY } = require("./server/routes/homepage");
 const { createCustomerOrdersRoutes } = require("./server/routes/customerOrders");
+const createCustomerHistoryRoutes = require("./server/routes/public/customerHistory");
 const articleSync = require("./server/services/articleSync");
 const createServiceZoneRoutes = require("./server/routes/serviceZones");
 const createPageRoutes = require("./server/routes/pages");
@@ -815,6 +816,8 @@ function requireCustomerJwt(req, res, next) {
     return res.status(401).json({ error: 'NOT_LOGGED_IN' });
   }
 }
+
+app.use(createCustomerHistoryRoutes({ pool, requireCustomerJwt, getSecret: getJwtSecret, logger: console }));
 
 app.get('/auth/line', (req, res) => {
   const clientId = String(process.env.LINE_CHANNEL_ID || '').trim();
