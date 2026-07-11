@@ -338,7 +338,7 @@ function loadTrackHtml({ data }) {
     fetch: async () => ({ ok: true, json: async () => data }),
     alert: () => {},
     window: {}, location: {}, console,
-    statusBadge: stub, timelineHTML: stub, photosHTML: stub, reviewHTML: stub,
+    statusBadge: stub, timelineHTML: stub, timelineLimitedHTML: stub, derivedStatusLimited: stub, photosHTML: stub, reviewHTML: stub,
     warrantyHTML: stub, renderRankLine: stub, renderCustomerESlip: async () => {}, openNav: () => {}, submitReview: () => {}, qs: () => "",
     Number, String, Array, Math, JSON, Date, encodeURIComponent, RegExp, Boolean,
   };
