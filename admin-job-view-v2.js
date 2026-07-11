@@ -1696,8 +1696,9 @@ async function loadJob(){
             updated: 'บันทึกพิกัดใหม่',
           };
           const gpsNote = result && GPS_ACTION_MSG[result.gps_action] ? ` • ${GPS_ACTION_MSG[result.gps_action]}` : '';
-          showToast('บันทึกใบงานครบแล้ว' + gpsNote, 'success');
-          if (msg) msg.textContent = `✅ บันทึกใบงานครบแล้ว${done.length ? `: ${done.join(' / ')}` : ''}${gpsNote}`;
+          const mapsNote = result && result.maps_action === 'cleared' ? ' • ล้างลิงก์แผนที่เดิม (สถานที่เปลี่ยน)' : '';
+          showToast('บันทึกใบงานครบแล้ว' + gpsNote + mapsNote, 'success');
+          if (msg) msg.textContent = `✅ บันทึกใบงานครบแล้ว${done.length ? `: ${done.join(' / ')}` : ''}${gpsNote}${mapsNote}`;
           await loadJob();
         }catch(e){
           console.error(e);

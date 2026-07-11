@@ -878,7 +878,9 @@ async function saveJob(){
       cleared: "ล้างพิกัดเดิมแล้ว (หาพิกัดจากสถานที่ใหม่ไม่ได้) กรุณาตรวจสอบ",
       updated: "บันทึกพิกัดใหม่แล้ว",
     };
-    showToast("บันทึกใบงานแล้ว" + (resp && GPS_ACTION_MSG[resp.gps_action] ? ` • ${GPS_ACTION_MSG[resp.gps_action]}` : ""), "success");
+    const gpsNote = resp && GPS_ACTION_MSG[resp.gps_action] ? ` • ${GPS_ACTION_MSG[resp.gps_action]}` : "";
+    const mapsNote = resp && resp.maps_action === "cleared" ? " • ล้างลิงก์แผนที่เดิม (สถานที่เปลี่ยน)" : "";
+    showToast("บันทึกใบงานแล้ว" + gpsNote + mapsNote, "success");
     await loadQueue();
   }catch(e){
     showToast(e.message||"บันทึกไม่สำเร็จ","error");

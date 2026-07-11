@@ -14344,35 +14344,33 @@ async function handleAdminBookV2(req, res) {
 
 
 // ✅ Coordinate resolution order (never convert missing values to zero):
-//   1) explicit admin-supplied gps_latitude/gps_longitude (STRICT: null/""/
-//      boolean/object are rejected, (0,0) is rejected)
+//   1) explicit admin-supplied gps_latitude/gps_longitude
 //   2) coordinates parsed from maps_url / address_text
 //   3) best-effort resolution of a short Google Maps link
 //   4) null
+// EVERY candidate pair — explicit, parsed, or resolved — is passed through the
+// SAME strict validator, so 0,0 / out-of-range / partial / NaN / non-numeric
+// derived coordinates are never persisted.
 const explicitAdminLL = strictLatLngPairOrNull(body.gps_latitude, body.gps_longitude);
-const parsedAdminLL = explicitAdminLL ? null : (parseLatLngFromText(maps_url) || parseLatLngFromText(address_text));
-console.log("[latlng_parse]", { explicit: !!explicitAdminLL, parsed: !!parsedAdminLL });
-
-  let final_lat = explicitAdminLL ? explicitAdminLL.lat
-    : (parsedAdminLL && Number.isFinite(Number(parsedAdminLL.lat)) ? Number(parsedAdminLL.lat) : null);
-  let final_lng = explicitAdminLL ? explicitAdminLL.lng
-    : (parsedAdminLL && Number.isFinite(Number(parsedAdminLL.lng)) ? Number(parsedAdminLL.lng) : null);
+let derivedAdminLL = null;
+if (!explicitAdminLL) {
+  const p = parseLatLngFromText(maps_url) || parseLatLngFromText(address_text);
+  derivedAdminLL = p ? strictLatLngPairOrNull(p.lat, p.lng) : null;
   // The maps_url itself is always persisted below regardless of resolution, so a
   // short Google Maps link stays saved even when coordinate resolution fails.
-  if (!explicitAdminLL && (final_lat == null || final_lng == null) && maps_url) {
-    const m = String(maps_url || '').trim();
-    if (m && /maps\.app\.goo\.gl|goo\.gl/i.test(m)) {
-      try {
-        const rr = await resolveMapsUrlToLatLng(m);
-        if (rr && Number.isFinite(Number(rr.lat)) && Number.isFinite(Number(rr.lng))) {
-          final_lat = Number(rr.lat);
-          final_lng = Number(rr.lng);
-        }
-      } catch (e) {
-        // fail-open
-      }
-    }
+  const m = String(maps_url || '').trim();
+  if (!derivedAdminLL && m && /maps\.app\.goo\.gl|goo\.gl/i.test(m)) {
+    try {
+      const rr = await resolveMapsUrlToLatLng(m);
+      if (rr) derivedAdminLL = strictLatLngPairOrNull(rr.lat, rr.lng);
+    } catch (e) { /* fail-open */ }
   }
+}
+const chosenAdminLL = explicitAdminLL || derivedAdminLL;
+console.log("[latlng_parse]", { explicit: !!explicitAdminLL, derived: !!derivedAdminLL });
+
+  let final_lat = chosenAdminLL ? chosenAdminLL.lat : null;
+  let final_lng = chosenAdminLL ? chosenAdminLL.lng : null;
 
 
   // sanitize items
@@ -17278,7 +17276,10 @@ try {
         `SELECT appointment_datetime,
                 COALESCE(duration_min,60) AS duration_min,
                 technician_username,
-                job_type
+                job_type,
+                maps_url,
+                address_text,
+                job_zone
          FROM public.jobs WHERE job_id=$1
          FOR UPDATE`,
         [job_id]
@@ -17290,41 +17291,88 @@ try {
 
       const cur = curR.rows[0];
 
-      // --- Coordinate write decision (never keep old GPS with a new location) ---
+      // ---- Effective location resolution (maps_url / address / GPS / zone) ----
+      // These four must stay mutually consistent. Presence flags distinguish an
+      // OMITTED field (preserve) from an EXPLICITLY supplied empty one (clear).
+      const curMaps = String(cur.maps_url || '').trim();
+      const curAddr = String(cur.address_text || '').trim();
+      const mapsProvided = maps_url !== undefined;
+      const addrProvided = address_text !== undefined;
+      const newMaps = mapsProvided ? String(maps_url || '').trim() : curMaps;
+      const newAddr = addrProvided ? String(address_text || '').trim() : curAddr;
+      const mapsChanged = mapsProvided && newMaps !== curMaps;
+      const addrChanged = addrProvided && newAddr !== curAddr;
+      const newJobZone = job_zone !== undefined ? String(job_zone || '').trim() : String(cur.job_zone || '').trim();
+
+      // Blocker 1 + 2: maps_url write semantics.
+      //   omitted             → preserve
+      //   supplied non-empty  → replace
+      //   supplied empty/null → clear to NULL
+      //   address changed without a replacement URL → clear the stale URL, so a
+      //   new address can never keep the old location's Maps URL (nav uses it first)
+      let mapsForce = false, mapsWrite = null, mapsAction = 'preserved';
+      if (mapsProvided) {
+        mapsForce = true;
+        mapsWrite = newMaps || null;
+        mapsAction = mapsWrite ? (mapsChanged ? 'replaced' : 'preserved') : 'cleared';
+      }
+      if (addrChanged && !mapsChanged) {
+        mapsForce = true;
+        mapsWrite = null;
+        mapsAction = 'cleared';
+      }
+      // The Maps URL that will actually be stored — the source for GPS/zone recompute.
+      const effectiveMaps = mapsForce ? String(mapsWrite || '') : curMaps;
+      // Only a change to a NEW non-empty Maps URL is a "location moved" signal.
+      // Merely CLEARING the URL must not recompute GPS/zone — the stored pin stays
+      // valid so technician navigation can fall back to it (Blocker 1).
+      const mapsMovedToNew = mapsChanged && newMaps !== '';
+      const locationMoved = mapsMovedToNew || addrChanged;
+
+      // Blocker 4: strict validation for EVERY derived coordinate pair (parsed
+      // from text or resolved from a short link) — 0,0 / out-of-range / partial /
+      // NaN are rejected, exactly like an explicit admin pair.
+      async function resolveStrictLatLng(mapsText, addrText) {
+        const p = parseLatLngFromText(mapsText) || parseLatLngFromText(addrText);
+        let pair = p ? strictLatLngPairOrNull(p.lat, p.lng) : null;
+        if (!pair && mapsText && /maps\.app\.goo\.gl|goo\.gl/i.test(mapsText)) {
+          try {
+            const rr = await resolveMapsUrlToLatLng(mapsText);
+            if (rr) pair = strictLatLngPairOrNull(rr.lat, rr.lng);
+          } catch (_) { /* fail-open → null (cleared) */ }
+        }
+        return pair;
+      }
+
+      // GPS decision:
       //   1) valid explicit pair            → update
-      //   2) maps_url/address changed w/o an explicit pair → recalculate from the
-      //      NEW location; save if resolvable, otherwise CLEAR to NULL (the old
-      //      coordinates belong to the old place and must not be retained)
-      //   3) otherwise                       → preserve
-      // gpsForce drives the UPDATE's CASE so we can write NULL deliberately
-      // (clearing) as opposed to COALESCE-preserving.
+      //   2) maps_url/address changed       → recalculate from the NEW effective
+      //      location; save if strictly valid, else CLEAR to NULL
+      //   3) otherwise                      → preserve
       let gpsForce = false, gpsWriteLat = null, gpsWriteLng = null, gpsAction = 'preserved';
       if (editGpsPair) {
         gpsForce = true; gpsWriteLat = editGpsPair.lat; gpsWriteLng = editGpsPair.lng; gpsAction = 'updated';
-      } else {
-        const curMaps = String(cur.maps_url || '').trim();
-        const curAddr = String(cur.address_text || '').trim();
-        const newMaps = maps_url !== undefined ? String(maps_url || '').trim() : curMaps;
-        const newAddr = address_text !== undefined ? String(address_text || '').trim() : curAddr;
-        const mapsChanged = maps_url !== undefined && newMaps !== curMaps;
-        const addrChanged = address_text !== undefined && newAddr !== curAddr;
-        if (mapsChanged || addrChanged) {
-          let resolved = parseLatLngFromText(newMaps) || parseLatLngFromText(newAddr);
-          if (!resolved && newMaps && /maps\.app\.goo\.gl|goo\.gl/i.test(newMaps)) {
-            try {
-              const rr = await resolveMapsUrlToLatLng(newMaps);
-              if (rr && Number.isFinite(Number(rr.lat)) && Number.isFinite(Number(rr.lng))) {
-                resolved = { lat: Number(rr.lat), lng: Number(rr.lng) };
-              }
-            } catch (_) { /* fail-open: leave unresolved → cleared */ }
-          }
-          gpsForce = true;
-          if (resolved && Number.isFinite(Number(resolved.lat)) && Number.isFinite(Number(resolved.lng))) {
-            gpsWriteLat = Number(resolved.lat); gpsWriteLng = Number(resolved.lng); gpsAction = 'recalculated';
-          } else {
-            gpsWriteLat = null; gpsWriteLng = null; gpsAction = 'cleared';
-          }
-        }
+      } else if (locationMoved) {
+        const pair = await resolveStrictLatLng(effectiveMaps, newAddr);
+        gpsForce = true;
+        if (pair) { gpsWriteLat = pair.lat; gpsWriteLng = pair.lng; gpsAction = 'recalculated'; }
+        else { gpsWriteLat = null; gpsWriteLng = null; gpsAction = 'cleared'; }
+      }
+
+      // Blocker 3: recompute the SYSTEM service zone from the new effective
+      // location whenever the location changed. Never keep the old zone; clear it
+      // (NULL) when the new location cannot be classified. Free-text job_zone is
+      // handled separately by the UPDATE below.
+      let zoneForce = false, zoneCodeWrite = null, zoneSourceWrite = null;
+      if (locationMoved || !!editGpsPair) {
+        const zoneMapsInput = editGpsPair ? `${editGpsPair.lat},${editGpsPair.lng}` : effectiveMaps;
+        let zoneDetected = null;
+        try {
+          zoneDetected = await detectServiceZoneFromText({ address_text: newAddr, job_zone: newJobZone, maps_url: zoneMapsInput });
+        } catch (_) { zoneDetected = null; }
+        zoneForce = true;
+        zoneCodeWrite = zoneDetected?.service_zone_code || null;
+        zoneSourceWrite = zoneDetected?.service_zone_source || null;
       }
 
       const apptToUse = appointment_dt || cur.appointment_datetime;
@@ -17366,13 +17414,15 @@ try {
           appointment_datetime = COALESCE($4, appointment_datetime),
           address_text = COALESCE($5, address_text),
           customer_note = COALESCE($6, customer_note),
-          maps_url = COALESCE(NULLIF($7, ''), maps_url),
-          job_zone = COALESCE(NULLIF($8, ''), job_zone),
-          gps_latitude = CASE WHEN $9 THEN $10 ELSE gps_latitude END,
-          gps_longitude = CASE WHEN $9 THEN $11 ELSE gps_longitude END,
-          technician_username = COALESCE(NULLIF($12, ''), technician_username),
-          technician_team = COALESCE(NULLIF($12, ''), technician_team)
-      WHERE job_id=$13
+          maps_url = CASE WHEN $7 THEN $8 ELSE maps_url END,
+          job_zone = COALESCE(NULLIF($9, ''), job_zone),
+          gps_latitude = CASE WHEN $10 THEN $11 ELSE gps_latitude END,
+          gps_longitude = CASE WHEN $10 THEN $12 ELSE gps_longitude END,
+          service_zone_code = CASE WHEN $13 THEN $14 ELSE service_zone_code END,
+          service_zone_source = CASE WHEN $13 THEN $15 ELSE service_zone_source END,
+          technician_username = COALESCE(NULLIF($16, ''), technician_username),
+          technician_team = COALESCE(NULLIF($16, ''), technician_team)
+      WHERE job_id=$17
       `,
       [
         customer_name ?? null,
@@ -17381,11 +17431,15 @@ try {
         appointment_dt,
         address_text ?? null,
         customer_note ?? null,
-        maps_url ?? null,
+        mapsForce,
+        mapsWrite,
         job_zone ?? null,
         gpsForce,
         gpsWriteLat,
         gpsWriteLng,
+        zoneForce,
+        zoneCodeWrite,
+        zoneSourceWrite,
         headerPrimaryToSave,
         job_id,
       ]
@@ -17431,9 +17485,12 @@ try {
         },
         pricing,
         team: savedTeam,
-        // How the job-site coordinates were resolved on this save so the admin
-        // UI can tell the user: preserved | updated | recalculated | cleared.
+        // How the location fields were resolved on this save so the admin UI can
+        // tell the user what happened.
+        //   gps_action  : preserved | updated | recalculated | cleared
+        //   maps_action : preserved | replaced | cleared
         gps_action: gpsAction,
+        maps_action: mapsAction,
       });
     } catch (innerErr) {
       try { await client.query("ROLLBACK"); } catch (_) {}
