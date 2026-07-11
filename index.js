@@ -1873,12 +1873,12 @@ async function assertTechBelongsToJob(clientOrPool, job_id, username) {
 async function requireTechOwnsResolvedJob(req, res, realId, clientOrPool = pool) {
   const tech = _authUsername(req);
   if (!tech) {
-    res.status(401).json({ error: 'UNAUTHORIZED' });
+    res.status(401).json({ error: 'UNAUTHORIZED', code: 'AUTH_REQUIRED' });
     return null;
   }
   const ok = await assertTechBelongsToJob(clientOrPool, realId, tech);
   if (!ok) {
-    res.status(403).json({ error: 'ช่างคนนี้ไม่ได้อยู่ในทีมของงานนี้' });
+    res.status(403).json({ error: 'ช่างคนนี้ไม่ได้อยู่ในทีมของงานนี้', code: 'TECH_NOT_ASSIGNED' });
     return null;
   }
   return tech;
@@ -18287,9 +18287,16 @@ function buildCustomerConfirmationVars({ job, items, origin, ddTH, ttTH, ddEN, t
       ...promoLinesEN(it),
     ].join('\n');
   });
+  // The official Tracking link must carry the long random booking_token when the
+  // job has one, so the customer opening it from the confirmation message gets
+  // FULL (token) access. The short booking_code only yields limited/redacted
+  // data after the tracking-privacy change. The visible job number below stays
+  // booking_code; the token is used solely as the URL credential and is never
+  // rendered as visible text or logged.
+  const trackingCredential = String(job.booking_token || '').trim() || String(job.booking_code || '') || String(job.job_id || '');
   return {
     booking_code: booking,
-    tracking_url: `${origin}/track.html?q=${encodeURIComponent(job.booking_code || String(job.job_id || ''))}`,
+    tracking_url: `${origin}/track.html?q=${encodeURIComponent(trackingCredential)}`,
     customer_name: _safeMsgText(job.customer_name),
     customer_phone: _safeMsgText(job.customer_phone),
     appointment_th: `${ddTH} เวลา ${ttTH} น.`,
@@ -18310,7 +18317,7 @@ app.get("/jobs/:job_id/summary", async (req, res) => {
 
   try {
     const jobR = await pool.query(
-      `SELECT job_id, booking_code, customer_name, customer_phone, appointment_datetime, address_text, job_type, job_price
+      `SELECT job_id, booking_code, booking_token, customer_name, customer_phone, appointment_datetime, address_text, job_type, job_price
        FROM public.jobs WHERE job_id=$1`,
       [job_id]
     );
@@ -18318,7 +18325,7 @@ app.get("/jobs/:job_id/summary", async (req, res) => {
 
     const job = jobR.rows[0];
 
-    // ✅ ใช้ทำลิงก์ Tracking ให้ลูกค้า
+    // ✅ ใช้ทำลิงก์ Tracking ให้ลูกค้า (ใช้ booking_token เป็น credential เมื่อมี)
     const origin = `${req.protocol}://${req.get("host")}`;
 
     let itemsR;
@@ -19180,13 +19187,38 @@ app.post("/jobs/:job_id/travel-start", requireTechnicianSession, async (req, res
 // =======================================
 app.post("/jobs/:job_id/checkin", requireTechnicianSession, async (req, res) => {
   const { job_id } = req.params;
-  const { lat, lng } = req.body || {};
+  const body = req.body || {};
+  const lat = Number(body.lat);
+  const lng = Number(body.lng);
+  // accuracy (metres) is optional but, when present, must be a valid non-negative
+  // number so we can reason about GPS confidence near the 500 m boundary.
+  const hasAccuracy = body.accuracy !== undefined && body.accuracy !== null && body.accuracy !== "";
+  const accuracy = hasAccuracy ? Number(body.accuracy) : null;
+  // captured_at is advisory only; validate loosely and ignore when unparseable.
+  const capturedAt = (() => {
+    const v = body.captured_at;
+    if (v === undefined || v === null || v === "") return null;
+    const d = new Date(v);
+    return Number.isFinite(d.getTime()) ? d.toISOString() : null;
+  })();
 
-  if (lat == null || lng == null) return res.status(400).json({ error: "พิกัด GPS ไม่ครบ" });
+  // ✅ Strict client-coordinate validation (structured codes for the app to map
+  // to clear Thai messages). Number(null/'') === 0 previously slipped through the
+  // null check and forced a (0,0) comparison — now rejected as invalid.
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+    return res.status(400).json({ error: "พิกัด GPS ไม่ถูกต้อง กรุณากดลองใหม่", code: "INVALID_COORDINATES" });
+  }
+  if (hasAccuracy && (!Number.isFinite(accuracy) || accuracy < 0)) {
+    return res.status(400).json({ error: "พิกัด GPS ไม่ถูกต้อง กรุณากดลองใหม่", code: "INVALID_COORDINATES" });
+  }
+
+  // Sanitized diagnostics only — never log raw coordinates, token, phone, name,
+  // or address. Rounded accuracy is safe and useful for triage.
+  const diag = { has_accuracy: hasAccuracy, accuracy_m: hasAccuracy ? Math.round(accuracy) : null };
 
   try {
     const realId = await resolveJobIdAny(pool, job_id);
-    if (!realId) return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
+    if (!realId) return res.status(400).json({ error: "job_id ไม่ถูกต้อง", code: "INVALID_JOB_REFERENCE" });
     const technician_username = await requireTechOwnsResolvedJob(req, res, realId, pool);
     if (!technician_username) return;
     await assertJobActionableForTechnician(pool, realId);
@@ -19334,20 +19366,40 @@ app.post("/jobs/:job_id/checkin", requireTechnicianSession, async (req, res) => 
           // then do not block check-in.
           // Here, if the only coordinates were invalid/sentinel and we couldn't derive a valid one,
           // `hasSiteLatLng` would be false and we wouldn't be inside this block.
-          return res.status(400).json({ error: "อยู่นอกพื้นที่หน้างาน", distance: Math.round(distance) });
+          //
+          // Poor-accuracy guard: only reject as "outside" when we are confident —
+          // i.e. the tech is beyond 500 m even after allowing for the GPS error
+          // radius. If the boundary sits within the accuracy error, ask for a
+          // retry instead of a false rejection (an assigned tech at the site with
+          // a weak fix must not be blocked).
+          if (hasAccuracy && Number.isFinite(accuracy) && (distance - accuracy) <= 500) {
+            console.log("[checkin]", { job_id: realId, tech: technician_username, site_required: true, distance_m: Math.round(distance), ...diag, result: "accuracy_too_low" });
+            return res.status(400).json({
+              error: "สัญญาณ GPS ยังไม่แม่นพอที่จะยืนยันตำแหน่ง กรุณาออกไปที่โล่งแล้วกดลองใหม่",
+              code: "LOCATION_ACCURACY_TOO_LOW",
+              accuracy: Math.round(accuracy),
+            });
+          }
+          console.log("[checkin]", { job_id: realId, tech: technician_username, site_required: true, distance_m: Math.round(distance), ...diag, result: "outside_radius" });
+          return res.status(400).json({ error: "อยู่นอกพื้นที่หน้างาน", code: "OUTSIDE_CHECKIN_RADIUS", distance: Math.round(distance) });
         }
       }
     }
 
+    // Idempotent: preserve the FIRST check-in timestamp so re-tapping does not
+    // reset it or move unrelated job timing; still record the latest coordinates.
     await pool.query(
-      `UPDATE public.jobs SET checkin_latitude=$1, checkin_longitude=$2, checkin_at=NOW() WHERE job_id=$3`,
+      `UPDATE public.jobs
+          SET checkin_latitude=$1, checkin_longitude=$2, checkin_at=COALESCE(checkin_at, NOW())
+        WHERE job_id=$3`,
       [lat, lng, realId]
     );
 
-    res.json({ success: true, distance: distance == null ? null : Math.round(distance), site_required: hasSiteLatLng });
+    console.log("[checkin]", { job_id: realId, tech: technician_username, site_required: hasSiteLatLng, distance_m: distance == null ? null : Math.round(distance), ...diag, result: "ok" });
+    res.json({ success: true, distance: distance == null ? null : Math.round(distance), site_required: hasSiteLatLng, captured_at: capturedAt });
   } catch (e) {
-    console.error(e);
-    res.status(Number(e.status || 500)).json({ error: e.message || "เช็คอินไม่สำเร็จ", code: e.code || undefined });
+    console.error("[checkin] error", { job_id: String(job_id), message: e && e.message });
+    res.status(Number(e.status || 500)).json({ error: e.message || "เช็คอินไม่สำเร็จ", code: e.code || "CHECKIN_FAILED" });
   }
 });
 
@@ -26154,12 +26206,40 @@ if (FLAG_SHOW_TECH_TEAM_ON_TRACKING && canShowPublicTechnician) {
     );
     const fromJoin = (tmR.rows || []).map((x) => String(x.username || "").trim()).filter(Boolean);
 
-    // รองรับ legacy fields
-    const legacy = [row.technician_username, row.technician_team]
+    // ดึงช่างจาก job_assignments ด้วย (โปรดักชันบางงาน assign ผ่านตารางนี้เท่านั้น).
+    // job_assignments มีสถานะ in_progress/done เท่านั้น — ทั้งสองถือว่าถูก assign จริง
+    // (การปฏิเสธ/หมดอายุอยู่ที่ job_offers ซึ่งไม่ใช่แหล่ง assignment).
+    let fromAssign = [];
+    try {
+      const jaR = await pool.query(
+        `SELECT technician_username FROM public.job_assignments
+          WHERE job_id=$1 AND COALESCE(status,'in_progress') IN ('in_progress','done')`,
+        [row.job_id]
+      );
+      fromAssign = (jaR.rows || []).map((x) => String(x.technician_username || "").trim()).filter(Boolean);
+    } catch (_) {
+      // ตารางอาจยังไม่มีในบางฐาน — ไม่ให้ tracking ล่ม
+      fromAssign = [];
+    }
+
+    // รองรับ legacy fields — technician_team อาจเก็บหลาย username คั่นด้วย comma
+    const legacy = [
+      row.technician_username,
+      ...String(row.technician_team || "").split(","),
+    ]
       .map((x) => String(x || "").trim())
       .filter(Boolean);
 
-    const uniq = Array.from(new Set([...fromJoin, ...legacy]));
+    // Deduplicate by normalized (lower-cased) username while keeping the first
+    // seen display casing; primary technician (technician_username) stays first.
+    const seen = new Set();
+    const uniq = [];
+    for (const u of [...legacy, ...fromJoin, ...fromAssign]) {
+      const norm = u.toLowerCase();
+      if (seen.has(norm)) continue;
+      seen.add(norm);
+      uniq.push(u);
+    }
     if (uniq.length) {
       const detR = await pool.query(
         `
