@@ -141,9 +141,9 @@ test("Test 4: admin job edit reads gps_latitude ?? latitude and shows the system
   // system-detected service zone shown separately from the free-text job_zone
   assert.match(src, /โซนบริการที่ระบบตรวจได้/);
   assert.match(src, /job\.service_zone_code/);
-  // save sends canonical gps_* keys
-  assert.match(src, /gps_latitude: String\(el\('edit_lat'\)\?\.value\|\|''\)\.trim\(\)/);
-  assert.match(src, /gps_longitude: String\(el\('edit_lng'\)\?\.value\|\|''\)\.trim\(\)/);
+  // save sends canonical gps_* keys via the drop-stale-GPS decision
+  assert.match(src, /gps_latitude: dropStaleGps \? '' : latNow/);
+  assert.match(src, /gps_longitude: dropStaleGps \? '' : lngNow/);
 });
 
 test("Test 1: admin add payload carries maps_url/job_zone/service_zone/gps", () => {
@@ -190,9 +190,11 @@ test("Test 5/E: book_v2 accepts explicit gps first; admin-edit preserves via COA
   // resolution order: explicit gps first
   assert.match(src, /const explicitAdminLL = strictLatLngPairOrNull\(body\.gps_latitude, body\.gps_longitude\)/);
   assert.match(src, /let final_lat = explicitAdminLL \? explicitAdminLL\.lat/);
-  // admin-edit uses the strict pair and preserves with COALESCE/NULLIF
-  assert.match(src, /const editGpsPair = strictLatLngPairOrNull\(/);
-  assert.match(src, /gps_latitude = COALESCE\(\$9, gps_latitude\)/);
+  // admin-edit validates a strict pair, rejects partial/invalid, and forces a
+  // deliberate write (CASE) so it can clear to NULL rather than COALESCE-preserve.
+  assert.match(src, /editGpsPair = strictLatLngPairOrNull\(latRaw, lngRaw\)/);
+  assert.match(src, /code: 'INVALID_JOB_SITE_COORDINATES'/);
+  assert.match(src, /gps_latitude = CASE WHEN \$9 THEN \$10 ELSE gps_latitude END/);
   assert.match(src, /maps_url = COALESCE\(NULLIF\(\$7, ''\), maps_url\)/);
   assert.match(src, /job_zone = COALESCE\(NULLIF\(\$8, ''\), job_zone\)/);
 });
@@ -358,4 +360,74 @@ test("edit updates coordinates when a valid new pair is supplied", async (t) => 
   const { rows } = await pool.query("SELECT * FROM public.job_location_roundtrip_probe WHERE job_id=$1", [jobId]);
   assert.equal(Number(rows[0].gps_latitude), 13.99);
   assert.equal(Number(rows[0].gps_longitude), 100.99);
+});
+
+// ---------------------------------------------------------------------------
+// Round-2 frontend blockers: modal field clearing + drop-stale-GPS decision
+// ---------------------------------------------------------------------------
+
+// Extract and execute the REAL admin-job-view save decision that chooses whether
+// to resubmit the pin or drop it so the backend recalculates. Load-bearing: if
+// the old (valid) pair were resubmitted with a changed map, the backend's
+// "valid explicit pair → update" branch would keep the stale coordinates.
+function loadJobViewGpsDecision() {
+  const src = read("admin-job-view-v2.js");
+  const start = src.indexOf("...(function(){");
+  const end = src.indexOf("})(),", start);
+  const body = src.slice(src.indexOf("{", start) + 1, src.lastIndexOf("return", end));
+  const retSrc = src.slice(src.indexOf("return", start), end);
+  // eslint-disable-next-line no-new-func
+  const fn = new Function("el", "job", `${body}\n${retSrc}`);
+  return (fields, job) => fn((id) => ({ value: fields[id] ?? "" }), job);
+}
+
+test("Blocker 2 FE (job view): changed map without a manual pin edit drops the stale GPS", () => {
+  const decide = loadJobViewGpsDecision();
+  const job = { maps_url: "https://maps.google.com/?q=13.1,100.1", address_text: "A", gps_latitude: 13.1, gps_longitude: 100.1 };
+  // Admin changed the maps URL but did NOT touch Lat/Lng (still the loaded pin).
+  const out = decide({
+    edit_maps_url: "https://maps.google.com/?q=14.5,101.5", edit_address: "A",
+    edit_lat: "13.1", edit_lng: "100.1",
+  }, job);
+  assert.equal(out.gps_latitude, "", "stale lat dropped so backend recalculates");
+  assert.equal(out.gps_longitude, "");
+});
+
+test("Blocker 2 FE (job view): a manual pin edit is submitted as-is", () => {
+  const decide = loadJobViewGpsDecision();
+  const job = { maps_url: "m", address_text: "A", gps_latitude: 13.1, gps_longitude: 100.1 };
+  const out = decide({ edit_maps_url: "m2", edit_address: "A", edit_lat: "15.2", edit_lng: "102.3" }, job);
+  assert.equal(out.gps_latitude, "15.2");
+  assert.equal(out.gps_longitude, "102.3");
+});
+
+test("Blocker 2 FE (job view): no location change resubmits the existing pin", () => {
+  const decide = loadJobViewGpsDecision();
+  const job = { maps_url: "m", address_text: "A", gps_latitude: 13.1, gps_longitude: 100.1 };
+  const out = decide({ edit_maps_url: "m", edit_address: "A", edit_lat: "13.1", edit_lng: "100.1" }, job);
+  assert.equal(out.gps_latitude, "13.1");
+  assert.equal(out.gps_longitude, "100.1");
+});
+
+test("Blocker 1 (review modal): location fields are cleared before populating", () => {
+  const src = read("admin-review-v2.js");
+  // Every location field is blanked before the conditional population, so a
+  // previously opened job's Lat/Lng cannot leak into the next one.
+  const clearIdx = src.indexOf('$("mLat").value = "";');
+  const popIdx = src.indexOf("const stored = strictStoredLatLng(CURRENT.gps_latitude");
+  assert.ok(clearIdx > 0 && popIdx > clearIdx, "mLat/mLng cleared before population");
+  assert.match(src, /\$\("mLng"\)\.value = "";/);
+  // A failed full-detail load warns instead of leaving stale values.
+  assert.match(src, /detailLoadFailed/);
+  assert.match(src, /โหลดรายละเอียดงานเต็มไม่สำเร็จ/);
+  // Save drops the stale pin when the map/address changed but the pin was not edited.
+  assert.match(src, /const dropStaleGps = locationTextChanged && !coordsManuallyEdited/);
+  assert.match(src, /gps_latitude: dropStaleGps \? "" : \(latNow \|\| null\)/);
+});
+
+test("Blocker 3 FE (admin add): incomplete/invalid GPS pair is blocked before submit", () => {
+  const src = read("admin-add-v2.js");
+  assert.match(src, /const validPair = latRaw && lngRaw/);
+  assert.match(src, /!\(la === 0 && ln === 0\)/);
+  assert.match(src, /พิกัดหน้างานไม่ถูกต้อง/);
 });
