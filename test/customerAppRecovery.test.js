@@ -236,7 +236,7 @@ test("Customer App build id is consistent across shell and service worker", () =
   const sw = read("customer-app/sw.js");
   const app = read("customer-app/assets/customer-app.js");
   const manifest = read("customer-app/manifest.webmanifest");
-  const build = "20260710_legacy_claim_v2";
+  const build = "20260711_tracking_gps_recovery_v1";
 
   assert.match(index, new RegExp(`customer-app\\.css\\?v=${build}`));
   assert.match(index, new RegExp(`modules\\/api\\.js\\?v=${build}`));
@@ -254,7 +254,7 @@ test("Customer App build id is consistent across shell and service worker", () =
 test("store module is loaded in index.html and precached in the service worker app shell", () => {
   const index = read("customer-app/index.html");
   const sw = read("customer-app/sw.js");
-  const build = "20260710_legacy_claim_v2";
+  const build = "20260711_tracking_gps_recovery_v1";
 
   assert.match(index, new RegExp(`modules/store\\.js\\?v=${build}`));
   assert.match(sw, /`\.\/modules\/store\.js\?v=\$\{BUILD_ID\}`/);
@@ -2773,4 +2773,228 @@ test("store performance guard: navigating from the loaded list to a product deta
 
   assert.equal(detailCalls, 1, "detail must fetch the routed item exactly once");
   assert.equal(listCalls, 1, "an already-loaded catalog list must never be refetched just to populate siblings/related items on the detail page");
+});
+
+// ---- Tracking hotfix: access-level aware customer information -------------
+test("tracking full (token) access renders the customer-information section", () => {
+  const root = loadTrackingFrontend();
+  const html = renderTracking(root, {
+    access_level: "token", booking_token: "TOK1", booking_code: "BK1",
+    job_status: "กำลังดำเนินการ", appointment_datetime: "2026-06-20T10:00:00Z",
+    customer_name: "คุณสมชาย", customer_phone: "0812345678", address_text: "อ่อนนุช กทม",
+  });
+  assert.match(html, /คุณสมชาย/);
+  assert.match(html, /0812345678/);
+  assert.match(html, /อ่อนนุช กทม/);
+  assert.doesNotMatch(html, /tracking-limited-note/);
+});
+
+test("tracking code-only access shows a limited-access notice instead of blank rows", () => {
+  const root = loadTrackingFrontend();
+  const html = renderTracking(root, {
+    access_level: "code", booking_code: "BK1", job_status: "กำลังดำเนินการ",
+    appointment_datetime: "2026-06-20T10:00:00Z", customer_phone: "•••• 5678",
+  });
+  assert.match(html, /tracking-limited-note/);
+  assert.match(html, /ลิงก์ติดตามงาน/);
+  assert.match(html, /•••• 5678/); // masked phone may still show
+  assert.doesNotMatch(html, /ชื่อลูกค้า/); // no misleading customer-name row in limited mode
+});
+
+// Blocker 1: the booking_token is a private request credential and must never
+// be rendered into the tracking UI (it is not a human-facing tracking number).
+// After a successful lookup the visible search field is normalised to the
+// booking_code (see lookup()), so the render path must emit the code — never
+// the token — anywhere: receipt link, review forms, timeline, or search input.
+test("tracking never renders the booking_token into the customer HTML", () => {
+  const SECRET_TOKEN = "TOKEN_SECRET_ZZZ_9x8y7z";
+  const data = {
+    access_level: "token", booking_token: SECRET_TOKEN, booking_code: "BK1",
+    job_status: "เสร็จแล้ว", finished_at: "2026-06-20T10:00:00Z",
+    appointment_datetime: "2026-06-20T10:00:00Z",
+    customer_name: "คุณสมชาย", customer_phone: "0812345678", address_text: "อ่อนนุช กทม",
+    review: { already_reviewed: false },
+  };
+  const root = loadTrackingFrontend();
+  // Post-lookup state: the search field holds the human-facing booking_code,
+  // the token stays only inside root.state.tracking.data as the credential.
+  root.state.updateDraft("tracking", { trackingCode: data.booking_code });
+  root.state.setTracking({ status: "success", data, error: "" });
+  const container = new TrackingContainer();
+  root.tracking.render(container);
+  const html = container.innerHTML;
+  assert.ok(!html.includes(SECRET_TOKEN), "rendered tracking HTML must not contain the booking_token");
+  assert.match(html, /BK1/); // the visible tracking number stays booking_code
+});
+
+// ==========================================================================
+// Round-3 blockers: private token-credential lifecycle + code-only "no tech"
+// ==========================================================================
+
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// A live DOM-ish element that records innerHTML/value and captures listeners so
+// tests can drive clicks/submits. querySelector maps to a fixed child registry.
+function makeLiveEl(children, extra) {
+  const listeners = {};
+  const el = {
+    value: "", dataset: {}, _html: "", _children: children || {},
+    set innerHTML(v) { this._html = String(v == null ? "" : v); },
+    get innerHTML() { return this._html; },
+    addEventListener(type, fn) { listeners[type] = fn; },
+    async fire(type, event) { if (listeners[type]) await listeners[type](event || { preventDefault() {} }); },
+    setAttribute() {}, getAttribute() { return null; },
+    hasAttribute(name) { return !!(extra && extra._attrs && extra._attrs[name]); },
+    closest() { return null; },
+    querySelector(sel) { return this._children[sel] || null; },
+    querySelectorAll() { return []; },
+  };
+  return Object.assign(el, extra || {});
+}
+
+// A container whose querySelector returns a stable set of live elements for the
+// selectors tracking.render()/lookup()/bindResultActions() actually query.
+function makeLiveTrackingContainer(opts) {
+  opts = opts || {};
+  const input = makeLiveEl();
+  const result = makeLiveEl();
+  const timeline = makeLiveEl();
+  const readBtn = makeLiveEl();
+  const refreshBtn = makeLiveEl();
+  const map = {
+    "#tracking-code": input,
+    "[data-tracking-result]": result,
+    "[data-tracking-timeline]": timeline,
+    "[data-action='track-read']": readBtn,
+    "[data-action='track-refresh']": refreshBtn,
+  };
+  if (opts.reviewForm) map["[data-review-form]"] = opts.reviewForm;
+  const container = {
+    _html: "",
+    set innerHTML(v) { this._html = String(v == null ? "" : v); },
+    get innerHTML() { return this._html; },
+    querySelector(sel) { return map[sel] || null; },
+    querySelectorAll() { return []; },
+  };
+  return { container, input, result, timeline, readBtn, refreshBtn };
+}
+
+// Record every credential the app actually sends to trackBooking.
+function installRecordingApi(root, responder) {
+  const calls = [];
+  root.api.trackBooking = async (q) => { calls.push(q); return responder(q); };
+  return { calls };
+}
+
+const SECRET = "TOKEN_SECRET_LIFECYCLE_9zx";
+
+test("Blocker 1: ?q token stays out of the visible UI while the lookup is pending", async () => {
+  const root = loadTrackingFrontend();
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const { calls } = installRecordingApi(root, async () => { await gate; return { access_level: "token", booking_code: "BKLIVE", booking_token: SECRET }; });
+  const { container, input, result } = makeLiveTrackingContainer();
+
+  root.tracking.setInitialCredential(SECRET);
+  root.tracking.render(container);
+  await delay(5); // let the render's auto-lookup start and reach the pending await
+
+  assert.equal(calls[0], SECRET, "the lookup must use the private token credential");
+  assert.equal(input.value, "", "the search input must be blank while the token lookup is pending");
+  assert.ok(!container.innerHTML.includes(SECRET), "container HTML must not contain the token while pending");
+  assert.ok(!result.innerHTML.includes(SECRET), "result HTML must not contain the token while pending");
+  assert.ok(!String(root.state.draft.tracking.trackingCode || "").includes(SECRET), "the draft must never hold the token");
+
+  release();
+  await delay(5);
+  assert.equal(input.value, "BKLIVE", "after success the input shows the booking_code");
+  assert.ok(!result.innerHTML.includes(SECRET), "the token never appears after success");
+});
+
+test("Blocker 1: a failed token lookup still keeps the token out of the visible UI", async () => {
+  const root = loadTrackingFrontend();
+  const { calls } = installRecordingApi(root, async () => { throw new Error("ไม่พบข้อมูลงาน"); });
+  const { container, input, result } = makeLiveTrackingContainer();
+
+  root.tracking.setInitialCredential(SECRET);
+  root.tracking.render(container);
+  await delay(5);
+
+  assert.equal(calls[0], SECRET);
+  assert.equal(input.value, "", "input stays blank on a failed token lookup");
+  assert.ok(!container.innerHTML.includes(SECRET));
+  assert.ok(!result.innerHTML.includes(SECRET), "the token must not leak into the error UI");
+  assert.ok(!String(root.state.draft.tracking.trackingCode || "").includes(SECRET));
+});
+
+test("Blocker 2: Refresh reuses the private token and preserves full (token) access", async () => {
+  const root = loadTrackingFrontend();
+  const { calls } = installRecordingApi(root, async (q) => {
+    if (q === SECRET) return { access_level: "token", booking_code: "BKLIVE", booking_token: SECRET, customer_name: "คุณเอ", customer_phone: "0812345678", technician: { full_name: "ช่างบี", username: "tech_b" } };
+    return { access_level: "code", booking_code: "BKLIVE", customer_phone: "•••• 5678" };
+  });
+  const { container, input, refreshBtn } = makeLiveTrackingContainer();
+
+  root.tracking.setInitialCredential(SECRET);
+  root.tracking.render(container);
+  await delay(5);
+  assert.equal(calls[0], SECRET);
+  assert.equal(input.value, "BKLIVE", "input normalised to booking_code after the token lookup");
+  assert.equal(root.state.tracking.data.access_level, "token");
+
+  await refreshBtn.fire("click");
+  await delay(5);
+  assert.equal(calls[1], SECRET, "Refresh must reuse the private token, not the visible booking_code");
+  assert.equal(root.state.tracking.data.access_level, "token", "access stays full after Refresh");
+  assert.equal(root.state.tracking.data.customer_name, "คุณเอ", "customer details remain visible after Refresh");
+});
+
+test("Blocker 2: technician-review success reloads with the private token", async () => {
+  const context = makeContext();
+  context.FormData = class { constructor() { this._e = [["rating", "5"]]; } entries() { return this._e; } };
+  context.fetch = async () => ({ ok: true, json: async () => ({}) });
+  const root = loadTrackingFrontend(context);
+  const { calls } = installRecordingApi(root, async (q) => {
+    if (q === SECRET) return { access_level: "token", booking_code: "BKLIVE", booking_token: SECRET, job_status: "เสร็จแล้ว", finished_at: "2026-06-20T10:00:00Z", review: { already_reviewed: false } };
+    return { access_level: "code", booking_code: "BKLIVE" };
+  });
+  const status = makeLiveEl();
+  const submit = makeLiveEl();
+  const reviewForm = makeLiveEl({ "[data-review-status]": status, "button[type='submit']": submit }, { _attrs: { "data-review-token": true } });
+  const { container } = makeLiveTrackingContainer({ reviewForm });
+
+  root.tracking.setInitialCredential(SECRET);
+  root.tracking.render(container);
+  await delay(5);
+  assert.equal(calls[0], SECRET);
+
+  await reviewForm.fire("submit");
+  await delay(560); // handler reloads via setTimeout(reloadCurrent, 500)
+  assert.equal(calls[calls.length - 1], SECRET, "review success must reload using the private token");
+});
+
+test("Blocker 3: code-only Overview explains limited access and never claims 'no technician'", () => {
+  const root = loadTrackingFrontend();
+  const html = renderTracking(root, {
+    access_level: "code", booking_code: "BKCODE", booking_mode: "urgent",
+    job_status: "กำลังดำเนินการ", appointment_datetime: "2026-06-20T10:00:00Z",
+    customer_phone: "•••• 5678",
+  });
+  assert.match(html, /โหมดจำกัดข้อมูล/);
+  assert.match(html, /ข้อมูลทีมช่างจะแสดงเมื่อเปิดจากลิงก์ติดตามงาน/);
+  assert.doesNotMatch(html, /ยังไม่มีช่างยืนยันงานนี้/);
+  assert.doesNotMatch(html, /รอช่างรับงาน/);
+  assert.doesNotMatch(html, /แอดมินกำลังช่วยจัดคิวให้/);
+  assert.doesNotMatch(html, /เปลี่ยนเป็นจองล่วงหน้า/);
+});
+
+test("Blocker 3: token (full) access still shows the real technician", () => {
+  const root = loadTrackingFrontend();
+  const html = renderTracking(root, {
+    access_level: "token", booking_code: "BKFULL", booking_token: "T1",
+    job_status: "กำลังดำเนินการ", appointment_datetime: "2026-06-20T10:00:00Z",
+    technician: { full_name: "ช่างสมชาย", username: "somchai", phone: "0899999999" },
+  });
+  assert.match(html, /ช่างสมชาย/, "the actual technician is shown on full access");
+  assert.doesNotMatch(html, /โหมดจำกัดข้อมูล/, "no limited-access notice on full access");
 });

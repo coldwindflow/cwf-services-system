@@ -3,7 +3,7 @@
 
   const App = window.CWFCustomerAppV2;
   const BOOT_TIMEOUT_MS = 3500;
-  const BUILD_ID = "20260710_legacy_claim_v2";
+  const BUILD_ID = "20260711_tracking_gps_recovery_v1";
 
   function withTimeout(promise, timeoutMs) {
     return Promise.race([
@@ -37,7 +37,11 @@
     const params = new URLSearchParams(window.location.search || "");
     const trackingKey = String(params.get("q") || params.get("token") || "").trim();
     if (trackingKey) {
-      App.state.updateDraft("tracking", { trackingCode: trackingKey });
+      // The deep-link value may be the private booking_token. Hand it to the
+      // tracking module as a PRIVATE credential — never write it into the
+      // visible tracking draft/input (it would be rendered before/while the
+      // lookup runs). The tracking module consumes it on its first render.
+      App.tracking?.setInitialCredential?.(trackingKey);
       if (!window.location.hash || App.state.readRouteFromHash() === "home") {
         window.location.hash = "#tracking";
       }

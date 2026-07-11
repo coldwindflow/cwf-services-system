@@ -6,6 +6,20 @@
   const LINE_URL = "https://lin.ee/fG1Oq7y";
   const WARRANTY_COPY = "รับประกันงานล้าง 30 วัน เฉพาะอาการที่เกี่ยวข้องกับการบริการ ไม่รวมอะไหล่เสีย ระบบรั่ว บอร์ด คอมเพรสเซอร์ ไฟตก หรือปัญหาจากตัวเครื่องเดิม";
 
+  // Private, in-memory lookup credential. It may be the long secret
+  // booking_token (from the ?q=/?token= deep link) or a customer-typed code.
+  // It is NEVER written into the draft, the visible input, or rendered HTML.
+  // Refresh and post-review reloads reuse THIS value so a token session is not
+  // silently downgraded to code-only access. A manual "ตรวจสอบสถานะ" replaces it
+  // with whatever the customer explicitly typed.
+  let activeCredential = "";
+  // Set when a deep-link credential is waiting for the first auto-lookup.
+  let pendingAutoLookup = false;
+
+  function setActiveCredential(value) {
+    activeCredential = String(value == null ? "" : value).trim();
+  }
+
   function esc(value) {
     return root.utils.escapeHtml(value == null ? "" : String(value));
   }
@@ -59,6 +73,44 @@
 
   function hasAssignedTech(data) {
     return techList(data).length > 0 || !!clean(data.assigned_at || data.accepted_at);
+  }
+
+  // Access-level awareness. A booking_code lookup returns access_level "code"
+  // with technician identity redacted. Redacted (absent) technician fields must
+  // never be interpreted as "no technician assigned" — hidden identity is not
+  // the same as an unassigned job.
+  function isTokenAccess(data) { return data && data.access_level === "token"; }
+  function isCodeOnly(data) { return !!(data && data.access_level === "code"); }
+
+  function limitedAccessNoticeHtml() {
+    return `
+      <div class="tracking-limited-note" data-limited-access role="note">
+        <strong>โหมดจำกัดข้อมูล (ค้นด้วยเลขงาน)</strong>
+        <p class="muted">เพื่อความปลอดภัย การค้นด้วยเลขงานจะแสดงเฉพาะสถานะและข้อมูลเบื้องต้น ข้อมูลทีมช่างจะแสดงเมื่อเปิดจากลิงก์ติดตามงานที่ได้รับในข้อความยืนยัน</p>
+      </div>`;
+  }
+
+  // Code-only status copy is derived ONLY from reliable, allow-listed timestamps
+  // (travel/checkin/started/finished) plus job_status "done" — never from
+  // technician presence, so a redacted technician cannot flip these to a
+  // "waiting for a technician" message.
+  function limitedStatusCopy(data) {
+    if (isDone(data)) return "งานเสร็จแล้ว";
+    if (clean(data.started_at)) return "กำลังให้บริการ";
+    if (clean(data.checkin_at)) return "ช่างถึงหน้างานแล้ว";
+    if (clean(data.travel_started_at)) return "ช่างกำลังเดินทาง";
+    return "กำลังติดตามสถานะงาน";
+  }
+  function limitedStatusDetail(data) {
+    if (isDone(data)) return "งานบริการเสร็จสิ้นแล้ว";
+    if (clean(data.started_at)) return "ทีมช่างกำลังให้บริการ";
+    if (clean(data.checkin_at)) return "ทีมช่างถึงหน้างานแล้ว";
+    if (clean(data.travel_started_at)) return "ช่างกำลังเดินทางไปยังสถานที่นัดหมาย";
+    return "ข้อมูลทีมช่างและรายละเอียดเต็มจะแสดงเมื่อเปิดจากลิงก์ติดตามงานในข้อความยืนยัน";
+  }
+  function limitedNextAction(data) {
+    if (isDone(data)) return "ดูเอกสารและการรับประกันได้จากลิงก์ติดตามงานในข้อความยืนยัน";
+    return "เปิดจากลิงก์ติดตามงานในข้อความยืนยันเพื่อดูข้อมูลทีมช่างและรายละเอียดเต็ม";
   }
 
   function mapUrl(data) {
@@ -759,6 +811,19 @@
   }
 
   function renderTechnicianCard(data) {
+    // Code-only access redacts technician identity. Never render the "no
+    // technician yet" empty card here — that would misrepresent a possibly
+    // assigned job as unassigned. Show a neutral limited-data note instead.
+    if (isCodeOnly(data)) {
+      return `
+        <div class="tracking-tech-card is-limited" data-tech-limited>
+          <div>
+            <strong>ข้อมูลทีมช่าง</strong>
+            <span class="muted">ข้อมูลทีมช่างจะแสดงเมื่อเปิดจากลิงก์ติดตามงานที่ได้รับในข้อความยืนยัน</span>
+          </div>
+        </div>
+      `;
+    }
     const list = techList(data);
     if (!list.length) {
       return `
@@ -819,15 +884,17 @@
   }
 
   function renderReceipt(data) {
-    const url = receiptUrl(data);
-    if (!url) return "";
+    // Only offer the button when a receipt URL can be built; the URL (which may
+    // carry the booking_token as ?key=) is constructed at click time from state,
+    // NOT embedded in the DOM, so the token never appears in rendered HTML.
+    if (!receiptUrl(data)) return "";
     return `
       <section class="tracking-extra-card receipt-card">
         <div>
           <strong>เอกสารหลังบริการ</strong>
           <p class="muted">เปิดใบรับเงินหรือ E-slip จากข้อมูลเดิมของระบบ</p>
         </div>
-        <a class="secondary-btn" href="${esc(url)}" target="_blank" rel="noopener">เปิด E-slip</a>
+        <button class="secondary-btn" type="button" data-action="open-eslip">เปิด E-slip</button>
       </section>
     `;
   }
@@ -858,8 +925,12 @@
     const reviewToken = data.access_level === "token" ? (data.booking_token || "") : "";
     const legacyEligible = !reviewToken && data.legacy_review_eligible === true;
     if (!reviewToken && !legacyEligible) return "";
+    // For token access the booking_token is NOT written into the form (it would
+    // leak into rendered HTML). The form is marked data-review-token and the
+    // handler injects the token from state at submit time. The legacy path only
+    // ever uses the public booking_code + the customer's phone.
     const credentialFields = reviewToken
-      ? `<input type="hidden" name="booking_token" value="${esc(reviewToken)}">`
+      ? ""
       : `<input type="hidden" name="booking_code" value="${esc(data.booking_code || "")}">
           <label class="field">
             <span>เบอร์โทรที่ใช้จอง (ยืนยันตัวตน)</span>
@@ -876,7 +947,7 @@
           <h2>ให้คะแนนงานนี้</h2>
         </div>
         ${legacyHint}
-        <form data-review-form>
+        <form data-review-form${reviewToken ? " data-review-token" : ""}>
           ${credentialFields}
           <label class="field">
             <span>คะแนน</span>
@@ -933,8 +1004,9 @@
     }
 
     if (!catalogReview.eligible) return "";
-    const key = data.booking_token || data.booking_code || "";
-    if (!key) return "";
+    // The write credential (booking_token / booking_code) is injected from state
+    // at submit — never embedded in the DOM.
+    if (!(data.booking_token || data.booking_code)) return "";
     return `
       <section class="tracking-extra-card catalog-review-form-card">
         <div class="section-head compact">
@@ -942,7 +1014,6 @@
           <h2>รีวิวบริการนี้</h2>
         </div>
         <form data-catalog-review-form>
-          <input type="hidden" name="token" value="${esc(key)}">
           <label class="field">
             <span>คะแนนบริการ</span>
             <select class="input" name="rating">
@@ -1018,19 +1089,44 @@
   }
 
   function renderJobDetails(data, photos, maps, trackingKey) {
-    return `
-      <div class="data-list tracking-summary-list">
-        <div class="data-row"><strong>รหัสติดตาม</strong><span class="muted">${esc(trackingKey || "-")}</span></div>
-        <div class="data-row"><strong>นัดหมาย</strong><span class="muted">${root.utils.formatDateTime(data.appointment_datetime)}</span></div>
-        <div class="data-row"><strong>บริการ</strong><span class="muted">${esc(serviceSummary(data))}</span></div>
-        <div class="data-row"><strong>ราคาโดยประมาณ</strong><span class="muted">${esc(money(data.job_price || data.base_total))}</span></div>
-        <div class="data-row"><strong>ระยะเวลา</strong><span class="muted">${data.duration_min ? `${Number(data.duration_min)} นาที` : "-"}</span></div>
-        <div class="data-row"><strong>ที่อยู่</strong><span class="muted">${esc(data.address_text || "-")}</span></div>
-        ${data.job_zone ? `<div class="data-row"><strong>พื้นที่</strong><span class="muted">${esc(data.job_zone)}</span></div>` : ""}
-        ${maps ? `<div class="data-row"><strong>แผนที่</strong><span><a class="mini-link" href="${esc(maps)}" target="_blank" rel="noopener">นำทางไปหน้างาน</a></span></div>` : ""}
-        <div class="data-row"><strong>หลังจบงาน</strong><span class="muted">รูปงาน ${photos.length} รายการ ${data.receipt_url ? "และมีเอกสารหลังบริการ" : ""}</span></div>
-      </div>
-    `;
+    // Access-level aware. Full (token) access — opened from the secure link in
+    // the confirmation message — shows the customer-information section, address,
+    // and map. A booking_code (limited) lookup must NOT render blank rows that
+    // pretend data is missing: it shows only the fields the privacy response
+    // actually returned, plus a clear notice explaining the secure link is
+    // needed for full details. No hidden field is reconstructed on the client.
+    const isFull = data.access_level === "token";
+    const rows = [];
+    rows.push(`<div class="data-row"><strong>รหัสติดตาม</strong><span class="muted">${esc(trackingKey || data.booking_code || "-")}</span></div>`);
+    if (isFull && data.customer_name) {
+      rows.push(`<div class="data-row"><strong>ชื่อลูกค้า</strong><span class="muted">${esc(data.customer_name)}</span></div>`);
+    }
+    // Masked phone may be present even in limited mode; the full number only in token mode.
+    if (data.customer_phone) {
+      rows.push(`<div class="data-row"><strong>เบอร์โทร</strong><span class="muted">${esc(data.customer_phone)}</span></div>`);
+    }
+    rows.push(`<div class="data-row"><strong>นัดหมาย</strong><span class="muted">${esc(root.utils.formatDateTime(data.appointment_datetime))}</span></div>`);
+    if (isFull || serviceSummary(data)) {
+      rows.push(`<div class="data-row"><strong>บริการ</strong><span class="muted">${esc(serviceSummary(data) || "-")}</span></div>`);
+    }
+    if (isFull && (data.job_price != null || data.base_total != null)) {
+      rows.push(`<div class="data-row"><strong>ราคาโดยประมาณ</strong><span class="muted">${esc(money(data.job_price || data.base_total))}</span></div>`);
+    }
+    if (data.duration_min) {
+      rows.push(`<div class="data-row"><strong>ระยะเวลา</strong><span class="muted">${Number(data.duration_min)} นาที</span></div>`);
+    }
+    if (isFull && data.address_text) {
+      rows.push(`<div class="data-row"><strong>ที่อยู่</strong><span class="muted">${esc(data.address_text)}</span></div>`);
+    }
+    if (isFull && data.job_zone) {
+      rows.push(`<div class="data-row"><strong>พื้นที่</strong><span class="muted">${esc(data.job_zone)}</span></div>`);
+    }
+    if (isFull && maps) {
+      rows.push(`<div class="data-row"><strong>แผนที่</strong><span><a class="mini-link" href="${esc(maps)}" target="_blank" rel="noopener">นำทางไปหน้างาน</a></span></div>`);
+    }
+    rows.push(`<div class="data-row"><strong>หลังจบงาน</strong><span class="muted">รูปงาน ${photos.length} รายการ ${data.receipt_url ? "และมีเอกสารหลังบริการ" : ""}</span></div>`);
+    const limitedNotice = !isFull ? limitedAccessNoticeHtml() : "";
+    return `${limitedNotice}<div class="data-list tracking-summary-list">${rows.join("")}</div>`;
   }
 
   function renderPhotoView(data) {
@@ -1102,15 +1198,27 @@
     const mode = modeFromData(data);
     const photos = photoList(data);
     const maps = mapUrl(data);
-    const trackingKey = data.booking_token || data.booking_code || "";
+    // The VISIBLE tracking number is always the short booking_code — never the
+    // long secret booking_token. The token stays only in state as the request
+    // credential (used for refresh/receipt/review requests), never rendered.
+    const trackingKey = data.booking_code || "";
     const done = isDone(data);
+    const codeOnly = isCodeOnly(data);
     const units = unitList(data);
     const appointmentText = data.appointment_datetime ? root.utils.formatDateTime(data.appointment_datetime) : "-";
+    // In code-only mode the status hero uses only reliable timestamp-derived
+    // copy (never technician presence), and the urgent "convert to scheduled"
+    // action is suppressed — it must not be offered merely because technician
+    // fields were redacted.
+    const heroTitle = codeOnly ? limitedStatusCopy(data) : statusCopy(data, mode);
+    const heroDetail = codeOnly ? limitedStatusDetail(data) : statusDetailCopy(data, mode);
+    const nextAction = codeOnly ? limitedNextAction(data) : nextActionCopy(data, mode);
     const overview = `
       <div class="tracking-premium-overview">
+        ${codeOnly ? limitedAccessNoticeHtml() : ""}
         <div class="status-hero is-${mode}">
-          <strong>${esc(statusCopy(data, mode))}</strong>
-          <span>${esc(statusDetailCopy(data, mode))}</span>
+          <strong>${esc(heroTitle)}</strong>
+          <span>${esc(heroDetail)}</span>
         </div>
         <div class="tracking-quick-grid">
           <div>
@@ -1119,7 +1227,7 @@
           </div>
           <div>
             <span>ขั้นตอนถัดไป</span>
-            <strong>${esc(nextActionCopy(data, mode))}</strong>
+            <strong>${esc(nextAction)}</strong>
           </div>
         </div>
         ${renderTechnicianCard(data)}
@@ -1128,7 +1236,7 @@
           <button class="secondary-btn" type="button" data-action="track-refresh">รีเฟรช</button>
           <a class="secondary-btn" href="tel:${ADMIN_PHONE}">โทรหา CWF</a>
           <a class="secondary-btn" href="${LINE_URL}" target="_blank" rel="noopener">LINE หา CWF</a>
-          ${mode === "urgent" && !hasAssignedTech(data) ? `<button class="secondary-btn" type="button" data-route="scheduled">เปลี่ยนเป็นจองล่วงหน้า</button>` : ""}
+          ${!codeOnly && mode === "urgent" && !hasAssignedTech(data) ? `<button class="secondary-btn" type="button" data-route="scheduled">เปลี่ยนเป็นจองล่วงหน้า</button>` : ""}
         </div>
         <p class="muted support-note">ต้องการแก้ไขเวลา เลื่อนนัด หรือยกเลิกงาน กรุณาติดต่อแอดมิน CWF</p>
       </div>
@@ -1203,6 +1311,7 @@
   function renderTimeline() {
     const data = root.state.tracking.data || {};
     const mode = modeFromData(data);
+    const codeOnly = isCodeOnly(data);
     const assigned = hasAssignedTech(data);
     const travel = !!clean(data.travel_started_at);
     const checkin = !!clean(data.checkin_at);
@@ -1211,19 +1320,29 @@
     const steps = [
       {
         title: mode === "urgent" ? "ส่งคำขอคิวด่วนแล้ว" : "รับคำขอจองแล้ว",
-        copy: mode === "urgent" ? "ระบบรับคำขอแล้ว แต่ยังไม่ถือว่ายืนยันงานจนกว่าจะมีช่างรับหรือแอดมินยืนยัน" : "รอแอดมินตรวจสอบคิวและรายละเอียด",
+        // Code-only mode uses neutral wording: it must not imply the job is
+        // still waiting for a technician just because identity is redacted.
+        copy: codeOnly
+          ? "ระบบได้รับคำขอของคุณแล้ว"
+          : (mode === "urgent" ? "ระบบรับคำขอแล้ว แต่ยังไม่ถือว่ายืนยันงานจนกว่าจะมีช่างรับหรือแอดมินยืนยัน" : "รอแอดมินตรวจสอบคิวและรายละเอียด"),
         ok: true,
       },
-      {
+    ];
+    // The assignment step relies on technician presence, which is redacted in
+    // code-only mode — omit it entirely there rather than claim "no technician".
+    if (!codeOnly) {
+      steps.push({
         title: mode === "urgent" ? "ช่างรับงาน / แอดมินยืนยัน" : "ยืนยันคิวและมอบหมายทีม",
         copy: assigned ? "มีทีมดูแลงานนี้แล้ว" : "แอดมินกำลังช่วยจัดคิวให้",
         ok: assigned,
-      },
+      });
+    }
+    steps.push(
       { title: "ช่างกำลังเดินทาง", copy: data.travel_started_at ? root.utils.formatDateTime(data.travel_started_at) : "จะแสดงเมื่อช่างเริ่มเดินทาง", ok: travel },
       { title: "ถึงหน้างาน", copy: data.checkin_at ? root.utils.formatDateTime(data.checkin_at) : "จะแสดงเมื่อทีมเช็กอิน", ok: checkin },
       { title: "เริ่มให้บริการ", copy: data.started_at ? root.utils.formatDateTime(data.started_at) : "จะแสดงเมื่อทีมเริ่มงาน", ok: started },
       { title: "งานเสร็จแล้ว", copy: data.finished_at ? root.utils.formatDateTime(data.finished_at) : "หลังจบงานจะแสดงรูป เอกสาร รีวิว และเงื่อนไขรับประกัน", ok: done },
-    ];
+    );
     const firstPending = steps.findIndex((step) => !step.ok);
     return root.utils.timeline(steps.map((step, index) => ({
       title: step.title,
@@ -1232,10 +1351,29 @@
     })));
   }
 
-  async function lookup(container) {
+  // lookup(container, opts)
+  //   opts.credential : an explicit PRIVATE credential (deep-link token, or the
+  //                     preserved active credential for refresh / review reload).
+  //                     When provided it is used for the request and is NEVER
+  //                     written to the draft or the visible input.
+  //   (no opts)       : manual "ตรวจสอบสถานะ" — use whatever the customer typed
+  //                     in the visible input and make it the new active credential.
+  async function lookup(container, opts) {
+    opts = opts || {};
     const input = container.querySelector("#tracking-code");
-    const q = String(input.value || "").trim();
-    root.state.updateDraft("tracking", { trackingCode: q });
+    const usingPrivate = opts.credential != null;
+    const q = usingPrivate
+      ? String(opts.credential || "").trim()
+      : String((input && input.value) || "").trim();
+    // The active credential future refreshes/reviews reuse is always the one
+    // actually used for THIS request. A private credential (token) is preserved;
+    // a manual read replaces it with the typed value.
+    setActiveCredential(q);
+    // Only the visible typed value is persisted to the draft — a private
+    // credential must never enter the draft (it would re-render into the input).
+    if (!usingPrivate) {
+      root.state.updateDraft("tracking", { trackingCode: q });
+    }
     if (!q) {
       root.state.setTracking({ status: "error", data: null, error: "กรุณากรอกเลขงานหรือรหัสติดตาม" });
       container.querySelector("[data-tracking-result]").innerHTML = renderTrackingResult();
@@ -1249,13 +1387,30 @@
     try {
       const data = await root.api.trackBooking(q);
       root.state.setTracking({ status: "success", data, error: "" });
+      // Privacy: the request may have used the private booking_token. Only ever
+      // put the human-facing booking_code into the visible input/draft — the
+      // token stays solely in activeCredential + state as the request credential.
+      if (data && data.booking_code) {
+        root.state.updateDraft("tracking", { trackingCode: String(data.booking_code) });
+        if (input) input.value = String(data.booking_code);
+      }
     } catch (error) {
       root.state.setTracking({ status: "error", data: null, error: error.message });
+      // A failed private lookup must not leave the token anywhere visible — it
+      // was never written to the input/draft, so nothing to clear here.
     }
     container.querySelector("[data-tracking-result]").innerHTML = renderTrackingResult();
     const timeline = container.querySelector("[data-tracking-timeline]");
     if (timeline) timeline.innerHTML = renderTimeline();
     bindResultActions(container);
+  }
+
+  // Refresh / post-review reloads reuse the private active credential so a
+  // token session keeps full access instead of silently downgrading to the
+  // visible booking_code.
+  function reloadCurrent(container) {
+    if (activeCredential) return lookup(container, { credential: activeCredential });
+    return lookup(container);
   }
 
   function bindResultActions(container) {
@@ -1298,7 +1453,18 @@
     }
 
     const refresh = container.querySelector("[data-action='track-refresh']");
-    if (refresh) refresh.addEventListener("click", () => lookup(container), { once: true });
+    if (refresh) refresh.addEventListener("click", () => reloadCurrent(container), { once: true });
+
+    // E-slip opens with a URL built from state at click time (the token, if any,
+    // travels only in that request URL — never rendered into the DOM).
+    const eslipBtn = container.querySelector("[data-action='open-eslip']");
+    if (eslipBtn) {
+      eslipBtn.addEventListener("click", () => {
+        const url = receiptUrl(root.state.tracking.data || {});
+        if (url) window.open(url, "_blank", "noopener");
+      });
+    }
+
     const form = container.querySelector("[data-review-form]");
     if (form) {
       form.addEventListener("submit", async (event) => {
@@ -1306,6 +1472,11 @@
         const status = form.querySelector("[data-review-status]");
         const submit = form.querySelector("button[type='submit']");
         const payload = Object.fromEntries(new FormData(form).entries());
+        // Token credential is injected from state, never read from the DOM.
+        if (form.hasAttribute("data-review-token")) {
+          const token = (root.state.tracking.data || {}).booking_token || "";
+          if (token) payload.booking_token = token;
+        }
         payload.rating = Number(payload.rating || 5);
         if (status) status.textContent = "กำลังส่งรีวิว...";
         if (submit) submit.disabled = true;
@@ -1318,7 +1489,7 @@
           const data = await response.json().catch(() => ({}));
           if (!response.ok) throw new Error(data.error || "ส่งรีวิวไม่สำเร็จ");
           if (status) status.textContent = "ส่งรีวิวเรียบร้อย ขอบคุณครับ";
-          setTimeout(() => lookup(container), 500);
+          setTimeout(() => reloadCurrent(container), 500);
         } catch (error) {
           if (status) status.textContent = error.message || "ส่งรีวิวไม่สำเร็จ";
           if (submit) submit.disabled = false;
@@ -1333,7 +1504,9 @@
         const status = catalogForm.querySelector("[data-catalog-review-status]");
         const submit = catalogForm.querySelector("button[type='submit']");
         const formData = Object.fromEntries(new FormData(catalogForm).entries());
-        const token = formData.token || "";
+        // Credential from state, not the DOM.
+        const d = root.state.tracking.data || {};
+        const token = d.booking_token || d.booking_code || "";
         if (status) status.textContent = "กำลังส่งรีวิว...";
         if (submit) submit.disabled = true;
         try {
@@ -1342,7 +1515,7 @@
             comment: formData.comment || "",
           });
           if (status) status.textContent = "ส่งรีวิวแล้ว รอแอดมินตรวจสอบ";
-          setTimeout(() => lookup(container), 500);
+          setTimeout(() => reloadCurrent(container), 500);
         } catch (error) {
           if (status) status.textContent = (error && error.message) || "ส่งรีวิวไม่สำเร็จ";
           if (submit) submit.disabled = false;
@@ -1390,9 +1563,23 @@
         root.state.updateDraft("tracking", { trackingCode: event.target.value });
       });
       bindResultActions(container);
-      if (code && root.state.tracking.status === "idle") {
+      if (pendingAutoLookup && activeCredential && root.state.tracking.status === "idle") {
+        // Deep-link (?q=/?token=): run the first lookup with the PRIVATE
+        // credential — it is never placed in the visible input above.
+        pendingAutoLookup = false;
+        setTimeout(() => lookup(container, { credential: activeCredential }), 0);
+      } else if (code && root.state.tracking.status === "idle") {
         setTimeout(() => lookup(container), 0);
       }
+    },
+    // Called by the app bootstrap with a ?q=/?token= deep-link value. The
+    // credential is held privately and consumed by the first render's
+    // auto-lookup; it is NEVER written to the draft or the visible input.
+    setInitialCredential(value) {
+      const cred = String(value == null ? "" : value).trim();
+      if (!cred) return;
+      setActiveCredential(cred);
+      pendingAutoLookup = true;
     },
   };
 })();

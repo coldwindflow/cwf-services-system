@@ -1,7 +1,7 @@
 
 
 // CWF Technician App: payout no-pay status display fix
-window.__CWF_TECH_APP_VERSION__ = "20260710_payout_no_pay_status_v1";
+window.__CWF_TECH_APP_VERSION__ = "20260711_tracking_gps_recovery_v1";
 try { console.info('[CWF_TECH_APP_VERSION]', window.__CWF_TECH_APP_VERSION__); } catch (_) {}
 
 // ✅ งานปัจจุบัน: งานล่วงหน้า (sub-tab)
@@ -1235,7 +1235,7 @@ function setPushUi(state, text) {
 
 async function ensureServiceWorkerForPush() {
   if (!('serviceWorker' in navigator)) throw new Error('เครื่องนี้ไม่รองรับ Service Worker');
-  const reg = await navigator.serviceWorker.register('/sw.js?v=20260710_payout_no_pay_status_v1', { updateViaCache: 'none' });
+  const reg = await navigator.serviceWorker.register('/sw.js?v=20260711_tracking_gps_recovery_v1', { updateViaCache: 'none' });
   try { await navigator.serviceWorker.ready; } catch (_) {}
   return reg;
 }
@@ -6536,50 +6536,169 @@ async function closeJob(jobId) {
 // =======================================
 // 📍 CHECK-IN
 // =======================================
-function checkin(jobId) {
-  if (!navigator.geolocation) return alert("เครื่องนี้ไม่รองรับ GPS");
+// Robust geolocation for Check-in. Resolves with a Position; rejects with a
+// normalized { code, message } object carrying a clear Thai message. Tries a
+// high-accuracy fix first, then retries ONCE (low-accuracy fallback) only for a
+// timeout or position-unavailable — never loops forever.
+function cwfGetCheckinPosition() {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation || typeof navigator.geolocation.getCurrentPosition !== "function") {
+      reject({ code: "UNSUPPORTED", message: "อุปกรณ์หรือเบราว์เซอร์นี้ไม่รองรับการระบุตำแหน่ง" });
+      return;
+    }
+    // GPS normally requires a secure (HTTPS/localhost) context.
+    if (typeof window !== "undefined" && window.isSecureContext === false) {
+      reject({ code: "INSECURE_CONTEXT", message: "ต้องเปิดแอปผ่านการเชื่อมต่อ HTTPS จึงจะใช้ GPS ได้" });
+      return;
+    }
+    const HIGH = { enableHighAccuracy: true, maximumAge: 15000, timeout: 20000 };
+    const LOW = { enableHighAccuracy: false, maximumAge: 60000, timeout: 15000 };
+    const mapErr = (err) => {
+      const c = err && err.code;
+      if (c === 1) return { code: "PERMISSION_DENIED", message: "ยังไม่ได้อนุญาตให้แอปใช้ตำแหน่ง กรุณาเปิดสิทธิ์ตำแหน่งของ Chrome/PWA แล้วกดลองใหม่" };
+      if (c === 2) return { code: "POSITION_UNAVAILABLE", message: "เครื่องยังหาตำแหน่งไม่ได้ กรุณาเปิดตำแหน่งและออกไปในจุดที่รับสัญญาณได้ดีขึ้น" };
+      if (c === 3) return { code: "TIMEOUT", message: "ใช้เวลาหาตำแหน่งนานเกินไป กรุณากดลองใหม่" };
+      return { code: "LOCATION_ERROR", message: (err && err.message) ? `ขอตำแหน่งไม่สำเร็จ: ${err.message}` : "ขอตำแหน่งไม่สำเร็จ กรุณากดลองใหม่" };
+    };
+    let attempt = 0;
+    const tryGet = (opts) => {
+      attempt += 1;
+      let settled = false;
+      try {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => { if (!settled) { settled = true; resolve(pos); } },
+          (err) => {
+            if (settled) return;
+            settled = true;
+            const e = mapErr(err);
+            if (attempt === 1 && (e.code === "TIMEOUT" || e.code === "POSITION_UNAVAILABLE")) {
+              tryGet(LOW); // one retry only
+              return;
+            }
+            reject(e);
+          },
+          opts
+        );
+      } catch (thrown) {
+        if (!settled) { settled = true; reject({ code: "LOCATION_ERROR", message: "ขอตำแหน่งไม่สำเร็จ กรุณากดลองใหม่" }); }
+      }
+    };
+    // Best-effort permission inspection (never mandatory).
+    if (navigator.permissions && typeof navigator.permissions.query === "function") {
+      navigator.permissions.query({ name: "geolocation" })
+        .then((st) => {
+          if (st && st.state === "denied") {
+            reject({ code: "PERMISSION_DENIED", message: "ยังไม่ได้อนุญาตให้แอปใช้ตำแหน่ง กรุณาเปิดสิทธิ์ตำแหน่งของ Chrome/PWA แล้วกดลองใหม่" });
+            return;
+          }
+          tryGet(HIGH);
+        })
+        .catch(() => tryGet(HIGH));
+    } else {
+      tryGet(HIGH);
+    }
+  });
+}
+
+// Map a server Check-in error (structured code first, HTTP status fallback) to a
+// clear actionable Thai message.
+function mapCheckinServerError(data, status) {
+  const code = data && data.code;
+  const CODE_MSG = {
+    INVALID_COORDINATES: "พิกัด GPS ไม่ถูกต้อง กรุณากดลองใหม่",
+    INVALID_JOB_REFERENCE: "ไม่พบงานนี้ กรุณารีเฟรชแล้วลองใหม่",
+    AUTH_REQUIRED: "เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่แล้วลองอีกครั้ง",
+    TECH_NOT_ASSIGNED: "คุณยังไม่ได้ถูกมอบหมายให้ทำงานนี้",
+    LOCATION_ACCURACY_TOO_LOW: "สัญญาณ GPS ยังไม่แม่นพอ กรุณาออกไปที่โล่งแล้วกดลองใหม่",
+    JOB_SITE_LOCATION_MISSING: "งานนี้ยังไม่มีพิกัดหน้างาน กรุณาติดต่อแอดมิน",
+    ALREADY_CHECKED_IN: "เช็คอินงานนี้ไปแล้ว",
+    CHECKIN_FAILED: "บันทึกเช็คอินไม่สำเร็จ กรุณากดลองใหม่",
+  };
+  if (code === "OUTSIDE_CHECKIN_RADIUS") {
+    return (data && data.distance != null)
+      ? `อยู่นอกพื้นที่หน้างาน (ห่างประมาณ ${data.distance} เมตร) กรุณาเข้าใกล้จุดนัดหมายแล้วลองใหม่`
+      : "อยู่นอกพื้นที่หน้างาน กรุณาเข้าใกล้จุดนัดหมายแล้วลองใหม่";
+  }
+  if (code && CODE_MSG[code]) return CODE_MSG[code];
+  if (Number(status) === 401) return "เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่แล้วลองอีกครั้ง";
+  if (Number(status) === 403) return "คุณยังไม่ได้ถูกมอบหมายให้ทำงานนี้";
+  return (data && data.error) ? String(data.error) : "บันทึกเช็คอินไม่สำเร็จ กรุณากดลองใหม่";
+}
+
+async function checkin(jobId) {
   const key = String(jobId || '').trim();
-  if (!key) return alert("ไม่พบรหัสงาน");
-  if (window.__CWF_CHECKIN_BUSY && window.__CWF_CHECKIN_BUSY[key]) return;
+  if (!key) { alert("ไม่พบรหัสงาน"); return; }
   window.__CWF_CHECKIN_BUSY = window.__CWF_CHECKIN_BUSY || {};
+  // A genuinely in-flight request for THIS job blocks duplicate taps; every exit
+  // path below clears the flag in `finally`, so a retry always works immediately.
+  if (window.__CWF_CHECKIN_BUSY[key]) return;
   window.__CWF_CHECKIN_BUSY[key] = true;
 
-  const btn = document.querySelector(`[data-role="workflow"][data-jobkey="${CSS.escape(key)}"]`);
-  const oldText = btn ? btn.innerHTML : '';
-  if (btn) { btn.disabled = true; btn.innerHTML = '📍 กำลังเช็คอิน...'; }
-  const hint = document.getElementById(`travel-hint-${key}`) || document.getElementById(`checkin-status-${key}`);
-  if (hint) hint.innerHTML = '📍 กำลังขอพิกัด GPS...';
+  let btn = null;
+  let oldText = '';
+  let hint = null;
+  try {
+    // cssEscapeCompat() never throws even on old Android WebViews without
+    // native CSS.escape — the previous direct CSS.escape() call could throw
+    // here and strand the busy lock forever.
+    try {
+      btn = document.querySelector(`[data-role="workflow"][data-jobkey="${cssEscapeCompat(key)}"]`);
+    } catch (_) { btn = null; }
+    oldText = btn ? btn.innerHTML : '';
+    if (btn) { btn.disabled = true; btn.innerHTML = '📍 กำลังเช็คอิน...'; }
+    hint = document.getElementById(`travel-hint-${key}`) || document.getElementById(`checkin-status-${key}`);
+    if (hint) hint.innerHTML = '📍 กำลังขอพิกัด GPS...';
 
-  const finish = () => {
-    window.__CWF_CHECKIN_BUSY[key] = false;
-    if (btn) { btn.disabled = false; btn.innerHTML = oldText || '📍 เช็คอิน'; }
-  };
+    let pos;
+    try {
+      pos = await cwfGetCheckinPosition();
+    } catch (geoErr) {
+      const msg = (geoErr && geoErr.message) || "ขอตำแหน่งไม่สำเร็จ กรุณากดลองใหม่";
+      if (hint) hint.innerHTML = `❌ ${msg}`;
+      alert(`❌ ${msg}`);
+      return;
+    }
 
-  navigator.geolocation.getCurrentPosition(
-    (pos) => {
-      const lat = pos.coords.latitude;
-      const lng = pos.coords.longitude;
-      if (hint) hint.innerHTML = '📍 ได้พิกัดแล้ว กำลังบันทึกเช็คอิน...';
-      fetch(`${API_BASE}/jobs/${encodeURIComponent(String(key))}/checkin`, {
+    const lat = pos && pos.coords ? pos.coords.latitude : NaN;
+    const lng = pos && pos.coords ? pos.coords.longitude : NaN;
+    const accuracy = pos && pos.coords && Number.isFinite(pos.coords.accuracy) ? pos.coords.accuracy : null;
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+      const m = "พิกัด GPS ไม่ถูกต้อง กรุณากดลองใหม่";
+      if (hint) hint.innerHTML = `❌ ${m}`;
+      alert(`❌ ${m}`);
+      return;
+    }
+    const captured_at = new Date(pos && pos.timestamp ? pos.timestamp : Date.now()).toISOString();
+    if (hint) hint.innerHTML = '📍 ได้พิกัดแล้ว กำลังบันทึกเช็คอิน...';
+
+    let res, data;
+    try {
+      res = await fetch(`${API_BASE}/jobs/${encodeURIComponent(String(key))}/checkin`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lat, lng }),
-      })
-        .then(async (res) => {
-          const data = await res.json().catch(() => ({}));
-          if (!res.ok) throw new Error(data.error || "เช็คอินไม่สำเร็จ");
-          return data;
-        })
-        .then(() => {
-          if (hint) hint.innerHTML = "✅ เช็คอินสำเร็จ";
-          setTimeout(()=>loadJobs(), 150);
-        })
-        .catch((e) => alert(`❌ ${e.message}`))
-        .finally(finish);
-    },
-    (err) => { finish(); alert(err?.message ? `ขอสิทธิ์ GPS ไม่สำเร็จ: ${err.message}` : "ขอสิทธิ์ GPS ไม่สำเร็จ/ถูกปฏิเสธ"); },
-    { enableHighAccuracy: false, maximumAge: 60000, timeout: 8000 }
-  );
+        body: JSON.stringify({ lat, lng, accuracy, captured_at }),
+      });
+      data = await res.json().catch(() => ({}));
+    } catch (netErr) {
+      const m = "บันทึกเช็คอินไม่สำเร็จ (เครือข่ายมีปัญหา) กรุณากดลองใหม่";
+      if (hint) hint.innerHTML = `❌ ${m}`;
+      alert(`❌ ${m}`);
+      return;
+    }
+    if (!res.ok) {
+      const m = mapCheckinServerError(data, res.status);
+      if (hint) hint.innerHTML = `❌ ${m}`;
+      alert(`❌ ${m}`);
+      return;
+    }
+    if (hint) hint.innerHTML = "✅ เช็คอินสำเร็จ";
+    setTimeout(() => loadJobs(), 150);
+  } finally {
+    // Guaranteed cleanup — no selector failure, GPS error, network error, or
+    // server rejection can leave the job permanently locked.
+    window.__CWF_CHECKIN_BUSY[key] = false;
+    if (btn) { btn.disabled = false; btn.innerHTML = oldText || '📍 เช็คอิน'; }
+  }
 }
 
 // =======================================
