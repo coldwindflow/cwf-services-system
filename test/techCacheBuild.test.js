@@ -4,7 +4,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const root = path.join(__dirname, "..");
-const BUILD = "20260711_tracking_gps_recovery_v1";
+const BUILD = "20260712_job_location_roundtrip_v1";
 
 function read(file) {
   return fs.readFileSync(path.join(root, file), "utf8");

@@ -306,7 +306,7 @@ test("post-save verification detects unit_price, qty, line_total, and assignee m
 
 test("HTML loads the shared helper and references the new JS cache version", () => {
   assert.match(html, /admin-job-edit-price-state\.js\?v=20260707_price_state_v2/);
-  assert.match(html, /admin-job-view-v2\.js\?v=20260707_saved_price_stability_review_fix2/);
+  assert.match(html, /admin-job-view-v2\.js\?v=20260712_job_location_roundtrip_v1/);
 });
 
 test("backend helper preserves submitted saved prices when frontend marks the row overridden", () => {
