@@ -369,3 +369,80 @@ test("Proofs 1+2: /admin/book_v2 persists explicit GPS and never stores 0,0 for 
   // No coordinates supplied and no parseable maps/address → NULL, never 0,0.
   assert.ok(!(Number(rowB.gps_latitude) === 0 && Number(rowB.gps_longitude) === 0), "missing GPS must not persist as 0,0");
 });
+
+// ---- Round-3 location-consistency proofs (real routes) --------------------
+
+test("R3-B1: explicitly clearing maps_url writes NULL and keeps the valid GPS", async (t) => {
+  if (dbUnavailable) { t.skip(dbUnavailable); return; }
+  const jobId = await seedJob({ address_text: "A", maps_url: "https://maps.app.goo.gl/keepGps", gps_latitude: 13.4, gps_longitude: 100.4 });
+  const { status, json } = await putEdit(jobId, { maps_url: "" });
+  assert.equal(status, 200);
+  assert.equal(json.maps_action, "cleared");
+  const row = await withDb((db) => db.query("SELECT * FROM public.jobs WHERE job_id=$1", [jobId]).then((r) => r.rows[0]));
+  assert.equal(row.maps_url, null, "maps_url cleared to NULL");
+  // Clearing the URL alone must NOT wipe the pin — nav falls back to it.
+  assert.equal(Number(row.gps_latitude), 13.4, "valid GPS retained for navigation fallback");
+  assert.equal(Number(row.gps_longitude), 100.4);
+});
+
+test("R3-B2: changing only the address clears the stale Maps URL (never keeps location A's URL)", async (t) => {
+  if (dbUnavailable) { t.skip(dbUnavailable); return; }
+  const jobId = await seedJob({ address_text: "loc A", maps_url: "https://maps.google.com/?q=13.1,100.1", gps_latitude: 13.1, gps_longitude: 100.1 });
+  // Admin changes the address only (Maps URL omitted / left as the old value).
+  const { status, json } = await putEdit(jobId, { address_text: "loc B ที่อยู่ใหม่" });
+  assert.equal(status, 200);
+  assert.equal(json.maps_action, "cleared");
+  const row = await withDb((db) => db.query("SELECT * FROM public.jobs WHERE job_id=$1", [jobId]).then((r) => r.rows[0]));
+  assert.equal(row.maps_url, null, "old Maps URL A cleared");
+  // Address B has no parseable coordinates → GPS cleared (never keeps A).
+  assert.ok(row.gps_latitude === null || Math.abs(Number(row.gps_latitude) - 13.1) > 1e-6, "GPS is not location A");
+});
+
+test("R3-B2b: address change while re-sending the OLD Maps URL still clears it", async (t) => {
+  if (dbUnavailable) { t.skip(dbUnavailable); return; }
+  const oldUrl = "https://maps.google.com/?q=13.1,100.1";
+  const jobId = await seedJob({ address_text: "loc A", maps_url: oldUrl, gps_latitude: 13.1, gps_longitude: 100.1 });
+  const { status } = await putEdit(jobId, { address_text: "loc B", maps_url: oldUrl });
+  assert.equal(status, 200);
+  const row = await withDb((db) => db.query("SELECT * FROM public.jobs WHERE job_id=$1", [jobId]).then((r) => r.rows[0]));
+  assert.equal(row.maps_url, null, "old URL not retained when address changed without a real replacement");
+});
+
+test("R3-B3: a location change recomputes the system service zone (old zone A not retained)", async (t) => {
+  if (dbUnavailable) { t.skip(dbUnavailable); return; }
+  const jobId = await seedJob({
+    address_text: "loc A", maps_url: "https://maps.google.com/?q=13.1,100.1",
+    gps_latitude: 13.1, gps_longitude: 100.1, service_zone_code: "ZONE_A", service_zone_source: "admin_override",
+  });
+  const { status } = await putEdit(jobId, { maps_url: "https://maps.google.com/?q=15.5,101.5" });
+  assert.equal(status, 200);
+  const row = await withDb((db) => db.query("SELECT * FROM public.jobs WHERE job_id=$1", [jobId]).then((r) => r.rows[0]));
+  assert.notEqual(row.service_zone_code, "ZONE_A", "old system zone must not be retained after a location change");
+});
+
+test("R3-B4: derived coordinates that resolve to 0,0 or out-of-range are rejected (not persisted)", async (t) => {
+  if (dbUnavailable) { t.skip(dbUnavailable); return; }
+  // maps_url parses to 0,0 → strict validator rejects → GPS cleared, never 0,0.
+  const jobZero = await seedJob({ address_text: "x", maps_url: "https://maps.google.com/?q=13.2,100.2", gps_latitude: 13.2, gps_longitude: 100.2 });
+  await putEdit(jobZero, { maps_url: "https://maps.google.com/?q=0.000000,0.000000" });
+  const rZero = await withDb((db) => db.query("SELECT * FROM public.jobs WHERE job_id=$1", [jobZero]).then((r) => r.rows[0]));
+  // NULL (not the number 0) — a 0,0 derived pair must be rejected, never stored.
+  assert.equal(rZero.gps_latitude, null, "0,0 derived pair not persisted");
+  assert.equal(rZero.gps_longitude, null);
+
+  // maps_url parses to an out-of-range latitude → rejected → cleared.
+  const jobOor = await seedJob({ address_text: "x", maps_url: "https://maps.google.com/?q=13.2,100.2", gps_latitude: 13.2, gps_longitude: 100.2 });
+  await putEdit(jobOor, { maps_url: "https://maps.google.com/?q=200.000000,100.500000" });
+  const rOor = await withDb((db) => db.query("SELECT * FROM public.jobs WHERE job_id=$1", [jobOor]).then((r) => r.rows[0]));
+  assert.equal(rOor.gps_latitude, null, "out-of-range derived pair not persisted");
+});
+
+test("R3-B4b: a valid derived pair from the new Maps URL is persisted", async (t) => {
+  if (dbUnavailable) { t.skip(dbUnavailable); return; }
+  const jobId = await seedJob({ address_text: "x", maps_url: "https://maps.google.com/?q=13.2,100.2", gps_latitude: 13.2, gps_longitude: 100.2 });
+  const { json } = await putEdit(jobId, { maps_url: "https://maps.google.com/?q=15.500000,101.500000" });
+  assert.equal(json.gps_action, "recalculated");
+  const row = await withDb((db) => db.query("SELECT * FROM public.jobs WHERE job_id=$1", [jobId]).then((r) => r.rows[0]));
+  assert.ok(Math.abs(Number(row.gps_latitude) - 15.5) < 1e-6);
+  assert.ok(Math.abs(Number(row.gps_longitude) - 101.5) < 1e-6);
+});

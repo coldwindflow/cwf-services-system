@@ -182,21 +182,28 @@ test("Test 7: technician job API returns maps_url/gps/address", () => {
   assert.match(src, /j\.address_text/);
 });
 
-test("Test 5/E: book_v2 accepts explicit gps first; admin-edit preserves via COALESCE", () => {
+test("Test 5/E: book_v2 + admin-edit strictly validate/resolve every coordinate source", () => {
   const src = read("index.js");
   // strict helpers
   assert.match(src, /function strictLatLngPairOrNull\(latRaw, lngRaw\)/);
   assert.match(src, /if \(lat === 0 && lng === 0\) return null;/);
-  // resolution order: explicit gps first
+  // book_v2: explicit gps first, and EVERY derived pair (parsed + resolved) is
+  // passed through the strict validator (Blocker 4).
   assert.match(src, /const explicitAdminLL = strictLatLngPairOrNull\(body\.gps_latitude, body\.gps_longitude\)/);
-  assert.match(src, /let final_lat = explicitAdminLL \? explicitAdminLL\.lat/);
-  // admin-edit validates a strict pair, rejects partial/invalid, and forces a
-  // deliberate write (CASE) so it can clear to NULL rather than COALESCE-preserve.
+  assert.match(src, /derivedAdminLL = p \? strictLatLngPairOrNull\(p\.lat, p\.lng\) : null/);
+  assert.match(src, /derivedAdminLL = strictLatLngPairOrNull\(rr\.lat, rr\.lng\)/);
+  // admin-edit: strict pair, 400 on partial/invalid, and force-CASE writes so it
+  // can deliberately clear maps_url / gps / service_zone to NULL.
   assert.match(src, /editGpsPair = strictLatLngPairOrNull\(latRaw, lngRaw\)/);
   assert.match(src, /code: 'INVALID_JOB_SITE_COORDINATES'/);
-  assert.match(src, /gps_latitude = CASE WHEN \$9 THEN \$10 ELSE gps_latitude END/);
-  assert.match(src, /maps_url = COALESCE\(NULLIF\(\$7, ''\), maps_url\)/);
-  assert.match(src, /job_zone = COALESCE\(NULLIF\(\$8, ''\), job_zone\)/);
+  assert.match(src, /maps_url = CASE WHEN \$7 THEN \$8 ELSE maps_url END/);
+  assert.match(src, /gps_latitude = CASE WHEN \$10 THEN \$11 ELSE gps_latitude END/);
+  assert.match(src, /service_zone_code = CASE WHEN \$13 THEN \$14 ELSE service_zone_code END/);
+  // derived coords in admin-edit also go through the strict validator.
+  assert.match(src, /pair = p \? strictLatLngPairOrNull\(p\.lat, p\.lng\) : null/);
+  assert.match(src, /pair = strictLatLngPairOrNull\(rr\.lat, rr\.lng\)/);
+  // zone recompute on location change.
+  assert.match(src, /zoneDetected = await detectServiceZoneFromText\(/);
 });
 
 test("Test 14: check-in 500 m + accuracy policy is unchanged", () => {
