@@ -337,6 +337,39 @@ function timelineHTML(d){
   `;
 }
 
+// Code-only status: derived ONLY from reliable timestamps/status, never from
+// d.technician (which is redacted for booking_code lookups). Redacted identity
+// must not be reported as "รอช่างรับงาน".
+function derivedStatusLimited(d){
+  const s = String(d.job_status || '').trim();
+  if (s === 'ยกเลิก') return 'ยกเลิก';
+  if (s === 'เสร็จแล้ว') return 'เสร็จสิ้น';
+  if (d.started_at) return 'กำลังทำงาน';
+  if (d.checkin_at) return 'ถึงหน้างานแล้ว';
+  if (d.travel_started_at) return 'กำลังเดินทาง';
+  return 'กำลังติดตามสถานะงาน';
+}
+
+// Limited timeline for code-only access: omit the "รับงาน" step (it depends on
+// the redacted d.technician) and use only travel/checkin/start/done timestamps.
+function timelineLimitedHTML(d){
+  const steps = [
+    { k: 'travel', label: 'กำลังเดินทาง', ok: !!d.travel_started_at },
+    { k: 'checkin', label: 'ถึงหน้างาน (เช็คอิน)', ok: !!d.checkin_at },
+    { k: 'start', label: 'เริ่มทำงาน', ok: !!d.started_at },
+    { k: 'done', label: 'เสร็จสิ้น', ok: String(d.job_status||'').trim()==='เสร็จแล้ว' },
+  ];
+  return `
+    <div class="card tight" style="margin-top:10px;">
+      <b>📍 ไทม์ไลน์สถานะ</b>
+      <div class="muted" style="margin-top:6px;">สถานะปัจจุบัน: <b>${derivedStatusLimited(d)}</b></div>
+      <ul style="margin:10px 0 0 18px;">
+        ${steps.map(s => `<li style="margin:6px 0;">${s.ok ? '✅' : '⏳'} ${s.label}</li>`).join('')}
+      </ul>
+    </div>
+  `;
+}
+
 function photosHTML(d){
   if (!Array.isArray(d.photos) || !d.photos.length) return '';
   return `
@@ -426,8 +459,9 @@ async function submitReview(key){
     const data = await res.json().catch(()=>({}));
     if (!res.ok) throw new Error(data.error || 'ส่งรีวิวไม่สำเร็จ');
     if (status) status.textContent = '✅ ส่งรีวิวเรียบร้อย ขอบคุณครับ';
-    // refresh
-    setTimeout(()=>track(), 600);
+    // Reload using the PRIVATE active credential (the token, if this was a token
+    // session) so review success does not downgrade to code-only access.
+    setTimeout(()=>track(ACTIVE_CREDENTIAL || undefined), 600);
   }catch(e){
     if (status) status.textContent = `❌ ${e.message}`;
   }
@@ -451,11 +485,17 @@ function openNav(lat,lng,addr){
 // memory — never written into the visible #q input. Click handlers read the
 // loaded response from here instead of interpolating values into inline HTML.
 let CURRENT_TRACK_DATA = null;
+// The active lookup credential (token or code) is preserved here so a Refresh
+// or post-review reload reuses it and does NOT downgrade a token session to the
+// visible booking_code. A manual "ค้นหา" (track() with no override) replaces it
+// with whatever the customer typed.
+let ACTIVE_CREDENTIAL = "";
 
 async function track(credOverride){
   const qEl = document.getElementById("q");
   const q = (credOverride != null ? String(credOverride) : (qEl.value || "")).trim();
   if(!q) return alert("ใส่เลข Booking หรือ token");
+  ACTIVE_CREDENTIAL = q;
 
   const box = document.getElementById("result");
   box.textContent = "กำลังค้นหา...";
@@ -481,10 +521,10 @@ async function track(credOverride){
             ${statusBadge(data.job_status)}
           </div>
           ${data.customer_phone ? `<p style="margin-top:10px;"><b>เบอร์โทร:</b> ${esc(data.customer_phone)}</p>` : ``}
-          ${timelineHTML(data)}
+          ${timelineLimitedHTML(data)}
           <div class="alert" style="margin-top:12px;background:#eff6ff;border:1px solid rgba(37,99,235,0.25);color:#1e3a8a;">
             <b>โหมดจำกัดข้อมูล (ค้นด้วยเลขงาน)</b>
-            <div class="muted" style="margin-top:4px;">เพื่อความปลอดภัย การค้นด้วยเลขงานจะแสดงเฉพาะสถานะและข้อมูลเบื้องต้น หากต้องการดูข้อมูลลูกค้า ที่อยู่ ช่าง และรายละเอียดเต็ม กรุณาเปิดจาก “ลิงก์ติดตามงาน” ในข้อความยืนยันที่ได้รับ</div>
+            <div class="muted" style="margin-top:4px;">เพื่อความปลอดภัย การค้นด้วยเลขงานจะแสดงเฉพาะสถานะและข้อมูลเบื้องต้น ข้อมูลทีมช่างจะแสดงเมื่อเปิดจาก “ลิงก์ติดตามงาน” ในข้อความยืนยันที่ได้รับ</div>
           </div>
           <div class="muted" style="margin-top:10px;">* ถ้าต้องการช่วยเหลือ โทร 098-877-7321 หรือ LINE OA: @cwfair</div>
         </div>
