@@ -14343,17 +14343,23 @@ async function handleAdminBookV2(req, res) {
   const standard_price = Number(customerPrice.active_price ?? customerPrice.standard_price ?? 0);
 
 
-// ✅ Parse lat/lng from maps_url or address_text (fail-open)
-const parsedAdminLL = parseLatLngFromText(maps_url) || parseLatLngFromText(address_text);
-const parsed_lat = parsedAdminLL ? parsedAdminLL.lat : null;
-const parsed_lng = parsedAdminLL ? parsedAdminLL.lng : null;
-console.log("[latlng_parse]", { ok: !!parsedAdminLL });
+// ✅ Coordinate resolution order (never convert missing values to zero):
+//   1) explicit admin-supplied gps_latitude/gps_longitude (STRICT: null/""/
+//      boolean/object are rejected, (0,0) is rejected)
+//   2) coordinates parsed from maps_url / address_text
+//   3) best-effort resolution of a short Google Maps link
+//   4) null
+const explicitAdminLL = strictLatLngPairOrNull(body.gps_latitude, body.gps_longitude);
+const parsedAdminLL = explicitAdminLL ? null : (parseLatLngFromText(maps_url) || parseLatLngFromText(address_text));
+console.log("[latlng_parse]", { explicit: !!explicitAdminLL, parsed: !!parsedAdminLL });
 
-  // ✅ Best-effort resolve short Google Maps links to precise lat/lng (fail-open)
-  // - ensures check-in / navigation uses correct pin coordinates
-  let final_lat = Number.isFinite(Number(parsed_lat)) ? Number(parsed_lat) : null;
-  let final_lng = Number.isFinite(Number(parsed_lng)) ? Number(parsed_lng) : null;
-  if ((final_lat == null || final_lng == null) && maps_url) {
+  let final_lat = explicitAdminLL ? explicitAdminLL.lat
+    : (parsedAdminLL && Number.isFinite(Number(parsedAdminLL.lat)) ? Number(parsedAdminLL.lat) : null);
+  let final_lng = explicitAdminLL ? explicitAdminLL.lng
+    : (parsedAdminLL && Number.isFinite(Number(parsedAdminLL.lng)) ? Number(parsedAdminLL.lng) : null);
+  // The maps_url itself is always persisted below regardless of resolution, so a
+  // short Google Maps link stays saved even when coordinate resolution fails.
+  if (!explicitAdminLL && (final_lat == null || final_lng == null) && maps_url) {
     const m = String(maps_url || '').trim();
     if (m && /maps\.app\.goo\.gl|goo\.gl/i.test(m)) {
       try {
@@ -17234,17 +17240,17 @@ app.put("/jobs/:job_id/admin-edit", async (req, res) => {
   const wantsTeamSave = Array.isArray(nextTeamRaw) || primary_username !== undefined || technician_username !== undefined;
   const desiredPrimaryFromBody = String(primary_username || technician_username || '').trim() || null;
 
-  // Backward-compatible mapping (do not break existing callers)
-  const toFiniteOrNull = (v) => {
-    if (v === null || v === undefined) return null;
-    const s = typeof v === 'string' ? v.trim() : v;
-    if (s === '') return null;
-    const n = Number(s);
-    return Number.isFinite(n) ? n : null;
-  };
-
-  const gpsLat = gps_latitude !== undefined ? toFiniteOrNull(gps_latitude) : toFiniteOrNull(latitude);
-  const gpsLng = gps_longitude !== undefined ? toFiniteOrNull(gps_longitude) : toFiniteOrNull(longitude);
+  // STRICT pair validation (canonical gps_* first, legacy latitude/longitude as
+  // fallback). null/""/whitespace/boolean/object and the (0,0) pair all resolve
+  // to null so the UPDATE's COALESCE preserves the existing stored coordinates
+  // instead of erasing them or writing 0,0. Only a valid non-(0,0) in-range pair
+  // updates the columns.
+  const editGpsPair = strictLatLngPairOrNull(
+    gps_latitude !== undefined ? gps_latitude : latitude,
+    gps_longitude !== undefined ? gps_longitude : longitude
+  );
+  const gpsLat = editGpsPair ? editGpsPair.lat : null;
+  const gpsLng = editGpsPair ? editGpsPair.lng : null;
 
   // ✅ FIX TIMEZONE: ถ้ามีการแก้วันนัด ให้ normalize เป็นเวลาไทยก่อนบันทึก
   const appointment_dt =
@@ -19202,6 +19208,19 @@ function strictNumericOrNaN(v) {
     return Number.isFinite(n) ? n : NaN;
   }
   return NaN;
+}
+
+// STRICT coordinate-PAIR validation for admin-supplied gps fields. Returns
+// {lat,lng} only when BOTH are real finite numbers in valid range and not the
+// (0,0) null-island pair; otherwise null. null / "" / whitespace / boolean /
+// array / object never become 0 — Number(null)===0 must never persist as (0,0).
+function strictLatLngPairOrNull(latRaw, lngRaw) {
+  const lat = strictNumericOrNaN(latRaw);
+  const lng = strictNumericOrNaN(lngRaw);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+  if (lat === 0 && lng === 0) return null;
+  return { lat, lng };
 }
 
 app.post("/jobs/:job_id/checkin", requireTechnicianSession, async (req, res) => {

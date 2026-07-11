@@ -1,7 +1,7 @@
 
 
 // CWF Technician App: payout no-pay status display fix
-window.__CWF_TECH_APP_VERSION__ = "20260711_tracking_gps_recovery_v1";
+window.__CWF_TECH_APP_VERSION__ = "20260712_job_location_roundtrip_v1";
 try { console.info('[CWF_TECH_APP_VERSION]', window.__CWF_TECH_APP_VERSION__); } catch (_) {}
 
 // ✅ งานปัจจุบัน: งานล่วงหน้า (sub-tab)
@@ -1235,7 +1235,7 @@ function setPushUi(state, text) {
 
 async function ensureServiceWorkerForPush() {
   if (!('serviceWorker' in navigator)) throw new Error('เครื่องนี้ไม่รองรับ Service Worker');
-  const reg = await navigator.serviceWorker.register('/sw.js?v=20260711_tracking_gps_recovery_v1', { updateViaCache: 'none' });
+  const reg = await navigator.serviceWorker.register('/sw.js?v=20260712_job_location_roundtrip_v1', { updateViaCache: 'none' });
   try { await navigator.serviceWorker.ready; } catch (_) {}
   return reg;
 }
@@ -3063,9 +3063,11 @@ function offerAreaText(o) {
 function offerMapUrl(o) {
   const maps = String(o?.maps_url || "").trim();
   if (maps) return maps;
-  const lat = Number(o?.gps_latitude);
-  const lng = Number(o?.gps_longitude);
-  if (Number.isFinite(lat) && Number.isFinite(lng)) return `https://www.google.com/maps?q=${lat},${lng}`;
+  // Use the same strict validation as navigation so missing/null coordinates
+  // never resolve to a q=0,0 pin (Number(null)===0).
+  if (_hasUsableLatLng(o?.gps_latitude, o?.gps_longitude)) {
+    return `https://www.google.com/maps?q=${_strictCoordNum(o.gps_latitude)},${_strictCoordNum(o.gps_longitude)}`;
+  }
   const address = String(o?.address_text || "").trim();
   if (address) return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
   return "";
@@ -3950,10 +3952,29 @@ function _normalizeMapsUrl(input){
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(s)}`;
 }
 
+// STRICT single-value coordinate parse. Accepts only a real finite JS number or
+// a numeric string. null / undefined / "" / whitespace / booleans / arrays /
+// objects all become NaN — Number(null)===0 and Number("")===0 must NEVER slip
+// through and make the app navigate to destination=0,0.
+function _strictCoordNum(v) {
+  if (typeof v === "number") return Number.isFinite(v) ? v : NaN;
+  if (typeof v === "string") {
+    const s = v.trim();
+    if (!s) return NaN;
+    if (!/^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/.test(s)) return NaN;
+    const n = Number(s);
+    return Number.isFinite(n) ? n : NaN;
+  }
+  return NaN;
+}
+
 function _hasUsableLatLng(lat, lng) {
-  const a = Number(lat);
-  const b = Number(lng);
-  return Number.isFinite(a) && Number.isFinite(b) && Math.abs(a) <= 90 && Math.abs(b) <= 180;
+  const a = _strictCoordNum(lat);
+  const b = _strictCoordNum(lng);
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return false; // null/empty/NaN/infinity/bool/array/object
+  if (Math.abs(a) > 90 || Math.abs(b) > 180) return false;      // out of valid coordinate range
+  if (a === 0 && b === 0) return false;                          // the (0,0) null-island pair = missing data
+  return true;
 }
 
 function _findJobForMap(jobKey) {
