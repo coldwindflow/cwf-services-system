@@ -1595,10 +1595,26 @@ async function loadJob(){
             job_zone: String(el('edit_zone')?.value||'').trim(),
             maps_url: String(el('edit_maps_url')?.value||'').trim(),
             // Send canonical gps_* keys (backend also accepts legacy latitude/longitude).
-            // Empty strings are preserved server-side (COALESCE) so an untouched
-            // location is never erased or turned into 0,0.
-            gps_latitude: String(el('edit_lat')?.value||'').trim(),
-            gps_longitude: String(el('edit_lng')?.value||'').trim(),
+            // If the admin changed the map/address but did NOT manually edit the
+            // pin, send blank coordinates so the backend recalculates (or clears)
+            // from the new location — never resubmit the old GPS with a new place.
+            ...(function(){
+              const latNow = String(el('edit_lat')?.value||'').trim();
+              const lngNow = String(el('edit_lng')?.value||'').trim();
+              const mapsNow = String(el('edit_maps_url')?.value||'').trim();
+              const addrNow = String(el('edit_address')?.value||'').trim();
+              const origMaps = String(job.maps_url||'').trim();
+              const origAddr = String(job.address_text||'').trim();
+              const origLat = String(job.gps_latitude ?? job.latitude ?? '').trim();
+              const origLng = String(job.gps_longitude ?? job.longitude ?? '').trim();
+              const locationTextChanged = (mapsNow !== origMaps) || (addrNow !== origAddr);
+              const coordsManuallyEdited = (latNow !== origLat) || (lngNow !== origLng);
+              const dropStaleGps = locationTextChanged && !coordsManuallyEdited;
+              return {
+                gps_latitude: dropStaleGps ? '' : latNow,
+                gps_longitude: dropStaleGps ? '' : lngNow,
+              };
+            })(),
             // IMPORTANT (Timezone): <input type="datetime-local"> has no timezone.
             // Using Date(...).toISOString() will convert to UTC ("Z") and cause 09:00 -> 16:00/18:00 shifts.
             // Treat the picked wall-clock time as Bangkok (+07:00).
@@ -1674,8 +1690,14 @@ async function loadJob(){
             return;
           }
 
-          showToast('บันทึกใบงานครบแล้ว', 'success');
-          if (msg) msg.textContent = `✅ บันทึกใบงานครบแล้ว${done.length ? `: ${done.join(' / ')}` : ''}`;
+          const GPS_ACTION_MSG = {
+            recalculated: 'อัปเดตพิกัดจากแผนที่/ที่อยู่ใหม่',
+            cleared: 'ล้างพิกัดเดิม (หาพิกัดจากสถานที่ใหม่ไม่ได้) — กรุณาตรวจสอบ',
+            updated: 'บันทึกพิกัดใหม่',
+          };
+          const gpsNote = result && GPS_ACTION_MSG[result.gps_action] ? ` • ${GPS_ACTION_MSG[result.gps_action]}` : '';
+          showToast('บันทึกใบงานครบแล้ว' + gpsNote, 'success');
+          if (msg) msg.textContent = `✅ บันทึกใบงานครบแล้ว${done.length ? `: ${done.join(' / ')}` : ''}${gpsNote}`;
           await loadJob();
         }catch(e){
           console.error(e);

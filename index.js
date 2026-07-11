@@ -17240,17 +17240,27 @@ app.put("/jobs/:job_id/admin-edit", async (req, res) => {
   const wantsTeamSave = Array.isArray(nextTeamRaw) || primary_username !== undefined || technician_username !== undefined;
   const desiredPrimaryFromBody = String(primary_username || technician_username || '').trim() || null;
 
-  // STRICT pair validation (canonical gps_* first, legacy latitude/longitude as
-  // fallback). null/""/whitespace/boolean/object and the (0,0) pair all resolve
-  // to null so the UPDATE's COALESCE preserves the existing stored coordinates
-  // instead of erasing them or writing 0,0. Only a valid non-(0,0) in-range pair
-  // updates the columns.
-  const editGpsPair = strictLatLngPairOrNull(
-    gps_latitude !== undefined ? gps_latitude : latitude,
-    gps_longitude !== undefined ? gps_longitude : longitude
-  );
-  const gpsLat = editGpsPair ? editGpsPair.lat : null;
-  const gpsLng = editGpsPair ? editGpsPair.lng : null;
+  // --- Job-site coordinate validation (strict, canonical gps_* first) --------
+  // Reject a partial or invalid explicit pair instead of silently preserving the
+  // old coordinates while returning success. Both blank/omitted = "no explicit
+  // GPS edit"; both valid = update; anything else (one field only, invalid,
+  // out-of-range, 0,0) = HTTP 400.
+  const latRaw = gps_latitude !== undefined ? gps_latitude : latitude;
+  const lngRaw = gps_longitude !== undefined ? gps_longitude : longitude;
+  const coordProvided = (v) => v !== undefined && v !== null && String(v).trim() !== '';
+  const latProvided = coordProvided(latRaw);
+  const lngProvided = coordProvided(lngRaw);
+  const INVALID_COORD_MSG = 'พิกัดหน้างานไม่ถูกต้อง กรุณาระบุ Lat และ Lng ให้ครบทั้งคู่และอยู่ในช่วงที่ถูกต้อง (ไม่ใช่ 0,0) หรือเว้นว่างทั้งคู่';
+  let editGpsPair = null;
+  if (latProvided || lngProvided) {
+    if (!(latProvided && lngProvided)) {
+      return res.status(400).json({ code: 'INVALID_JOB_SITE_COORDINATES', error: INVALID_COORD_MSG });
+    }
+    editGpsPair = strictLatLngPairOrNull(latRaw, lngRaw);
+    if (!editGpsPair) {
+      return res.status(400).json({ code: 'INVALID_JOB_SITE_COORDINATES', error: INVALID_COORD_MSG });
+    }
+  }
 
   // ✅ FIX TIMEZONE: ถ้ามีการแก้วันนัด ให้ normalize เป็นเวลาไทยก่อนบันทึก
   const appointment_dt =
@@ -17279,6 +17289,44 @@ try {
       }
 
       const cur = curR.rows[0];
+
+      // --- Coordinate write decision (never keep old GPS with a new location) ---
+      //   1) valid explicit pair            → update
+      //   2) maps_url/address changed w/o an explicit pair → recalculate from the
+      //      NEW location; save if resolvable, otherwise CLEAR to NULL (the old
+      //      coordinates belong to the old place and must not be retained)
+      //   3) otherwise                       → preserve
+      // gpsForce drives the UPDATE's CASE so we can write NULL deliberately
+      // (clearing) as opposed to COALESCE-preserving.
+      let gpsForce = false, gpsWriteLat = null, gpsWriteLng = null, gpsAction = 'preserved';
+      if (editGpsPair) {
+        gpsForce = true; gpsWriteLat = editGpsPair.lat; gpsWriteLng = editGpsPair.lng; gpsAction = 'updated';
+      } else {
+        const curMaps = String(cur.maps_url || '').trim();
+        const curAddr = String(cur.address_text || '').trim();
+        const newMaps = maps_url !== undefined ? String(maps_url || '').trim() : curMaps;
+        const newAddr = address_text !== undefined ? String(address_text || '').trim() : curAddr;
+        const mapsChanged = maps_url !== undefined && newMaps !== curMaps;
+        const addrChanged = address_text !== undefined && newAddr !== curAddr;
+        if (mapsChanged || addrChanged) {
+          let resolved = parseLatLngFromText(newMaps) || parseLatLngFromText(newAddr);
+          if (!resolved && newMaps && /maps\.app\.goo\.gl|goo\.gl/i.test(newMaps)) {
+            try {
+              const rr = await resolveMapsUrlToLatLng(newMaps);
+              if (rr && Number.isFinite(Number(rr.lat)) && Number.isFinite(Number(rr.lng))) {
+                resolved = { lat: Number(rr.lat), lng: Number(rr.lng) };
+              }
+            } catch (_) { /* fail-open: leave unresolved → cleared */ }
+          }
+          gpsForce = true;
+          if (resolved && Number.isFinite(Number(resolved.lat)) && Number.isFinite(Number(resolved.lng))) {
+            gpsWriteLat = Number(resolved.lat); gpsWriteLng = Number(resolved.lng); gpsAction = 'recalculated';
+          } else {
+            gpsWriteLat = null; gpsWriteLng = null; gpsAction = 'cleared';
+          }
+        }
+      }
+
       const apptToUse = appointment_dt || cur.appointment_datetime;
       const durToUse = Number(cur.duration_min || 60);
       const jobTypeToUse = (job_type ?? cur.job_type);
@@ -17320,11 +17368,11 @@ try {
           customer_note = COALESCE($6, customer_note),
           maps_url = COALESCE(NULLIF($7, ''), maps_url),
           job_zone = COALESCE(NULLIF($8, ''), job_zone),
-          gps_latitude = COALESCE($9, gps_latitude),
-          gps_longitude = COALESCE($10, gps_longitude),
-          technician_username = COALESCE(NULLIF($11, ''), technician_username),
-          technician_team = COALESCE(NULLIF($11, ''), technician_team)
-      WHERE job_id=$12
+          gps_latitude = CASE WHEN $9 THEN $10 ELSE gps_latitude END,
+          gps_longitude = CASE WHEN $9 THEN $11 ELSE gps_longitude END,
+          technician_username = COALESCE(NULLIF($12, ''), technician_username),
+          technician_team = COALESCE(NULLIF($12, ''), technician_team)
+      WHERE job_id=$13
       `,
       [
         customer_name ?? null,
@@ -17335,8 +17383,9 @@ try {
         customer_note ?? null,
         maps_url ?? null,
         job_zone ?? null,
-        gpsLat,
-        gpsLng,
+        gpsForce,
+        gpsWriteLat,
+        gpsWriteLng,
         headerPrimaryToSave,
         job_id,
       ]
@@ -17382,6 +17431,9 @@ try {
         },
         pricing,
         team: savedTeam,
+        // How the job-site coordinates were resolved on this save so the admin
+        // UI can tell the user: preserved | updated | recalculated | cleared.
+        gps_action: gpsAction,
       });
     } catch (innerErr) {
       try { await client.query("ROLLBACK"); } catch (_) {}

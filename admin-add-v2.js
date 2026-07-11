@@ -2856,6 +2856,24 @@ async function submitBooking() {
     return;
   }
 
+  // Client-side guard: a job-site coordinate must be a complete, valid, non-(0,0)
+  // pair — never one field alone, and never an out-of-range/garbage value.
+  {
+    const latRaw = String(el("gps_latitude")?.value || "").trim();
+    const lngRaw = String(el("gps_longitude")?.value || "").trim();
+    if (latRaw || lngRaw) {
+      const num = (s) => (/^[+-]?(?:\d+\.?\d*|\.\d+)$/.test(s) ? Number(s) : NaN);
+      const la = num(latRaw), ln = num(lngRaw);
+      const validPair = latRaw && lngRaw && Number.isFinite(la) && Number.isFinite(ln)
+        && Math.abs(la) <= 90 && Math.abs(ln) <= 180 && !(la === 0 && ln === 0);
+      if (!validPair) {
+        showToast('พิกัดหน้างานไม่ถูกต้อง กรุณากรอก Lat และ Lng ให้ครบทั้งคู่และถูกต้อง (ไม่ใช่ 0,0) หรือเว้นว่างทั้งคู่', 'error');
+        el("btnSubmit").disabled = false;
+        return;
+      }
+    }
+  }
+
   try {
     el("btnSubmit").disabled = true;
     if (DEBUG_ENABLED) {
