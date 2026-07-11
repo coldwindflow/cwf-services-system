@@ -14343,6 +14343,20 @@ async function handleAdminBookV2(req, res) {
   const standard_price = Number(customerPrice.active_price ?? customerPrice.standard_price ?? 0);
 
 
+// Blocker: explicit admin coordinates must be validated at the BACKEND, not just
+// the UI — a stale cached admin page or a direct API caller can send a partial or
+// invalid pair. One-field-only / invalid / out-of-range / 0,0 → HTTP 400 instead
+// of silently falling back to maps/address derivation. Both blank = no explicit GPS.
+{
+  const latProvided = coordFieldProvided(body.gps_latitude);
+  const lngProvided = coordFieldProvided(body.gps_longitude);
+  if (latProvided || lngProvided) {
+    if (!(latProvided && lngProvided) || !strictLatLngPairOrNull(body.gps_latitude, body.gps_longitude)) {
+      return res.status(400).json({ code: 'INVALID_JOB_SITE_COORDINATES', error: INVALID_JOB_SITE_COORDINATES_MSG });
+    }
+  }
+}
+
 // ✅ Coordinate resolution order (never convert missing values to zero):
 //   1) explicit admin-supplied gps_latitude/gps_longitude
 //   2) coordinates parsed from maps_url / address_text
@@ -17279,7 +17293,9 @@ try {
                 job_type,
                 maps_url,
                 address_text,
-                job_zone
+                job_zone,
+                gps_latitude,
+                gps_longitude
          FROM public.jobs WHERE job_id=$1
          FOR UPDATE`,
         [job_id]
@@ -17304,36 +17320,39 @@ try {
       const addrChanged = addrProvided && newAddr !== curAddr;
       const newJobZone = job_zone !== undefined ? String(job_zone || '').trim() : String(cur.job_zone || '').trim();
 
+      // Did the admin supply an explicit pin that differs from the stored one?
+      // (editGpsPair is already strictly validated / 400'd earlier.) An explicit
+      // GPS that MOVES the pin is itself a location change.
+      const curPair = strictLatLngPairOrNull(cur.gps_latitude, cur.gps_longitude);
+      const gpsMovedByExplicit = !!editGpsPair && !(curPair && Math.abs(curPair.lat - editGpsPair.lat) < 1e-9 && Math.abs(curPair.lng - editGpsPair.lng) < 1e-9);
+      // A change to a NEW non-empty Maps URL is a "location moved" signal. Merely
+      // CLEARING the URL is not (the stored pin stays valid for nav fallback).
+      const mapsMovedToNew = mapsChanged && newMaps !== '';
+
       // Blocker 1 + 2: maps_url write semantics.
-      //   omitted             → preserve
-      //   supplied non-empty  → replace
-      //   supplied empty/null → clear to NULL
-      //   address changed without a replacement URL → clear the stale URL, so a
-      //   new address can never keep the old location's Maps URL (nav uses it first)
+      //   omitted                                   → preserve
+      //   supplied non-empty                        → replace
+      //   supplied empty/null                       → clear to NULL
+      //   address OR explicit-GPS moved w/o a real replacement URL → clear the
+      //   stale URL, so a new location can never keep the old Maps URL (which
+      //   technician navigation prioritises before GPS).
       let mapsForce = false, mapsWrite = null, mapsAction = 'preserved';
       if (mapsProvided) {
         mapsForce = true;
         mapsWrite = newMaps || null;
         mapsAction = mapsWrite ? (mapsChanged ? 'replaced' : 'preserved') : 'cleared';
       }
-      if (addrChanged && !mapsChanged) {
+      if ((addrChanged || gpsMovedByExplicit) && !mapsMovedToNew) {
         mapsForce = true;
         mapsWrite = null;
         mapsAction = 'cleared';
       }
-      // The Maps URL that will actually be stored — the source for GPS/zone recompute.
-      const effectiveMaps = mapsForce ? String(mapsWrite || '') : curMaps;
-      // Only a change to a NEW non-empty Maps URL is a "location moved" signal.
-      // Merely CLEARING the URL must not recompute GPS/zone — the stored pin stays
-      // valid so technician navigation can fall back to it (Blocker 1).
-      const mapsMovedToNew = mapsChanged && newMaps !== '';
-      const locationMoved = mapsMovedToNew || addrChanged;
 
       // Blocker 4: strict validation for EVERY derived coordinate pair (parsed
-      // from text or resolved from a short link) — 0,0 / out-of-range / partial /
-      // NaN are rejected, exactly like an explicit admin pair.
-      async function resolveStrictLatLng(mapsText, addrText) {
-        const p = parseLatLngFromText(mapsText) || parseLatLngFromText(addrText);
+      // from text or resolved from a short link). Source-SPECIFIC (Blocker 2): a
+      // new Maps URL never falls back to the unchanged old address.
+      async function deriveStrictLatLng(mapsText, addrText) {
+        const p = parseLatLngFromText(mapsText) || (addrText ? parseLatLngFromText(addrText) : null);
         let pair = p ? strictLatLngPairOrNull(p.lat, p.lng) : null;
         if (!pair && mapsText && /maps\.app\.goo\.gl|goo\.gl/i.test(mapsText)) {
           try {
@@ -17344,31 +17363,47 @@ try {
         return pair;
       }
 
+      // Choose the NEW effective coordinate source (never the old one after a move):
+      //   - maps moved to new + address changed → new maps, address as fallback
+      //   - maps moved to new only              → new maps ONLY
+      //   - address changed only                → new address only
+      let srcMaps = '', srcAddr = '';
+      if (mapsMovedToNew && addrChanged) { srcMaps = newMaps; srcAddr = newAddr; }
+      else if (mapsMovedToNew) { srcMaps = newMaps; srcAddr = ''; }
+      else if (addrChanged) { srcMaps = ''; srcAddr = newAddr; }
+      const locationMoved = mapsMovedToNew || addrChanged;
+
       // GPS decision:
-      //   1) valid explicit pair            → update
-      //   2) maps_url/address changed       → recalculate from the NEW effective
-      //      location; save if strictly valid, else CLEAR to NULL
-      //   3) otherwise                      → preserve
+      //   1) explicit pair (already validated)  → update
+      //   2) location moved                     → derive from the NEW source only;
+      //      save if strictly valid, else CLEAR to NULL
+      //   3) otherwise                          → preserve
       let gpsForce = false, gpsWriteLat = null, gpsWriteLng = null, gpsAction = 'preserved';
       if (editGpsPair) {
         gpsForce = true; gpsWriteLat = editGpsPair.lat; gpsWriteLng = editGpsPair.lng; gpsAction = 'updated';
       } else if (locationMoved) {
-        const pair = await resolveStrictLatLng(effectiveMaps, newAddr);
+        const pair = await deriveStrictLatLng(srcMaps, srcAddr);
         gpsForce = true;
         if (pair) { gpsWriteLat = pair.lat; gpsWriteLng = pair.lng; gpsAction = 'recalculated'; }
         else { gpsWriteLat = null; gpsWriteLng = null; gpsAction = 'cleared'; }
       }
 
-      // Blocker 3: recompute the SYSTEM service zone from the new effective
-      // location whenever the location changed. Never keep the old zone; clear it
-      // (NULL) when the new location cannot be classified. Free-text job_zone is
-      // handled separately by the UPDATE below.
+      // Blocker 3: recompute the SYSTEM service zone from the NEW effective source
+      // whenever the location moved (new maps/address or an explicit pin). Never
+      // keep the old zone; clear it (NULL) when the new location cannot be
+      // classified. The old, unchanged job_zone/address are NOT used as evidence
+      // for the new zone. Free-text job_zone is preserved separately by the UPDATE.
+      const jobZoneChanged = job_zone !== undefined && newJobZone !== String(cur.job_zone || '').trim();
       let zoneForce = false, zoneCodeWrite = null, zoneSourceWrite = null;
-      if (locationMoved || !!editGpsPair) {
-        const zoneMapsInput = editGpsPair ? `${editGpsPair.lat},${editGpsPair.lng}` : effectiveMaps;
+      if (locationMoved || gpsMovedByExplicit) {
+        const zoneMapsInput = editGpsPair ? `${editGpsPair.lat},${editGpsPair.lng}` : srcMaps;
         let zoneDetected = null;
         try {
-          zoneDetected = await detectServiceZoneFromText({ address_text: newAddr, job_zone: newJobZone, maps_url: zoneMapsInput });
+          zoneDetected = await detectServiceZoneFromText({
+            address_text: srcAddr,
+            job_zone: jobZoneChanged ? newJobZone : '',
+            maps_url: zoneMapsInput,
+          });
         } catch (_) { zoneDetected = null; }
         zoneForce = true;
         zoneCodeWrite = zoneDetected?.service_zone_code || null;
@@ -19331,6 +19366,14 @@ function strictLatLngPairOrNull(latRaw, lngRaw) {
   if (lat === 0 && lng === 0) return null;
   return { lat, lng };
 }
+
+// A coordinate field counts as "provided" only when it is a non-blank value.
+// undefined / null / "" / whitespace = not provided.
+function coordFieldProvided(v) {
+  return v !== undefined && v !== null && String(v).trim() !== '';
+}
+// Shared actionable Thai message for an invalid job-site coordinate pair.
+const INVALID_JOB_SITE_COORDINATES_MSG = 'พิกัดหน้างานไม่ถูกต้อง กรุณาระบุ Lat และ Lng ให้ครบทั้งคู่และอยู่ในช่วงที่ถูกต้อง (ไม่ใช่ 0,0) หรือเว้นว่างทั้งคู่';
 
 app.post("/jobs/:job_id/checkin", requireTechnicianSession, async (req, res) => {
   const { job_id } = req.params;
