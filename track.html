@@ -377,7 +377,7 @@ function reviewHTML(d){
           <option value="2">2 - ควรปรับปรุง</option>
           <option value="1">1 - แย่</option>
         </select>
-        <button type="button" onclick="submitReview('${d.booking_token || d.booking_code || ''}')">ส่งรีวิว</button>
+        <button type="button" data-review-submit>ส่งรีวิว</button>
       </div>
       <textarea id="review_text" rows="3" style="margin-top:8px;" placeholder="เขียนรีวิว (ถ้ามี)"></textarea>
       <textarea id="complaint_text" rows="2" style="margin-top:8px;" placeholder="ร้องเรียน/ข้อเสนอแนะ (ถ้ามี)"></textarea>
@@ -446,9 +446,15 @@ function openNav(lat,lng,addr){
   window.open(url,"_blank");
 }
 
-async function track(){
+// The credential used for the request (may be a secret booking_token from the
+// official link, or a short booking_code the user typed) is kept ONLY in JS
+// memory — never written into the visible #q input. Click handlers read the
+// loaded response from here instead of interpolating values into inline HTML.
+let CURRENT_TRACK_DATA = null;
+
+async function track(credOverride){
   const qEl = document.getElementById("q");
-  const q = (qEl.value || "").trim();
+  const q = (credOverride != null ? String(credOverride) : (qEl.value || "")).trim();
   if(!q) return alert("ใส่เลข Booking หรือ token");
 
   const box = document.getElementById("result");
@@ -458,6 +464,33 @@ async function track(){
     const res = await fetch(`${API}/public/track?q=${encodeURIComponent(q)}`);
     const data = await res.json().catch(()=>({}));
     if(!res.ok) throw new Error(data.error || "ค้นหาไม่สำเร็จ");
+    CURRENT_TRACK_DATA = data;
+
+    // After a lookup show the PUBLIC booking_code in the input — never leave a
+    // secret token/credential visible in the search box.
+    if (data.booking_code) qEl.value = data.booking_code;
+
+    // True code-only limited mode: a booking_code lookup returns redacted data,
+    // so show status + masked phone + a clear explanation, NOT misleading dash
+    // rows or navigation/technician controls that cannot work.
+    if (data.access_level !== "token") {
+      box.innerHTML = `
+        <div class="job-card">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+            <b>📌 Booking: ${esc(data.booking_code || "-")}</b>
+            ${statusBadge(data.job_status)}
+          </div>
+          ${data.customer_phone ? `<p style="margin-top:10px;"><b>เบอร์โทร:</b> ${esc(data.customer_phone)}</p>` : ``}
+          ${timelineHTML(data)}
+          <div class="alert" style="margin-top:12px;background:#eff6ff;border:1px solid rgba(37,99,235,0.25);color:#1e3a8a;">
+            <b>โหมดจำกัดข้อมูล (ค้นด้วยเลขงาน)</b>
+            <div class="muted" style="margin-top:4px;">เพื่อความปลอดภัย การค้นด้วยเลขงานจะแสดงเฉพาะสถานะและข้อมูลเบื้องต้น หากต้องการดูข้อมูลลูกค้า ที่อยู่ ช่าง และรายละเอียดเต็ม กรุณาเปิดจาก “ลิงก์ติดตามงาน” ในข้อความยืนยันที่ได้รับ</div>
+          </div>
+          <div class="muted" style="margin-top:10px;">* ถ้าต้องการช่วยเหลือ โทร 098-877-7321 หรือ LINE OA: @cwfair</div>
+        </div>
+      `;
+      return;
+    }
 
     const dt = data.appointment_datetime ? new Date(data.appointment_datetime).toLocaleString("th-TH") : "-";
     // Only treat technician_team as the team when it is a NON-EMPTY array;
@@ -469,7 +502,7 @@ async function track(){
 
     // ปุ่มโทร (เลือกเบอร์แรกที่มี) — escape the number used inside the attribute.
     const firstTel = techTeam.find(t => t && t.phone) ? String(techTeam.find(t => t && t.phone).phone).trim() : "";
-    const telBtn = firstTel ? `<button class="secondary" type="button" onclick="location.href='tel:${esc(firstTel)}'">📞 โทรหาช่าง</button>` : "";
+    const telBtn = firstTel ? `<button class="secondary" type="button" data-tel="${esc(firstTel)}">📞 โทรหาช่าง</button>` : "";
     // ❌ ตาม requirement: ห้ามแสดงเอกสารก่อนเสร็จ และแทนที่ใบเสร็จเดิมด้วย E-Slip ใหม่
     const receiptBtn = "";
 
@@ -494,7 +527,7 @@ async function track(){
         <p><b>ที่อยู่:</b> ${esc(data.address_text || "-")}</p>
 
         <div class="row" style="margin-top:10px;gap:10px;flex-wrap:wrap;">
-          <button class="secondary" type="button" onclick="openNav(${Number.isFinite(Number(data.gps_latitude)) ? Number(data.gps_latitude) : "null"}, ${Number.isFinite(Number(data.gps_longitude)) ? Number(data.gps_longitude) : "null"}, '${esc(String(data.address_text||"")).replace(/'/g,"\\'")}')">🧭 นำทาง</button>
+          <button class="secondary" type="button" data-nav>🧭 นำทาง</button>
           ${receiptBtn}
           ${telBtn}
         </div>
@@ -524,7 +557,7 @@ async function track(){
                         ${phone ? `☎️ <a href="${telLink}">${esc(phone)}</a>` : `☎️ ยังไม่มีเบอร์โทร`}
                       </div>
                     </div>
-                    ${phone ? `<button class="secondary" type="button" style="width:auto;" onclick="location.href='${telLink}'">โทร</button>` : ``}
+                    ${phone ? `<button class="secondary" type="button" style="width:auto;" data-tel="${esc(phone)}">โทร</button>` : ``}
                   </div>
                 `;
               }).join('')}
@@ -535,7 +568,7 @@ async function track(){
         ${data.technician_note ? `
           <div class="card tight" style="margin-top:10px;">
             <b>📝 หมายเหตุจากช่าง (แสดงหลังเสร็จสิ้น)</b>
-            <div class="muted" style="margin-top:6px;white-space:pre-wrap;">${String(data.technician_note).replace(/</g,'&lt;')}</div>
+            <div class="muted" style="margin-top:6px;white-space:pre-wrap;">${esc(data.technician_note)}</div>
           </div>
         ` : ``}
 
@@ -599,11 +632,43 @@ async function track(){
   });
 })();
 
-// auto load from query string
+// Delegated handlers for the result card — read values from CURRENT_TRACK_DATA
+// (JS memory), never from interpolated inline JavaScript, so untrusted address/
+// phone/token strings can never break out into executable code.
+(function bindResultActions(){
+  const box = document.getElementById("result");
+  if (!box) return;
+  box.addEventListener("click", (e) => {
+    const target = e.target && e.target.closest ? e.target : null;
+    if (!target) return;
+    const nav = target.closest("[data-nav]");
+    if (nav) {
+      const d = CURRENT_TRACK_DATA || {};
+      const la = Number(d.gps_latitude), lo = Number(d.gps_longitude);
+      openNav(Number.isFinite(la) ? la : null, Number.isFinite(lo) ? lo : null, String(d.address_text || ""));
+      return;
+    }
+    const tel = target.closest("[data-tel]");
+    if (tel) {
+      const num = String(tel.getAttribute("data-tel") || "").replace(/[^0-9+]/g, "");
+      if (num) location.href = "tel:" + num;
+      return;
+    }
+    const rev = target.closest("[data-review-submit]");
+    if (rev) {
+      const d = CURRENT_TRACK_DATA || {};
+      submitReview(d.booking_token || d.booking_code || "");
+      return;
+    }
+  });
+})();
+
+// Auto-load from the query string. The credential (booking_token from the
+// official link, or a booking_code) is passed straight to track() and kept in
+// memory — it is NOT written into the visible #q input.
 const q0 = qs("q") || qs("token") || "";
 if(q0){
-  document.getElementById("q").value = q0;
-  track();
+  track(q0);
 }
 
 // PWA update toast

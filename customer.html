@@ -1365,9 +1365,13 @@ async function book(){
     window.__cwfSchedKey = null;
     try { sessionStorage.removeItem("cwf_sched_key"); } catch (_) {}
     const box = document.getElementById("result");
-    const token = data.token;
-    const code = data.booking_code || token || '';
-    const trackUrl = `${API}/track.html?q=${encodeURIComponent(code)}`;
+    // The VISIBLE booking number is always the short booking_code — never the
+    // secret booking_token. The token is used ONLY as the Tracking credential in
+    // the link / LINE share / calendar url, and is never displayed or copied.
+    const token = data.token || '';
+    const code = data.booking_code || '';
+    const cred = token || code; // request credential for the Tracking link
+    const trackUrl = `${API}/track.html?q=${encodeURIComponent(cred)}`;
     box.innerHTML = `<div class="success-card">
       <div class="success-title">✅ จองสำเร็จ</div>
       <div class="success-row"><span class="k">เลข Booking/Tracking</span><span class="v"><b style="font-size:18px;">${code || '-'}</b></span></div>
@@ -1375,13 +1379,14 @@ async function book(){
       <div class="success-row"><span class="k">เวลาโดยประมาณ</span><span class="v">${data.duration_min || '-'} นาที</span></div>
       <div class="success-actions">
         <button type="button" class="secondary action-btn" onclick="copyText('${code.replace(/'/g,"\\'")}')">📋 คัดลอกเลข</button>
-        <button type="button" class="secondary action-btn" onclick="shareLine('${code.replace(/'/g,"\\'")}')">💬 ส่งเข้า LINE</button>
+        <button type="button" class="secondary action-btn" onclick="shareLine()">💬 ส่งเข้า LINE</button>
         <button type="button" class="secondary action-btn" onclick="downloadIcsForBooking()">📅 เพิ่มเข้าปฏิทิน</button>
         <button type="button" class="secondary action-btn" onclick="location.href='${trackUrl}'">🔎 ไปหน้าติดตามงาน</button>
       </div>
     </div>`;
 
-    // stash for calendar button (ไม่กระทบ flow เดิม)
+    // stash for calendar + LINE share button (ไม่กระทบ flow เดิม).
+    // track_url carries the token credential; code is the visible booking number.
     window.__lastBookingForIcs = {
       code,
       date: document.getElementById('date')?.value || '',
@@ -1428,12 +1433,16 @@ function toast(msg){
   setTimeout(()=>{ el.classList.remove('show'); setTimeout(()=> el.remove(), 250); }, 1600);
 }
 
-function shareLine(code){
+function shareLine(){
   try{
-    const c = String(code||'').trim();
-    if(!c) return;
-    const trackUrl = `${API}/track.html?q=${encodeURIComponent(c)}`;
-    const msg = `เลข Booking: ${c}\nติดตามงาน: ${trackUrl}`;
+    // Share the VISIBLE booking_code as the number and the token-credentialed
+    // Tracking URL (from the stashed booking) as the link — never the token as
+    // the booking number.
+    const b = window.__lastBookingForIcs || {};
+    const c = String(b.code || '').trim();
+    const trackUrl = String(b.track_url || (c ? `${API}/track.html?q=${encodeURIComponent(c)}` : '')).trim();
+    if(!c && !trackUrl) return;
+    const msg = `เลข Booking: ${c || '-'}\nติดตามงาน: ${trackUrl}`;
     // ใช้ได้ดีบนมือถือ (LINE app จะรับต่อ)
     const u = `https://line.me/R/msg/text/?${encodeURIComponent(msg)}`;
     window.open(u, '_blank', 'noopener');

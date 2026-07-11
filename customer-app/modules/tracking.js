@@ -819,15 +819,17 @@
   }
 
   function renderReceipt(data) {
-    const url = receiptUrl(data);
-    if (!url) return "";
+    // Only offer the button when a receipt URL can be built; the URL (which may
+    // carry the booking_token as ?key=) is constructed at click time from state,
+    // NOT embedded in the DOM, so the token never appears in rendered HTML.
+    if (!receiptUrl(data)) return "";
     return `
       <section class="tracking-extra-card receipt-card">
         <div>
           <strong>เอกสารหลังบริการ</strong>
           <p class="muted">เปิดใบรับเงินหรือ E-slip จากข้อมูลเดิมของระบบ</p>
         </div>
-        <a class="secondary-btn" href="${esc(url)}" target="_blank" rel="noopener">เปิด E-slip</a>
+        <button class="secondary-btn" type="button" data-action="open-eslip">เปิด E-slip</button>
       </section>
     `;
   }
@@ -858,8 +860,12 @@
     const reviewToken = data.access_level === "token" ? (data.booking_token || "") : "";
     const legacyEligible = !reviewToken && data.legacy_review_eligible === true;
     if (!reviewToken && !legacyEligible) return "";
+    // For token access the booking_token is NOT written into the form (it would
+    // leak into rendered HTML). The form is marked data-review-token and the
+    // handler injects the token from state at submit time. The legacy path only
+    // ever uses the public booking_code + the customer's phone.
     const credentialFields = reviewToken
-      ? `<input type="hidden" name="booking_token" value="${esc(reviewToken)}">`
+      ? ""
       : `<input type="hidden" name="booking_code" value="${esc(data.booking_code || "")}">
           <label class="field">
             <span>เบอร์โทรที่ใช้จอง (ยืนยันตัวตน)</span>
@@ -876,7 +882,7 @@
           <h2>ให้คะแนนงานนี้</h2>
         </div>
         ${legacyHint}
-        <form data-review-form>
+        <form data-review-form${reviewToken ? " data-review-token" : ""}>
           ${credentialFields}
           <label class="field">
             <span>คะแนน</span>
@@ -933,8 +939,9 @@
     }
 
     if (!catalogReview.eligible) return "";
-    const key = data.booking_token || data.booking_code || "";
-    if (!key) return "";
+    // The write credential (booking_token / booking_code) is injected from state
+    // at submit — never embedded in the DOM.
+    if (!(data.booking_token || data.booking_code)) return "";
     return `
       <section class="tracking-extra-card catalog-review-form-card">
         <div class="section-head compact">
@@ -942,7 +949,6 @@
           <h2>รีวิวบริการนี้</h2>
         </div>
         <form data-catalog-review-form>
-          <input type="hidden" name="token" value="${esc(key)}">
           <label class="field">
             <span>คะแนนบริการ</span>
             <select class="input" name="rating">
@@ -1131,7 +1137,10 @@
     const mode = modeFromData(data);
     const photos = photoList(data);
     const maps = mapUrl(data);
-    const trackingKey = data.booking_token || data.booking_code || "";
+    // The VISIBLE tracking number is always the short booking_code — never the
+    // long secret booking_token. The token stays only in state as the request
+    // credential (used for refresh/receipt/review requests), never rendered.
+    const trackingKey = data.booking_code || "";
     const done = isDone(data);
     const units = unitList(data);
     const appointmentText = data.appointment_datetime ? root.utils.formatDateTime(data.appointment_datetime) : "-";
@@ -1278,6 +1287,13 @@
     try {
       const data = await root.api.trackBooking(q);
       root.state.setTracking({ status: "success", data, error: "" });
+      // Privacy: the lookup may have used the private booking_token as the
+      // credential. Never leave the token echoed in the visible search field —
+      // normalise it back to the human-facing booking_code once we have it.
+      if (data && data.booking_code) {
+        root.state.updateDraft("tracking", { trackingCode: String(data.booking_code) });
+        if (input) input.value = String(data.booking_code);
+      }
     } catch (error) {
       root.state.setTracking({ status: "error", data: null, error: error.message });
     }
@@ -1328,6 +1344,17 @@
 
     const refresh = container.querySelector("[data-action='track-refresh']");
     if (refresh) refresh.addEventListener("click", () => lookup(container), { once: true });
+
+    // E-slip opens with a URL built from state at click time (the token, if any,
+    // travels only in that request URL — never rendered into the DOM).
+    const eslipBtn = container.querySelector("[data-action='open-eslip']");
+    if (eslipBtn) {
+      eslipBtn.addEventListener("click", () => {
+        const url = receiptUrl(root.state.tracking.data || {});
+        if (url) window.open(url, "_blank", "noopener");
+      });
+    }
+
     const form = container.querySelector("[data-review-form]");
     if (form) {
       form.addEventListener("submit", async (event) => {
@@ -1335,6 +1362,11 @@
         const status = form.querySelector("[data-review-status]");
         const submit = form.querySelector("button[type='submit']");
         const payload = Object.fromEntries(new FormData(form).entries());
+        // Token credential is injected from state, never read from the DOM.
+        if (form.hasAttribute("data-review-token")) {
+          const token = (root.state.tracking.data || {}).booking_token || "";
+          if (token) payload.booking_token = token;
+        }
         payload.rating = Number(payload.rating || 5);
         if (status) status.textContent = "กำลังส่งรีวิว...";
         if (submit) submit.disabled = true;
@@ -1362,7 +1394,9 @@
         const status = catalogForm.querySelector("[data-catalog-review-status]");
         const submit = catalogForm.querySelector("button[type='submit']");
         const formData = Object.fromEntries(new FormData(catalogForm).entries());
-        const token = formData.token || "";
+        // Credential from state, not the DOM.
+        const d = root.state.tracking.data || {};
+        const token = d.booking_token || d.booking_code || "";
         if (status) status.textContent = "กำลังส่งรีวิว...";
         if (submit) submit.disabled = true;
         try {
