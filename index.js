@@ -19185,15 +19185,34 @@ app.post("/jobs/:job_id/travel-start", requireTechnicianSession, async (req, res
 // =======================================
 // 📍 CHECK-IN
 // =======================================
+// A GPS fix coarser than this (metres) cannot be trusted for a 500 m boundary
+// decision — reject as retryable rather than pass a nominal-but-unusable point.
+const MAX_CHECKIN_ACCURACY_M = 200;
+
+// STRICT numeric parse: accept only a real JS number or a numeric string.
+// null/undefined/""/whitespace/booleans/arrays/objects all become NaN and are
+// rejected — Number(null)===0 / Number([])===0 must never slip through as (0,0).
+// A genuine real zero (0 or "0") is preserved as a valid coordinate value.
+function strictNumericOrNaN(v) {
+  if (typeof v === "number") return Number.isFinite(v) ? v : NaN;
+  if (typeof v === "string") {
+    const s = v.trim();
+    if (!/^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/.test(s)) return NaN;
+    const n = Number(s);
+    return Number.isFinite(n) ? n : NaN;
+  }
+  return NaN;
+}
+
 app.post("/jobs/:job_id/checkin", requireTechnicianSession, async (req, res) => {
   const { job_id } = req.params;
   const body = req.body || {};
-  const lat = Number(body.lat);
-  const lng = Number(body.lng);
+  const lat = strictNumericOrNaN(body.lat);
+  const lng = strictNumericOrNaN(body.lng);
   // accuracy (metres) is optional but, when present, must be a valid non-negative
   // number so we can reason about GPS confidence near the 500 m boundary.
   const hasAccuracy = body.accuracy !== undefined && body.accuracy !== null && body.accuracy !== "";
-  const accuracy = hasAccuracy ? Number(body.accuracy) : null;
+  const accuracy = hasAccuracy ? strictNumericOrNaN(body.accuracy) : null;
   // captured_at is advisory only; validate loosely and ignore when unparseable.
   const capturedAt = (() => {
     const v = body.captured_at;
@@ -19202,9 +19221,9 @@ app.post("/jobs/:job_id/checkin", requireTechnicianSession, async (req, res) => 
     return Number.isFinite(d.getTime()) ? d.toISOString() : null;
   })();
 
-  // ✅ Strict client-coordinate validation (structured codes for the app to map
-  // to clear Thai messages). Number(null/'') === 0 previously slipped through the
-  // null check and forced a (0,0) comparison — now rejected as invalid.
+  // ✅ Strict client-coordinate validation. Rejects missing/null/empty/
+  // whitespace/boolean/array/object/non-numeric BEFORE any distance math; a real
+  // zero coordinate is still accepted (0 is a valid latitude/longitude value).
   if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
     return res.status(400).json({ error: "พิกัด GPS ไม่ถูกต้อง กรุณากดลองใหม่", code: "INVALID_COORDINATES" });
   }
@@ -19327,6 +19346,18 @@ app.post("/jobs/:job_id/checkin", requireTechnicianSession, async (req, res) => 
 
       const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
       distance = R * c;
+
+      // Absolute accuracy gate: when the site is enforced, a fix coarser than the
+      // usable threshold cannot confirm the tech is at the site — even a nominal
+      // point INSIDE 500 m must be retried rather than accepted.
+      if (hasAccuracy && Number.isFinite(accuracy) && accuracy > MAX_CHECKIN_ACCURACY_M) {
+        console.log("[checkin]", { job_id: realId, tech: technician_username, site_required: true, distance_m: Math.round(distance), ...diag, result: "accuracy_too_low_abs" });
+        return res.status(400).json({
+          error: "สัญญาณ GPS ยังไม่แม่นพอที่จะยืนยันตำแหน่ง กรุณาออกไปที่โล่งแล้วกดลองใหม่",
+          code: "LOCATION_ACCURACY_TOO_LOW",
+          accuracy: Math.round(accuracy),
+        });
+      }
 
       if (distance > 500) {
         // ✅ Precision recovery: if stored coords are wrong but maps_url is correct,
@@ -26217,8 +26248,10 @@ if (FLAG_SHOW_TECH_TEAM_ON_TRACKING && canShowPublicTechnician) {
         [row.job_id]
       );
       fromAssign = (jaR.rows || []).map((x) => String(x.technician_username || "").trim()).filter(Boolean);
-    } catch (_) {
-      // ตารางอาจยังไม่มีในบางฐาน — ไม่ให้ tracking ล่ม
+    } catch (e) {
+      // Do not fail tracking, but do NOT swallow silently — log a sanitized
+      // warning (job_id + message only; never token/PII/address/coordinates).
+      console.warn("[public/track] job_assignments aggregation failed", { job_id: row.job_id, message: e && e.message });
       fromAssign = [];
     }
 
