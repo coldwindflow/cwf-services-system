@@ -74,7 +74,7 @@ test("track.html escapes customer/technician/address/photo/phone values", () => 
   assert.match(trackHtml, /ที่อยู่:<\/b> \$\{esc\(data\.address_text/);
   assert.match(trackHtml, /src="\$\{esc\(photo\)\}"/);
   assert.match(trackHtml, /tel:\$\{esc\(phone\)\}/);
-  assert.match(trackHtml, /tel:\$\{esc\(firstTel\)\}/);
+  assert.match(trackHtml, /data-tel="\$\{esc\(firstTel\)\}"/);
 });
 
 // ============================ A3. Customer App tracking rendering =========
@@ -102,7 +102,7 @@ test("checkin backend validates coordinates + accuracy with structured codes", (
   // idempotent: preserve the first check-in timestamp.
   assert.match(route, /checkin_at=COALESCE\(checkin_at, NOW\(\)\)/);
   // reads accuracy + captured_at from the body.
-  assert.match(route, /const accuracy = hasAccuracy \? Number\(body\.accuracy\) : null/);
+  assert.match(route, /const accuracy = hasAccuracy \? strictNumericOrNaN\(body\.accuracy\) : null/);
   assert.match(route, /captured_at/);
   // never logs raw coordinates.
   assert.doesNotMatch(route, /console\.[a-z]+\([^)]*\blat\b[^)]*\blng\b/);
@@ -270,4 +270,135 @@ test("checkin() uses cssEscapeCompat and a high-accuracy-first geolocation strat
   assert.match(block, /enableHighAccuracy: true/);
   assert.match(block, /body: JSON\.stringify\(\{ lat, lng, accuracy, captured_at \}\)/);
   assert.match(block, /finally \{/);
+});
+
+// ============ Review-round blockers ======================================
+
+// Blocker 3: strict raw coordinate validation (unit test of the real parser).
+test("strictNumericOrNaN rejects null/empty/whitespace/boolean/array/object; accepts real zero", () => {
+  const src = sliceBetween(indexSrc, "function strictNumericOrNaN(v) {", "\napp.post(\"/jobs/:job_id/checkin\"");
+  const sandbox = { Number, String };
+  vm.createContext(sandbox);
+  vm.runInContext(`${src}\nglobalThis.__f = strictNumericOrNaN;`, sandbox);
+  const f = sandbox.__f;
+  for (const bad of [null, undefined, "", "   ", "\t", true, false, [], {}, [5], "abc", "12abc", NaN, {}]) {
+    assert.ok(Number.isNaN(f(bad)), `expected NaN for ${JSON.stringify(bad)}`);
+  }
+  assert.equal(f(0), 0);
+  assert.equal(f("0"), 0);
+  assert.equal(f(13.7), 13.7);
+  assert.equal(f("-100.5"), -100.5);
+  assert.equal(f("100"), 100);
+});
+
+// Blocker 3 + 7: route wiring (validation, structured codes, accuracy gates).
+test("checkin route: strict validation + absolute & boundary accuracy gates + 500 m preserved", () => {
+  const route = sliceBetween(indexSrc, 'app.post("/jobs/:job_id/checkin"', "// 📷 PHOTOS");
+  assert.match(route, /const lat = strictNumericOrNaN\(body\.lat\)/);
+  assert.match(route, /const lng = strictNumericOrNaN\(body\.lng\)/);
+  assert.match(route, /code: "INVALID_COORDINATES"/);
+  // Absolute accuracy gate: unusable fix inside 500 m is rejected.
+  assert.match(indexSrc, /const MAX_CHECKIN_ACCURACY_M = 200/);
+  assert.match(route, /accuracy > MAX_CHECKIN_ACCURACY_M/);
+  // Boundary overlap gate.
+  assert.match(route, /\(distance - accuracy\) <= 500/);
+  // Confident-outside rejection + 500 m threshold intact.
+  assert.match(route, /code: "OUTSIDE_CHECKIN_RADIUS"/);
+  assert.match(route, /distance > 500/);
+});
+
+// Blocker 7: the accuracy decision rule (inside good / inside unusable / boundary / outside).
+test("accuracy decision: good passes, unusable-inside and boundary-overlap are retryable, confident-outside rejected", () => {
+  const MAX = 200;
+  const decide = (distance, accuracy) => {
+    if (accuracy > MAX) return "ACCURACY";
+    if (distance > 500) {
+      if ((distance - accuracy) <= 500) return "ACCURACY";
+      return "OUTSIDE";
+    }
+    return "OK";
+  };
+  assert.equal(decide(120, 20), "OK");       // inside + good
+  assert.equal(decide(120, 3000), "ACCURACY"); // inside + unusable
+  assert.equal(decide(560, 100), "ACCURACY"); // boundary overlap
+  assert.equal(decide(900, 20), "OUTSIDE");   // confidently outside
+});
+
+// ---- track.html behavioural (vm) : blockers 2, 4, 6 ----------------------
+function loadTrackHtml({ data }) {
+  const escSrc = sliceBetween(trackHtml, "function esc(s){", "\nfunction renderRankLine");
+  const trackSrc = sliceBetween(trackHtml, "let CURRENT_TRACK_DATA = null;", "\n// 🏅");
+  const qEl = { value: "" };
+  const resultEl = { innerHTML: "", textContent: "" };
+  const els = { q: qEl, result: resultEl };
+  const stub = () => "";
+  const sandbox = {
+    API: "http://test",
+    document: { getElementById: (id) => els[id] || null },
+    fetch: async () => ({ ok: true, json: async () => data }),
+    alert: () => {},
+    window: {}, location: {}, console,
+    statusBadge: stub, timelineHTML: stub, photosHTML: stub, reviewHTML: stub,
+    warrantyHTML: stub, renderRankLine: stub, renderCustomerESlip: async () => {}, openNav: () => {}, submitReview: () => {}, qs: () => "",
+    Number, String, Array, Math, JSON, Date, encodeURIComponent, RegExp, Boolean,
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(`${escSrc}\n${trackSrc}\nglobalThis.__track = track;`, sandbox);
+  return { track: sandbox.__track, qEl, resultEl };
+}
+
+test("track.html (token): token absent from rendered HTML + #q shows booking_code; XSS payloads escaped", async () => {
+  const data = {
+    access_level: "token", booking_code: "CWF123ABC", booking_token: "SECRETTOKEN9",
+    customer_name: `<img src=x onerror=alert(1)>`, address_text: `'"><script>alert(1)</script>`,
+    job_type: "ล้าง", appointment_datetime: "2026-06-20T10:00:00Z",
+    technician_team: [{ full_name: `<b>evil</b>`, phone: `0812345678` }],
+  };
+  const { track, qEl, resultEl } = loadTrackHtml({ data });
+  await track("SECRETTOKEN9");
+  assert.ok(!resultEl.innerHTML.includes("SECRETTOKEN9"), "booking_token must not appear in rendered HTML");
+  assert.equal(qEl.value, "CWF123ABC", "#q must show the booking_code, not the token");
+  assert.ok(!resultEl.innerHTML.includes("<script>"), "script payload must be escaped");
+  assert.ok(!resultEl.innerHTML.includes("<img src=x"), "img/onerror payload must be escaped");
+  assert.ok(resultEl.innerHTML.includes("&lt;script&gt;") || resultEl.innerHTML.includes("&lt;img"), "payload should be HTML-escaped");
+  // Uses data-attribute handlers, not interpolated inline JS.
+  assert.ok(resultEl.innerHTML.includes("data-nav"));
+});
+
+test("track.html (code): limited mode shows notice, hides address/nav, no dash rows", async () => {
+  const data = { access_level: "code", booking_code: "CWF777", job_status: "กำลังดำเนินการ", appointment_datetime: "2026-06-20T10:00:00Z", customer_phone: "•••• 5678" };
+  const { track, qEl, resultEl } = loadTrackHtml({ data });
+  await track("CWF777");
+  assert.ok(resultEl.innerHTML.includes("โหมดจำกัดข้อมูล"), "must show the limited-access notice");
+  assert.ok(resultEl.innerHTML.includes("•••• 5678"), "masked phone may show");
+  assert.ok(!resultEl.innerHTML.includes("data-nav"), "no navigation control in limited mode");
+  assert.ok(!resultEl.innerHTML.includes("ชื่อลูกค้า"), "no misleading customer-name row");
+  assert.equal(qEl.value, "CWF777");
+});
+
+// ---- track.html source contract : blockers 2, 4 -------------------------
+test("track.html has no interpolated inline onclick for address/phone/token and keeps the credential private", () => {
+  assert.doesNotMatch(trackHtml, /onclick="openNav\(/);
+  assert.doesNotMatch(trackHtml, /onclick="location\.href='tel:\$\{/);
+  assert.doesNotMatch(trackHtml, /submitReview\('\$\{/);
+  assert.match(trackHtml, /data-nav/);
+  assert.match(trackHtml, /data-tel="\$\{esc/);
+  assert.match(trackHtml, /data-review-submit/);
+  // Auto-load passes the credential to track(), never into #q.
+  assert.match(trackHtml, /if\(q0\)\{\s*\n\s*track\(q0\);/);
+  assert.doesNotMatch(trackHtml, /getElementById\("q"\)\.value = q0/);
+});
+
+// ---- customer.html source contract : blocker 5 --------------------------
+test("customer.html shows booking_code as the number and uses data.token for the tracking link", () => {
+  const html = read("customer.html");
+  // Visible number is booking_code only — never falls back to the token.
+  assert.match(html, /const code = data\.booking_code \|\| '';/);
+  assert.doesNotMatch(html, /const code = data\.booking_code \|\| token/);
+  // Credential prefers the token; the Tracking link uses it.
+  assert.match(html, /const cred = token \|\| code;/);
+  assert.match(html, /const trackUrl = `\$\{API\}\/track\.html\?q=\$\{encodeURIComponent\(cred\)\}`/);
+  // LINE share + ICS use the token-credentialed track_url, code is the number.
+  assert.match(html, /function shareLine\(\)/);
+  assert.match(html, /track_url: trackUrl/);
 });

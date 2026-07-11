@@ -2800,3 +2800,29 @@ test("tracking code-only access shows a limited-access notice instead of blank r
   assert.match(html, /•••• 5678/); // masked phone may still show
   assert.doesNotMatch(html, /ชื่อลูกค้า/); // no misleading customer-name row in limited mode
 });
+
+// Blocker 1: the booking_token is a private request credential and must never
+// be rendered into the tracking UI (it is not a human-facing tracking number).
+// After a successful lookup the visible search field is normalised to the
+// booking_code (see lookup()), so the render path must emit the code — never
+// the token — anywhere: receipt link, review forms, timeline, or search input.
+test("tracking never renders the booking_token into the customer HTML", () => {
+  const SECRET_TOKEN = "TOKEN_SECRET_ZZZ_9x8y7z";
+  const data = {
+    access_level: "token", booking_token: SECRET_TOKEN, booking_code: "BK1",
+    job_status: "เสร็จแล้ว", finished_at: "2026-06-20T10:00:00Z",
+    appointment_datetime: "2026-06-20T10:00:00Z",
+    customer_name: "คุณสมชาย", customer_phone: "0812345678", address_text: "อ่อนนุช กทม",
+    review: { already_reviewed: false },
+  };
+  const root = loadTrackingFrontend();
+  // Post-lookup state: the search field holds the human-facing booking_code,
+  // the token stays only inside root.state.tracking.data as the credential.
+  root.state.updateDraft("tracking", { trackingCode: data.booking_code });
+  root.state.setTracking({ status: "success", data, error: "" });
+  const container = new TrackingContainer();
+  root.tracking.render(container);
+  const html = container.innerHTML;
+  assert.ok(!html.includes(SECRET_TOKEN), "rendered tracking HTML must not contain the booking_token");
+  assert.match(html, /BK1/); // the visible tracking number stays booking_code
+});

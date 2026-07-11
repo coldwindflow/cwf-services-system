@@ -229,8 +229,17 @@ test("all three job-doc routes share one gate helper + sensitive headers", () =>
 });
 
 test("the customer app only builds receipt links + review form on full (token) access", () => {
-  assert.match(trackingClientSrc, /data\.booking_token\s*\?\s*`\/docs\/receipt\/\$\{encodeURIComponent\(data\.job_id\)\}\?key=/);
+  // The receipt URL still carries the booking_token as ?key=, but it is now
+  // constructed at click time from state (receiptUrl(data)) instead of being
+  // interpolated into rendered HTML — see Blocker 1.
+  assert.match(trackingClientSrc, /`\/docs\/receipt\/\$\{encodeURIComponent\(data\.job_id\)\}\?key=\$\{encodeURIComponent\(data\.booking_token\)\}`/);
+  // The review form only offers the token-write path on full (token) access.
   assert.match(trackingClientSrc, /data\.access_level === "token" \? \(data\.booking_token \|\| ""\) : ""/);
-  assert.match(trackingClientSrc, /name="booking_token"/);
+  // Blocker 1: the booking_token must NOT be embedded in rendered HTML as a
+  // hidden input. It is injected from state at submit time and the form is only
+  // flagged with data-review-token.
+  assert.doesNotMatch(trackingClientSrc, /name="booking_token"/);
+  assert.match(trackingClientSrc, /data-review-token/);
+  assert.match(trackingClientSrc, /payload\.booking_token = token/);
   assert.doesNotMatch(trackingClientSrc, /<input type="hidden" name="q"/);
 });
