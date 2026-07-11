@@ -615,7 +615,7 @@ async function loadJob(){
 
         <div class="row" style="margin-top:10px;gap:10px;flex-wrap:wrap;align-items:flex-end">
           <div style="flex:1;min-width:220px">
-            <label>โซน</label>
+            <label>โซน (ข้อความอิสระ)</label>
             <input id="edit_zone" value="${escapeHtml(safe(job.job_zone||''))}" />
           </div>
           <div style="flex:1;min-width:220px">
@@ -624,12 +624,17 @@ async function loadJob(){
           </div>
           <div style="width:160px">
             <label>Lat</label>
-            <input id="edit_lat" value="${escapeHtml(safe(job.latitude||''))}" />
+            <input id="edit_lat" value="${escapeHtml(safe(job.gps_latitude ?? job.latitude ?? ''))}" />
           </div>
           <div style="width:160px">
             <label>Lng</label>
-            <input id="edit_lng" value="${escapeHtml(safe(job.longitude||''))}" />
+            <input id="edit_lng" value="${escapeHtml(safe(job.gps_longitude ?? job.longitude ?? ''))}" />
           </div>
+        </div>
+        <div class="muted" style="margin-top:6px;font-size:12px;">
+          🗺️ โซนบริการที่ระบบตรวจได้:
+          <b>${escapeHtml(safe(job.service_zone_code || '—'))}</b>${job.service_zone_source ? ` <span style="opacity:.75">(${escapeHtml(safe(job.service_zone_source))})</span>` : ''}
+          <span style="opacity:.75">— ช่องนี้เป็นโซนของระบบ (แยกจากช่อง “โซน” ที่พิมพ์เอง)</span>
         </div>
 
         <div style="margin-top:12px">
@@ -1589,8 +1594,11 @@ async function loadJob(){
             address_text: String(el('edit_address')?.value||'').trim(),
             job_zone: String(el('edit_zone')?.value||'').trim(),
             maps_url: String(el('edit_maps_url')?.value||'').trim(),
-            latitude: String(el('edit_lat')?.value||'').trim(),
-            longitude: String(el('edit_lng')?.value||'').trim(),
+            // Send canonical gps_* keys (backend also accepts legacy latitude/longitude).
+            // Empty strings are preserved server-side (COALESCE) so an untouched
+            // location is never erased or turned into 0,0.
+            gps_latitude: String(el('edit_lat')?.value||'').trim(),
+            gps_longitude: String(el('edit_lng')?.value||'').trim(),
             // IMPORTANT (Timezone): <input type="datetime-local"> has no timezone.
             // Using Date(...).toISOString() will convert to UTC ("Z") and cause 09:00 -> 16:00/18:00 shifts.
             // Treat the picked wall-clock time as Bangkok (+07:00).

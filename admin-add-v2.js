@@ -2684,6 +2684,48 @@ async function verifyCreatedAdminJob(jobId, payload, expectedSingleTechnician) {
     }
   }
 
+  // Location round-trip check: confirm the location fields the admin actually
+  // submitted survived into the stored job. Only fields that were provided are
+  // asserted (an address-only job legitimately has no coordinates). service_zone
+  // is verified only when the admin set an explicit override, because the backend
+  // may auto-detect a different-but-valid zone otherwise.
+  const locationMismatches = [];
+  const submittedStr = (v) => String(v == null ? '' : v).trim();
+  const numOrNull = (v) => {
+    const s = submittedStr(v);
+    if (!s) return null;
+    const n = Number(s);
+    return Number.isFinite(n) ? n : null;
+  };
+  const checkText = (field) => {
+    const want = submittedStr(payload[field]);
+    if (!want) return;
+    if (submittedStr(job[field]) !== want) {
+      locationMismatches.push({ field, expected: want, actual: submittedStr(job[field]) });
+    }
+  };
+  checkText('address_text');
+  checkText('maps_url');
+  checkText('job_zone');
+  if (submittedStr(payload.service_zone_code)) checkText('service_zone_code');
+  // Coordinates: only assert when the admin supplied a valid (non-0,0) pair.
+  const wantLat = numOrNull(payload.gps_latitude);
+  const wantLng = numOrNull(payload.gps_longitude);
+  const suppliedValidPair = wantLat != null && wantLng != null && !(wantLat === 0 && wantLng === 0);
+  if (suppliedValidPair) {
+    const gotLat = numOrNull(job.gps_latitude);
+    const gotLng = numOrNull(job.gps_longitude);
+    const close = (a, b) => a != null && b != null && Math.abs(a - b) < 1e-6;
+    if (!close(gotLat, wantLat) || !close(gotLng, wantLng)) {
+      locationMismatches.push({ field: 'gps', expected: [wantLat, wantLng], actual: [gotLat, gotLng] });
+    }
+  }
+
+  if (locationMismatches.length) {
+    console.warn('[admin-add] post-save location mismatch', { job_id: jobId, locationMismatches });
+    return { ok: false, locationIncomplete: true, mismatches: locationMismatches, detail };
+  }
+
   if (mismatches.length) {
     console.warn('[admin-add] post-save verification mismatch', { job_id: jobId, mismatches, payload, detail });
     return { ok: false, mismatches, detail };
@@ -2846,7 +2888,10 @@ async function submitBooking() {
       return { ok: true, skipped: true };
     });
     if (!verify.ok) {
-      showToast('บันทึกสำเร็จแต่ข้อมูลไม่ตรงที่เลือก กรุณาตรวจสอบใบงานก่อนส่งลูกค้า', 'error');
+      const msg = verify.locationIncomplete
+        ? 'บันทึกงานแล้ว แต่ข้อมูลสถานที่ไม่ครบ กรุณาตรวจสอบใบงานก่อนส่งให้ช่าง'
+        : 'บันทึกสำเร็จแต่ข้อมูลไม่ตรงที่เลือก กรุณาตรวจสอบใบงานก่อนส่งลูกค้า';
+      showToast(msg, 'error');
       return;
     }
     if(uiMode === 'urgent') {
