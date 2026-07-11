@@ -544,7 +544,7 @@ test("Customer App profile opens history detail with opaque job_ref and clears c
 });
 
 test("Customer App cache version is bumped consistently", () => {
-  const expected = "20260710_legacy_claim_v2";
+  const expected = "20260711_tracking_gps_recovery_v1";
   for (const file of [
     "customer-app/index.html",
     "customer-app/sw.js",

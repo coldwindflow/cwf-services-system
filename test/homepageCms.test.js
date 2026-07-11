@@ -278,7 +278,7 @@ test("customer homepage has no admin control, bottom nav is fixed five-tab, and 
   const sw = read("customer-app/sw.js");
   const app = read("customer-app/assets/customer-app.js");
   const manifest = read("customer-app/manifest.webmanifest");
-  const build = "20260710_legacy_claim_v2";
+  const build = "20260711_tracking_gps_recovery_v1";
 
   assert.doesNotMatch(index + ui, /โหมดแอดมิน|openCms|localStorage\.getItem\('cwfHomeCmsDemo'/);
   assert.match(index, /data-route="store"[\s\S]*ร้านค้า/);

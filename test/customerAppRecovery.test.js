@@ -236,7 +236,7 @@ test("Customer App build id is consistent across shell and service worker", () =
   const sw = read("customer-app/sw.js");
   const app = read("customer-app/assets/customer-app.js");
   const manifest = read("customer-app/manifest.webmanifest");
-  const build = "20260710_legacy_claim_v2";
+  const build = "20260711_tracking_gps_recovery_v1";
 
   assert.match(index, new RegExp(`customer-app\\.css\\?v=${build}`));
   assert.match(index, new RegExp(`modules\\/api\\.js\\?v=${build}`));
@@ -254,7 +254,7 @@ test("Customer App build id is consistent across shell and service worker", () =
 test("store module is loaded in index.html and precached in the service worker app shell", () => {
   const index = read("customer-app/index.html");
   const sw = read("customer-app/sw.js");
-  const build = "20260710_legacy_claim_v2";
+  const build = "20260711_tracking_gps_recovery_v1";
 
   assert.match(index, new RegExp(`modules/store\\.js\\?v=${build}`));
   assert.match(sw, /`\.\/modules\/store\.js\?v=\$\{BUILD_ID\}`/);
@@ -2773,4 +2773,30 @@ test("store performance guard: navigating from the loaded list to a product deta
 
   assert.equal(detailCalls, 1, "detail must fetch the routed item exactly once");
   assert.equal(listCalls, 1, "an already-loaded catalog list must never be refetched just to populate siblings/related items on the detail page");
+});
+
+// ---- Tracking hotfix: access-level aware customer information -------------
+test("tracking full (token) access renders the customer-information section", () => {
+  const root = loadTrackingFrontend();
+  const html = renderTracking(root, {
+    access_level: "token", booking_token: "TOK1", booking_code: "BK1",
+    job_status: "กำลังดำเนินการ", appointment_datetime: "2026-06-20T10:00:00Z",
+    customer_name: "คุณสมชาย", customer_phone: "0812345678", address_text: "อ่อนนุช กทม",
+  });
+  assert.match(html, /คุณสมชาย/);
+  assert.match(html, /0812345678/);
+  assert.match(html, /อ่อนนุช กทม/);
+  assert.doesNotMatch(html, /tracking-limited-note/);
+});
+
+test("tracking code-only access shows a limited-access notice instead of blank rows", () => {
+  const root = loadTrackingFrontend();
+  const html = renderTracking(root, {
+    access_level: "code", booking_code: "BK1", job_status: "กำลังดำเนินการ",
+    appointment_datetime: "2026-06-20T10:00:00Z", customer_phone: "•••• 5678",
+  });
+  assert.match(html, /tracking-limited-note/);
+  assert.match(html, /ลิงก์ติดตามงาน/);
+  assert.match(html, /•••• 5678/); // masked phone may still show
+  assert.doesNotMatch(html, /ชื่อลูกค้า/); // no misleading customer-name row in limited mode
 });
