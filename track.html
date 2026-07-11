@@ -460,13 +460,16 @@ async function track(){
     if(!res.ok) throw new Error(data.error || "ค้นหาไม่สำเร็จ");
 
     const dt = data.appointment_datetime ? new Date(data.appointment_datetime).toLocaleString("th-TH") : "-";
-    const techTeam = Array.isArray(data.technician_team)
+    // Only treat technician_team as the team when it is a NON-EMPTY array;
+    // an empty [] (single-tech jobs with no team rows) must fall back to
+    // data.technician so the assigned technician still shows.
+    const techTeam = (Array.isArray(data.technician_team) && data.technician_team.length)
       ? data.technician_team
       : (data.technician ? [data.technician] : []);
 
-    // ปุ่มโทร (เลือกเบอร์แรกที่มี)
+    // ปุ่มโทร (เลือกเบอร์แรกที่มี) — escape the number used inside the attribute.
     const firstTel = techTeam.find(t => t && t.phone) ? String(techTeam.find(t => t && t.phone).phone).trim() : "";
-    const telBtn = firstTel ? `<button class="secondary" type="button" onclick="location.href='tel:${firstTel}'">📞 โทรหาช่าง</button>` : "";
+    const telBtn = firstTel ? `<button class="secondary" type="button" onclick="location.href='tel:${esc(firstTel)}'">📞 โทรหาช่าง</button>` : "";
     // ❌ ตาม requirement: ห้ามแสดงเอกสารก่อนเสร็จ และแทนที่ใบเสร็จเดิมด้วย E-Slip ใหม่
     const receiptBtn = "";
 
@@ -476,7 +479,7 @@ async function track(){
     box.innerHTML = `
       <div class="job-card">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
-          <b>📌 Booking: ${data.booking_code || "-"}</b>
+          <b>📌 Booking: ${esc(data.booking_code || "-")}</b>
           ${statusBadge(data.job_status)}
         </div>
 
@@ -485,13 +488,13 @@ async function track(){
             ตอนนี้ยังไม่พบช่างรับงานด่วน ระบบกำลังให้แอดมินช่วยจัดคิวให้ใหม่ หรือคุณสามารถติดต่อเราได้ทันทีค่ะ
           </div>
         ` : ``}
-        <p style="margin-top:10px;"><b>ชื่อลูกค้า:</b> ${data.customer_name || "-"}</p>
-        <p><b>ประเภทงาน:</b> ${data.job_type || "-"}</p>
-        <p><b>นัดหมาย:</b> ${dt}</p>
-        <p><b>ที่อยู่:</b> ${data.address_text || "-"}</p>
+        <p style="margin-top:10px;"><b>ชื่อลูกค้า:</b> ${esc(data.customer_name || "-")}</p>
+        <p><b>ประเภทงาน:</b> ${esc(data.job_type || "-")}</p>
+        <p><b>นัดหมาย:</b> ${esc(dt)}</p>
+        <p><b>ที่อยู่:</b> ${esc(data.address_text || "-")}</p>
 
         <div class="row" style="margin-top:10px;gap:10px;flex-wrap:wrap;">
-          <button class="secondary" type="button" onclick="openNav(${data.gps_latitude ?? "null"}, ${data.gps_longitude ?? "null"}, '${String(data.address_text||"").replace(/'/g,"\\'")}')">🧭 นำทาง</button>
+          <button class="secondary" type="button" onclick="openNav(${Number.isFinite(Number(data.gps_latitude)) ? Number(data.gps_latitude) : "null"}, ${Number.isFinite(Number(data.gps_longitude)) ? Number(data.gps_longitude) : "null"}, '${esc(String(data.address_text||"")).replace(/'/g,"\\'")}')">🧭 นำทาง</button>
           ${receiptBtn}
           ${telBtn}
         </div>
@@ -508,14 +511,15 @@ async function track(){
                 const name = t.full_name || t.username || "-";
                 const photo = t.photo || "/logo.png";
                 const phone = t.phone ? String(t.phone).trim() : "";
-                const telLink = phone ? `tel:${phone}` : "";
+                const telLink = phone ? `tel:${esc(phone)}` : "";
+                const rating = Number.isFinite(Number(t.rating)) ? Number(t.rating) : 0;
                 return `
                   <div style="display:flex;gap:10px;align-items:center;">
-                    <img src="${photo}" style="width:56px;height:56px;border-radius:999px;object-fit:cover;border:2px solid rgba(37,99,235,0.25);background:#fff;">
+                    <img src="${esc(photo)}" style="width:56px;height:56px;border-radius:999px;object-fit:cover;border:2px solid rgba(37,99,235,0.25);background:#fff;">
                     <div style="flex:1;min-width:0;">
                       <div><b>${esc(name)}</b></div>
                       ${renderRankLine(t)}
-                      <div class=\"muted\">⭐ ${t.rating ?? 0} · เกรด ${esc(t.grade || "-")}</div>
+                      <div class=\"muted\">⭐ ${rating} · เกรด ${esc(t.grade || "-")}</div>
                       <div class="muted" style="margin-top:4px;">
                         ${phone ? `☎️ <a href="${telLink}">${esc(phone)}</a>` : `☎️ ยังไม่มีเบอร์โทร`}
                       </div>

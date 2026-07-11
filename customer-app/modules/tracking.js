@@ -1018,19 +1018,48 @@
   }
 
   function renderJobDetails(data, photos, maps, trackingKey) {
-    return `
-      <div class="data-list tracking-summary-list">
-        <div class="data-row"><strong>รหัสติดตาม</strong><span class="muted">${esc(trackingKey || "-")}</span></div>
-        <div class="data-row"><strong>นัดหมาย</strong><span class="muted">${root.utils.formatDateTime(data.appointment_datetime)}</span></div>
-        <div class="data-row"><strong>บริการ</strong><span class="muted">${esc(serviceSummary(data))}</span></div>
-        <div class="data-row"><strong>ราคาโดยประมาณ</strong><span class="muted">${esc(money(data.job_price || data.base_total))}</span></div>
-        <div class="data-row"><strong>ระยะเวลา</strong><span class="muted">${data.duration_min ? `${Number(data.duration_min)} นาที` : "-"}</span></div>
-        <div class="data-row"><strong>ที่อยู่</strong><span class="muted">${esc(data.address_text || "-")}</span></div>
-        ${data.job_zone ? `<div class="data-row"><strong>พื้นที่</strong><span class="muted">${esc(data.job_zone)}</span></div>` : ""}
-        ${maps ? `<div class="data-row"><strong>แผนที่</strong><span><a class="mini-link" href="${esc(maps)}" target="_blank" rel="noopener">นำทางไปหน้างาน</a></span></div>` : ""}
-        <div class="data-row"><strong>หลังจบงาน</strong><span class="muted">รูปงาน ${photos.length} รายการ ${data.receipt_url ? "และมีเอกสารหลังบริการ" : ""}</span></div>
-      </div>
-    `;
+    // Access-level aware. Full (token) access — opened from the secure link in
+    // the confirmation message — shows the customer-information section, address,
+    // and map. A booking_code (limited) lookup must NOT render blank rows that
+    // pretend data is missing: it shows only the fields the privacy response
+    // actually returned, plus a clear notice explaining the secure link is
+    // needed for full details. No hidden field is reconstructed on the client.
+    const isFull = data.access_level === "token";
+    const rows = [];
+    rows.push(`<div class="data-row"><strong>รหัสติดตาม</strong><span class="muted">${esc(trackingKey || data.booking_code || "-")}</span></div>`);
+    if (isFull && data.customer_name) {
+      rows.push(`<div class="data-row"><strong>ชื่อลูกค้า</strong><span class="muted">${esc(data.customer_name)}</span></div>`);
+    }
+    // Masked phone may be present even in limited mode; the full number only in token mode.
+    if (data.customer_phone) {
+      rows.push(`<div class="data-row"><strong>เบอร์โทร</strong><span class="muted">${esc(data.customer_phone)}</span></div>`);
+    }
+    rows.push(`<div class="data-row"><strong>นัดหมาย</strong><span class="muted">${esc(root.utils.formatDateTime(data.appointment_datetime))}</span></div>`);
+    if (isFull || serviceSummary(data)) {
+      rows.push(`<div class="data-row"><strong>บริการ</strong><span class="muted">${esc(serviceSummary(data) || "-")}</span></div>`);
+    }
+    if (isFull && (data.job_price != null || data.base_total != null)) {
+      rows.push(`<div class="data-row"><strong>ราคาโดยประมาณ</strong><span class="muted">${esc(money(data.job_price || data.base_total))}</span></div>`);
+    }
+    if (data.duration_min) {
+      rows.push(`<div class="data-row"><strong>ระยะเวลา</strong><span class="muted">${Number(data.duration_min)} นาที</span></div>`);
+    }
+    if (isFull && data.address_text) {
+      rows.push(`<div class="data-row"><strong>ที่อยู่</strong><span class="muted">${esc(data.address_text)}</span></div>`);
+    }
+    if (isFull && data.job_zone) {
+      rows.push(`<div class="data-row"><strong>พื้นที่</strong><span class="muted">${esc(data.job_zone)}</span></div>`);
+    }
+    if (isFull && maps) {
+      rows.push(`<div class="data-row"><strong>แผนที่</strong><span><a class="mini-link" href="${esc(maps)}" target="_blank" rel="noopener">นำทางไปหน้างาน</a></span></div>`);
+    }
+    rows.push(`<div class="data-row"><strong>หลังจบงาน</strong><span class="muted">รูปงาน ${photos.length} รายการ ${data.receipt_url ? "และมีเอกสารหลังบริการ" : ""}</span></div>`);
+    const limitedNotice = !isFull ? `
+      <div class="tracking-limited-note" data-limited-access role="note">
+        <strong>โหมดจำกัดข้อมูล (ค้นด้วยเลขงาน)</strong>
+        <p class="muted">เพื่อความปลอดภัย การค้นด้วยเลขงานจะแสดงเฉพาะสถานะและข้อมูลเบื้องต้น หากต้องการดูข้อมูลลูกค้า ที่อยู่ รายละเอียดช่าง และข้อมูลเต็ม กรุณาเปิดจาก “ลิงก์ติดตามงาน” ในข้อความยืนยันที่ได้รับ</p>
+      </div>` : "";
+    return `${limitedNotice}<div class="data-list tracking-summary-list">${rows.join("")}</div>`;
   }
 
   function renderPhotoView(data) {
