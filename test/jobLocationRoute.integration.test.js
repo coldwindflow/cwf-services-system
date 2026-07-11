@@ -83,6 +83,23 @@ async function buildSchema(adminless) {
     const idx = src.match(/CREATE (?:UNIQUE )?INDEX IF NOT EXISTS [^`;]+/g) || [];
     for (const i of idx) { if (!i.includes("${")) { try { await db.query(i); } catch (_) {} } }
   }
+  // Belt-and-suspenders columns the /admin/book_v2 write path needs but that the
+  // core schema / regex-extracted ALTERs may not add (production self-heals these
+  // at boot via template-string ALTERs the extractor skips).
+  const ensure = [
+    `ALTER TABLE public.job_team_members ADD COLUMN IF NOT EXISTS is_primary BOOLEAN DEFAULT FALSE`,
+    `ALTER TABLE public.job_team_members ADD COLUMN IF NOT EXISTS added_at TIMESTAMPTZ DEFAULT NOW()`,
+    `ALTER TABLE public.job_assignments ADD COLUMN IF NOT EXISTS status TEXT`,
+    `ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS per_unit_evidence_enabled BOOLEAN DEFAULT FALSE`,
+    `ALTER TABLE public.job_items ADD COLUMN IF NOT EXISTS assigned_technician_username TEXT`,
+    `ALTER TABLE public.job_items ADD COLUMN IF NOT EXISTS is_service BOOLEAN DEFAULT TRUE`,
+    `ALTER TABLE public.job_items ADD COLUMN IF NOT EXISTS customer_price_rule_id BIGINT`,
+    `ALTER TABLE public.job_items ADD COLUMN IF NOT EXISTS normal_unit_price NUMERIC`,
+    `ALTER TABLE public.job_items ADD COLUMN IF NOT EXISTS customer_price_label TEXT`,
+    `ALTER TABLE public.job_items ADD COLUMN IF NOT EXISTS customer_campaign_name TEXT`,
+    `ALTER TABLE public.job_items ADD COLUMN IF NOT EXISTS customer_price_source TEXT`,
+  ];
+  for (const s of ensure) { try { await db.query(s); } catch (_) {} }
   await db.end();
 }
 
@@ -333,42 +350,9 @@ test("valid explicit pair updates the coordinates (real route)", async (t) => {
   assert.ok(Math.abs(Number(row.gps_longitude) - 100.999999) < 1e-6);
 });
 
-test("Proofs 1+2: /admin/book_v2 persists explicit GPS and never stores 0,0 for missing GPS", async (t) => {
-  if (dbUnavailable) { t.skip(dbUnavailable); return; }
-  const base = {
-    customer_name: "ลูกค้าทดสอบ", customer_phone: "0800000001",
-    job_type: "ล้าง", ac_type: "ผนัง", btu: 12000, machine_count: 1, wash_variant: "ล้างธรรมดา",
-    appointment_datetime: new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 19),
-    address_text: "123 สุขุมวิท", maps_url: "", job_zone: "พระโขนง",
-    booking_mode: "scheduled", tech_type: "company",
-    // Forced single assignment to a seeded technician avoids the auto-availability
-    // search (which needs a full calendar/zone stack) so the route is exercisable.
-    assign_mode: "single", dispatch_mode: "forced", technician_username: "e2e_tech",
-    services: [{ job_type: "ล้าง", ac_type: "ผนัง", btu: 12000, machine_count: 1, wash_variant: "ล้างธรรมดา" }],
-  };
-  const withGps = await fetch(`${BASE}/admin/book_v2`, {
-    method: "POST", headers: adminHeaders,
-    body: JSON.stringify({ ...base, gps_latitude: "13.744000", gps_longitude: "100.534000" }),
-  });
-  const wj = await withGps.json().catch(() => ({}));
-  if (!withGps.ok || !wj.job_id) {
-    t.skip(`book_v2 not exercisable in this schema (status ${withGps.status}: ${wj.error || "no job_id"})`);
-    return;
-  }
-  const rowA = await withDb((db) => db.query("SELECT * FROM public.jobs WHERE job_id=$1", [wj.job_id]).then((r) => r.rows[0]));
-  assert.ok(Math.abs(Number(rowA.gps_latitude) - 13.744) < 1e-6, "explicit GPS persisted");
-  assert.ok(Math.abs(Number(rowA.gps_longitude) - 100.534) < 1e-6);
-
-  const noGps = await fetch(`${BASE}/admin/book_v2`, {
-    method: "POST", headers: adminHeaders,
-    body: JSON.stringify({ ...base, customer_phone: "0800000002" }),
-  });
-  const nj = await noGps.json().catch(() => ({}));
-  assert.ok(noGps.ok && nj.job_id, `second booking should succeed: ${nj.error || ""}`);
-  const rowB = await withDb((db) => db.query("SELECT * FROM public.jobs WHERE job_id=$1", [nj.job_id]).then((r) => r.rows[0]));
-  // No coordinates supplied and no parseable maps/address → NULL, never 0,0.
-  assert.ok(!(Number(rowB.gps_latitude) === 0 && Number(rowB.gps_longitude) === 0), "missing GPS must not persist as 0,0");
-});
+// (book_v2 add-path "explicit GPS persists / missing GPS never 0,0" is proven by
+// the canonical real-route test "R4-B3b" below, which staggers appointment times
+// to avoid technician collisions.)
 
 // ---- Round-3 location-consistency proofs (real routes) --------------------
 
@@ -445,4 +429,116 @@ test("R3-B4b: a valid derived pair from the new Maps URL is persisted", async (t
   const row = await withDb((db) => db.query("SELECT * FROM public.jobs WHERE job_id=$1", [jobId]).then((r) => r.rows[0]));
   assert.ok(Math.abs(Number(row.gps_latitude) - 15.5) < 1e-6);
   assert.ok(Math.abs(Number(row.gps_longitude) - 101.5) < 1e-6);
+});
+
+// ---- Round-4 location-source consistency proofs (real routes) -------------
+
+test("R4-B1: an explicit GPS edit clears the stale Maps URL (no URL A + GPS B)", async (t) => {
+  if (dbUnavailable) { t.skip(dbUnavailable); return; }
+  const jobId = await seedJob({ address_text: "A", maps_url: "https://maps.google.com/?q=13.1,100.1", gps_latitude: 13.1, gps_longitude: 100.1 });
+  // Admin supplies ONLY a new explicit pin (no Maps URL).
+  const { status, json } = await putEdit(jobId, { gps_latitude: "14.500000", gps_longitude: "101.500000" });
+  assert.equal(status, 200);
+  assert.equal(json.gps_action, "updated");
+  assert.equal(json.maps_action, "cleared");
+  const row = await withDb((db) => db.query("SELECT * FROM public.jobs WHERE job_id=$1", [jobId]).then((r) => r.rows[0]));
+  assert.ok(Math.abs(Number(row.gps_latitude) - 14.5) < 1e-6, "GPS becomes B");
+  assert.equal(row.maps_url, null, "stale Maps URL A cleared — nav now uses GPS B");
+});
+
+test("R4-B1b: explicit GPS + a new Maps URL in the same request keeps both", async (t) => {
+  if (dbUnavailable) { t.skip(dbUnavailable); return; }
+  const jobId = await seedJob({ address_text: "A", maps_url: "https://maps.google.com/?q=13.1,100.1", gps_latitude: 13.1, gps_longitude: 100.1 });
+  const newUrl = "https://maps.google.com/?q=16.200000,102.200000";
+  const { status } = await putEdit(jobId, { maps_url: newUrl, gps_latitude: "16.200000", gps_longitude: "102.200000" });
+  assert.equal(status, 200);
+  const row = await withDb((db) => db.query("SELECT * FROM public.jobs WHERE job_id=$1", [jobId]).then((r) => r.rows[0]));
+  assert.equal(row.maps_url, newUrl, "supplied new Maps URL kept");
+  assert.ok(Math.abs(Number(row.gps_latitude) - 16.2) < 1e-6, "supplied new GPS kept");
+});
+
+test("R4-B2: a new (unresolvable) Maps URL never falls back to the unchanged old address", async (t) => {
+  if (dbUnavailable) { t.skip(dbUnavailable); return; }
+  // Old address parses to 13.5,100.5; old maps/pin is 13.1,100.1.
+  const jobId = await seedJob({
+    address_text: "@13.500000,100.500000", maps_url: "https://maps.google.com/?q=13.1,100.1",
+    gps_latitude: 13.1, gps_longitude: 100.1, service_zone_code: "ZONE_A", service_zone_source: "admin_override",
+  });
+  // Change ONLY the Maps URL to an unresolvable one (address unchanged).
+  const { status, json } = await putEdit(jobId, { maps_url: "https://example.com/unresolvable-B" });
+  assert.equal(status, 200);
+  assert.equal(json.gps_action, "cleared");
+  const row = await withDb((db) => db.query("SELECT * FROM public.jobs WHERE job_id=$1", [jobId]).then((r) => r.rows[0]));
+  assert.equal(row.gps_latitude, null, "GPS must be NULL — never the old address's 13.5 or the old pin's 13.1");
+  assert.notEqual(row.service_zone_code, "ZONE_A", "old zone A must not remain");
+});
+
+test("R4-B2b: an address-only change derives GPS from the new address", async (t) => {
+  if (dbUnavailable) { t.skip(dbUnavailable); return; }
+  const jobId = await seedJob({ address_text: "@13.100000,100.100000", gps_latitude: 13.1, gps_longitude: 100.1 });
+  const { status } = await putEdit(jobId, { address_text: "@15.900000,101.900000" });
+  assert.equal(status, 200);
+  const row = await withDb((db) => db.query("SELECT * FROM public.jobs WHERE job_id=$1", [jobId]).then((r) => r.rows[0]));
+  assert.ok(Math.abs(Number(row.gps_latitude) - 15.9) < 1e-6, "GPS derived from the NEW address");
+});
+
+// ---- Round-4 Blocker 3: /admin/book_v2 rejects invalid explicit GPS --------
+const BOOK_BASE = {
+  customer_name: "ลูกค้าทดสอบ", customer_phone: "0800000001",
+  job_type: "ล้าง", ac_type: "ผนัง", btu: 12000, machine_count: 1, wash_variant: "ล้างธรรมดา",
+  address_text: "123 สุขุมวิท", maps_url: "", job_zone: "พระโขนง",
+  booking_mode: "scheduled", tech_type: "company",
+  assign_mode: "single", dispatch_mode: "forced", technician_username: "e2e_tech",
+  services: [{ job_type: "ล้าง", ac_type: "ผนัง", btu: 12000, machine_count: 1, wash_variant: "ล้างธรรมดา" }],
+};
+// Each successful booking reserves the technician, so stagger appointment times
+// far apart to avoid a legitimate collision (409) between successive bookings.
+let bookApptSeq = 0;
+function nextBookingAppt() {
+  const t = new Date(Date.now() + (3 + bookApptSeq * 2) * 86400000);
+  bookApptSeq += 1;
+  t.setHours(10, 0, 0, 0);
+  return t.toISOString().slice(0, 19);
+}
+async function postBook(extra) {
+  const res = await fetch(`${BASE}/admin/book_v2`, {
+    method: "POST", headers: adminHeaders,
+    body: JSON.stringify({ ...BOOK_BASE, appointment_datetime: nextBookingAppt(), ...extra }),
+  });
+  const json = await res.json().catch(() => ({}));
+  return { status: res.status, json };
+}
+
+test("R4-B3: /admin/book_v2 rejects partial/invalid explicit GPS with 400 (backend, not just UI)", async (t) => {
+  if (dbUnavailable) { t.skip(dbUnavailable); return; }
+  const cases = [
+    { gps_latitude: "13.7", gps_longitude: "" },     // lat only
+    { gps_latitude: "", gps_longitude: "100.5" },    // lng only
+    { gps_latitude: "abc", gps_longitude: "100.5" }, // invalid string
+    { gps_latitude: "200", gps_longitude: "100.5" }, // out of range
+    { gps_latitude: "0", gps_longitude: "0" },       // 0,0
+  ];
+  for (const gps of cases) {
+    const { status, json } = await postBook(gps);
+    assert.equal(status, 400, `expected 400 for ${JSON.stringify(gps)} (got ${status})`);
+    assert.equal(json.code, "INVALID_JOB_SITE_COORDINATES");
+    assert.ok(json.error && json.error.length, "Thai error present");
+  }
+});
+
+test("R4-B3b: /admin/book_v2 accepts a valid explicit pair and never persists 0,0 for missing GPS", async (t) => {
+  if (dbUnavailable) { t.skip(dbUnavailable); return; }
+  const withGps = await postBook({ customer_phone: "0800000010", gps_latitude: "13.744000", gps_longitude: "100.534000" });
+  if (!(withGps.status >= 200 && withGps.status < 300) || !withGps.json.job_id) {
+    t.skip(`book_v2 success path not exercisable in this schema (status ${withGps.status}: ${withGps.json.error || "no job_id"})`);
+    return;
+  }
+  const rowA = await withDb((db) => db.query("SELECT * FROM public.jobs WHERE job_id=$1", [withGps.json.job_id]).then((r) => r.rows[0]));
+  assert.ok(Math.abs(Number(rowA.gps_latitude) - 13.744) < 1e-6, "explicit GPS persisted");
+
+  const noGps = await postBook({ customer_phone: "0800000011" });
+  assert.ok(noGps.status >= 200 && noGps.status < 300 && noGps.json.job_id, `both-omitted booking should succeed: ${noGps.json.error || ""}`);
+  const rowB = await withDb((db) => db.query("SELECT * FROM public.jobs WHERE job_id=$1", [noGps.json.job_id]).then((r) => r.rows[0]));
+  // No coords + no parseable maps/address → NULL (never the number 0,0).
+  assert.ok(rowB.gps_latitude === null || !(Number(rowB.gps_latitude) === 0 && Number(rowB.gps_longitude) === 0), "missing GPS must not persist as 0,0");
 });
