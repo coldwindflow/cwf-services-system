@@ -1,8 +1,17 @@
 /* CWF root service worker: Tech App shell/cache refresh */
 const CWF_TECH_BUILD_ID = "20260712_job_location_roundtrip_v1";
 const CWF_ACCOUNTING_CACHE_BUMP = "20260703_accounting_payout_adjustment_v1";
+const CWF_LEGACY_CUSTOMER_RETIREMENT_BUMP = "20260713_retire_legacy_customer_ui_v1";
 const CACHE_PREFIX = "cwf-root-tech-app-";
-const CACHE_NAME = `${CACHE_PREFIX}${CWF_TECH_BUILD_ID}-${CWF_ACCOUNTING_CACHE_BUMP}`;
+const CACHE_NAME = `${CACHE_PREFIX}${CWF_TECH_BUILD_ID}-${CWF_ACCOUNTING_CACHE_BUMP}-${CWF_LEGACY_CUSTOMER_RETIREMENT_BUMP}`;
+const LEGACY_CUSTOMER_PATHS = new Set([
+  "/customer",
+  "/customer.html",
+  "/track",
+  "/track.html",
+  "/register",
+  "/register.html",
+]);
 const SHELL_ASSETS = [
   `/tech.html?v=${CWF_TECH_BUILD_ID}`,
   `/app.js?v=${CWF_TECH_BUILD_ID}`,
@@ -43,6 +52,18 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
   if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/tech/work-calendar")) return;
+
+  const normalizedPath = url.pathname.length > 1 ? url.pathname.replace(/\/+$/, "") : url.pathname;
+  if (LEGACY_CUSTOMER_PATHS.has(normalizedPath)) {
+    event.respondWith(
+      fetch(request, { cache: "no-store" })
+        .catch(() => new Response("Customer App is unavailable while offline.", {
+          status: 503,
+          headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" },
+        }))
+    );
+    return;
+  }
 
   if (request.mode === "navigate" || /\.(?:js|css|html|json)$/i.test(url.pathname)) {
     event.respondWith(

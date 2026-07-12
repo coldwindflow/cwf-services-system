@@ -2,6 +2,7 @@
   "use strict";
 
   const root = window.CWFCustomerAppV2 = window.CWFCustomerAppV2 || {};
+  console.info("[customer-home] six-cards legacy-retirement 20260713 loaded");
   let homeLoadPromise = null;
 
   function collectionState(name, emptyText, renderItems) {
@@ -230,11 +231,35 @@
     const cfg = section || {};
     const limitRaw = Number(cfg.featured_limit);
     const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(12, Math.round(limitRaw))) : 6;
-    if (cfg.featured_mode === "manual" && Array.isArray(cfg.item_ids) && cfg.item_ids.length) {
+    const selectable = (item) => !!(item
+      && item.item_id != null
+      && item.is_active !== false
+      && item.is_customer_visible !== false);
+    const unique = (items) => {
+      const seen = new Set();
+      return items.filter((item) => {
+        if (!selectable(item)) return false;
+        const id = String(item.item_id);
+        if (seen.has(id)) return false;
+        seen.add(id);
+        return true;
+      });
+    };
+    if (cfg.featured_mode === "manual") {
       const byId = new Map(rows.map((item) => [String(item.item_id), item]));
-      return cfg.item_ids.map((id) => byId.get(String(id))).filter(Boolean).slice(0, limit);
+      const selected = Array.isArray(cfg.item_ids) ? cfg.item_ids.map((id) => byId.get(String(id))) : [];
+      return unique(selected).slice(0, limit);
     }
-    return rows.filter((item) => item && item.is_featured).slice(0, limit);
+    return unique(rows)
+      .map((item, index) => ({ item, index }))
+      .sort((a, b) => {
+        const featuredOrder = Number(!!b.item.is_featured) - Number(!!a.item.is_featured);
+        if (featuredOrder) return featuredOrder;
+        const bookableOrder = Number(b.item.booking_mode === "bookable") - Number(a.item.booking_mode === "bookable");
+        return bookableOrder || a.index - b.index;
+      })
+      .map(({ item }) => item)
+      .slice(0, limit);
   }
 
   // One compact featured card: image, name, price, book button — nothing else.
@@ -267,12 +292,6 @@
     `;
   }
 
-  // Featured services render as a compact 2×2 grid of four small cards. When
-  // more than four featured items exist they are split into "pages" of four
-  // that auto-rotate (cross-fade + staggered rise-in), so customers can read
-  // one set before the next slides in — see bindHomepageFeaturedRotator.
-  const FEATURED_PAGE_SIZE = 4;
-
   function renderHomepageFeaturedServices(section) {
     const catalog = root.state.catalog || { status: "idle", items: [] };
     if (catalog.status === "loading" || catalog.status === "idle") {
@@ -284,21 +303,9 @@
     const showBadge = cfg.show_badge !== false;
     const items = featuredCatalogItems(cfg);
     if (!items.length) return root.utils.stateBox("", "ยังไม่มีบริการแนะนำที่เปิดแสดง");
-    const pages = [];
-    for (let i = 0; i < items.length; i += FEATURED_PAGE_SIZE) {
-      pages.push(items.slice(i, i + FEATURED_PAGE_SIZE));
-    }
-    const multi = pages.length > 1;
     return `
-      <div class="homepage-featured-rotator" data-featured-rotator>
-        <div class="homepage-featured-pages">
-          ${pages.map((pageItems, p) => `
-            <div class="homepage-featured-page${p === 0 ? " is-active" : ""}" data-featured-page aria-hidden="${p === 0 ? "false" : "true"}">
-              ${pageItems.map((item) => renderFeaturedMiniCard(item, showPrice, showBadge)).join("")}
-            </div>
-          `).join("")}
-        </div>
-        ${multi ? `<div class="homepage-featured-dots" role="tablist" aria-label="ชุดบริการแนะนำ">${pages.map((_, p) => `<button type="button" class="${p === 0 ? "is-active" : ""}" data-featured-dot="${p}" aria-label="ชุดบริการที่ ${p + 1}" aria-selected="${p === 0 ? "true" : "false"}"></button>`).join("")}</div>` : ""}
+      <div class="homepage-featured-grid" data-featured-grid>
+        ${items.map((item) => renderFeaturedMiniCard(item, showPrice, showBadge)).join("")}
       </div>
     `;
   }
@@ -1024,49 +1031,6 @@
     });
     bindHomepageSocialCards(container);
     bindHomepageFbTimelines(container);
-    bindHomepageFeaturedRotator(container);
-  }
-
-  // Auto-rotate the pages of four featured cards. All pages stay in the DOM
-  // (so their book/detail buttons keep the handlers bound above) — only the
-  // active page is opaque and interactive; the rest fade out and turn off
-  // pointer events. Advances on a slow, readable interval, pauses while the
-  // customer is touching the section, and lets the dots jump directly.
-  function bindHomepageFeaturedRotator(container) {
-    container.querySelectorAll("[data-featured-rotator]").forEach((rotator) => {
-      if (rotator.dataset.bound === "1") return;
-      rotator.dataset.bound = "1";
-      const pages = Array.from(rotator.querySelectorAll("[data-featured-page]"));
-      const dots = Array.from(rotator.querySelectorAll("[data-featured-dot]"));
-      if (pages.length <= 1) return;
-      let index = 0;
-      let timer = 0;
-      let paused = false;
-      const setActive = (next) => {
-        index = (next % pages.length + pages.length) % pages.length;
-        pages.forEach((page, i) => {
-          const active = i === index;
-          page.classList.toggle("is-active", active);
-          page.setAttribute("aria-hidden", active ? "false" : "true");
-        });
-        dots.forEach((dot, i) => {
-          const active = i === index;
-          dot.classList.toggle("is-active", active);
-          dot.setAttribute("aria-selected", active ? "true" : "false");
-        });
-      };
-      const stop = () => { if (timer) { clearInterval(timer); timer = 0; } };
-      const start = () => { stop(); timer = setInterval(() => { if (!paused) setActive(index + 1); }, 4200); };
-      dots.forEach((dot, i) => {
-        dot.addEventListener("click", () => { setActive(i); start(); });
-      });
-      ["touchstart", "pointerdown"].forEach((ev) =>
-        rotator.addEventListener(ev, () => { paused = true; }, { passive: true }));
-      ["touchend", "pointerup", "mouseleave"].forEach((ev) =>
-        rotator.addEventListener(ev, () => { paused = false; }, { passive: true }));
-      setActive(0);
-      start();
-    });
   }
 
   // Size each Facebook Page Plugin to its real container width so its cover,
@@ -1452,6 +1416,12 @@
           </div>
         </section>
       `;
+    },
+
+    _test: {
+      featuredCatalogItems,
+      renderHomepageHero,
+      renderHomepageFeaturedServices,
     },
   };
 

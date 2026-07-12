@@ -544,7 +544,7 @@ test("Customer App profile opens history detail with opaque job_ref and clears c
 });
 
 test("Customer App cache version is bumped consistently", () => {
-  const expected = "20260712_tracking_full_read_v1";
+  const expected = "20260713_home_six_cards_retire_legacy_v1";
   for (const file of [
     "customer-app/index.html",
     "customer-app/sw.js",

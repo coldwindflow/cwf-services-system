@@ -18,7 +18,7 @@ CWF Services System is the production web application for Coldwindflow air-servi
 - `migrations/`: database migration history. Do not rewrite, reorder, or delete existing migrations.
 - `docs/`: architecture notes, source-of-truth docs, route audits, and archived historical patch notes.
 - `assets/`: static application assets and generated documents/media support assets.
-- Root `admin-*.html/js`, `tech.html`, `customer.html`, `partner-*.html/js`: production frontend screens served by Express.
+- Root `admin-*.html/js`, `tech.html`, `partner-*.html/js`: production frontend screens served by Express. Customer booking, account, and tracking use `/customer-app/index.html`; legacy customer URLs are redirect-only compatibility entries.
 
 ## Safety Rules
 
