@@ -1331,6 +1331,8 @@
       if (card) mount.innerHTML = renderQuickPrice(card);
     });
     bindHomepage(container);
+    // Re-hide any CTA pointing at a disabled route that this refresh re-rendered.
+    root.pageAvailability?.applyToDom?.(container);
   }
 
   function updateAccountChrome() {
@@ -1382,6 +1384,42 @@
     },
 
     renderBookingMode(container) {
+      // Page-availability gates each booking-mode card independently. This is a
+      // UI rollout control layered on top of — never a replacement for — the
+      // server booking kill switches.
+      const pa = root.pageAvailability;
+      const paReady = !!pa && typeof pa.isReady === "function" && pa.isReady();
+      const scheduledOn = !paReady || pa.isEnabled("scheduled");
+      const urgentOn = !paReady || pa.isEnabled("urgent");
+
+      const scheduledCard = scheduledOn ? `
+            <button class="mode-card is-scheduled" type="button" data-route="scheduled">
+              <span class="mode-kicker">เปิดจองในแอป</span>
+              <strong>จองล้างแอร์</strong>
+              <span>รองรับแอร์ผนัง แอร์สี่ทิศทาง แอร์แขวน และแอร์เปลือยใต้ฝ้า</span>
+              <span class="mode-foot">ดูราคาและคิวว่าง</span>
+            </button>` : "";
+      const urgentCard = urgentOn ? `
+            <button class="mode-card is-urgent" type="button" data-route="urgent">
+              <span class="mode-kicker">คำขอด่วน</span>
+              <strong>คิวด่วน</strong>
+              <span>ส่งรายละเอียดให้พาร์ทเนอร์ช่างกดรับ และติดตามผลด้วย Booking Code</span>
+              <span class="mode-foot">ยังไม่ถือว่ายืนยันงานจนกว่าจะมีช่างรับ</span>
+            </button>` : "";
+
+      const bookingBody = (scheduledOn || urgentOn) ? `
+          <div class="card-grid">${scheduledCard}${urgentCard}
+          </div>` : `
+          <section class="card booking-empty-card" role="status">
+            <div class="booking-empty-emoji" aria-hidden="true">🛠️</div>
+            <h2>ระบบจองออนไลน์กำลังปรับปรุง</h2>
+            <p class="muted">ขออภัยในความไม่สะดวก กรุณาติดต่อแอดมินเพื่อจองหรือสอบถามคิวช่าง</p>
+            <div class="support-strip">
+              <a class="primary-btn" href="https://lin.ee/fG1Oq7y" target="_blank" rel="noopener noreferrer">แชท LINE @cwfair</a>
+              <a class="secondary-btn" href="tel:0988777321">โทร 098-877-7321</a>
+            </div>
+          </section>`;
+
       container.innerHTML = `
         <section class="screen">
           ${pageHeaderHtml("booking")}
@@ -1390,20 +1428,7 @@
             <h2>จองล้างแอร์ล่วงหน้า</h2>
             <p>เลือกประเภทการล้าง ดูราคา และเลือกวันเวลาจากคิวช่างที่ว่างจริง</p>
           </div>
-          <div class="card-grid">
-            <button class="mode-card is-scheduled" type="button" data-route="scheduled">
-              <span class="mode-kicker">เปิดจองในแอป</span>
-              <strong>จองล้างแอร์</strong>
-              <span>รองรับแอร์ผนัง แอร์สี่ทิศทาง แอร์แขวน และแอร์เปลือยใต้ฝ้า</span>
-              <span class="mode-foot">ดูราคาและคิวว่าง</span>
-            </button>
-            <button class="mode-card is-urgent" type="button" data-route="urgent">
-              <span class="mode-kicker">คำขอด่วน</span>
-              <strong>คิวด่วน</strong>
-              <span>ส่งรายละเอียดให้พาร์ทเนอร์ช่างกดรับ และติดตามผลด้วย Booking Code</span>
-              <span class="mode-foot">ยังไม่ถือว่ายืนยันงานจนกว่าจะมีช่างรับ</span>
-            </button>
-          </div>
+          ${bookingBody}
           <section class="card support-card">
             <h2>งานซ่อม ติดตั้ง ย้ายแอร์ หรือตรวจอาการ</h2>
             <p class="muted">ยังไม่เปิดจองอัตโนมัติ กรุณาติดต่อแอดมินเพื่อประเมินอาการ ราคา และเวลาที่เหมาะสม</p>

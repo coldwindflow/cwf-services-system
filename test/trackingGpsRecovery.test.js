@@ -34,11 +34,35 @@ function sliceBetween(src, startMarker, endMarker) {
 
 test("official confirmation tracking_url uses booking_token when present (not booking_code)", () => {
   assert.match(indexSrc, /const trackingCredential = String\(job\.booking_token \|\| ''\)\.trim\(\)/);
-  assert.match(indexSrc, /tracking_url: `\$\{origin\}\/track\.html\?q=\$\{encodeURIComponent\(trackingCredential\)\}`/);
   // The visible job number stays booking_code.
   assert.match(indexSrc, /booking_code: booking,/);
   // The summary query must actually load booking_token to build the link.
   assert.match(indexSrc, /SELECT job_id, booking_code, booking_token, customer_name/);
+});
+
+test("official confirmation tracking_url now opens Customer App V2 Tracking (query BEFORE #tracking, encoded)", () => {
+  // Destination changed to the Customer App deep link; the ?q= credential must
+  // come BEFORE the #tracking hash so the app reads it at boot, and it must be
+  // URL-encoded via the SAME unchanged trackingCredential.
+  assert.match(
+    indexSrc,
+    /tracking_url: `\$\{origin\}\/customer-app\/index\.html\?q=\$\{encodeURIComponent\(trackingCredential\)\}#tracking`/,
+  );
+  // Sanity on ordering: ?q= appears before #tracking in the template.
+  const line = indexSrc.split("\n").find((l) => l.includes("tracking_url:"));
+  assert.ok(line, "tracking_url line present");
+  assert.ok(line.indexOf("?q=") < line.indexOf("#tracking"), "?q= must precede #tracking");
+});
+
+test("only the official confirmation link changed — track.html still exists and is NOT globally replaced", () => {
+  // Legacy tracking page must remain for rollback.
+  assert.ok(fs.existsSync(path.join(ROOT, "track.html")), "track.html must still exist");
+  // The /track route/redirect and track.html references elsewhere must survive:
+  // this task only repoints buildCustomerConfirmationVars, not a global swap.
+  assert.match(indexSrc, /app\.get\("\/track"/, "GET /track route must remain");
+  // customer.html (legacy) still points at track.html — proof of no global replace.
+  const customerHtml = read("customer.html");
+  assert.match(customerHtml, /\/track\.html\?q=/, "legacy customer.html must still use track.html");
 });
 
 test("booking_token is never rendered as visible confirmation text nor logged", () => {

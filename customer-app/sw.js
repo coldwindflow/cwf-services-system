@@ -1,6 +1,6 @@
 "use strict";
 
-const BUILD_ID = "20260711_tracking_gps_recovery_v1";
+const BUILD_ID = "20260712_page_controls_tracking_link_v1";
 const CACHE_NAME = `cwf-customer-app-v2-${BUILD_ID}`;
 const APP_SHELL = [
   `./index.html?v=${BUILD_ID}`,
@@ -12,6 +12,7 @@ const APP_SHELL = [
   `./modules/utils.js?v=${BUILD_ID}`,
   `./modules/analytics.js?v=${BUILD_ID}`,
   `./modules/api.js?v=${BUILD_ID}`,
+  `./modules/pageAvailability.js?v=${BUILD_ID}`,
   `./modules/services.js?v=${BUILD_ID}`,
   `./modules/ui.js?v=${BUILD_ID}`,
   `./modules/store.js?v=${BUILD_ID}`,
