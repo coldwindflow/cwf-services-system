@@ -1,6 +1,6 @@
 "use strict";
 
-const BUILD_ID = "20260711_tracking_gps_recovery_v1";
+const BUILD_ID = "20260712_page_controls_tracking_link_v3";
 const CACHE_NAME = `cwf-customer-app-v2-${BUILD_ID}`;
 const APP_SHELL = [
   `./index.html?v=${BUILD_ID}`,
@@ -12,6 +12,7 @@ const APP_SHELL = [
   `./modules/utils.js?v=${BUILD_ID}`,
   `./modules/analytics.js?v=${BUILD_ID}`,
   `./modules/api.js?v=${BUILD_ID}`,
+  `./modules/pageAvailability.js?v=${BUILD_ID}`,
   `./modules/services.js?v=${BUILD_ID}`,
   `./modules/ui.js?v=${BUILD_ID}`,
   `./modules/store.js?v=${BUILD_ID}`,
@@ -55,6 +56,22 @@ self.addEventListener("fetch", (event) => {
     return;
   }
   if (!url.pathname.startsWith("/customer-app/")) return;
+
+  // Secure Tracking deep link: a navigation that carries the PRIVATE tracking
+  // credential (?q= or ?token=) must NEVER touch Cache Storage — the credential
+  // would otherwise become part of a cache key. Fetch network-only and return
+  // the response directly: no cache.put, and no caches.match on this
+  // credential-bearing request. Offline → fall back to the canonical cached app
+  // shell (a credential-free key); the in-app boot re-reads ?q= from the URL.
+  // The credential is never logged.
+  const hasTrackingCredential = url.searchParams.has("q") || url.searchParams.has("token");
+  if (request.mode === "navigate" && hasTrackingCredential) {
+    event.respondWith(
+      fetch(request, { cache: "no-store" })
+        .catch(() => caches.match(`./index.html?v=${BUILD_ID}`))
+    );
+    return;
+  }
 
   event.respondWith(
     fetch(request, { cache: "no-store" })

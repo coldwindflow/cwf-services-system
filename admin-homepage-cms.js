@@ -15,7 +15,44 @@
       { id: "social", type: "social", enabled: true, sort_order: 75, title: "ติดตามเราบนโซเชียล", body: "อัปเดตล่าสุดจาก Facebook และ YouTube ของ Coldwindflow", items: [] },
       { id: "trust", type: "trust", enabled: true, sort_order: 80, title: "มาตรฐานที่ลูกค้าวางใจ", body: "", items: [{ title: "แจ้งราคาก่อนทำ", body: "ระบบคำนวณจากข้อมูลบริการจริง" }, { title: "ช่างผ่านมาตรฐาน", body: "ทีมงานได้รับการตรวจสอบก่อนรับงาน" }, { title: "ติดตามงานได้", body: "ดูสถานะสำคัญด้วย Booking Code" }, { title: "ติดต่อแอดมินง่าย", body: "รองรับ LINE และโทรศัพท์" }] },
     ],
+    // Per-page rollout switches for Customer App V2. All-enabled by default; a
+    // page turned off here is hidden + unreachable in the app. This is a UI
+    // rollout control only — it never replaces the server booking kill switches.
+    page_availability: { home: true, store: true, booking: true, scheduled: true, urgent: true, tracking: true, profile: true },
   };
+
+  // Customer App pages that can be toggled, in display order. Labels/hints are
+  // Thai. `scheduled`/`urgent` note the server kill-switch relationship.
+  const PAGE_AVAILABILITY_KEYS = ["home", "store", "booking", "scheduled", "urgent", "tracking", "profile"];
+  const PAGE_AVAILABILITY_META = {
+    home: ["หน้าแรก", "หน้าแรกของแอป (แบนเนอร์ เมนูด่วน ทางลัด)"],
+    store: ["ร้านค้า", "แคตตาล็อกสินค้า/บริการ และหน้ารายละเอียดสินค้า"],
+    booking: ["เลือกประเภทการจอง", "หน้ารวมที่ให้ลูกค้าเลือกจองล่วงหน้าหรือคิวด่วน"],
+    scheduled: ["จองล่วงหน้า", "ฟอร์มจองล้างแอร์ล่วงหน้า — ต้องเปิด kill switch ฝั่งเซิร์ฟเวอร์ด้วยจึงจะจองสำเร็จ"],
+    urgent: ["คิวด่วน", "ส่งคำขอด่วนให้ช่างกดรับ — ต้องเปิด kill switch ฝั่งเซิร์ฟเวอร์ด้วยจึงจะส่งได้"],
+    tracking: ["ติดตามงาน", "หน้าติดตามงาน และเป็นปลายทางของลิงก์ยืนยันนัดหมายที่ส่งให้ลูกค้า"],
+    profile: ["บัญชีลูกค้า", "หน้าโปรไฟล์และประวัติงานของลูกค้า"],
+  };
+
+  // Legacy/missing → all enabled. Present keys coerced to booleans; a missing
+  // key defaults to enabled (never silently disable a page).
+  function normalizePageAvailability(raw) {
+    const src = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+    const out = {};
+    PAGE_AVAILABILITY_KEYS.forEach((key) => { out[key] = key in src ? src[key] === true : true; });
+    return out;
+  }
+
+  // Pure decision for a page-availability toggle. Turning a page OFF is refused
+  // when it is the LAST enabled page, so the UI can never reach an all-disabled
+  // state (backend validation + publish guard remain as defense-in-depth).
+  // Returns true when the toggle is allowed to apply.
+  function pageAvailabilityToggleAllowed(pa, key, checked) {
+    if (checked) return true;
+    if (pa[key] !== true) return true; // already off — no-op, harmless
+    const enabledCount = PAGE_AVAILABILITY_KEYS.filter((route) => pa[route] === true).length;
+    return enabledCount > 1;
+  }
 
   const TYPE_ICONS = {
     hero: "🏠", quick: "⚡", promo_banner: "🎨",
@@ -90,6 +127,7 @@
       };
     });
     next.theme = next.theme && typeof next.theme === "object" && !Array.isArray(next.theme) ? next.theme : {};
+    next.page_availability = normalizePageAvailability(next.page_availability);
     return next;
   }
   function setStatus(text, kind) { $("status").textContent = text; $("status").className = `status-chip ${kind || ""}`; }
@@ -227,6 +265,25 @@
   }
 
   async function publish() {
+    config.page_availability = normalizePageAvailability(config.page_availability);
+    const pa = config.page_availability;
+    const enabledCount = PAGE_AVAILABILITY_KEYS.filter((k) => pa[k]).length;
+    // Hard guard: refuse to publish an all-disabled app (matches the server,
+    // which also rejects it). Steer the admin to the availability editor.
+    if (enabledCount === 0) {
+      selected = "page-availability";
+      render();
+      if (window.innerWidth <= 880) switchTab("editor");
+      setStatus("ต้องเปิดอย่างน้อย 1 หน้าก่อน Publish", "bad");
+      return;
+    }
+    // Tracking is the destination of the customer confirmation link — confirm
+    // before publishing it in the off state.
+    if (pa.tracking === false && !window.confirm(
+      "คุณกำลังจะปิดหน้า “ติดตามงาน”\n\nลิงก์ยืนยันนัดหมายที่ส่งให้ลูกค้าชี้มาที่หน้านี้ ลูกค้าที่กดลิงก์จะเห็นหน้ากำลังปรับปรุงแทนสถานะงานจริง\n\nยืนยันที่จะ Publish หรือไม่?")) {
+      setStatus("ยกเลิกการ Publish", "");
+      return;
+    }
     setStatus("กำลัง Publish...", "");
     const data = await requestJson("/admin/homepage-cms/publish", { method: "POST", body: JSON.stringify({ config }) });
     setStatus(`Publish แล้ว v${data.version}`, "ok");
@@ -288,16 +345,39 @@
           </div>
         </div>
       </div>`;
+    const availabilityRow = `
+      <div class="sec-row ${selected === "page-availability" ? "is-active" : ""}">
+        <div class="sec-row-body" data-edit="page-availability">
+          <div class="sec-icon">🚦</div>
+          <div class="sec-info">
+            <div class="sec-name">สถานะหน้าแอปลูกค้า</div>
+            <div class="sec-type">เปิด/ปิดหน้าแต่ละหน้า</div>
+          </div>
+        </div>
+      </div>`;
     $("sectionList").innerHTML += `<div class="nav-hd" style="margin-top:8px">แบนเนอร์หัวหน้า (แยกแต่ละหน้า)</div>${headerRows}`
+      + `<div class="nav-hd" style="margin-top:8px">การเผยแพร่หน้า</div>${availabilityRow}`
       + `<div class="nav-hd" style="margin-top:8px">รูปลักษณ์</div>${themeRow}`;
     $("sectionPicker").innerHTML = list.map((section) => `<option value="${esc(section.id)}">${esc(section.title || section.type)}</option>`).join("")
       + PAGE_HEADER_META.map(([key, label]) => `<option value="head:${key}">${esc(label)}</option>`).join("")
+      + `<option value="page-availability">สถานะหน้าแอปลูกค้า</option>`
       + `<option value="theme">ธีม / สีแบรนด์</option>`;
     $("sectionPicker").value = selected;
   }
 
   /* ── editor header ── */
   function renderEditorHeader() {
+    if (selected === "page-availability") {
+      $("editorHeader").innerHTML = `
+        <div class="editor-hd">
+          <div class="editor-hd-icon">🚦</div>
+          <div>
+            <div class="editor-hd-title">สถานะหน้าแอปลูกค้า</div>
+            <div class="editor-hd-sub">เปิด/ปิดหน้าแต่ละหน้าในแอปลูกค้า · มีผลหลังกด Publish</div>
+          </div>
+        </div>`;
+      return;
+    }
     if (selected === "theme") {
       $("editorHeader").innerHTML = `
         <div class="editor-hd">
@@ -629,7 +709,71 @@
       </div>`;
   }
 
+  // Non-blocking relationship warnings for the page-availability editor. These
+  // never auto-toggle anything — they only advise the admin.
+  function pageAvailabilityWarnings(pa) {
+    const warns = [];
+    if (pa.booking && !pa.scheduled && !pa.urgent) {
+      warns.push("เปิดหน้า “เลือกประเภทการจอง” แต่ปิดทั้ง “จองล่วงหน้า” และ “คิวด่วน” — ลูกค้าจะเห็นหน้าจองที่ไม่มีตัวเลือกให้กด");
+    }
+    if (!pa.booking && (pa.scheduled || pa.urgent)) {
+      warns.push("เปิดหน้าจอง (ล่วงหน้า/ด่วน) แต่ปิดหน้า “เลือกประเภทการจอง” — ลูกค้าจะเข้าหน้าจองจากเมนูปกติไม่ได้");
+    }
+    if (pa.store === false) {
+      // storeItem detail inherits the store flag; note it so admins aren't
+      // surprised that product-detail deep links also close.
+      warns.push("ปิด “ร้านค้า” จะปิดหน้ารายละเอียดสินค้าทั้งหมดด้วย (ลิงก์สินค้าจะเข้าไม่ได้)");
+    }
+    return warns;
+  }
+
+  function renderPageAvailabilityEditor() {
+    config.page_availability = normalizePageAvailability(config.page_availability);
+    const pa = config.page_availability;
+    const enabledCount = PAGE_AVAILABILITY_KEYS.filter((k) => pa[k]).length;
+    const rows = PAGE_AVAILABILITY_KEYS.map((key) => {
+      const [label, hint] = PAGE_AVAILABILITY_META[key];
+      const isTracking = key === "tracking";
+      return `
+        <div class="pa-row ${pa[key] ? "" : "is-off"} ${isTracking ? "pa-row-tracking" : ""}">
+          <div class="pa-info">
+            <div class="pa-name">${esc(label)} ${pa[key] ? "" : '<span class="pa-badge-off">ปิดอยู่</span>'}</div>
+            <div class="pa-hint">${esc(hint)}</div>
+          </div>
+          <label class="tog"><input type="checkbox" data-page-availability="${key}" ${pa[key] ? "checked" : ""}><span></span></label>
+        </div>`;
+    }).join("");
+
+    const warnings = pageAvailabilityWarnings(pa);
+    const warnHtml = warnings.length
+      ? `<div class="pa-note pa-note-warn"><strong>ข้อควรระวัง</strong><ul>${warnings.map((w) => `<li>${esc(w)}</li>`).join("")}</ul></div>`
+      : "";
+    const allDisabledHtml = enabledCount === 0
+      ? `<div class="pa-note pa-note-bad"><strong>ต้องเปิดอย่างน้อย 1 หน้า</strong><div>ตอนนี้ปิดทุกหน้า จะยังไม่สามารถ Publish ได้จนกว่าจะเปิดอย่างน้อยหนึ่งหน้า</div></div>`
+      : "";
+    const trackingOffHtml = pa.tracking === false
+      ? `<div class="pa-note pa-note-bad"><strong>คำเตือน: ปิดหน้า “ติดตามงาน”</strong><div>ลิงก์ยืนยันนัดหมายที่ส่งให้ลูกค้าชี้มาที่หน้านี้ ถ้าปิด ลูกค้าที่กดลิงก์จะเห็นหน้ากำลังปรับปรุงแทนสถานะงานจริง</div></div>`
+      : "";
+
+    $("editor").innerHTML = `
+      <div class="ep">
+        <div class="ep-head">สถานะหน้าแอปลูกค้า</div>
+        <div class="ep-body">
+          <p style="font-size:13px;color:var(--muted);line-height:1.6;margin:0 0 10px">
+            เปิด/ปิดแต่ละหน้าของแอปลูกค้า หน้าที่ปิดจะถูกซ่อนจากเมนู เข้าผ่านลิงก์ตรงไม่ได้ และจะแสดงหน้า “กำลังปรับปรุง”
+            แทน · <strong>การเปลี่ยนแปลงมีผลหลังกด Publish เท่านั้น</strong>
+          </p>
+          <div class="pa-callout">หมายเหตุ: นี่คือปุ่มควบคุมการเผยแพร่ (UI) เท่านั้น ไม่ได้แทนที่ kill switch ฝั่งเซิร์ฟเวอร์ของการจอง — การเปิดหน้า “จองล่วงหน้า/คิวด่วน” ยังต้องเปิด kill switch ที่เซิร์ฟเวอร์ด้วย</div>
+          ${allDisabledHtml}
+          ${trackingOffHtml}
+          <div class="pa-list">${rows}</div>
+          ${warnHtml}
+        </div>
+      </div>`;
+  }
+
   function renderEditor() {
+    if (selected === "page-availability") { renderPageAvailabilityEditor(); return; }
     if (selected === "theme") { renderThemeEditor(); return; }
     if (headKey()) { renderHeadEditor(); return; }
     const section = current();
@@ -944,6 +1088,23 @@
 
   document.addEventListener("change", (event) => {
     const target = event.target;
+    if (target.matches("[data-page-availability]")) {
+      config.page_availability = normalizePageAvailability(config.page_availability);
+      const key = target.dataset.pageAvailability;
+      // Never let the UI reach an all-disabled state: refuse to turn off the
+      // last enabled page. Revert the checkbox, keep config unchanged, and show
+      // the same message the publish guard uses.
+      if (!pageAvailabilityToggleAllowed(config.page_availability, key, target.checked)) {
+        target.checked = true;
+        setStatus("ต้องเปิดอย่างน้อย 1 หน้า", "bad");
+        return;
+      }
+      // Only ever change the one page the admin toggled — never auto-toggle a
+      // related page. Re-render the editor so notes/warnings update live.
+      config.page_availability[key] = target.checked;
+      renderEditor();
+      return;
+    }
     if (target.matches("select[data-item]")) { current().items[Number(target.dataset.item)][target.dataset.prop] = target.value; if (target.dataset.prop === "platform") render(); else renderPreview(); }
     if (target.matches("select[data-field]")) { current()[target.dataset.field] = target.value; renderPreview(); }
     if (target.matches("[data-toggle]")) { const s = sections().find((row) => row.id === target.dataset.toggle); if (s) s.enabled = target.checked; renderPreview(); }

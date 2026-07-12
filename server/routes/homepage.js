@@ -27,6 +27,71 @@ const INTERNAL_ROUTES = new Set(["home", "booking", "scheduled", "urgent", "trac
 // Per-page header banners the admin manages independently of the homepage hero.
 const PAGE_HEADER_KEYS = ["store", "booking", "tracking"];
 const FOCAL_POSITIONS = new Set(["top", "center", "bottom"]);
+
+// ---- Customer App page availability (rollout control, NOT a kill switch) -----
+// Which Customer App V2 top-level pages are enabled. Stored inside the same
+// Homepage CMS config (published_config) — no new table/migration. Legacy
+// configs without this field are interpreted as all-enabled.
+const PAGE_AVAILABILITY_KEYS = ["home", "store", "booking", "scheduled", "urgent", "tracking", "profile"];
+const DEFAULT_PAGE_AVAILABILITY = Object.freeze({
+  home: true, store: true, booking: true, scheduled: true, urgent: true, tracking: true, profile: true,
+});
+// Fail-safe when there is no config AND no valid client cache: keep the landing
+// page and Tracking reachable, close transactional/unfinished flows.
+const DEGRADED_PAGE_AVAILABILITY = Object.freeze({
+  home: true, store: false, booking: false, scheduled: false, urgent: false, tracking: true, profile: false,
+});
+
+// Strict validation for an admin-supplied page_availability object. Absent =
+// legacy = all-enabled (not an error). When present it must be a plain object
+// with exactly the 7 boolean keys, no unknown/missing keys, and at least one
+// page enabled. Errors are pushed into `errors`; the returned object is always a
+// complete 7-key map so callers never crash on it.
+function normalizePageAvailability(raw, errors) {
+  if (raw === undefined || raw === null) return { ...DEFAULT_PAGE_AVAILABILITY };
+  if (typeof raw !== "object" || Array.isArray(raw)) {
+    errors.push("page_availability must be an object");
+    return { ...DEFAULT_PAGE_AVAILABILITY };
+  }
+  for (const key of Object.keys(raw)) {
+    if (!PAGE_AVAILABILITY_KEYS.includes(key)) errors.push(`page_availability.${key} is not a valid page`);
+  }
+  const out = {};
+  let anyEnabled = false;
+  for (const key of PAGE_AVAILABILITY_KEYS) {
+    if (!Object.prototype.hasOwnProperty.call(raw, key)) {
+      errors.push(`page_availability.${key} is required`);
+      out[key] = true;
+      continue;
+    }
+    const v = raw[key];
+    if (typeof v !== "boolean") {
+      errors.push(`page_availability.${key} must be a boolean`);
+      out[key] = true;
+      continue;
+    }
+    out[key] = v;
+    if (v) anyEnabled = true;
+  }
+  if (!anyEnabled) errors.push("page_availability must keep at least one page enabled");
+  return out;
+}
+
+// Non-throwing read for public responses. A published config is either legacy
+// (no field → all-enabled) or already validated; defensively coerce anything
+// odd to a safe complete map, and never emit an all-disabled result.
+function readPageAvailability(config) {
+  const raw = config && typeof config === "object" ? config.page_availability : null;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return { ...DEFAULT_PAGE_AVAILABILITY };
+  const out = {};
+  let anyEnabled = false;
+  for (const key of PAGE_AVAILABILITY_KEYS) {
+    const v = raw[key];
+    out[key] = typeof v === "boolean" ? v : true;
+    if (out[key]) anyEnabled = true;
+  }
+  return anyEnabled ? out : { ...DEFAULT_PAGE_AVAILABILITY };
+}
 const ASPECT_MODES = new Set(["contain", "cover"]);
 const MAX_PROMO_BANNERS = 8;
 const MAX_SOCIAL_ITEMS = 8;
@@ -45,6 +110,7 @@ const SOCIAL_HOST_PATTERNS = {
 
 const DEFAULT_CONFIG = {
   version: 1,
+  page_availability: { home: true, store: true, booking: true, scheduled: true, urgent: true, tracking: true, profile: true },
   sections: [
     {
       id: "hero",
@@ -431,6 +497,7 @@ function validateConfig(input) {
     sections: normalizedSections.sort((a, b) => a.sort_order - b.sort_order),
     page_headers: normalizePageHeaders(input?.page_headers, errors),
     theme: normalizeTheme(input?.theme, errors),
+    page_availability: normalizePageAvailability(input?.page_availability, errors),
   };
   return { ok: errors.length === 0, errors, config: normalized };
 }
@@ -512,7 +579,9 @@ function stripPublicConfig(config) {
     page_headers[key] = cleanHeader;
   }
   const theme = config?.theme && typeof config.theme === "object" && !Array.isArray(config.theme) ? config.theme : {};
-  return { version: 1, sections, page_headers, theme };
+  // Page availability travels to the public config as a normalized 7-key boolean
+  // map (legacy configs → all-enabled). No admin metadata is included.
+  return { version: 1, sections, page_headers, theme, page_availability: readPageAvailability(config) };
 }
 
 async function hydrateAutoSyncArticles(pool, publicConfig) {
@@ -576,11 +645,21 @@ function hydrateDraftConfig(rawConfig) {
   const base = rawConfig && typeof rawConfig === "object" && Array.isArray(rawConfig.sections) ? rawConfig : DEFAULT_CONFIG;
   const existingTypes = new Set(base.sections.map((section) => section && (section.type || section.id)));
   const missing = DEFAULT_CONFIG.sections.filter((defaultSection) => !existingTypes.has(defaultSection.type));
-  if (!missing.length) return base;
-  return {
+  // Preserve EVERY existing top-level field (page_headers, theme,
+  // page_availability, version, …). Only append missing default sections and
+  // backfill page_availability for a legacy draft that predates it. Never reduce
+  // the config to just { version, sections } (that dropped page_headers/theme).
+  const hydrated = {
+    ...base,
     version: base.version || 1,
-    sections: [...base.sections, ...missing.map((section) => JSON.parse(JSON.stringify(section)))],
+    sections: missing.length
+      ? [...base.sections, ...missing.map((section) => JSON.parse(JSON.stringify(section)))]
+      : base.sections,
   };
+  if (!hydrated.page_availability || typeof hydrated.page_availability !== "object" || Array.isArray(hydrated.page_availability)) {
+    hydrated.page_availability = { ...DEFAULT_PAGE_AVAILABILITY };
+  }
+  return hydrated;
 }
 
 async function loadPublished(pool) {
@@ -650,6 +729,49 @@ function createHomepageRoutes(deps = {}) {
       }
       console.error("[homepage/public] failed", error);
       res.status(500).json({ error: "โหลดหน้าแรกไม่สำเร็จ" });
+    }
+  });
+
+  // Lightweight public read of the Customer App page-availability flags. Reads
+  // the SAME published Homepage CMS config; returns only the page flags + safe
+  // metadata (no Draft, no updated_by, no admin/customer data). Never 500s — on
+  // any DB/schema/unexpected error it returns the degraded fail-safe with HTTP
+  // 200 so the app can still boot into Home + Tracking.
+  router.get("/public/customer-app-config", async (_req, res) => {
+    res.set("Cache-Control", "no-store");
+    try {
+      const row = await loadPublished(pool);
+      if (!row || !row.published_config) {
+        // No published config yet → default all-enabled (fallback, not degraded).
+        return res.json({
+          ok: true,
+          page_availability: { ...DEFAULT_PAGE_AVAILABILITY },
+          config_version: null,
+          published_at: null,
+          fallback: true,
+          degraded: false,
+        });
+      }
+      // Legacy published config with no page_availability → all-enabled, not a fallback.
+      return res.json({
+        ok: true,
+        page_availability: readPageAvailability(row.published_config),
+        config_version: row.version ?? null,
+        published_at: row.published_at ?? null,
+        fallback: false,
+        degraded: false,
+      });
+    } catch (error) {
+      // Never crash the app: DB/schema/unexpected → degraded fail-safe, HTTP 200.
+      console.warn("[customer-app-config] degraded fallback", { message: error && error.message });
+      return res.json({
+        ok: true,
+        page_availability: { ...DEGRADED_PAGE_AVAILABILITY },
+        config_version: null,
+        published_at: null,
+        fallback: true,
+        degraded: true,
+      });
     }
   });
 
@@ -861,8 +983,14 @@ module.exports = {
   DEFAULT_CONFIG,
   MAX_IMAGE_BYTES,
   SECTION_TYPES,
+  PAGE_AVAILABILITY_KEYS,
+  DEFAULT_PAGE_AVAILABILITY,
+  DEGRADED_PAGE_AVAILABILITY,
   activeNow,
   createHomepageRoutes,
+  hydrateDraftConfig,
+  normalizePageAvailability,
+  readPageAvailability,
   stripPublicConfig,
   validateConfig,
 };

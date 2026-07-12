@@ -4,7 +4,19 @@ const fs = require("node:fs");
 const path = require("node:path");
 const express = require("express");
 
-const { DEFAULT_CONFIG, createHomepageRoutes, validateConfig, activeNow, stripPublicConfig } = require("../server/routes/homepage");
+const {
+  DEFAULT_CONFIG,
+  createHomepageRoutes,
+  validateConfig,
+  activeNow,
+  stripPublicConfig,
+  PAGE_AVAILABILITY_KEYS,
+  DEFAULT_PAGE_AVAILABILITY,
+  DEGRADED_PAGE_AVAILABILITY,
+  hydrateDraftConfig,
+  normalizePageAvailability,
+  readPageAvailability,
+} = require("../server/routes/homepage");
 
 const REPO_ROOT = path.resolve(__dirname, "..");
 
@@ -278,7 +290,7 @@ test("customer homepage has no admin control, bottom nav is fixed five-tab, and 
   const sw = read("customer-app/sw.js");
   const app = read("customer-app/assets/customer-app.js");
   const manifest = read("customer-app/manifest.webmanifest");
-  const build = "20260711_tracking_gps_recovery_v1";
+  const build = "20260712_page_controls_tracking_link_v3";
 
   assert.doesNotMatch(index + ui, /โหมดแอดมิน|openCms|localStorage\.getItem\('cwfHomeCmsDemo'/);
   assert.match(index, /data-route="store"[\s\S]*ร้านค้า/);
@@ -1481,4 +1493,207 @@ test("admin-homepage-cms.js wires the articles auto-sync editor: toggle, source_
   assert.match(admin, /\/admin\/homepage-cms\/sync-articles/);
   assert.match(admin, /\/admin\/homepage-cms\/synced-articles/);
   assert.match(admin, /itemTypes\.includes\(section\.type\) && !\(section\.type === "articles" && section\.auto_sync\)/);
+});
+
+/* ==========================================================================
+   Page availability (Customer App V2 rollout control, stored in the SAME
+   Homepage CMS published_config — no new table). Locked defaults: legacy /
+   missing → all enabled; degraded fail-safe = Home + Tracking only.
+   ========================================================================== */
+
+test("page_availability: exports have the locked 7 keys and default shapes", () => {
+  assert.deepEqual(PAGE_AVAILABILITY_KEYS, ["home", "store", "booking", "scheduled", "urgent", "tracking", "profile"]);
+  assert.deepEqual({ ...DEFAULT_PAGE_AVAILABILITY }, { home: true, store: true, booking: true, scheduled: true, urgent: true, tracking: true, profile: true });
+  // Degraded fail-safe keeps only the landing page and Tracking reachable.
+  assert.deepEqual({ ...DEGRADED_PAGE_AVAILABILITY }, { home: true, store: false, booking: false, scheduled: false, urgent: false, tracking: true, profile: false });
+});
+
+test("page_availability: DEFAULT_CONFIG ships all-enabled", () => {
+  assert.deepEqual(DEFAULT_CONFIG.page_availability, { home: true, store: true, booking: true, scheduled: true, urgent: true, tracking: true, profile: true });
+});
+
+test("page_availability: absent block validates to all-enabled (legacy safe), not an error", () => {
+  const out = validateConfig({ sections: [{ id: "hero", type: "hero", enabled: true, sort_order: 1, title: "x", items: [] }] });
+  assert.equal(out.ok, true);
+  assert.deepEqual(out.config.page_availability, { home: true, store: true, booking: true, scheduled: true, urgent: true, tracking: true, profile: true });
+});
+
+test("page_availability: a valid explicit block is preserved as booleans", () => {
+  const pa = { home: true, store: false, booking: true, scheduled: false, urgent: true, tracking: true, profile: false };
+  const out = validateConfig({ page_availability: pa, sections: [{ id: "hero", type: "hero", enabled: true, sort_order: 1, title: "x", items: [] }] });
+  assert.equal(out.ok, true);
+  assert.deepEqual(out.config.page_availability, pa);
+});
+
+test("page_availability: rejects missing key, unknown key, non-boolean value, and all-disabled", () => {
+  const base = [{ id: "hero", type: "hero", enabled: true, sort_order: 1, title: "x", items: [] }];
+  const missingKey = validateConfig({ page_availability: { home: true, store: true, booking: true, scheduled: true, urgent: true, tracking: true }, sections: base });
+  assert.equal(missingKey.ok, false);
+
+  const unknownKey = validateConfig({ page_availability: { home: true, store: true, booking: true, scheduled: true, urgent: true, tracking: true, profile: true, extra: true }, sections: base });
+  assert.equal(unknownKey.ok, false);
+
+  const nonBool = validateConfig({ page_availability: { home: "yes", store: true, booking: true, scheduled: true, urgent: true, tracking: true, profile: true }, sections: base });
+  assert.equal(nonBool.ok, false);
+
+  const allDisabled = validateConfig({ page_availability: { home: false, store: false, booking: false, scheduled: false, urgent: false, tracking: false, profile: false }, sections: base });
+  assert.equal(allDisabled.ok, false);
+});
+
+test("page_availability: readPageAvailability never returns all-disabled and legacy → all-enabled", () => {
+  assert.deepEqual(readPageAvailability({}), { ...DEFAULT_PAGE_AVAILABILITY });
+  assert.deepEqual(readPageAvailability({ page_availability: null }), { ...DEFAULT_PAGE_AVAILABILITY });
+  // A corrupt all-disabled map is coerced back to the all-enabled safe default.
+  assert.deepEqual(
+    readPageAvailability({ page_availability: { home: false, store: false, booking: false, scheduled: false, urgent: false, tracking: false, profile: false } }),
+    { ...DEFAULT_PAGE_AVAILABILITY },
+  );
+  // A valid partial-off map is honoured.
+  const partial = { home: true, store: false, booking: false, scheduled: false, urgent: false, tracking: true, profile: false };
+  assert.deepEqual(readPageAvailability({ page_availability: partial }), partial);
+});
+
+test("page_availability: stripPublicConfig includes normalized flags and never admin-only fields", () => {
+  const pub = stripPublicConfig({
+    version: 1,
+    sections: [{ id: "hero", type: "hero", enabled: true, sort_order: 1, title: "x", items: [], image_public_id: "secret" }],
+    page_availability: { home: true, store: false, booking: true, scheduled: true, urgent: true, tracking: true, profile: true },
+  });
+  assert.deepEqual(pub.page_availability, { home: true, store: false, booking: true, scheduled: true, urgent: true, tracking: true, profile: true });
+  assert.doesNotMatch(JSON.stringify(pub), /secret|updated_by/);
+});
+
+test("page_availability: hydrateDraftConfig preserves sections/theme/page_headers and backfills flags", () => {
+  const hydrated = hydrateDraftConfig({
+    version: 3,
+    sections: [{ id: "hero", type: "hero", enabled: true, sort_order: 1, title: "keep me", items: [] }],
+    theme: { primary: "#123456" },
+    page_headers: { tracking: { enabled: true, title: "T" } },
+    // no page_availability → legacy, must backfill all-enabled
+  });
+  assert.match(JSON.stringify(hydrated.sections), /keep me/);
+  assert.deepEqual(hydrated.theme, { primary: "#123456" });
+  assert.equal(hydrated.page_headers.tracking.title, "T");
+  assert.deepEqual(hydrated.page_availability, { ...DEFAULT_PAGE_AVAILABILITY });
+});
+
+test("GET /public/customer-app-config: no published config → all-enabled fallback, no admin leak", async () => {
+  const pool = createPool();
+  pool.state.row.published_config = null;
+  const server = await withServer(pool, (_req, _res, next) => next());
+  try {
+    const res = await fetch(`${server.base}/public/customer-app-config`);
+    const data = await res.json();
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    assert.equal(data.ok, true);
+    assert.equal(data.fallback, true);
+    assert.equal(data.degraded, false);
+    assert.deepEqual(data.page_availability, { ...DEFAULT_PAGE_AVAILABILITY });
+    assert.doesNotMatch(JSON.stringify(data), /draft_config|updated_by|sections/);
+  } finally {
+    await server.close();
+  }
+});
+
+test("GET /public/customer-app-config: legacy published (no flags) → all-enabled, not fallback", async () => {
+  const pool = createPool();
+  pool.state.row.published_config = { version: 2, sections: [{ id: "hero", type: "hero", enabled: true, sort_order: 1, title: "x", items: [] }] };
+  pool.state.row.version = 2;
+  const server = await withServer(pool, (_req, _res, next) => next());
+  try {
+    const res = await fetch(`${server.base}/public/customer-app-config`);
+    const data = await res.json();
+    assert.equal(res.status, 200);
+    assert.equal(data.fallback, false);
+    assert.equal(data.degraded, false);
+    assert.deepEqual(data.page_availability, { ...DEFAULT_PAGE_AVAILABILITY });
+  } finally {
+    await server.close();
+  }
+});
+
+test("GET /public/customer-app-config: published flags are returned verbatim", async () => {
+  const pool = createPool();
+  const pa = { home: true, store: false, booking: false, scheduled: false, urgent: false, tracking: true, profile: false };
+  pool.state.row.published_config = { version: 5, page_availability: pa, sections: [{ id: "hero", type: "hero", enabled: true, sort_order: 1, title: "x", items: [] }] };
+  pool.state.row.version = 5;
+  const server = await withServer(pool, (_req, _res, next) => next());
+  try {
+    const res = await fetch(`${server.base}/public/customer-app-config`);
+    const data = await res.json();
+    assert.equal(res.status, 200);
+    assert.equal(data.fallback, false);
+    assert.deepEqual(data.page_availability, pa);
+  } finally {
+    await server.close();
+  }
+});
+
+test("GET /public/customer-app-config: DB failure → degraded fail-safe with HTTP 200 (never 500)", async () => {
+  const pool = {
+    async query() {
+      const error = new Error("missing table");
+      error.code = "42P01";
+      throw error;
+    },
+  };
+  const server = await withServer(pool, (_req, _res, next) => next());
+  try {
+    const res = await fetch(`${server.base}/public/customer-app-config`);
+    const data = await res.json();
+    assert.equal(res.status, 200);
+    assert.equal(data.degraded, true);
+    assert.equal(data.fallback, true);
+    assert.deepEqual(data.page_availability, { ...DEGRADED_PAGE_AVAILABILITY });
+  } finally {
+    await server.close();
+  }
+});
+
+test("page_availability: Draft save does not publish flags until Publish is called", async () => {
+  const pool = createPool();
+  const allow = await withServer(pool, (req, _res, next) => { req.actor = { username: "admin", role: "admin" }; next(); });
+  try {
+    const draftConfig = {
+      version: 1,
+      page_availability: { home: true, store: false, booking: false, scheduled: false, urgent: false, tracking: true, profile: false },
+      sections: [{ id: "hero", type: "hero", enabled: true, sort_order: 1, title: "x", items: [] }],
+    };
+    await fetch(`${allow.base}/admin/homepage-cms/draft`, {
+      method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ config: draftConfig }),
+    });
+    // Public config still all-enabled — Draft is not published.
+    let res = await fetch(`${allow.base}/public/customer-app-config`);
+    let data = await res.json();
+    assert.deepEqual(data.page_availability, { ...DEFAULT_PAGE_AVAILABILITY });
+
+    await fetch(`${allow.base}/admin/homepage-cms/publish`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ config: draftConfig }),
+    });
+    res = await fetch(`${allow.base}/public/customer-app-config`);
+    data = await res.json();
+    assert.deepEqual(data.page_availability, { home: true, store: false, booking: false, scheduled: false, urgent: false, tracking: true, profile: false });
+  } finally {
+    await allow.close();
+  }
+});
+
+test("admin CMS wires the page-availability editor (toggles, publish guard, tracking-off confirm)", () => {
+  const adminJs = read("admin-homepage-cms.js");
+  const adminHtml = read("admin-homepage-cms.html");
+  // Editor + nav entry.
+  assert.match(adminJs, /data-edit="page-availability"/);
+  assert.match(adminJs, /renderPageAvailabilityEditor/);
+  assert.match(adminJs, /data-page-availability="/);
+  // Never auto-toggle: only the toggled key changes.
+  assert.match(adminJs, /config\.page_availability\[key\] = target\.checked/);
+  // Cannot disable the last enabled page (UI guard), and publish guards remain.
+  assert.match(adminJs, /function pageAvailabilityToggleAllowed\(/);
+  assert.match(adminJs, /if \(!pageAvailabilityToggleAllowed\(config\.page_availability, key, target\.checked\)\)/);
+  // Publish guards: all-disabled blocked, tracking-off confirm.
+  assert.match(adminJs, /ต้องเปิดอย่างน้อย 1 หน้า/);
+  assert.match(adminJs, /pa\.tracking === false && !window\.confirm/);
+  // CSS present for the editor.
+  assert.match(adminHtml, /\.pa-row/);
 });

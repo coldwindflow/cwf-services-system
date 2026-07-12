@@ -136,6 +136,12 @@
       return requestJson("/public/homepage/active-job", { cache: "no-store" });
     },
 
+    // Page-availability rollout control (admin toggle) — always fetched fresh so
+    // a page turned off in the CMS takes effect without a cache round-trip.
+    async loadCustomerAppConfig() {
+      return requestJson("/public/customer-app-config", { cache: "no-store" });
+    },
+
     async createOrder(payload) {
       return requestJson("/public/orders", { method: "POST", body: payload || {} });
     },

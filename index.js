@@ -18446,7 +18446,15 @@ function buildCustomerConfirmationVars({ job, items, origin, ddTH, ttTH, ddEN, t
   const trackingCredential = String(job.booking_token || '').trim() || String(job.booking_code || '') || String(job.job_id || '');
   return {
     booking_code: booking,
-    tracking_url: `${origin}/track.html?q=${encodeURIComponent(trackingCredential)}`,
+    // Official confirmation link opens the Customer App V2 Tracking screen with
+    // the credential in the URL FRAGMENT (after #), which browsers never send to
+    // the server (no access logs, no Referer leak). The app boot reads it from
+    // location.hash, then scrubs the URL to a clean #tracking. Legacy
+    // ?q=...#tracking links still work and are also scrubbed on boot.
+    // The credential selection above is unchanged: booking_token when present
+    // (full access), never rendered as visible text or logged. Legacy track.html
+    // is intentionally left in place for rollback.
+    tracking_url: `${origin}/customer-app/index.html#tracking?q=${encodeURIComponent(trackingCredential)}`,
     customer_name: _safeMsgText(job.customer_name),
     customer_phone: _safeMsgText(job.customer_phone),
     appointment_th: `${ddTH} เวลา ${ttTH} น.`,

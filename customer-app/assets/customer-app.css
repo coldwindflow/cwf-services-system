@@ -5813,3 +5813,46 @@ textarea.purchase-input { min-height: 66px; resize: vertical; }
   font-weight: 800;
 }
 .nav-item-primary.is-active span { color: var(--navy); font-weight: 900; }
+
+/* ============================================================================
+   Page availability — maintenance screen + booking empty state
+   These appear when an admin disables a Customer App page (rollout control,
+   NOT a server kill switch). Kept visually calm and reassuring.
+   ========================================================================== */
+.maintenance-screen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+  padding: 24px 16px;
+}
+.maintenance-card {
+  width: 100%;
+  max-width: 420px;
+  background: var(--card, #fff);
+  border: 1px solid var(--line, #e3e9f2);
+  border-radius: var(--radius-lg);
+  padding: 28px 22px;
+  text-align: center;
+  box-shadow: 0 18px 40px -24px rgba(6, 24, 47, 0.35);
+}
+.maintenance-emoji { font-size: 44px; line-height: 1; margin-bottom: 10px; }
+.maintenance-card h2 { font-size: 19px; font-weight: 800; color: var(--navy); margin: 0 0 6px; }
+.maintenance-page { font-size: 14px; color: var(--navy-3); margin: 0 0 4px; }
+.maintenance-card .muted { font-size: 14px; margin: 0 0 18px; }
+.maintenance-actions { display: flex; flex-direction: column; gap: 10px; }
+.maintenance-actions .primary-btn,
+.maintenance-actions .secondary-btn { width: 100%; text-align: center; justify-content: center; }
+
+.booking-empty-card {
+  text-align: center;
+  padding: 26px 20px;
+}
+.booking-empty-emoji { font-size: 40px; line-height: 1; margin-bottom: 8px; }
+.booking-empty-card h2 { font-size: 18px; font-weight: 800; color: var(--navy); margin: 0 0 6px; }
+.booking-empty-card .muted { margin: 0 0 16px; }
+.booking-empty-card .support-strip { justify-content: center; }
+
+/* Availability-hidden controls: belt-and-braces so a [hidden] element that some
+   other rule forces back to display:block still stays out of the layout. */
+[data-cwf-avail="off"] { display: none !important; }
