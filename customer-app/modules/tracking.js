@@ -947,21 +947,25 @@
     `;
   }
 
-  function renderReview(data) {
-    if (!isDone(data)) return "";
+  function renderExistingTechnicianReviewSummary(data) {
     const review = data.review || {};
-    if (review.already_reviewed) {
-      return `
-        <section class="tracking-extra-card review-summary-card">
-          <div class="section-head compact">
-            <span class="section-kicker">Review</span>
-            <h2>รีวิวของคุณ</h2>
-          </div>
-          <p><strong>${esc(review.rating || "-")} / 5</strong></p>
-          ${review.review_text ? `<p class="muted preserve-lines">${esc(review.review_text)}</p>` : ""}
-        </section>
-      `;
-    }
+    if (!isDone(data) || !review.already_reviewed) return "";
+    return `
+      <section class="tracking-extra-card review-summary-card">
+        <div class="section-head compact">
+          <span class="section-kicker">Technician Review</span>
+          <h2>รีวิวทีมช่าง</h2>
+        </div>
+        <p><strong>${esc(review.rating || "-")} / 5</strong></p>
+        ${review.review_text ? `<p class="muted preserve-lines">${esc(review.review_text)}</p>` : ""}
+        ${review.complaint_text ? `<p class="muted preserve-lines"><strong>ข้อเสนอแนะ:</strong> ${esc(review.complaint_text)}</p>` : ""}
+        ${review.reviewed_at ? `<p class="muted">ส่งเมื่อ ${esc(root.utils.formatDateTime(review.reviewed_at))}</p>` : ""}
+      </section>
+    `;
+  }
+
+  function renderTechnicianReviewForm(data) {
+    if (!isDone(data) || data.review?.already_reviewed) return "";
     // Reviewing is a WRITE. Two authorised shapes, mirroring the server policy:
     //  - token lookup (access_level "token"): the exact booking_token authorises,
     //    posted as a hidden field. No PII entry needed.
@@ -1022,34 +1026,45 @@
     `;
   }
 
+  function renderReview(data) {
+    return renderExistingTechnicianReviewSummary(data) || renderTechnicianReviewForm(data);
+  }
+
   // Separate, additional section from renderReview() above (which rates the
   // technician via jobs.customer_rating/technician_reviews). This one rates
   // the catalog item/service via public.catalog_item_reviews, authorized by
   // the same tracking token -- no Customer App login required. Server is the
   // sole source of truth for eligibility/target; this only reflects data.catalog_review.
-  function renderCatalogReview(data) {
+  function catalogReviewStatusLabel(value) {
+    const status = clean(value).toLowerCase();
+    if (status === "approved") return "เผยแพร่แล้ว";
+    if (status === "rejected") return "ไม่ผ่านการตรวจสอบ";
+    if (["pending", "pending_review"].includes(status)) return "รอตรวจสอบ";
+    if (status === "hidden") return "ซ่อนจากหน้าสาธารณะ";
+    return "ส่งรีวิวแล้ว";
+  }
+
+  function renderExistingCatalogReviewSummary(data) {
+    const catalogReview = data.catalog_review;
+    if (!isDone(data) || !catalogReview?.already_reviewed) return "";
+    const review = catalogReview.review || {};
+    return `
+      <section class="tracking-extra-card catalog-review-summary-card">
+        <div class="section-head compact">
+          <span class="section-kicker">Service Review</span>
+          <h2>รีวิวบริการนี้</h2>
+        </div>
+        <p><strong>${esc(review.rating || "-")} / 5</strong> &middot; <span class="muted">${esc(catalogReviewStatusLabel(review.moderation_status))}</span></p>
+        ${review.comment ? `<p class="muted preserve-lines">${esc(review.comment)}</p>` : ""}
+        ${review.created_at ? `<p class="muted">ส่งเมื่อ ${esc(root.utils.formatDateTime(review.created_at))}</p>` : ""}
+      </section>
+    `;
+  }
+
+  function renderCatalogReviewForm(data) {
     if (!isDone(data)) return "";
     const catalogReview = data.catalog_review;
-    if (!catalogReview) return "";
-
-    if (catalogReview.already_reviewed) {
-      const review = catalogReview.review || {};
-      const statusLabel = review.moderation_status === "approved"
-        ? "ได้รับการอนุมัติ"
-        : review.moderation_status === "rejected"
-          ? "ไม่ผ่านการตรวจสอบ"
-          : "รอแอดมินตรวจสอบ";
-      return `
-        <section class="tracking-extra-card catalog-review-summary-card">
-          <div class="section-head compact">
-            <span class="section-kicker">Service Review</span>
-            <h2>รีวิวบริการนี้</h2>
-          </div>
-          <p><strong>${esc(review.rating || "-")} / 5</strong> &middot; <span class="muted">${esc(statusLabel)}</span></p>
-          ${review.comment ? `<p class="muted preserve-lines">${esc(review.comment)}</p>` : ""}
-        </section>
-      `;
-    }
+    if (!catalogReview || catalogReview.already_reviewed) return "";
 
     if (!catalogReview.eligible || !canUseTokenActions(data)) return "";
     // The private write credential is injected from state
@@ -1081,6 +1096,10 @@
         </form>
       </section>
     `;
+  }
+
+  function renderCatalogReview(data) {
+    return renderExistingCatalogReviewSummary(data) || renderCatalogReviewForm(data);
   }
 
   function renderWarranty(data) {
@@ -1121,18 +1140,25 @@
   }
 
   function renderAftercare(data) {
-    // Only one review form may ever be on screen at a time. The catalog
-    // review (server-derived item/service_type/overall target) is the
-    // primary form once available; the legacy technician-review form is
-    // shown only as a fallback when data.catalog_review is absent entirely
-    // (older API shape / migration not yet applied on this deployment).
-    const catalogReviewAvailable = data.catalog_review != null;
-    const content = [
-      renderReceipt(data),
-      catalogReviewAvailable ? "" : renderReview(data),
-      renderCatalogReview(data),
+    // Existing review summaries and warranty terms are read-only. Render both
+    // summary types when they coexist, independently of token capabilities.
+    const readOnlyContent = [
+      renderExistingTechnicianReviewSummary(data),
+      renderExistingCatalogReviewSummary(data),
       renderWarranty(data),
-    ].filter(Boolean).join("");
+    ];
+
+    // Documents and new-review forms remain exact-token actions. Keep the
+    // existing single-form rule: catalog review is primary when its API shape
+    // exists; technician review is the legacy fallback only when absent.
+    const catalogReviewAvailable = data.catalog_review != null;
+    const privilegedContent = canUseTokenActions(data)
+      ? [
+          renderReceipt(data),
+          catalogReviewAvailable ? renderCatalogReviewForm(data) : renderTechnicianReviewForm(data),
+        ]
+      : [];
+    const content = [...readOnlyContent, ...privilegedContent].filter(Boolean).join("");
     return content || root.utils.stateBox("", "รายละเอียดหลังบริการจะแสดงหลังงานเสร็จ");
   }
 
@@ -1361,11 +1387,11 @@
       });
     }
 
-    if (done && canUseTokenActions(data)) {
+    if (done) {
       views.push({
         id: "aftercare",
-        label: "เอกสาร",
-        meta: "รีวิว/ประกัน",
+        label: "หลังบริการ",
+        meta: canUseTokenActions(data) ? "เอกสารและรีวิว" : "สรุปและรับประกัน",
         content: renderAftercare(data),
       });
     }
@@ -1717,6 +1743,7 @@
       receiptUrl,
       renderReview,
       renderCatalogReview,
+      renderAftercare,
       renderTrackingResult,
       renderTimeline,
     },

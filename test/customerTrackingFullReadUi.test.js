@@ -183,8 +183,152 @@ test("completed copy follows read versus privileged-action capability", () => {
   };
   app.state.tracking = { status: "success", data: tokenData, error: "" };
   const tokenHtml = app.tracking._test.renderTrackingResult();
-  assert.match(tokenHtml, />เอกสาร</);
-  assert.match(tokenHtml, /รีวิว\/ประกัน/);
+  assert.match(tokenHtml, />หลังบริการ</);
+  assert.match(tokenHtml, /เอกสารและรีวิว/);
+});
+
+function assertNoPrivilegedAftercare(html) {
+  assert.doesNotMatch(html, /booking_token|\/docs\/receipt|\/docs\/quote|\/docs\/eslip/);
+  assert.doesNotMatch(html, /data-review-form|data-catalog-review-form|open-eslip/);
+  assert.doesNotMatch(html, /ให้คะแนนงานนี้|ส่งรีวิว/);
+}
+
+test("code-only completed shows existing technician review and warranty read-only", () => {
+  const app = loadTrackingRuntime();
+  const data = {
+    ...codeReadPayload(),
+    job_status: "เสร็จแล้ว",
+    finished_at: "2026-07-15T11:00:00+07:00",
+    review: {
+      already_reviewed: true,
+      rating: 4,
+      review_text: "ช่างตรงเวลาและทำงานเรียบร้อย",
+      complaint_text: "ขอให้โทรก่อนเข้าหน้างาน",
+      reviewed_at: "2026-07-15T12:00:00+07:00",
+    },
+  };
+  app.state.tracking = { status: "success", data, error: "" };
+  const html = app.tracking._test.renderTrackingResult();
+  assert.match(html, />หลังบริการ</);
+  assert.match(html, /รีวิวทีมช่าง/);
+  assert.match(html, /4 \/ 5/);
+  assert.match(html, /ช่างตรงเวลาและทำงานเรียบร้อย/);
+  assert.match(html, /ขอให้โทรก่อนเข้าหน้างาน/);
+  assert.match(html, /DATE:2026-07-15T12:00:00\+07:00/);
+  assert.match(html, /เงื่อนไขรับประกัน/);
+  assertNoPrivilegedAftercare(html);
+});
+
+test("code-only completed shows existing catalog review and warranty read-only", () => {
+  const app = loadTrackingRuntime();
+  const data = {
+    ...codeReadPayload(),
+    job_status: "เสร็จแล้ว",
+    finished_at: "2026-07-15T11:00:00+07:00",
+    catalog_review: {
+      eligible: false,
+      already_reviewed: true,
+      review: {
+        rating: 5,
+        comment: "บริการล้างละเอียดมาก",
+        moderation_status: "approved",
+        created_at: "2026-07-15T12:30:00+07:00",
+      },
+    },
+  };
+  app.state.tracking = { status: "success", data, error: "" };
+  const html = app.tracking._test.renderTrackingResult();
+  assert.match(html, /รีวิวบริการนี้/);
+  assert.match(html, /5 \/ 5/);
+  assert.match(html, /บริการล้างละเอียดมาก/);
+  assert.match(html, /เผยแพร่แล้ว/);
+  assert.match(html, /DATE:2026-07-15T12:30:00\+07:00/);
+  assert.match(html, /เงื่อนไขรับประกัน/);
+  assertNoPrivilegedAftercare(html);
+});
+
+test("code-only completed preserves both existing review summaries", () => {
+  const app = loadTrackingRuntime();
+  const data = {
+    ...codeReadPayload(),
+    job_status: "เสร็จแล้ว",
+    finished_at: "2026-07-15T11:00:00+07:00",
+    review: { already_reviewed: true, rating: 4, review_text: "รีวิวทีมช่าง" },
+    catalog_review: {
+      eligible: false,
+      already_reviewed: true,
+      review: { rating: 5, comment: "รีวิวตัวบริการ", moderation_status: "pending" },
+    },
+  };
+  app.state.tracking = { status: "success", data, error: "" };
+  const html = app.tracking._test.renderTrackingResult();
+  assert.match(html, /รีวิวทีมช่าง/);
+  assert.match(html, /รีวิวตัวบริการ/);
+  assert.match(html, /รอตรวจสอบ/);
+  assertNoPrivilegedAftercare(html);
+});
+
+test("code-only completed with no review still shows warranty without review invitation", () => {
+  const app = loadTrackingRuntime();
+  const data = {
+    ...codeReadPayload(),
+    job_status: "เสร็จแล้ว",
+    finished_at: "2026-07-15T11:00:00+07:00",
+  };
+  app.state.tracking = { status: "success", data, error: "" };
+  const html = app.tracking._test.renderTrackingResult();
+  assert.match(html, />หลังบริการ</);
+  assert.match(html, /เงื่อนไขรับประกัน/);
+  assertNoPrivilegedAftercare(html);
+});
+
+test("token completed retains documents and one eligible write-review flow", () => {
+  const app = loadTrackingRuntime();
+  const data = {
+    ...codeReadPayload(),
+    access_level: "token",
+    can_use_token_actions: true,
+    capabilities: { can_view_full_tracking: true, can_use_token_actions: true },
+    booking_token: "private-token",
+    job_id: 88,
+    job_status: "เสร็จแล้ว",
+    finished_at: "2026-07-15T11:00:00+07:00",
+    receipt_url: "/docs/receipt/88?key=private-token",
+    catalog_review: { eligible: true, already_reviewed: false, review: null },
+  };
+  app.state.tracking = { status: "success", data, error: "" };
+  const html = app.tracking._test.renderTrackingResult();
+  assert.match(html, /data-action="open-eslip"/);
+  assert.match(html, /data-catalog-review-form/);
+  assert.doesNotMatch(html, /data-review-form/);
+  assert.match(html, /เงื่อนไขรับประกัน/);
+});
+
+test("token completed with existing reviews shows both summaries and no duplicate form", () => {
+  const app = loadTrackingRuntime();
+  const data = {
+    ...codeReadPayload(),
+    access_level: "token",
+    can_use_token_actions: true,
+    capabilities: { can_view_full_tracking: true, can_use_token_actions: true },
+    booking_token: "private-token",
+    job_id: 88,
+    job_status: "เสร็จแล้ว",
+    finished_at: "2026-07-15T11:00:00+07:00",
+    receipt_url: "/docs/receipt/88?key=private-token",
+    review: { already_reviewed: true, rating: 4, review_text: "ทีมช่างดี" },
+    catalog_review: {
+      eligible: false,
+      already_reviewed: true,
+      review: { rating: 5, comment: "บริการดี", moderation_status: "approved" },
+    },
+  };
+  app.state.tracking = { status: "success", data, error: "" };
+  const html = app.tracking._test.renderTrackingResult();
+  assert.match(html, /ทีมช่างดี/);
+  assert.match(html, /บริการดี/);
+  assert.match(html, /data-action="open-eslip"/);
+  assert.doesNotMatch(html, /data-review-form|data-catalog-review-form/);
 });
 
 test("payment statuses are customer-facing Thai and unknown values are hidden", () => {
