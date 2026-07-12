@@ -1,6 +1,6 @@
 "use strict";
 
-const BUILD_ID = "20260712_page_controls_tracking_link_v3";
+const BUILD_ID = "20260712_page_controls_tracking_link_v4";
 const CACHE_NAME = `cwf-customer-app-v2-${BUILD_ID}`;
 const APP_SHELL = [
   `./index.html?v=${BUILD_ID}`,

@@ -5815,28 +5815,70 @@ textarea.purchase-input { min-height: 66px; resize: vertical; }
 .nav-item-primary.is-active span { color: var(--navy); font-weight: 900; }
 
 /* ============================================================================
-   Page availability — maintenance screen + booking empty state
-   These appear when an admin disables a Customer App page (rollout control,
-   NOT a server kill switch). Kept visually calm and reassuring.
+   Page availability — LOCKED maintenance screen + booking empty state.
+   Menus/CTAs are never hidden: a disabled page shows a static, blurred skeleton
+   (placeholder only — no live data / no API) behind a readable overlay, so the
+   app keeps its full shape and the Bottom Navigation never reflows.
    ========================================================================== */
 .maintenance-screen {
+  position: relative;
+  min-height: 72vh;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+}
+/* Static placeholder shell — blurred + inert so it reads as "a page behind
+   glass" without ever showing real content. */
+.maintenance-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  filter: blur(7px);
+  opacity: 0.55;
+  pointer-events: none;
+  user-select: none;
+}
+.maintenance-skeleton .sk-block {
+  background: linear-gradient(100deg, #e9eef6 30%, #f4f7fb 50%, #e9eef6 70%);
+  background-size: 200% 100%;
+  animation: cwf-sk-shimmer 1.6s ease-in-out infinite;
+  border-radius: var(--radius);
+}
+.maintenance-skeleton .sk-hero { height: 150px; }
+.maintenance-skeleton .sk-chips { display: flex; gap: 10px; }
+.maintenance-skeleton .sk-chip { height: 64px; flex: 1; border-radius: var(--radius-sm); }
+.maintenance-skeleton .sk-card { height: 96px; }
+.maintenance-skeleton .sk-card-short { height: 60px; width: 65%; }
+@keyframes cwf-sk-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .maintenance-skeleton .sk-block { animation: none; }
+}
+/* Readable overlay on top of the blurred shell. */
+.maintenance-overlay {
+  position: absolute;
+  inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 60vh;
   padding: 24px 16px;
+  background: rgba(244, 247, 251, 0.55);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
 }
 .maintenance-card {
   width: 100%;
-  max-width: 420px;
+  max-width: 380px;
   background: var(--card, #fff);
   border: 1px solid var(--line, #e3e9f2);
   border-radius: var(--radius-lg);
-  padding: 28px 22px;
+  padding: 26px 22px;
   text-align: center;
-  box-shadow: 0 18px 40px -24px rgba(6, 24, 47, 0.35);
+  box-shadow: 0 24px 50px -24px rgba(6, 24, 47, 0.45);
 }
-.maintenance-emoji { font-size: 44px; line-height: 1; margin-bottom: 10px; }
+.maintenance-lock { font-size: 40px; line-height: 1; margin-bottom: 10px; }
 .maintenance-card h2 { font-size: 19px; font-weight: 800; color: var(--navy); margin: 0 0 6px; }
 .maintenance-page { font-size: 14px; color: var(--navy-3); margin: 0 0 4px; }
 .maintenance-card .muted { font-size: 14px; margin: 0 0 18px; }
@@ -5852,7 +5894,3 @@ textarea.purchase-input { min-height: 66px; resize: vertical; }
 .booking-empty-card h2 { font-size: 18px; font-weight: 800; color: var(--navy); margin: 0 0 6px; }
 .booking-empty-card .muted { margin: 0 0 16px; }
 .booking-empty-card .support-strip { justify-content: center; }
-
-/* Availability-hidden controls: belt-and-braces so a [hidden] element that some
-   other rule forces back to display:block still stays out of the layout. */
-[data-cwf-avail="off"] { display: none !important; }

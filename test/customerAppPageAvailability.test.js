@@ -2,11 +2,11 @@
 
 // Focused tests for Customer App V2 page-availability (admin rollout control).
 //  - The pageAvailability module: flag validation, route mapping, load
-//    priority (server → cache → degraded), DOM hiding that preserves
-//    business-disabled controls, and the maintenance screen.
-//  - Source contracts for the central router guard, boot order, and the
-//    booking-mode empty state, so a disabled page is truly unreachable and
-//    never calls its handler or page-specific API.
+//    priority (server → cache → degraded), the locked-maintenance model (menus/
+//    CTAs are never hidden — applyToDom is a no-op), and the static blurred
+//    maintenance screen.
+//  - Runtime router-guard tests: a disabled route shows the maintenance screen
+//    with its nav item still present + active, and never runs its handler/API.
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
@@ -182,51 +182,54 @@ test("firstEnabledRoute: honors priority order and always returns an enabled rou
   assert.equal(h.pa.firstEnabledRoute(), "tracking");
 });
 
-// ============================ DOM hiding ==================================
-test("applyToDom hides controls for disabled/unknown routes and restores them when re-enabled", async () => {
+// ============================ locked-maintenance model ====================
+// Menus/CTAs are NEVER hidden: applyToDom must not touch [data-route] controls.
+test("applyToDom does NOT hide [data-route] controls (menus/CTAs stay intact)", async () => {
   const trackingBtn = makeEl({ "data-route": "tracking" });
-  const storeBtn = makeEl({ "data-route": "store" });
+  const storeBtn = makeEl({ "data-route": "store" }); // points at a DISABLED route
   const h = loadModule({ routeEls: [trackingBtn, storeBtn] });
   h.setApi(async () => ({ ok: true, degraded: false, page_availability: { home: true, store: false, booking: false, scheduled: false, urgent: false, tracking: true, profile: false } }));
   await h.pa.load(); // load() calls applyToDom(document)
-  // tracking enabled → visible; store disabled → hidden
-  assert.equal(trackingBtn.hasAttribute("hidden"), false);
-  assert.equal(storeBtn.getAttribute("data-cwf-avail"), "off");
-  assert.equal(storeBtn.hasAttribute("hidden"), true);
-  assert.equal(storeBtn.getAttribute("aria-hidden"), "true");
-
-  // Re-enable store and re-apply → restored.
-  h.setApi(async () => ({ ok: true, degraded: false, page_availability: { ...ALL } }));
-  await h.pa.load();
+  // Neither the enabled nor the disabled control is hidden/disabled/aria-hidden.
+  for (const btn of [trackingBtn, storeBtn]) {
+    assert.equal(btn.hasAttribute("hidden"), false, "must not set hidden");
+    assert.equal(btn.hasAttribute("data-cwf-avail"), false, "must not mark controls off");
+    assert.equal(btn.getAttribute("aria-hidden"), null, "must not aria-hide");
+    assert.equal(btn.getAttribute("tabindex"), null, "must not remove from tab order");
+  }
+  // Explicit applyToDom(scope) is a harmless no-op too.
+  h.pa.applyToDom(h.appEl);
   assert.equal(storeBtn.hasAttribute("hidden"), false);
-  assert.equal(storeBtn.hasAttribute("data-cwf-avail"), false);
 });
 
-test("applyToDom never re-enables a control that other business logic had disabled", async () => {
-  // A booking CTA that was already disabled by business logic, pointing at a
-  // disabled route. When we later restore it, it must stay disabled.
-  const bizDisabled = makeEl({ "data-route": "store" }, { hasDisabled: true, disabled: true });
-  const h = loadModule({ routeEls: [bizDisabled] });
-  h.setApi(async () => ({ ok: true, degraded: false, page_availability: { home: true, store: false, booking: false, scheduled: false, urgent: false, tracking: true, profile: false } }));
-  await h.pa.load();
-  assert.equal(bizDisabled.disabled, true);
-  // Re-enable the store page → restore should recover the PRIOR disabled state.
+test("startObserver is a no-op (nothing is hidden, so nothing to reapply)", async () => {
+  const h = loadModule();
   h.setApi(async () => ({ ok: true, degraded: false, page_availability: { ...ALL } }));
   await h.pa.load();
-  assert.equal(bizDisabled.disabled, true, "must not silently re-enable a business-disabled control");
+  // Must not throw and must not require a MutationObserver.
+  assert.doesNotThrow(() => h.pa.startObserver());
 });
 
 // ============================ maintenance screen ==========================
-test("maintenanceHtml shows the page label, a back button to the first enabled route, LINE + phone", async () => {
+test("maintenanceHtml is a STATIC blurred skeleton + readable overlay (no live data)", async () => {
   const h = loadModule();
   h.setApi(async () => ({ ok: true, degraded: false, page_availability: { home: false, store: false, booking: false, scheduled: false, urgent: false, tracking: true, profile: false } }));
   await h.pa.load();
   const html = h.pa.maintenanceHtml("store");
+  // Static blurred skeleton behind a readable overlay.
+  assert.match(html, /maintenance-skeleton/);
+  assert.match(html, /sk-block/);
+  assert.match(html, /aria-hidden="true"/); // skeleton hidden from a11y tree
+  assert.match(html, /maintenance-overlay/);
+  assert.match(html, /role="status"/);
+  // Message + page label + back-to-enabled + contact actions.
   assert.match(html, /หน้านี้กำลังปรับปรุง/);
   assert.match(html, /ร้านค้า/); // page label for 'store'
-  assert.match(html, /data-route="tracking"/); // firstEnabledRoute
+  assert.match(html, /data-route="tracking"/); // firstEnabledRoute back button
   assert.match(html, /lin\.ee\/fG1Oq7y/);
   assert.match(html, /tel:0988777321/);
+  // The skeleton must be generic placeholder markup — never real customer data.
+  assert.doesNotMatch(html, /booking_code|booking_token|customer_name|address_text|\?q=|\?token=/i);
 });
 
 // ============================ router guard (source) =======================
@@ -278,7 +281,7 @@ test("api exposes loadCustomerAppConfig as a no-store GET to /public/customer-ap
 });
 
 test("build wiring: pageAvailability.js is registered in the HTML shell and the SW cache, with the new build id", () => {
-  const build = "20260712_page_controls_tracking_link_v3";
+  const build = "20260712_page_controls_tracking_link_v4";
   assert.match(indexHtml, new RegExp(`modules/pageAvailability\\.js\\?v=${build}`));
   assert.match(swSrc, new RegExp(`BUILD_ID = "${build}"`));
   assert.match(swSrc, /modules\/pageAvailability\.js\?v=\$\{BUILD_ID\}/);
@@ -291,7 +294,7 @@ test("build wiring: pageAvailability.js is registered in the HTML shell and the 
    RUNTIME tests (execute the real code in a VM — not regex assertions).
    ========================================================================== */
 
-const BUILD = "20260712_page_controls_tracking_link_v3";
+const BUILD = "20260712_page_controls_tracking_link_v4";
 const adminSrc = read("admin-homepage-cms.js");
 
 function reqUrlOf(req) {
@@ -452,13 +455,28 @@ test("SW: activation deletes stale Customer App cache namespaces and keeps the c
 });
 
 // ---- Router guard runtime harness ----------------------------------------
+function makeNavItem(route) {
+  let active = false;
+  const attrs = { "data-route": route };
+  return {
+    getAttribute: (n) => (n in attrs ? attrs[n] : null),
+    setAttribute: (n, v) => { attrs[n] = String(v); },
+    removeAttribute: (n) => { delete attrs[n]; },
+    hasAttribute: (n) => n in attrs,
+    classList: { toggle: (cls, force) => { if (cls === "is-active") active = !!force; } },
+    get isActive() { return active; },
+  };
+}
+
 function loadRouterRuntime() {
   const store = new Map();
   const appEl = { innerHTML: "", dataset: {}, focus() {}, querySelectorAll: () => [] };
   const body = { classList: { add() {}, remove() {}, toggle() {} } };
+  // The real Bottom Navigation (5 fixed items) — none are ever hidden/removed.
+  const navItems = ["home", "store", "booking", "tracking", "profile"].map(makeNavItem);
   const documentObj = {
     getElementById: (id) => (id === "app" ? appEl : null),
-    querySelectorAll: () => [],
+    querySelectorAll: (sel) => (String(sel).includes("nav-item") ? navItems : []),
     addEventListener: () => {},
     body,
   };
@@ -509,25 +527,30 @@ function loadRouterRuntime() {
   vm.runInContext(routerSrc, sandbox); // router
   const root = win.CWFCustomerAppV2;
 
-  const home = () => { handlerCalls.home += 1; };
+  // Real handlers render into the #app container they receive; the spies do too
+  // so a successful (enabled) render overwrites any prior maintenance markup.
+  const paint = (name) => (app) => { if (app) app.innerHTML = `<section data-rendered="${name}">ok</section>`; };
+  const home = (app) => { handlerCalls.home += 1; paint("home")(app); };
   home.onLeave = () => { handlerCalls.homeLeave += 1; };
   root.router.register({
     home,
-    store: () => { handlerCalls.store += 1; apiCalls.store += 1; },
-    storeItem: () => { handlerCalls.storeItem += 1; apiCalls.store += 1; },
-    booking: () => { handlerCalls.booking += 1; },
-    scheduled: () => { handlerCalls.scheduled += 1; root.api.previewPricing(); root.api.loadAvailability(); },
-    urgent: () => { handlerCalls.urgent += 1; root.api.submitUrgentRequest(); },
-    tracking: () => { handlerCalls.tracking += 1; root.api.trackBooking(); },
-    profile: () => { handlerCalls.profile += 1; },
+    store: (app) => { handlerCalls.store += 1; apiCalls.store += 1; paint("store")(app); },
+    storeItem: (app) => { handlerCalls.storeItem += 1; apiCalls.store += 1; paint("storeItem")(app); },
+    booking: (app) => { handlerCalls.booking += 1; paint("booking")(app); },
+    scheduled: (app) => { handlerCalls.scheduled += 1; root.api.previewPricing(); root.api.loadAvailability(); paint("scheduled")(app); },
+    urgent: (app) => { handlerCalls.urgent += 1; root.api.submitUrgentRequest(); paint("urgent")(app); },
+    tracking: (app) => { handlerCalls.tracking += 1; root.api.trackBooking(); paint("tracking")(app); },
+    profile: (app) => { handlerCalls.profile += 1; paint("profile")(app); },
   });
 
   return {
-    root, state, appEl, handlerCalls, apiCalls, routeToCalls,
+    root, state, appEl, handlerCalls, apiCalls, routeToCalls, navItems,
     setFlags: (flags) => { apiResponse = async () => ({ ok: true, degraded: false, page_availability: flags }); },
     load: () => root.pageAvailability.load(),
     render: (requested) => { state.requested = requested; root.router.render({ focus: false }); },
     isMaintenance: () => String(appEl.innerHTML).includes("หน้านี้กำลังปรับปรุง"),
+    navActive: (route) => navItems.find((n) => n.getAttribute("data-route") === route).isActive,
+    navHidden: (route) => navItems.find((n) => n.getAttribute("data-route") === route).hasAttribute("hidden"),
   };
 }
 
@@ -550,6 +573,39 @@ test("router runtime: disabled Tracking never calls the tracking handler or /pub
   assert.equal(h.handlerCalls.tracking, 0, "tracking handler must not run");
   assert.equal(h.apiCalls.track, 0, "no /public/track lookup may fire");
   assert.equal(h.isMaintenance(), true, "maintenance screen shown");
+});
+
+test("router runtime: disabled Booking keeps its Bottom-Nav item present + active, shows maintenance, no booking handler/API", async () => {
+  const h = loadRouterRuntime();
+  h.setFlags(flags({ booking: false }));
+  await h.load();
+  h.render("booking");
+  // DoD: the "จอง" menu item stays in the nav (never hidden/removed) …
+  assert.equal(h.navHidden("booking"), false, "booking nav item must not be hidden");
+  // … and is shown active for the disabled route it points at.
+  assert.equal(h.navActive("booking"), true, "booking nav item must be active");
+  // Route resolves to #booking and shows the locked maintenance screen …
+  assert.equal(h.state.route, "booking", "URL/route stays #booking");
+  assert.equal(h.isMaintenance(), true, "maintenance screen shown");
+  // … without ever running the booking handler (so no scheduled/urgent API).
+  assert.equal(h.handlerCalls.booking, 0);
+  assert.equal(h.apiCalls.pricing, 0);
+  assert.equal(h.apiCalls.availability, 0);
+  assert.equal(h.apiCalls.urgent, 0);
+});
+
+test("router runtime: re-enabling a page restores normal behaviour (handler runs, no maintenance)", async () => {
+  const h = loadRouterRuntime();
+  h.setFlags(flags({ booking: false }));
+  await h.load();
+  h.render("booking");
+  assert.equal(h.isMaintenance(), true);
+  // Admin re-enables booking; a fresh availability load flips the flag.
+  h.setFlags(flags());
+  await h.load();
+  h.render("booking");
+  assert.equal(h.handlerCalls.booking, 1, "handler runs once the page is enabled again");
+  assert.equal(h.isMaintenance(), false, "no maintenance once enabled");
 });
 
 test("router runtime: disabled Scheduled never calls the handler, pricing, or availability", async () => {
