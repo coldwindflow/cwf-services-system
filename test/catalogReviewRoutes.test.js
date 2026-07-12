@@ -44,6 +44,12 @@ function makePool({ schemaReady = true, trackingSchemaReady = false, items = [],
       return { rows: [{ cnt: schemaReady ? 1 : 0 }] };
     }
 
+    if (s.includes("FROM public.jobs") && s.includes("WHERE booking_token = $1") && !s.includes("OR booking_code = $1")) {
+      const [token] = params;
+      const job = state.jobs.find((j) => j.booking_token === token);
+      return { rows: job ? [{ ...job }] : [] };
+    }
+
     if (s.includes("FROM public.jobs") && s.includes("WHERE booking_token = $1 OR booking_code = $1")) {
       const [token] = params;
       const job = state.jobs.find((j) => j.booking_token === token || j.booking_code === token);
@@ -872,6 +878,56 @@ test("POST /public/catalog-reviews never trusts client-supplied job_id/item_id a
     assert.equal(pool.state.reviews[0].review_source, "tracking");
     assert.equal(pool.state.reviews[0].moderation_status, "pending");
     assert.equal(body.moderation_status, "pending");
+  });
+});
+
+test("POST /public/catalog-reviews rejects booking_code and near-miss credentials but accepts the exact booking_token", async () => {
+  const pool = makePool({
+    trackingSchemaReady: true,
+    jobs: [{
+      job_id: 201,
+      job_type: "ล้าง",
+      catalog_item_id: 1,
+      job_status: DONE_STATUS,
+      canceled_at: null,
+      booking_token: "exact-private-token-201",
+      booking_code: "CWFABC1234",
+      customer_name: "สมชาย",
+    }],
+  });
+  const router = createCatalogReviewRoutes({ pool, requireCustomerJwt: requireCustomerJwtFor(null), requireAdminSession: denyAdmin });
+  await withServer(router, async (base) => {
+    for (const credential of ["CWFABC1234", "exact-private-token-20", "wrong-private-token"]) {
+      const denied = await fetch(`${base}/public/catalog-reviews`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ token: credential, rating: 5 }),
+      });
+      assert.equal(denied.status, 403);
+      assert.equal(pool.state.reviews.length, 0);
+    }
+
+    const accepted = await fetch(`${base}/public/catalog-reviews`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ token: "exact-private-token-201", rating: 5, comment: "ดีมาก" }),
+    });
+    assert.equal(accepted.status, 201);
+    assert.equal(pool.state.reviews.length, 1);
+  });
+});
+
+test("GET tracking review status keeps its read lookup behavior for booking codes", async () => {
+  const pool = makePool({
+    trackingSchemaReady: true,
+    jobs: [{ job_id: 202, job_type: "ล้าง", catalog_item_id: 1, job_status: DONE_STATUS, canceled_at: null, booking_token: "tok-202", booking_code: "CWFREAD202", customer_name: "สมหญิง" }],
+  });
+  const router = createCatalogReviewRoutes({ pool, requireCustomerJwt: requireCustomerJwtFor(null), requireAdminSession: denyAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/public/catalog-reviews/status?token=CWFREAD202`);
+    const body = await res.json();
+    assert.equal(res.status, 200);
+    assert.equal(body.eligible, true);
   });
 });
 

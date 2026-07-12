@@ -214,6 +214,17 @@ module.exports = function createCatalogReviewRoutes(deps = {}) {
     return r.rows[0] || null;
   }
 
+  async function findJobByExactBookingToken(db, token, { forUpdate = false } = {}) {
+    const r = await db.query(
+      `SELECT job_id, job_type, job_status, canceled_at, catalog_item_id, customer_name
+         FROM public.jobs
+        WHERE booking_token = $1
+        LIMIT 1${forUpdate ? "\n        FOR UPDATE" : ""}`,
+      [token]
+    );
+    return r.rows[0] || null;
+  }
+
   // Returns the customer's completed, catalog-linked, not-yet-reviewed jobs
   // for this item — the source of truth for both "is eligible at all" and
   // "which job should this review be attached to". Never trusts client input
@@ -499,7 +510,7 @@ module.exports = function createCatalogReviewRoutes(deps = {}) {
         // Lock the job row for the duration of the transaction so two
         // concurrent submissions against the same token can't both see it
         // as eligible before either commits.
-        job = await findJobByTrackingToken(client, token, { forUpdate: true });
+        job = await findJobByExactBookingToken(client, token, { forUpdate: true });
         if (!job || !isJobReviewEligible(job)) {
           await client.query("ROLLBACK");
           return res.status(403).json({ error: "งานนี้ยังไม่เสร็จสมบูรณ์ หรือ token ไม่ถูกต้อง" });

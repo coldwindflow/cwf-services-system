@@ -106,13 +106,12 @@ test("track.html escapes customer/technician/address/photo/phone values", () => 
 
 // ============================ A3. Customer App tracking rendering =========
 
-test("customer-app tracking is access-level aware (full customer info vs limited notice)", () => {
-  assert.match(trackingJs, /const isFull = data\.access_level === "token"/);
+test("customer-app separates full tracking reads from token-only actions", () => {
+  assert.match(trackingJs, /const isFull = canViewDetails\(data\)/);
   assert.match(trackingJs, /if \(isFull && data\.customer_name\)/);
   assert.match(trackingJs, /if \(isFull && data\.address_text\)/);
-  assert.match(trackingJs, /tracking-limited-note/);
-  // The limited notice appears only when NOT full access.
-  assert.match(trackingJs, /const limitedNotice = !isFull \?/);
+  assert.match(trackingJs, /function canUseTokenActions\(data\)/);
+  assert.match(trackingJs, /if \(!canUseTokenActions\(data\)\) return "";/);
 });
 
 // ============================ B6. Backend coordinate validation ===========
@@ -392,14 +391,25 @@ test("track.html (token): token absent from rendered HTML + #q shows booking_cod
   assert.ok(resultEl.innerHTML.includes("data-nav"));
 });
 
-test("track.html (code): limited mode shows notice, hides address/nav, no dash rows", async () => {
-  const data = { access_level: "code", booking_code: "CWF777", job_status: "กำลังดำเนินการ", appointment_datetime: "2026-06-20T10:00:00Z", customer_phone: "•••• 5678" };
+test("track.html (code): full read details render while token actions stay unavailable", async () => {
+  const data = {
+    access_level: "code",
+    can_view_full_tracking: true,
+    can_use_token_actions: false,
+    booking_code: "CWF777",
+    job_status: "กำลังดำเนินการ",
+    appointment_datetime: "2026-06-20T10:00:00Z",
+    customer_name: "คุณลูกค้า",
+    customer_phone: "0812345678",
+    address_text: "99 ถนนสุขุมวิท",
+  };
   const { track, qEl, resultEl } = loadTrackHtml({ data });
   await track("CWF777");
-  assert.ok(resultEl.innerHTML.includes("โหมดจำกัดข้อมูล"), "must show the limited-access notice");
-  assert.ok(resultEl.innerHTML.includes("•••• 5678"), "masked phone may show");
-  assert.ok(!resultEl.innerHTML.includes("data-nav"), "no navigation control in limited mode");
-  assert.ok(!resultEl.innerHTML.includes("ชื่อลูกค้า"), "no misleading customer-name row");
+  assert.ok(resultEl.innerHTML.includes("คุณลูกค้า"));
+  assert.ok(resultEl.innerHTML.includes("99 ถนนสุขุมวิท"));
+  assert.ok(resultEl.innerHTML.includes("data-nav"));
+  assert.ok(!resultEl.innerHTML.includes("data-review-submit"));
+  assert.ok(!resultEl.innerHTML.includes("SECRETTOKEN"));
   assert.equal(qEl.value, "CWF777");
 });
 

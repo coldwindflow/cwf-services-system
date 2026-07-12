@@ -113,7 +113,7 @@
     },
 
     async trackBooking(q) {
-      return requestJson("/public/track", { query: { q } });
+      return requestJson("/public/track", { query: { q }, cache: "no-store" });
     },
 
     async loadUrgentStatus(q) {

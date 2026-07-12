@@ -50,37 +50,53 @@ function richPayload() {
     technician_note: "ลูกค้าไม่อยู่บ้าน",
     technician: { username: "tech1", full_name: "ช่าง หนึ่ง", phone: "0899999999" },
     technician_team: [{ username: "tech1", phone: "0899999999" }],
-    photos: [{ public_url: "https://x/y.jpg" }],
-    units: [{ location_label: "ห้องนอน", checklist: [{ issue: "ตัน" }] }],
+    photos: [{ photo_id: 900, public_url: "https://x/y.jpg", phase: "after" }],
+    units: [{ unit_id: 700, unit_no: 1, unit_code: "AC-01", label: "ห้องนอน", photos: [{ photo_id: 901, public_url: "https://x/u.jpg" }] }],
     cancel_reason: "ลูกค้ายกเลิก",
     review: { review_text: "ดีมาก" },
+    catalog_review: { eligible: true, already_reviewed: true, review: { rating: 5, comment: "ดี", moderation_status: "pending", created_at: "2026-07-10" } },
     customer_complaint: "ช้า",
   };
 }
 
-// Fields a booking_code lookup is ALLOWED to return — everything else must be absent.
+// Booking-code reads use a customer-facing allowlist. Nested projectors also
+// remove internal identifiers and write/document metadata.
 const ALLOWED_CODE_KEYS = new Set([
-  "access_level", "legacy_review_eligible", "booking_code", "job_status",
-  "booking_mode", "dispatch_mode", "appointment_datetime", "duration_min",
+  "access_level", "capabilities", "can_view_full_tracking", "can_use_token_actions",
+  "legacy_review_eligible", "booking_code", "customer_name", "customer_phone",
+  "job_type", "job_status", "booking_mode", "dispatch_mode", "appointment_datetime",
+  "duration_min", "job_price", "payment_status", "paid_at", "address_text",
+  "maps_url", "job_zone", "gps_latitude", "gps_longitude", "created_at",
   "travel_started_at", "checkin_at", "started_at", "finished_at", "canceled_at",
-  "customer_phone",
+  "cancel_reason", "technician_note", "service_items", "photos", "units",
+  "technician", "technician_team", "review", "catalog_review",
 ]);
 
-test("booking_code redaction returns ONLY the allowlisted keys (blacklist-proof)", () => {
+test("booking_code gets full customer-facing detail without privileged fields", () => {
   const redacted = trackingPrivacy.redactPublicTrackPayload(richPayload());
   for (const key of Object.keys(redacted)) {
     assert.ok(ALLOWED_CODE_KEYS.has(key), `unexpected key leaked to code lookup: ${key}`);
   }
-  // Spot-check the sensitive ones are truly gone.
-  for (const gone of ["booking_token", "customer_name", "address_text", "maps_url",
-    "gps_latitude", "gps_longitude", "job_id", "technician_note", "technician",
-    "technician_team", "photos", "units", "cancel_reason", "review", "customer_complaint", "receipt_url"]) {
+  for (const gone of ["booking_token", "job_id", "receipt_url", "document_key", "auth_token", "customer_complaint"]) {
     assert.equal(redacted[gone], undefined, `${gone} must not be present for a code lookup`);
   }
   assert.equal(redacted.access_level, "code");
-  assert.equal(redacted.customer_phone, "•••• 5678"); // masked confirmation aid
+  assert.equal(redacted.can_view_full_tracking, true);
+  assert.equal(redacted.can_use_token_actions, false);
+  assert.equal(redacted.capabilities.can_view_documents, false);
+  assert.equal(redacted.capabilities.can_submit_review, false);
+  assert.equal(redacted.customer_name, richPayload().customer_name);
+  assert.equal(redacted.customer_phone, "0812345678");
+  assert.equal(redacted.address_text, richPayload().address_text);
   assert.equal(redacted.job_status, "รอดำเนินการ");
   assert.equal(redacted.booking_code, "CWFABCDEFG");
+  assert.equal(redacted.technician.username, undefined);
+  assert.equal(redacted.technician.full_name, richPayload().technician.full_name);
+  assert.equal(redacted.photos[0].photo_id, undefined);
+  assert.equal(redacted.units[0].unit_id, undefined);
+  assert.equal(redacted.units[0].photos[0].photo_id, undefined);
+  assert.equal(redacted.catalog_review.eligible, false);
+  assert.equal(redacted.catalog_review.review.moderation_status, undefined);
 });
 
 test("a brand-new sensitive field added upstream does NOT leak through code redaction", () => {
@@ -89,13 +105,10 @@ test("a brand-new sensitive field added upstream does NOT leak through code reda
   assert.equal(redacted.some_future_pii_field, undefined);
 });
 
-test("legacy_review_eligible passes through as a non-sensitive boolean (default false, no token leak)", () => {
-  // Absent upstream -> false, never undefined/truthy by accident.
+test("booking-code read model never advertises legacy or catalog write eligibility", () => {
   assert.equal(trackingPrivacy.redactPublicTrackPayload(richPayload()).legacy_review_eligible, false);
-  // Explicit true is surfaced so the UI can offer the legacy phone form...
   const eligible = trackingPrivacy.redactPublicTrackPayload({ ...richPayload(), legacy_review_eligible: true });
-  assert.equal(eligible.legacy_review_eligible, true);
-  // ...but it must never carry the token alongside it.
+  assert.equal(eligible.legacy_review_eligible, false);
   assert.equal(eligible.booking_token, undefined);
 });
 
@@ -233,8 +246,11 @@ test("the customer app only builds receipt links + review form on full (token) a
   // constructed at click time from state (receiptUrl(data)) instead of being
   // interpolated into rendered HTML — see Blocker 1.
   assert.match(trackingClientSrc, /`\/docs\/receipt\/\$\{encodeURIComponent\(data\.job_id\)\}\?key=\$\{encodeURIComponent\(data\.booking_token\)\}`/);
-  // The review form only offers the token-write path on full (token) access.
-  assert.match(trackingClientSrc, /data\.access_level === "token" \? \(data\.booking_token \|\| ""\) : ""/);
+  // Read and write capabilities are separate; code-only reads cannot create
+  // document links or review forms.
+  assert.match(trackingClientSrc, /if \(!canUseTokenActions\(data\)\) return "";/);
+  assert.match(trackingClientSrc, /const reviewToken = canUseTokenActions\(data\)/);
+  assert.match(trackingClientSrc, /if \(!catalogReview\.eligible \|\| !canUseTokenActions\(data\)\) return "";/);
   // Blocker 1: the booking_token must NOT be embedded in rendered HTML as a
   // hidden input. It is injected from state at submit time and the form is only
   // flagged with data-review-token.
