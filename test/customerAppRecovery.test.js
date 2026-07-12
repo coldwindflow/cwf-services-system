@@ -236,7 +236,7 @@ test("Customer App build id is consistent across shell and service worker", () =
   const sw = read("customer-app/sw.js");
   const app = read("customer-app/assets/customer-app.js");
   const manifest = read("customer-app/manifest.webmanifest");
-  const build = "20260712_page_controls_tracking_link_v4";
+  const build = "20260712_tracking_full_read_v1";
 
   assert.match(index, new RegExp(`customer-app\\.css\\?v=${build}`));
   assert.match(index, new RegExp(`modules\\/api\\.js\\?v=${build}`));
@@ -254,7 +254,7 @@ test("Customer App build id is consistent across shell and service worker", () =
 test("store module is loaded in index.html and precached in the service worker app shell", () => {
   const index = read("customer-app/index.html");
   const sw = read("customer-app/sw.js");
-  const build = "20260712_page_controls_tracking_link_v4";
+  const build = "20260712_tracking_full_read_v1";
 
   assert.match(index, new RegExp(`modules/store\\.js\\?v=${build}`));
   assert.match(sw, /`\.\/modules\/store\.js\?v=\$\{BUILD_ID\}`/);
@@ -2789,16 +2789,18 @@ test("tracking full (token) access renders the customer-information section", ()
   assert.doesNotMatch(html, /tracking-limited-note/);
 });
 
-test("tracking code-only access shows a limited-access notice instead of blank rows", () => {
+test("tracking code-only access renders the full read model without token actions", () => {
   const root = loadTrackingFrontend();
   const html = renderTracking(root, {
-    access_level: "code", booking_code: "BK1", job_status: "กำลังดำเนินการ",
-    appointment_datetime: "2026-06-20T10:00:00Z", customer_phone: "•••• 5678",
+    access_level: "code", can_view_full_tracking: true, can_use_token_actions: false,
+    booking_code: "BK1", job_status: "กำลังดำเนินการ",
+    appointment_datetime: "2026-06-20T10:00:00Z", customer_phone: "0812345678",
+    customer_name: "คุณสมชาย", address_text: "อ่อนนุช กทม",
   });
-  assert.match(html, /tracking-limited-note/);
-  assert.match(html, /ลิงก์ติดตามงาน/);
-  assert.match(html, /•••• 5678/); // masked phone may still show
-  assert.doesNotMatch(html, /ชื่อลูกค้า/); // no misleading customer-name row in limited mode
+  assert.match(html, /คุณสมชาย/);
+  assert.match(html, /0812345678/);
+  assert.match(html, /อ่อนนุช กทม/);
+  assert.doesNotMatch(html, /data-review-form|open-eslip|\/docs\/receipt/);
 });
 
 // Blocker 1: the booking_token is a private request credential and must never
@@ -2973,18 +2975,17 @@ test("Blocker 2: technician-review success reloads with the private token", asyn
   assert.equal(calls[calls.length - 1], SECRET, "review success must reload using the private token");
 });
 
-test("Blocker 3: code-only Overview explains limited access and never claims 'no technician'", () => {
+test("code-only Overview uses read capability and suppresses privileged actions", () => {
   const root = loadTrackingFrontend();
   const html = renderTracking(root, {
-    access_level: "code", booking_code: "BKCODE", booking_mode: "urgent",
+    access_level: "code", can_view_full_tracking: true, can_use_token_actions: false,
+    booking_code: "BKCODE", booking_mode: "urgent",
     job_status: "กำลังดำเนินการ", appointment_datetime: "2026-06-20T10:00:00Z",
-    customer_phone: "•••• 5678",
+    customer_phone: "0812345678", technician: { full_name: "ช่างสมชาย" },
   });
-  assert.match(html, /โหมดจำกัดข้อมูล/);
-  assert.match(html, /ข้อมูลทีมช่างจะแสดงเมื่อเปิดจากลิงก์ติดตามงาน/);
-  assert.doesNotMatch(html, /ยังไม่มีช่างยืนยันงานนี้/);
-  assert.doesNotMatch(html, /รอช่างรับงาน/);
-  assert.doesNotMatch(html, /แอดมินกำลังช่วยจัดคิวให้/);
+  assert.match(html, /ช่างสมชาย/);
+  assert.doesNotMatch(html, /โหมดจำกัดข้อมูล/);
+  assert.doesNotMatch(html, /data-review-form|open-eslip/);
   assert.doesNotMatch(html, /เปลี่ยนเป็นจองล่วงหน้า/);
 });
 

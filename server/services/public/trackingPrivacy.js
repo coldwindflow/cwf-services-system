@@ -4,11 +4,10 @@
 // /public/urgent-status, /docs/receipt, /docs/eslip).
 //
 // Threat model: booking_code is a short, human-readable code (CWF + 7 chars)
-// that customers write down and read aloud to staff — it WILL leak. It must
-// therefore never unlock full personal data by itself:
-//   - full access (raw phone, address, GPS, maps link, receipt) requires the
-//     long random booking_token the app received at booking time
-//   - a booking_code lookup still works, but PII comes back masked/omitted
+// that customers write down and read aloud to staff. It grants a deliberately
+// allowlisted, read-only visit view, but never unlocks credentials or actions:
+//   - documents and writes require the long random booking_token
+//   - booking_code responses omit internal IDs, booking_token and URLs carrying it
 //   - every public lookup endpoint is rate-limited per client IP so neither
 //     codes nor tokens can be brute-forced
 //
@@ -26,8 +25,7 @@ function timingSafeEqualStr(a, b) {
   return crypto.timingSafeEqual(bufA, bufB);
 }
 
-// Full access only when the query string equals the job's booking_token.
-// A booking_code match (or anything else) is treated as limited access.
+// Privileged/token action access only when the query equals booking_token.
 function isFullAccessQuery(q, row) {
   const token = row && row.booking_token;
   if (!token) return false;
@@ -51,40 +49,137 @@ function shortenAddress(text, keepChars = 24) {
   return `${value.slice(0, keepChars)}…`;
 }
 
-// Build the response for a booking_code lookup with an explicit ALLOWLIST
-// (not a blacklist). A booking code is a short, shareable identifier, so a code
-// lookup returns only the minimum needed to answer "what state is my job in?"
-// plus a masked confirmation value. Anything not named here — customer_name,
-// exact/partial address, GPS, maps link, sequential job_id, technician notes,
-// job/unit photos, unit location/checklist data, cancel reason, review/complaint
-// text, receipt link, the booking_token, technician identity, and ANY field
-// added in future — is dropped by construction. Full detail requires the token.
+// Nested public projections intentionally omit database IDs and upstream fields
+// that are not part of the customer-facing tracking contract.
+function publicPhoto(photo) {
+  if (!photo || typeof photo !== "object") return null;
+  return {
+    phase: photo.phase || null,
+    photo_category: photo.photo_category || null,
+    created_at: photo.created_at || null,
+    uploaded_at: photo.uploaded_at || null,
+    public_url: photo.public_url || null,
+  };
+}
+
+function publicTechnician(technician) {
+  if (!technician || typeof technician !== "object") return null;
+  return {
+    full_name: technician.full_name || null,
+    photo: technician.photo || null,
+    rank_level: technician.rank_level == null ? null : technician.rank_level,
+    rank_key: technician.rank_key || null,
+    rating: technician.rating == null ? null : technician.rating,
+    grade: technician.grade || null,
+    phone: technician.phone || null,
+  };
+}
+
+function publicUnit(unit) {
+  if (!unit || typeof unit !== "object") return null;
+  return {
+    unit_no: unit.unit_no == null ? null : unit.unit_no,
+    unit_code: unit.unit_code || null,
+    label: unit.label || null,
+    btu: unit.btu == null ? null : unit.btu,
+    ac_type: unit.ac_type || null,
+    service_type: unit.service_type || null,
+    checklist_summary: unit.checklist_summary && typeof unit.checklist_summary === "object"
+      ? {
+          pre_completed: unit.checklist_summary.pre_completed === true,
+          post_completed: unit.checklist_summary.post_completed === true,
+          issue_count: Number(unit.checklist_summary.issue_count || 0),
+        }
+      : null,
+    photos: Array.isArray(unit.photos) ? unit.photos.map(publicPhoto).filter(Boolean) : [],
+  };
+}
+
+function publicReview(review) {
+  const source = review && typeof review === "object" ? review : {};
+  return {
+    already_reviewed: source.already_reviewed === true,
+    rating: source.rating == null ? null : source.rating,
+    review_text: source.review_text || null,
+    complaint_text: source.complaint_text || null,
+    reviewed_at: source.reviewed_at || null,
+  };
+}
+
+function publicCatalogReview(review) {
+  if (!review || typeof review !== "object") return null;
+  const existing = review.review && typeof review.review === "object" ? review.review : null;
+  return {
+    eligible: false,
+    already_reviewed: review.already_reviewed === true,
+    review: existing
+      ? {
+          rating: existing.rating == null ? null : existing.rating,
+          comment: existing.comment || "",
+          created_at: existing.created_at || null,
+        }
+      : null,
+  };
+}
+
+// Booking-code lookups receive the ordinary customer-facing read model, but
+// no private credential, internal identifier, document URL, or write ability.
+// This remains an allowlist so future upstream fields stay denied by default.
 function redactPublicTrackPayload(payload) {
   const source = payload && typeof payload === "object" ? payload : {};
-  const out = {
+  return {
     access_level: "code",
-    // Non-sensitive: whether a LEGACY (tokenless) job can be reviewed via code +
-    // full phone. Reveals only that a review is possible — no PII, no token — so
-    // the tracking UI can offer the legacy review form on a booking_code lookup.
-    legacy_review_eligible: source.legacy_review_eligible === true,
-    // The customer typed this in, so echoing it back is not a disclosure.
+    capabilities: {
+      can_view_full_tracking: true,
+      can_use_token_actions: false,
+      can_view_documents: false,
+      can_submit_review: false,
+    },
+    can_view_full_tracking: true,
+    can_use_token_actions: false,
+    legacy_review_eligible: false,
     booking_code: source.booking_code || null,
-    // Status lane — enough to render progress, no PII.
+    customer_name: source.customer_name || null,
+    customer_phone: source.customer_phone || null,
+    job_type: source.job_type || null,
     job_status: source.job_status || null,
     booking_mode: source.booking_mode || null,
     dispatch_mode: source.dispatch_mode || null,
     appointment_datetime: source.appointment_datetime || null,
     duration_min: source.duration_min == null ? null : source.duration_min,
-    // Progress signals (timestamps only — no free-text reasons).
+    job_price: source.job_price == null ? null : source.job_price,
+    payment_status: source.payment_status || null,
+    paid_at: source.paid_at || null,
+    address_text: source.address_text || null,
+    maps_url: source.maps_url || null,
+    job_zone: source.job_zone || null,
+    gps_latitude: source.gps_latitude == null ? null : source.gps_latitude,
+    gps_longitude: source.gps_longitude == null ? null : source.gps_longitude,
+    created_at: source.created_at || null,
     travel_started_at: source.travel_started_at || null,
     checkin_at: source.checkin_at || null,
     started_at: source.started_at || null,
     finished_at: source.finished_at || null,
     canceled_at: source.canceled_at || null,
-    // A masked confirmation aid so the customer recognises their own booking.
-    customer_phone: maskPhone(source.customer_phone),
+    cancel_reason: source.cancel_reason || null,
+    technician_note: source.technician_note || null,
+    service_items: Array.isArray(source.service_items)
+      ? source.service_items.map((item) => ({
+          item_name: item && item.item_name ? item.item_name : null,
+          qty: item && item.qty != null ? item.qty : null,
+          unit_price: item && item.unit_price != null ? item.unit_price : null,
+          line_total: item && item.line_total != null ? item.line_total : null,
+        }))
+      : [],
+    photos: Array.isArray(source.photos) ? source.photos.map(publicPhoto).filter(Boolean) : [],
+    units: Array.isArray(source.units) ? source.units.map(publicUnit).filter(Boolean) : [],
+    technician: publicTechnician(source.technician),
+    technician_team: Array.isArray(source.technician_team)
+      ? source.technician_team.map(publicTechnician).filter(Boolean)
+      : [],
+    review: publicReview(source.review),
+    catalog_review: publicCatalogReview(source.catalog_review),
   };
-  return out;
 }
 
 // Fixed-window in-memory rate limiter with an LRU cap so the map can never

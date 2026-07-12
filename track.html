@@ -148,8 +148,11 @@ function isDoneStatus(jobStatus){
 // ✅ สร้าง URL ใบเสร็จเดิมให้ปลอดภัย (กัน backend ส่ง localhost / คนละโดเมน)
 // - เป้าหมาย: ป้องกัน Error 'Failed to fetch' ในมือถือ/PWA
 function buildReceiptUrl(jobData){
+  const canUseTokenActions = jobData?.can_use_token_actions === true || jobData?.capabilities?.can_use_token_actions === true || jobData?.access_level === "token";
+  if (!canUseTokenActions) return "";
   const id = jobData?.job_id;
-  const fallback = id ? `${API}/docs/receipt/${encodeURIComponent(id)}` : "";
+  const token = String(jobData?.booking_token || "").trim();
+  const fallback = id && token ? `${API}/docs/receipt/${encodeURIComponent(id)}?key=${encodeURIComponent(token)}` : "";
   const raw = String(jobData?.receipt_url || "").trim();
   if(!raw) return fallback;
 
@@ -398,6 +401,8 @@ function reviewHTML(d){
       </div>
     `;
   }
+  const canUseTokenActions = d.can_use_token_actions === true || d.capabilities?.can_use_token_actions === true || d.access_level === "token";
+  if (!canUseTokenActions || !d.booking_token) return '';
   return `
     <div class="card tight" style="margin-top:10px;border-style:dashed;">
       <b>⭐ ให้คะแนนช่าง</b>
@@ -513,7 +518,7 @@ async function track(credOverride){
     // True code-only limited mode: a booking_code lookup returns redacted data,
     // so show status + masked phone + a clear explanation, NOT misleading dash
     // rows or navigation/technician controls that cannot work.
-    if (data.access_level !== "token") {
+    if (!(data.can_view_full_tracking === true || data.capabilities?.can_view_full_tracking === true || data.access_level === "token")) {
       box.innerHTML = `
         <div class="job-card">
           <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
@@ -697,7 +702,8 @@ async function track(credOverride){
     const rev = target.closest("[data-review-submit]");
     if (rev) {
       const d = CURRENT_TRACK_DATA || {};
-      submitReview(d.booking_token || d.booking_code || "");
+      const canUseTokenActions = d.can_use_token_actions === true || d.capabilities?.can_use_token_actions === true || d.access_level === "token";
+      if (canUseTokenActions && d.booking_token) submitReview(d.booking_token);
       return;
     }
   });

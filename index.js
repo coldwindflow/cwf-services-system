@@ -26209,6 +26209,9 @@ app.get("/public/urgent-status", async (req, res) => {
 });
 
 app.get("/public/track", async (req, res) => {
+  res.set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+  res.set("Pragma", "no-cache");
+  res.set("Expires", "0");
   // Anti-enumeration: booking codes are short; without a budget an attacker
   // could sweep the keyspace. Real customers do a handful of lookups a minute.
   const trackRate = publicTrackRateLimiter.check(trackingPrivacy.clientIpKey(req));
@@ -26219,7 +26222,10 @@ app.get("/public/track", async (req, res) => {
       retry_after_s: trackRate.retry_after_s,
     });
   }
-  const q = (req.query.q || req.query.token || req.query.booking_code || "").toString().trim();
+  const rawQuery = (req.query.q || req.query.token || req.query.booking_code || "").toString().trim();
+  // Booking codes are case-insensitive for customer input. Token casing is
+  // private and significant, so only normalize a value with the exact code shape.
+  const q = /^CWF[A-Z0-9]{7}$/i.test(rawQuery) ? rawQuery.toUpperCase() : rawQuery;
   if (!q) return res.status(400).json({ error: "ต้องส่ง q (token หรือ booking_code)" });
 
   try {
@@ -26229,7 +26235,7 @@ app.get("/public/track", async (req, res) => {
         j.job_id, j.booking_code, j.booking_token,
         j.customer_name, j.customer_phone, j.job_type,
         j.appointment_datetime, j.job_status, j.booking_mode, j.dispatch_mode,
-        j.duration_min, j.job_price,
+        j.duration_min, j.job_price, j.payment_status, j.paid_at, j.created_at,
         j.address_text, j.gps_latitude, j.gps_longitude, j.maps_url, j.job_zone,
         j.technician_username, j.technician_team,
         j.travel_started_at, j.checkin_at, j.started_at, j.finished_at, j.canceled_at, j.cancel_reason,
@@ -26248,6 +26254,20 @@ app.get("/public/track", async (req, res) => {
 
     const row = r.rows[0];
     const origin = `${req.protocol}://${req.get("host")}`;
+
+    let serviceItems = [];
+    try {
+      const itemR = await pool.query(
+        `SELECT item_name, qty, unit_price, line_total
+           FROM public.job_items
+          WHERE job_id=$1
+          ORDER BY job_item_id ASC`,
+        [row.job_id]
+      );
+      serviceItems = itemR.rows || [];
+    } catch (e) {
+      console.warn("[public_track_items] load failed", { job_id: row.job_id, error: e.message });
+    }
 
     // ✅ รูป/หมายเหตุ แสดงเฉพาะหลังปิดงาน
     const isDone = String(row.job_status || "").trim() === "เสร็จแล้ว";
@@ -26307,6 +26327,30 @@ app.get("/public/track", async (req, res) => {
     }
 
     let publicUnits = [];
+    if (!isDone) {
+      try {
+        const unitR = await pool.query(
+          `SELECT unit_no, unit_code, item_name, ac_type, wash_type, btu, location_label
+             FROM public.job_units
+            WHERE job_id=$1
+              AND LOWER(COALESCE(NULLIF(status,''),'pending')) NOT IN ('cancelled','removed','deleted','void','inactive')
+            ORDER BY unit_no ASC, unit_id ASC`,
+          [row.job_id]
+        );
+        publicUnits = (unitR.rows || []).map((unit) => ({
+          unit_no: unit.unit_no,
+          unit_code: unit.unit_code || null,
+          label: [`เครื่องที่ ${unit.unit_no || "-"}`, unit.location_label].filter(Boolean).join(" / "),
+          btu: unit.btu || null,
+          ac_type: unit.ac_type || null,
+          service_type: unit.wash_type || unit.item_name || null,
+          checklist_summary: null,
+          photos: [],
+        }));
+      } catch (e) {
+        console.warn("[public_track_units] basic load failed", { job_id: row.job_id, error: e.message });
+      }
+    }
     if (isDone) {
       try {
         const unitsR = await pool.query(
@@ -26503,6 +26547,14 @@ if (FLAG_SHOW_TECH_TEAM_ON_TRACKING && canShowPublicTechnician) {
       !!row.technician_username;
     const trackPayload = {
       access_level: fullAccess ? "token" : "code",
+      capabilities: {
+        can_view_full_tracking: true,
+        can_use_token_actions: fullAccess,
+        can_view_documents: fullAccess,
+        can_submit_review: fullAccess,
+      },
+      can_view_full_tracking: true,
+      can_use_token_actions: fullAccess,
       legacy_review_eligible: legacyReviewEligible,
       job_id: row.job_id,
       booking_code: row.booking_code || null,
@@ -26516,6 +26568,15 @@ if (FLAG_SHOW_TECH_TEAM_ON_TRACKING && canShowPublicTechnician) {
       dispatch_mode: row.dispatch_mode || null,
       duration_min: row.duration_min == null ? null : Number(row.duration_min),
       job_price: row.job_price == null ? null : Number(row.job_price),
+      payment_status: row.payment_status || null,
+      paid_at: row.paid_at || null,
+      created_at: row.created_at || null,
+      service_items: serviceItems.map((item) => ({
+        item_name: item.item_name || null,
+        qty: item.qty == null ? null : Number(item.qty),
+        unit_price: item.unit_price == null ? null : Number(item.unit_price),
+        line_total: item.line_total == null ? null : Number(item.line_total),
+      })),
       address_text: row.address_text,
       maps_url: row.maps_url || null,
       job_zone: row.job_zone || null,
