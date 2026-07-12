@@ -3,6 +3,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <!-- Never send a Referer header. Placed before every resource tag so a legacy
+       q=credential deep link cannot leak the credential as the Referer of a
+       same-origin CSS / JS / icon / font request. -->
+  <meta name="referrer" content="no-referrer">
   <meta name="theme-color" content="#071B38">
   <meta name="application-name" content="CWF Service">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -17,10 +21,10 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700;800;900&display=swap" media="print" onload="this.media='all'">
   <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700;800;900&display=swap"></noscript>
-  <link rel="manifest" href="./manifest.webmanifest?v=20260712_page_controls_tracking_link_v2">
+  <link rel="manifest" href="./manifest.webmanifest?v=20260712_page_controls_tracking_link_v3">
   <link rel="icon" type="image/png" sizes="192x192" href="./assets/icons/cwf-customer-192.png">
   <link rel="apple-touch-icon" sizes="180x180" href="./assets/icons/cwf-customer-180.png">
-  <link rel="stylesheet" href="./assets/customer-app.css?v=20260712_page_controls_tracking_link_v2">
+  <link rel="stylesheet" href="./assets/customer-app.css?v=20260712_page_controls_tracking_link_v3">
 </head>
 <body class="is-app-booting">
   <div class="app-shell" data-app-shell>
@@ -58,22 +62,22 @@
     </nav>
   </div>
 
-  <script src="./modules/state.js?v=20260712_page_controls_tracking_link_v2"></script>
-  <script src="./modules/utils.js?v=20260712_page_controls_tracking_link_v2"></script>
-  <script src="./modules/analytics.js?v=20260712_page_controls_tracking_link_v2"></script>
-  <script src="./modules/api.js?v=20260712_page_controls_tracking_link_v2"></script>
-  <script src="./modules/pageAvailability.js?v=20260712_page_controls_tracking_link_v2"></script>
-  <script src="./modules/services.js?v=20260712_page_controls_tracking_link_v2"></script>
-  <script src="./modules/ui.js?v=20260712_page_controls_tracking_link_v2"></script>
-  <script src="./modules/store.js?v=20260712_page_controls_tracking_link_v2"></script>
-  <script src="./modules/auth.js?v=20260712_page_controls_tracking_link_v2"></script>
-  <script src="./modules/pricing.js?v=20260712_page_controls_tracking_link_v2"></script>
-  <script src="./modules/availability.js?v=20260712_page_controls_tracking_link_v2"></script>
-  <script src="./modules/bookingScheduled.js?v=20260712_page_controls_tracking_link_v2"></script>
-  <script src="./modules/bookingUrgent.js?v=20260712_page_controls_tracking_link_v2"></script>
-  <script src="./modules/tracking.js?v=20260712_page_controls_tracking_link_v2"></script>
-  <script src="./modules/profile.js?v=20260712_page_controls_tracking_link_v2"></script>
-  <script src="./modules/router.js?v=20260712_page_controls_tracking_link_v2"></script>
-  <script src="./assets/customer-app.js?v=20260712_page_controls_tracking_link_v2"></script>
+  <script src="./modules/state.js?v=20260712_page_controls_tracking_link_v3"></script>
+  <script src="./modules/utils.js?v=20260712_page_controls_tracking_link_v3"></script>
+  <script src="./modules/analytics.js?v=20260712_page_controls_tracking_link_v3"></script>
+  <script src="./modules/api.js?v=20260712_page_controls_tracking_link_v3"></script>
+  <script src="./modules/pageAvailability.js?v=20260712_page_controls_tracking_link_v3"></script>
+  <script src="./modules/services.js?v=20260712_page_controls_tracking_link_v3"></script>
+  <script src="./modules/ui.js?v=20260712_page_controls_tracking_link_v3"></script>
+  <script src="./modules/store.js?v=20260712_page_controls_tracking_link_v3"></script>
+  <script src="./modules/auth.js?v=20260712_page_controls_tracking_link_v3"></script>
+  <script src="./modules/pricing.js?v=20260712_page_controls_tracking_link_v3"></script>
+  <script src="./modules/availability.js?v=20260712_page_controls_tracking_link_v3"></script>
+  <script src="./modules/bookingScheduled.js?v=20260712_page_controls_tracking_link_v3"></script>
+  <script src="./modules/bookingUrgent.js?v=20260712_page_controls_tracking_link_v3"></script>
+  <script src="./modules/tracking.js?v=20260712_page_controls_tracking_link_v3"></script>
+  <script src="./modules/profile.js?v=20260712_page_controls_tracking_link_v3"></script>
+  <script src="./modules/router.js?v=20260712_page_controls_tracking_link_v3"></script>
+  <script src="./assets/customer-app.js?v=20260712_page_controls_tracking_link_v3"></script>
 </body>
 </html>

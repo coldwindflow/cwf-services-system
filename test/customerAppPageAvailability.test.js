@@ -278,7 +278,7 @@ test("api exposes loadCustomerAppConfig as a no-store GET to /public/customer-ap
 });
 
 test("build wiring: pageAvailability.js is registered in the HTML shell and the SW cache, with the new build id", () => {
-  const build = "20260712_page_controls_tracking_link_v2";
+  const build = "20260712_page_controls_tracking_link_v3";
   assert.match(indexHtml, new RegExp(`modules/pageAvailability\\.js\\?v=${build}`));
   assert.match(swSrc, new RegExp(`BUILD_ID = "${build}"`));
   assert.match(swSrc, /modules\/pageAvailability\.js\?v=\$\{BUILD_ID\}/);
@@ -291,7 +291,7 @@ test("build wiring: pageAvailability.js is registered in the HTML shell and the 
    RUNTIME tests (execute the real code in a VM — not regex assertions).
    ========================================================================== */
 
-const BUILD = "20260712_page_controls_tracking_link_v2";
+const BUILD = "20260712_page_controls_tracking_link_v3";
 const adminSrc = read("admin-homepage-cms.js");
 
 function reqUrlOf(req) {
@@ -670,4 +670,130 @@ test("CMS toggle handler reverts the checkbox + shows the message, and backend g
   // Defense-in-depth: publish still refuses an all-disabled config.
   assert.match(adminSrc, /enabledCount === 0/);
   assert.match(adminSrc, /ต้องเปิดอย่างน้อย 1 หน้าก่อน Publish/);
+});
+
+/* ==========================================================================
+   Secure tracking deep link — fragment credential parse + URL scrub (runtime),
+   referrer policy, and boot wiring.
+   ========================================================================== */
+
+// Execute the real parseTrackingBoot() from customer-app.js in a VM.
+function loadParseTrackingBoot() {
+  const src = extractFn(bootSrc, "function parseTrackingBoot(");
+  const sandbox = { URL, URLSearchParams, String };
+  vm.createContext(sandbox);
+  vm.runInContext(`${src}\nglobalThis.__fn = parseTrackingBoot;`, sandbox);
+  return sandbox.__fn;
+}
+
+const ORIGIN = "https://cwf.example.com";
+const BASE = `${ORIGIN}/customer-app/index.html`;
+const CRED = "PRIVATE_TOKEN_9xZ";
+
+test("parseTrackingBoot: official fragment form #tracking?q= captures + scrubs the credential", () => {
+  const parse = loadParseTrackingBoot();
+  const r = parse(`${BASE}#tracking?q=${CRED}`);
+  assert.equal(r.credential, CRED);
+  assert.equal(r.isTracking, true);
+  assert.equal(r.changed, true);
+  assert.ok(!r.cleanUrl.includes(CRED), "cleanUrl must not contain the credential");
+  assert.ok(!r.cleanUrl.includes("q="), "cleanUrl must not contain q=");
+  assert.equal(r.cleanUrl, `${BASE}#tracking`, "scrubbed to a clean #tracking");
+});
+
+test("parseTrackingBoot: official fragment form #tracking?token= is captured + scrubbed", () => {
+  const parse = loadParseTrackingBoot();
+  const r = parse(`${BASE}#tracking?token=${CRED}`);
+  assert.equal(r.credential, CRED);
+  assert.equal(r.cleanUrl, `${BASE}#tracking`);
+  assert.ok(!r.cleanUrl.includes(CRED));
+});
+
+test("parseTrackingBoot: legacy query ?q=...#tracking still works and is scrubbed", () => {
+  const parse = loadParseTrackingBoot();
+  const r = parse(`${BASE}?q=${CRED}#tracking`);
+  assert.equal(r.credential, CRED);
+  assert.equal(r.isTracking, true);
+  assert.equal(r.changed, true);
+  assert.equal(r.cleanUrl, `${BASE}#tracking`);
+  assert.ok(!r.cleanUrl.includes(CRED));
+  assert.ok(!/\?q=|\?token=/.test(r.cleanUrl), "no credential query remains");
+});
+
+test("parseTrackingBoot: legacy query ?token=...#tracking still works and is scrubbed", () => {
+  const parse = loadParseTrackingBoot();
+  const r = parse(`${BASE}?token=${CRED}#tracking`);
+  assert.equal(r.credential, CRED);
+  assert.equal(r.cleanUrl, `${BASE}#tracking`);
+  assert.ok(!r.cleanUrl.includes(CRED));
+});
+
+test("parseTrackingBoot: unrelated query params are preserved (fragment form)", () => {
+  const parse = loadParseTrackingBoot();
+  const r = parse(`${BASE}?utm_source=line#tracking?q=${CRED}`);
+  assert.equal(r.credential, CRED);
+  assert.ok(r.cleanUrl.includes("utm_source=line"), "utm param preserved");
+  assert.ok(r.cleanUrl.endsWith("#tracking"));
+  assert.ok(!r.cleanUrl.includes(CRED));
+});
+
+test("parseTrackingBoot: unrelated query params are preserved (legacy form)", () => {
+  const parse = loadParseTrackingBoot();
+  const r = parse(`${BASE}?utm_source=line&q=${CRED}#tracking`);
+  assert.equal(r.credential, CRED);
+  assert.ok(r.cleanUrl.includes("utm_source=line"));
+  assert.ok(!r.cleanUrl.includes(CRED));
+  assert.ok(!/[?&]q=/.test(r.cleanUrl), "q removed but utm kept");
+});
+
+test("parseTrackingBoot: a normal URL without a credential is left unchanged", () => {
+  const parse = loadParseTrackingBoot();
+  const r = parse(`${BASE}?utm_source=line#home`);
+  assert.equal(r.credential, "");
+  assert.equal(r.changed, false, "no scrub needed → no replaceState");
+});
+
+test("parseTrackingBoot: the credential never survives in cleanUrl across all sensitive forms", () => {
+  const parse = loadParseTrackingBoot();
+  const forms = [
+    `${BASE}#tracking?q=${CRED}`,
+    `${BASE}#tracking?token=${CRED}`,
+    `${BASE}?q=${CRED}#tracking`,
+    `${BASE}?token=${CRED}#tracking`,
+    `${BASE}?utm_source=line#tracking?q=${CRED}`,
+  ];
+  for (const href of forms) {
+    const r = parse(href);
+    assert.equal(r.credential, CRED, `captured for ${href}`);
+    assert.ok(!r.cleanUrl.includes(CRED), `scrubbed for ${href}`);
+    assert.ok(r.isTracking, `tracking route for ${href}`);
+  }
+});
+
+test("boot wiring: scrub-before-init, single setInitialCredential, replaceState (no new history entry)", () => {
+  // Parse + scrub happens before App.state.init().
+  const parseIdx = bootSrc.indexOf("parseTrackingBoot(window.location.href)");
+  const stateInitIdx = bootSrc.indexOf("App.state.init();");
+  assert.ok(parseIdx !== -1 && stateInitIdx !== -1 && parseIdx < stateInitIdx, "parse+scrub must precede state.init()");
+  // Uses history.replaceState (not a new history entry) to drop the credential.
+  assert.match(bootSrc, /window\.history\.replaceState\(null, "", boot\.cleanUrl\)/);
+  // The credential is handed over exactly once, from the parsed value.
+  const occurrences = (bootSrc.match(/setInitialCredential\?\.\(boot\.credential\)/g) || []).length;
+  assert.equal(occurrences, 1, "setInitialCredential called exactly once with the parsed credential");
+  // The credential path must NOT persist the token anywhere serialisable.
+  assert.doesNotMatch(bootSrc, /localStorage\.setItem\([^)]*boot\.credential/);
+  assert.doesNotMatch(bootSrc, /sessionStorage\.setItem\([^)]*boot\.credential/);
+});
+
+test("referrer policy: index.html sets no-referrer before any resource link/script, exactly once", () => {
+  assert.match(indexHtml, /<meta name="referrer" content="no-referrer">/);
+  const metaIdx = indexHtml.indexOf('<meta name="referrer"');
+  const firstLink = indexHtml.indexOf("<link");
+  const firstScript = indexHtml.indexOf("<script");
+  assert.ok(metaIdx !== -1);
+  assert.ok(firstLink === -1 || metaIdx < firstLink, "referrer meta must precede the first <link>");
+  assert.ok(firstScript === -1 || metaIdx < firstScript, "referrer meta must precede the first <script>");
+  const count = (indexHtml.match(/name="referrer"/g) || []).length;
+  assert.equal(count, 1, "exactly one referrer policy (no duplicate/conflicting)");
+  assert.doesNotMatch(indexHtml, /http-equiv="referrer"/i, "no conflicting http-equiv referrer");
 });

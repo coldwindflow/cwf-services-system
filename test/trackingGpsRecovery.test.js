@@ -40,18 +40,21 @@ test("official confirmation tracking_url uses booking_token when present (not bo
   assert.match(indexSrc, /SELECT job_id, booking_code, booking_token, customer_name/);
 });
 
-test("official confirmation tracking_url now opens Customer App V2 Tracking (query BEFORE #tracking, encoded)", () => {
-  // Destination changed to the Customer App deep link; the ?q= credential must
-  // come BEFORE the #tracking hash so the app reads it at boot, and it must be
-  // URL-encoded via the SAME unchanged trackingCredential.
+test("official confirmation tracking_url puts the credential in the FRAGMENT (#tracking?q=), not the query", () => {
+  // The credential now lives AFTER the # so browsers never send it to the
+  // server (no access logs / Referer leak). Same unchanged trackingCredential,
+  // still URL-encoded.
   assert.match(
     indexSrc,
-    /tracking_url: `\$\{origin\}\/customer-app\/index\.html\?q=\$\{encodeURIComponent\(trackingCredential\)\}#tracking`/,
+    /tracking_url: `\$\{origin\}\/customer-app\/index\.html#tracking\?q=\$\{encodeURIComponent\(trackingCredential\)\}`/,
   );
-  // Sanity on ordering: ?q= appears before #tracking in the template.
+  // Ordering: #tracking appears BEFORE ?q= in the template (credential in the
+  // fragment), and there is no credential in the query segment before the #.
   const line = indexSrc.split("\n").find((l) => l.includes("tracking_url:"));
   assert.ok(line, "tracking_url line present");
-  assert.ok(line.indexOf("?q=") < line.indexOf("#tracking"), "?q= must precede #tracking");
+  assert.ok(line.indexOf("#tracking") < line.indexOf("?q="), "#tracking must precede ?q= (credential in fragment)");
+  const beforeHash = line.slice(line.indexOf("index.html"), line.indexOf("#tracking"));
+  assert.ok(!/\?q=|\?token=/.test(beforeHash), "no credential may appear in the query segment before #");
 });
 
 test("only the official confirmation link changed — track.html still exists and is NOT globally replaced", () => {
