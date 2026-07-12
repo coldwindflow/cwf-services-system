@@ -2,7 +2,6 @@
   "use strict";
 
   const root = window.CWFCustomerAppV2 = window.CWFCustomerAppV2 || {};
-  console.info("[customer-home] six-cards legacy-retirement 20260713 loaded");
   let homeLoadPromise = null;
 
   function collectionState(name, emptyText, renderItems) {

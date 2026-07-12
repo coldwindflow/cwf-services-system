@@ -5206,7 +5206,7 @@ textarea.purchase-input { min-height: 66px; resize: vertical; }
   box-shadow: 0 6px 16px rgba(22, 89, 224, 0.16);
 }
 /* Fixed aspect ratios keep images consistent across widths */
-.homepage-service-card .homepage-card-image    { aspect-ratio: 4 / 3; }
+.homepage-service-card .homepage-card-image    { aspect-ratio: 16 / 10; }
 .homepage-announcement-card .homepage-card-image  { aspect-ratio: 16 / 9; }
 .homepage-update-card .homepage-card-image     { height: 140px; }
 .homepage-article-card .homepage-card-image    { aspect-ratio: 16 / 9; }
@@ -5292,22 +5292,21 @@ textarea.purchase-input { min-height: 66px; resize: vertical; }
 }
 /* Featured card CTA button — compact "จอง" pill */
 .homepage-service-action {
-  width: calc(100% - 20px) !important;
+  width: calc(100% - 16px) !important;
   min-height: 44px !important;
-  margin: 0 10px 10px !important;
-  padding: 0 10px !important;
+  margin: 0 8px 8px !important;
+  padding: 0 8px !important;
   font-size: 12px !important;
   font-weight: 900;
   border-radius: 11px !important;
 }
 /* Compact featured body: just name + price, tighter than editorial cards */
 .homepage-service-card .homepage-card-body {
-  gap: 3px;
-  padding: 8px 10px 6px;
+  gap: 2px;
+  padding: 6px 8px 4px;
 }
 .homepage-service-card .homepage-card-body strong {
   font-size: 12px;
-  min-height: 48px;
   -webkit-line-clamp: 3;
 }
 .homepage-service-card .homepage-card-body > span {

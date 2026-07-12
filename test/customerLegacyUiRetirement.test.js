@@ -82,17 +82,28 @@ test("homepage renders all six featured cards together without rotator pages or 
   assert.doesNotMatch(html, /featured-rotator|featured-page|featured-dot|aria-hidden="true"/);
 });
 
-test("homepage hero CSS expands for CMS text and featured cards use a two-column grid", () => {
+test("homepage hero expands and six-card grid is genuinely compact without shrinking its CTA", () => {
   const css = read("customer-app/assets/customer-app.css");
   const hero = css.match(/\.homepage-hero\s*\{[^}]*\}/)[0];
   const title = css.match(/\.homepage-hero h2\s*\{[^}]*\}/)[0];
   const body = css.match(/\.homepage-hero p\s*\{[^}]*\}/)[0];
+  const cardImage = css.match(/\.homepage-service-card \.homepage-card-image\s*\{[^}]*\}/)[0];
+  const cardBody = css.match(/\.homepage-service-card \.homepage-card-body\s*\{[^}]*\}/)[0];
+  const cardTitle = css.match(/\.homepage-service-card \.homepage-card-body strong\s*\{[^}]*\}/)[0];
+  const cardAction = css.match(/\.homepage-service-action\s*\{[^}]*\}/)[0];
   assert.match(hero, /min-height:\s*220px/);
   assert.doesNotMatch(hero, /\n\s*height:/);
   assert.doesNotMatch(title, /line-clamp|text-overflow|overflow:\s*hidden/);
   assert.doesNotMatch(body, /line-clamp|text-overflow|overflow:\s*hidden/);
   assert.match(css, /\.homepage-featured-grid\s*\{[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/s);
-  assert.match(css, /\.homepage-service-action\s*\{[^}]*min-height:\s*44px/s);
+  assert.match(cardImage, /aspect-ratio:\s*16\s*\/\s*10/);
+  assert.doesNotMatch(cardImage, /aspect-ratio:\s*4\s*\/\s*3/);
+  assert.match(cardBody, /gap:\s*2px/);
+  assert.match(cardBody, /padding:\s*6px 8px 4px/);
+  assert.match(cardTitle, /line-clamp:\s*3/);
+  assert.doesNotMatch(cardTitle, /min-height/);
+  assert.match(cardAction, /min-height:\s*44px/);
+  assert.match(cardAction, /margin:\s*0 8px 8px/);
 });
 
 test("homepage hero renders long CMS title and body without altering or truncating content", () => {
