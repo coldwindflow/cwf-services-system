@@ -2,7 +2,6 @@
   "use strict";
 
   const root = window.CWFCustomerAppV2 = window.CWFCustomerAppV2 || {};
-  console.info("[customer-tracking] full-read-ui v1 loaded");
   const ADMIN_PHONE = "098-877-7321";
   const LINE_URL = "https://lin.ee/fG1Oq7y";
   const WARRANTY_COPY = "รับประกันงานล้าง 30 วัน เฉพาะอาการที่เกี่ยวข้องกับการบริการ ไม่รวมอะไหล่เสีย ระบบรั่ว บอร์ด คอมเพรสเซอร์ ไฟตก หรือปัญหาจากตัวเครื่องเดิม";
@@ -85,6 +84,22 @@
     return !!(data && (data.can_view_full_tracking === true
       || data.capabilities?.can_view_full_tracking === true
       || isTokenAccess(data)));
+  }
+
+  function isCanceled(data) {
+    if (clean(data && data.canceled_at)) return true;
+    const status = clean(data && data.job_status).toLowerCase();
+    return status.includes("ยกเลิก") || ["cancel", "canceled", "cancelled"].includes(status);
+  }
+
+  function paymentStatusLabel(value, paidAt) {
+    const status = clean(value).toLowerCase();
+    if (status === "paid" || (!status && clean(paidAt))) return "ชำระแล้ว";
+    if (status === "unpaid") return "ยังไม่ชำระ";
+    if (status === "partial") return "ชำระบางส่วน";
+    if (["pending", "pending_payment", "payment_processing"].includes(status)) return "รอตรวจสอบการชำระ";
+    if (["failed", "payment_failed"].includes(status)) return "การชำระไม่สำเร็จ";
+    return status ? "กรุณาติดต่อ CWF เพื่อตรวจสอบการชำระ" : "ยังไม่มีข้อมูลการชำระ";
   }
   function canUseTokenActions(data) {
     return !!(data && (data.can_use_token_actions === true
@@ -640,6 +655,7 @@
   function jobPhase(data, mode) {
     const status = clean(data.job_status);
     const noTech = status.includes("ไม่พบช่าง") || status.includes("ตีกลับ");
+    if (isCanceled(data)) return "canceled";
     if (isDone(data)) return "completed";
     if (mode === "urgent" && noTech) return "urgent_no_tech";
     if (clean(data.started_at)) return "started";
@@ -651,6 +667,7 @@
 
   function statusCopy(data, mode) {
     const phase = jobPhase(data, mode);
+    if (phase === "canceled") return "งานนี้ถูกยกเลิกแล้ว";
     if (phase === "completed") return "งานเสร็จแล้ว";
     if (phase === "started") return "กำลังให้บริการ";
     if (phase === "checked_in") return "ช่างถึงหน้างานแล้ว";
@@ -664,7 +681,15 @@
   function statusDetailCopy(data, mode) {
     const phase = jobPhase(data, mode);
     const hasPhotos = hasPhotoContent(data);
+    if (phase === "canceled") {
+      return clean(data.cancel_reason) ? `เหตุผล: ${clean(data.cancel_reason)}` : "งานนี้สิ้นสุดแล้ว หากต้องการความช่วยเหลือกรุณาติดต่อ CWF";
+    }
     if (phase === "completed") {
+      if (!canUseTokenActions(data)) {
+        return hasPhotos
+          ? "งานบริการเสร็จสิ้นแล้ว ดูรูปงาน สรุปงาน และรายละเอียดที่ลูกค้าควรทราบได้ในหน้านี้"
+          : "งานบริการเสร็จสิ้นแล้ว ดูสรุปงานและรายละเอียดที่ลูกค้าควรทราบได้ในหน้านี้";
+      }
       return hasPhotos
         ? "งานบริการเสร็จสิ้นแล้ว สามารถดูรูปงาน เอกสาร การรับประกัน และรีวิวได้"
         : "งานบริการเสร็จสิ้นแล้ว สามารถดูเอกสาร การรับประกัน และการให้คะแนนได้";
@@ -681,12 +706,18 @@
   function nextActionCopy(data, mode) {
     const phase = jobPhase(data, mode);
     const hasPhotos = hasPhotoContent(data);
+    if (phase === "canceled") return "ติดต่อ CWF หากต้องการตรวจสอบหรือจองบริการใหม่";
     if (phase === "completed") {
+      if (!canUseTokenActions(data)) {
+        return hasPhotos ? "ดูรูปงานและสรุปรายละเอียดบริการ" : "ดูสรุปรายละเอียดบริการ หรือติดต่อ CWF";
+      }
       return hasPhotos
         ? "ดูรูปงาน เอกสาร การรับประกัน และรีวิวงานนี้"
         : "ดูเอกสาร การรับประกัน และให้คะแนนงานนี้";
     }
-    if (phase === "started") return "รอทีมช่างทำงานให้เสร็จ หลังจบงานจะเห็นเอกสารหลังบริการ";
+    if (phase === "started") return canUseTokenActions(data)
+      ? "รอทีมช่างทำงานให้เสร็จ หลังจบงานจะเห็นเอกสารหลังบริการ"
+      : "รอทีมช่างทำงานให้เสร็จ หลังจบงานจะเห็นรูปและสรุปบริการ";
     if (phase === "checked_in") return "เตรียมพื้นที่หน้างานให้พร้อมสำหรับเริ่มบริการ";
     if (phase === "traveling") return "รอรับทีมช่างที่กำลังเดินทางไปหน้างาน";
     if (phase === "assigned") return "รอถึงเวลานัด หรือเปิดแผนที่หากต้องการดูสถานที่งาน";
@@ -1147,7 +1178,7 @@
       rows.push(`<div class="data-row tracking-service-lines"><strong>รายการบริการ</strong><span>${serviceItems.map((item) => `${esc(item.item_name || "บริการ")} × ${Number(item.qty) || 1}`).join("<br>")}</span></div>`);
     }
     if (data.payment_status || data.paid_at) {
-      rows.push(`<div class="data-row"><strong>การชำระเงิน</strong><span class="muted">${esc(data.payment_status || (data.paid_at ? "ชำระแล้ว" : "-"))}</span></div>`);
+      rows.push(`<div class="data-row"><strong>การชำระเงิน</strong><span class="muted">${esc(paymentStatusLabel(data.payment_status, data.paid_at))}</span></div>`);
     }
     if (data.cancel_reason) {
       rows.push(`<div class="data-row"><strong>เหตุผลยกเลิก</strong><span class="muted">${esc(data.cancel_reason)}</span></div>`);
@@ -1248,10 +1279,9 @@
     const done = isDone(data);
     const units = unitList(data);
     const appointmentText = data.appointment_datetime ? root.utils.formatDateTime(data.appointment_datetime) : "-";
-    // In code-only mode the status hero uses only reliable timestamp-derived
-    // copy (never technician presence), and the urgent "convert to scheduled"
-    // action is suppressed — it must not be offered merely because technician
-    // fields were redacted.
+    // Read visibility and privileged actions are separate capabilities. A
+    // booking code may show customer-facing assignment details without gaining
+    // document, review, or mutation controls.
     const heroTitle = statusCopy(data, mode);
     const heroDetail = statusDetailCopy(data, mode);
     const nextAction = nextActionCopy(data, mode);
@@ -1331,7 +1361,7 @@
       });
     }
 
-    if (done) {
+    if (done && canUseTokenActions(data)) {
       views.push({
         id: "aftercare",
         label: "เอกสาร",
@@ -1364,26 +1394,36 @@
   function renderTimeline() {
     const data = root.state.tracking.data || {};
     const mode = modeFromData(data);
-    const codeOnly = isCodeOnly(data);
+    const canView = canViewDetails(data);
+    const canUseActions = canUseTokenActions(data);
     const assigned = hasAssignedTech(data);
     const travel = !!clean(data.travel_started_at);
     const checkin = !!clean(data.checkin_at);
     const started = !!clean(data.started_at);
     const done = isDone(data);
+    const canceled = isCanceled(data);
     const steps = [
       {
         title: mode === "urgent" ? "ส่งคำขอคิวด่วนแล้ว" : "รับคำขอจองแล้ว",
-        // Code-only mode uses neutral wording: it must not imply the job is
-        // still waiting for a technician just because identity is redacted.
-        copy: codeOnly
+        copy: canView
           ? "ระบบได้รับคำขอของคุณแล้ว"
           : (mode === "urgent" ? "ระบบรับคำขอแล้ว แต่ยังไม่ถือว่ายืนยันงานจนกว่าจะมีช่างรับหรือแอดมินยืนยัน" : "รอแอดมินตรวจสอบคิวและรายละเอียด"),
         ok: true,
       },
     ];
-    // The assignment step relies on technician presence, which is redacted in
-    // code-only mode — omit it entirely there rather than claim "no technician".
-    if (!codeOnly) {
+
+    if (canceled) {
+      steps.push({
+        title: "งานถูกยกเลิก",
+        copy: clean(data.cancel_reason)
+          ? `เหตุผล: ${clean(data.cancel_reason)}`
+          : (data.canceled_at ? root.utils.formatDateTime(data.canceled_at) : "งานนี้สิ้นสุดแล้ว"),
+        ok: true,
+      });
+      return root.utils.timeline(steps.map((step) => ({ title: step.title, copy: step.copy, kind: "" })));
+    }
+
+    if (canView) {
       steps.push({
         title: mode === "urgent" ? "ช่างรับงาน / แอดมินยืนยัน" : "ยืนยันคิวและมอบหมายทีม",
         copy: assigned ? "มีทีมดูแลงานนี้แล้ว" : "แอดมินกำลังช่วยจัดคิวให้",
@@ -1394,7 +1434,13 @@
       { title: "ช่างกำลังเดินทาง", copy: data.travel_started_at ? root.utils.formatDateTime(data.travel_started_at) : "จะแสดงเมื่อช่างเริ่มเดินทาง", ok: travel },
       { title: "ถึงหน้างาน", copy: data.checkin_at ? root.utils.formatDateTime(data.checkin_at) : "จะแสดงเมื่อทีมเช็กอิน", ok: checkin },
       { title: "เริ่มให้บริการ", copy: data.started_at ? root.utils.formatDateTime(data.started_at) : "จะแสดงเมื่อทีมเริ่มงาน", ok: started },
-      { title: "งานเสร็จแล้ว", copy: data.finished_at ? root.utils.formatDateTime(data.finished_at) : "หลังจบงานจะแสดงรูป เอกสาร รีวิว และเงื่อนไขรับประกัน", ok: done },
+      {
+        title: "งานเสร็จแล้ว",
+        copy: data.finished_at
+          ? root.utils.formatDateTime(data.finished_at)
+          : (canUseActions ? "หลังจบงานจะแสดงรูป เอกสาร รีวิว และเงื่อนไขรับประกัน" : "หลังจบงานจะแสดงรูปและสรุปรายละเอียดบริการ"),
+        ok: done,
+      },
     );
     const firstPending = steps.findIndex((step) => !step.ok);
     return root.utils.timeline(steps.map((step, index) => ({
@@ -1665,10 +1711,14 @@
     _test: {
       canViewDetails,
       canUseTokenActions,
+      isCanceled,
+      jobPhase,
+      paymentStatusLabel,
       receiptUrl,
       renderReview,
       renderCatalogReview,
       renderTrackingResult,
+      renderTimeline,
     },
   };
 })();

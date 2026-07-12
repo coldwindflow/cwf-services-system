@@ -121,6 +121,81 @@ test("exact-token capability retains document and review behavior", () => {
   assert.match(app.tracking._test.renderReview(data), /data-review-token/);
 });
 
+test("canceled jobs render a terminal canceled hero and timeline", () => {
+  const app = loadTrackingRuntime();
+  const data = {
+    ...codeReadPayload(),
+    canceled_at: "2026-07-14T08:30:00+07:00",
+    cancel_reason: "ลูกค้าแจ้งยกเลิกนัด",
+  };
+  app.state.tracking = { status: "success", data, error: "" };
+  const html = app.tracking._test.renderTrackingResult();
+  const timeline = app.tracking._test.renderTimeline();
+  assert.match(html, /งานนี้ถูกยกเลิกแล้ว/);
+  assert.match(html, /ลูกค้าแจ้งยกเลิกนัด/);
+  assert.match(timeline, /งานถูกยกเลิก/);
+  assert.match(timeline, /ลูกค้าแจ้งยกเลิกนัด/);
+  assert.doesNotMatch(timeline, /ช่างกำลังเดินทาง|ถึงหน้างาน|เริ่มให้บริการ|งานเสร็จแล้ว/);
+  assert.equal(app.tracking._test.jobPhase(data, "scheduled"), "canceled");
+});
+
+test("a canceled status is terminal even when canceled_at is absent", () => {
+  const app = loadTrackingRuntime();
+  const data = { ...codeReadPayload(), job_status: "ยกเลิก", canceled_at: null };
+  app.state.tracking = { status: "success", data, error: "" };
+  assert.equal(app.tracking._test.isCanceled(data), true);
+  assert.match(app.tracking._test.renderTimeline(), /งานถูกยกเลิก/);
+  assert.doesNotMatch(app.tracking._test.renderTimeline(), /รอทีมช่าง|ช่างกำลังเดินทาง/);
+});
+
+test("booking-code full read shows real technician assignment in timeline", () => {
+  const app = loadTrackingRuntime();
+  const data = codeReadPayload();
+  app.state.tracking = { status: "success", data, error: "" };
+  const timeline = app.tracking._test.renderTimeline();
+  assert.match(timeline, /ยืนยันคิวและมอบหมายทีม/);
+  assert.match(timeline, /มีทีมดูแลงานนี้แล้ว/);
+  assert.equal(app.tracking._test.canViewDetails(data), true);
+  assert.equal(app.tracking._test.canUseTokenActions(data), false);
+});
+
+test("completed copy follows read versus privileged-action capability", () => {
+  const app = loadTrackingRuntime();
+  const codeData = {
+    ...codeReadPayload(),
+    job_status: "เสร็จแล้ว",
+    finished_at: "2026-07-15T11:00:00+07:00",
+    photos: [{ url: "https://example.test/after.jpg", phase: "after" }],
+  };
+  app.state.tracking = { status: "success", data: codeData, error: "" };
+  const codeHtml = app.tracking._test.renderTrackingResult();
+  assert.match(codeHtml, /ดูรูปงาน สรุปงาน และรายละเอียด/);
+  assert.doesNotMatch(codeHtml, />เอกสาร<|รีวิว\/ประกัน|ดูรูปงาน เอกสาร|ดูเอกสาร/);
+
+  const tokenData = {
+    ...codeData,
+    access_level: "token",
+    can_use_token_actions: true,
+    capabilities: { can_view_full_tracking: true, can_use_token_actions: true },
+    booking_token: "private-token",
+    job_id: 88,
+    receipt_url: "/docs/receipt/88?key=private-token",
+  };
+  app.state.tracking = { status: "success", data: tokenData, error: "" };
+  const tokenHtml = app.tracking._test.renderTrackingResult();
+  assert.match(tokenHtml, />เอกสาร</);
+  assert.match(tokenHtml, /รีวิว\/ประกัน/);
+});
+
+test("payment statuses are customer-facing Thai and unknown values are hidden", () => {
+  const app = loadTrackingRuntime();
+  assert.equal(app.tracking._test.paymentStatusLabel("unpaid"), "ยังไม่ชำระ");
+  assert.equal(app.tracking._test.paymentStatusLabel("paid"), "ชำระแล้ว");
+  assert.equal(app.tracking._test.paymentStatusLabel("partial"), "ชำระบางส่วน");
+  assert.equal(app.tracking._test.paymentStatusLabel("pending"), "รอตรวจสอบการชำระ");
+  assert.equal(app.tracking._test.paymentStatusLabel("provider_internal_state"), "กรุณาติดต่อ CWF เพื่อตรวจสอบการชำระ");
+});
+
 test("tracking UI exposes loading, not-found, rate-limit and offline states", () => {
   const app = loadTrackingRuntime();
   app.state.tracking = { status: "loading", data: null, error: "" };

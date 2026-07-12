@@ -921,30 +921,45 @@ async function main() {
     assert(got429, "rate limit never tripped — a rotating spoofed XFF bypassed it");
   });
 
-  // S16) A booking_code lookup is a minimal allowlist. Beyond the phone-masking
-  // already checked in S11, prove the sensitive fields are absent by
-  // construction — name, address, internal job_id, technician notes, photos,
-  // unit data, cancel reason, and any review text must never appear.
-  await record("S16 booking_code lookup leaks no name/address/job_id/notes/photos/units/review", async () => {
+  // S16) A booking_code grants the customer-facing read model, never a private
+  // credential, internal identifier, document capability, or write capability.
+  await record("S16 booking_code returns full read details without privileged fields", async () => {
     const red = await (await fetch(`${BASE_A}/public/track?q=${encodeURIComponent(bookingCode1)}`,
       { headers: { "x-forwarded-for": "198.51.100.7" } })).json();
-    assert(red.access_level === "code", "expected a limited (code) lookup");
+    assert(red.access_level === "code", "expected booking-code read access");
+    assert(red.can_view_full_tracking === true, "code lookup must allow customer-facing details");
+    assert(red.can_use_token_actions === false, "code lookup must deny privileged actions");
+    assert(red.capabilities?.can_view_full_tracking === true, "nested read capability must be explicit");
+    assert(red.capabilities?.can_view_documents === false, "code lookup must deny documents");
+    assert(red.capabilities?.can_submit_review === false, "code lookup must deny review writes");
+
+    // Positive contract: full customer-facing fields are present even when a
+    // particular seeded job has null/empty optional values.
+    for (const key of [
+      "customer_name", "customer_phone", "address_text", "maps_url", "job_type",
+      "job_status", "appointment_datetime", "job_price", "payment_status",
+      "service_items", "photos", "units", "technician", "technician_team",
+    ]) {
+      assert(Object.prototype.hasOwnProperty.call(red, key), `code lookup missing read field: ${key}`);
+    }
+    assert(Array.isArray(red.service_items), "service_items must be an array");
+    assert(Array.isArray(red.photos), "photos must be an array");
+    assert(Array.isArray(red.units), "units must be an array");
+    assert(Array.isArray(red.technician_team), "technician_team must be an array");
+
     const forbidden = [
-      "customer_name", "customer_fullname", "name",
-      "address_text", "address", "address_prefix", "maps_url", "gps_latitude", "gps_longitude",
-      "job_id", "id",
-      "technician_note", "technician_notes", "notes", "note", "admin_note",
-      "photos", "job_photos", "photo_urls",
-      "units", "job_items", "items", "machine_count", "unit_data",
-      "cancel_reason", "canceled_reason",
-      "customer_review", "review_text", "customer_complaint", "complaint_text",
-      "technician_username", "technician_name", "receipt_url",
+      "booking_token", "job_id", "receipt_url", "quote_url", "eslip_url",
+      "document_key", "auth_token", "session", "session_id", "privileged_url",
+      "payment_secret", "webhook_data", "private_key", "admin_note",
     ];
     const leaked = forbidden.filter((k) => red[k] !== undefined && red[k] !== null);
     assert(leaked.length === 0, `booking_code lookup leaked fields: ${leaked.join(", ")}`);
-    // Positive: it still returns the minimal, useful status surface.
+    const serialized = JSON.stringify(red);
+    for (const nestedKey of ["photo_id", "unit_id", "technician_username", "tracking_token_hash"]) {
+      assert(!serialized.includes(`\"${nestedKey}\"`), `booking_code lookup leaked nested field: ${nestedKey}`);
+    }
     assert(red.booking_code === bookingCode1, "code lookup must echo the booking_code");
-    assert(typeof red.job_status === "string", "code lookup must return a status");
+    assert(typeof red.job_status === "string", "code lookup must return status");
   });
 
   // S17) /public/review is a WRITE. A tokened job must NOT be reviewable via the
