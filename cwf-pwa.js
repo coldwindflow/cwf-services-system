@@ -1,6 +1,6 @@
 (function(){
   'use strict';
-  var VERSION = '20260711_tracking_gps_recovery_v1';
+  var VERSION = '20260712_job_location_roundtrip_v1';
   try { window.__CWF_PWA_BUILD__ = VERSION; } catch (_) {}
   function register(){
     if (!('serviceWorker' in navigator)) return;

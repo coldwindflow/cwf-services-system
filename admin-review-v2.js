@@ -284,6 +284,27 @@ function stopPollingForAuth(){
   catch (_) { location.href = "/login.html"; }
 }
 
+// Strict validation for a STORED coordinate pair. Rejects null/undefined/""/
+// whitespace/non-numeric/out-of-range and the (0,0) null-island pair so a
+// missing coordinate is never treated as a real pin.
+function strictStoredLatLng(latRaw, lngRaw){
+  const parse = (v) => {
+    if (typeof v === 'number') return Number.isFinite(v) ? v : NaN;
+    if (typeof v === 'string') {
+      const s = v.trim();
+      if (!/^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/.test(s)) return NaN;
+      const n = Number(s);
+      return Number.isFinite(n) ? n : NaN;
+    }
+    return NaN;
+  };
+  const lat = parse(latRaw), lng = parse(lngRaw);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+  if (lat === 0 && lng === 0) return null;
+  return { lat, lng };
+}
+
 function parseLatLngClient(input){
   const s = String(input||'').trim();
   if(!s) return null;
@@ -699,23 +720,39 @@ async function openJob(jobId){
     if (!row) throw new Error("ไม่พบงาน");
     acknowledgeNewJob(jobId);
 
+    // The queue row is abbreviated and may lack the stored gps_latitude/
+    // gps_longitude/service_zone_* fields. Fetch the full job so the edit modal
+    // shows the REAL stored location instead of re-deriving coordinates from the
+    // address text. Fail-open to the queue row if the detail call fails.
+    let full = row;
+    let detailLoadFailed = false;
+    try {
+      const detail = await apiFetch(`/admin/job_v2/${encodeURIComponent(row.job_id)}`);
+      if (detail && detail.job) full = Object.assign({}, row, detail.job);
+      else detailLoadFailed = true;
+    } catch (e) { detailLoadFailed = true; /* fail-open to the queue row */ }
+
     CURRENT = {
-      job_id: row.job_id,
-      booking_code: row.booking_code,
-      booking_mode: String(row.booking_mode||"scheduled").toLowerCase(),
-      job_status: row.job_status,
-      job_type: row.job_type,
-      duration_min: Number(row.duration_min||0) || 60,
-      appointment_datetime: row.appointment_datetime,
-      customer_name: row.customer_name,
-      customer_phone: row.customer_phone,
-      address_text: row.address_text,
-      maps_url: row.maps_url,
-      customer_note: row.customer_note,
-      job_zone: row.job_zone,
-      technician_username: row.technician_username || "",
+      job_id: full.job_id,
+      booking_code: full.booking_code,
+      booking_mode: String(full.booking_mode||"scheduled").toLowerCase(),
+      job_status: full.job_status,
+      job_type: full.job_type,
+      duration_min: Number(full.duration_min||0) || 60,
+      appointment_datetime: full.appointment_datetime,
+      customer_name: full.customer_name,
+      customer_phone: full.customer_phone,
+      address_text: full.address_text,
+      maps_url: full.maps_url,
+      customer_note: full.customer_note,
+      job_zone: full.job_zone,
+      gps_latitude: full.gps_latitude,
+      gps_longitude: full.gps_longitude,
+      service_zone_code: full.service_zone_code,
+      service_zone_source: full.service_zone_source,
+      technician_username: full.technician_username || "",
       team_members: [],
-      admin_action_required: row.admin_action_required !== false,
+      admin_action_required: full.admin_action_required !== false,
     };
 
     // team
@@ -733,12 +770,43 @@ async function openJob(jobId){
     $("mJobType").value = text(CURRENT.job_type||"");
     $("mBookingCode").value = text(CURRENT.booking_code||"");
     $("mAppt").value = toLocalInputDatetime(CURRENT.appointment_datetime);
+    // Clear EVERY location field before populating so values from a previously
+    // opened job can never leak into this one (esp. Lat/Lng, which were only set
+    // conditionally and otherwise kept their stale value).
+    $("mAddress").value = "";
+    $("mMaps").value = "";
+    $("mZone").value = "";
+    $("mLat").value = "";
+    $("mLng").value = "";
+
     $("mAddress").value = text(CURRENT.address_text||"");
     $("mMaps").value = text(CURRENT.maps_url||"");
     $("mZone").value = text(CURRENT.job_zone||"");
-    // auto parse lat/lng (fail-open)
-    const ll = parseLatLngClient($("mMaps").value) || parseLatLngClient($("mAddress").value);
-    if (ll) { $("mLat").value = String(ll.lat); $("mLng").value = String(ll.lng); }
+    // Prefer REAL stored coordinates. Only derive lat/lng from the maps_url /
+    // address text when the job has no usable stored pin — never overwrite a
+    // stored coordinate with one parsed from the address. When neither exists the
+    // fields stay blank (cleared above).
+    const stored = strictStoredLatLng(CURRENT.gps_latitude, CURRENT.gps_longitude);
+    if (stored) {
+      $("mLat").value = String(stored.lat);
+      $("mLng").value = String(stored.lng);
+    } else {
+      const ll = parseLatLngClient($("mMaps").value) || parseLatLngClient($("mAddress").value);
+      if (ll) { $("mLat").value = String(ll.lat); $("mLng").value = String(ll.lng); }
+    }
+
+    // Snapshot the loaded location so save() can tell whether the admin changed
+    // the map/address (and therefore must not resubmit the old GPS pair).
+    CURRENT.__origLocation = {
+      maps_url: $("mMaps").value.trim(),
+      address_text: $("mAddress").value.trim(),
+      lat: $("mLat").value.trim(),
+      lng: $("mLng").value.trim(),
+    };
+
+    if (detailLoadFailed) {
+      showToast("โหลดรายละเอียดงานเต็มไม่สำเร็จ — พิกัด/สถานที่อาจไม่ครบ กรุณาตรวจสอบก่อนบันทึก", "error");
+    }
 
     $("mNote").value = text(CURRENT.customer_note||"");
 
@@ -780,21 +848,39 @@ async function loadPricing(){
 async function saveJob(){
   if (!CURRENT) return;
   if (blockReadOnlyMutation()) return;
+  const latNow = $("mLat").value.trim();
+  const lngNow = $("mLng").value.trim();
+  const mapsNow = $("mMaps").value.trim();
+  const addrNow = $("mAddress").value.trim();
+  const orig = CURRENT.__origLocation || {};
+  const locationTextChanged = (mapsNow !== (orig.maps_url || "")) || (addrNow !== (orig.address_text || ""));
+  const coordsManuallyEdited = (latNow !== (orig.lat || "")) || (lngNow !== (orig.lng || ""));
+  // If the admin changed the map/address but did NOT manually edit the pin, do
+  // not resubmit the old coordinates — send blank so the backend recalculates
+  // (or clears) from the new location instead of keeping the old GPS.
+  const dropStaleGps = locationTextChanged && !coordsManuallyEdited;
   const payload = {
     customer_name: $("mCustomerName").value.trim() || null,
     customer_phone: $("mCustomerPhone").value.trim() || null,
     job_type: $("mJobType").value.trim() || null,
     appointment_datetime: $("mAppt").value ? localDatetimeToBangkokISO($("mAppt").value) : null,
-    address_text: $("mAddress").value.trim() || null,
+    address_text: addrNow || null,
     customer_note: $("mNote").value.trim() || null,
-    maps_url: $("mMaps").value.trim() || null,
+    maps_url: mapsNow || null,
     job_zone: $("mZone").value.trim() || null,
-    gps_latitude: $("mLat").value.trim() || null,
-    gps_longitude: $("mLng").value.trim() || null,
+    gps_latitude: dropStaleGps ? "" : (latNow || null),
+    gps_longitude: dropStaleGps ? "" : (lngNow || null),
   };
   try{
-    await apiFetch(`/jobs/${CURRENT.job_id}/admin-edit`, { method:"PUT", body: JSON.stringify(payload) });
-    showToast("บันทึกใบงานแล้ว","success");
+    const resp = await apiFetch(`/jobs/${CURRENT.job_id}/admin-edit`, { method:"PUT", body: JSON.stringify(payload) });
+    const GPS_ACTION_MSG = {
+      recalculated: "อัปเดตพิกัดจากแผนที่/ที่อยู่ใหม่แล้ว",
+      cleared: "ล้างพิกัดเดิมแล้ว (หาพิกัดจากสถานที่ใหม่ไม่ได้) กรุณาตรวจสอบ",
+      updated: "บันทึกพิกัดใหม่แล้ว",
+    };
+    const gpsNote = resp && GPS_ACTION_MSG[resp.gps_action] ? ` • ${GPS_ACTION_MSG[resp.gps_action]}` : "";
+    const mapsNote = resp && resp.maps_action === "cleared" ? " • ล้างลิงก์แผนที่เดิม (สถานที่เปลี่ยน)" : "";
+    showToast("บันทึกใบงานแล้ว" + gpsNote + mapsNote, "success");
     await loadQueue();
   }catch(e){
     showToast(e.message||"บันทึกไม่สำเร็จ","error");

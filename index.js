@@ -14343,30 +14343,48 @@ async function handleAdminBookV2(req, res) {
   const standard_price = Number(customerPrice.active_price ?? customerPrice.standard_price ?? 0);
 
 
-// ✅ Parse lat/lng from maps_url or address_text (fail-open)
-const parsedAdminLL = parseLatLngFromText(maps_url) || parseLatLngFromText(address_text);
-const parsed_lat = parsedAdminLL ? parsedAdminLL.lat : null;
-const parsed_lng = parsedAdminLL ? parsedAdminLL.lng : null;
-console.log("[latlng_parse]", { ok: !!parsedAdminLL });
-
-  // ✅ Best-effort resolve short Google Maps links to precise lat/lng (fail-open)
-  // - ensures check-in / navigation uses correct pin coordinates
-  let final_lat = Number.isFinite(Number(parsed_lat)) ? Number(parsed_lat) : null;
-  let final_lng = Number.isFinite(Number(parsed_lng)) ? Number(parsed_lng) : null;
-  if ((final_lat == null || final_lng == null) && maps_url) {
-    const m = String(maps_url || '').trim();
-    if (m && /maps\.app\.goo\.gl|goo\.gl/i.test(m)) {
-      try {
-        const rr = await resolveMapsUrlToLatLng(m);
-        if (rr && Number.isFinite(Number(rr.lat)) && Number.isFinite(Number(rr.lng))) {
-          final_lat = Number(rr.lat);
-          final_lng = Number(rr.lng);
-        }
-      } catch (e) {
-        // fail-open
-      }
+// Blocker: explicit admin coordinates must be validated at the BACKEND, not just
+// the UI — a stale cached admin page or a direct API caller can send a partial or
+// invalid pair. One-field-only / invalid / out-of-range / 0,0 → HTTP 400 instead
+// of silently falling back to maps/address derivation. Both blank = no explicit GPS.
+{
+  const latProvided = coordFieldProvided(body.gps_latitude);
+  const lngProvided = coordFieldProvided(body.gps_longitude);
+  if (latProvided || lngProvided) {
+    if (!(latProvided && lngProvided) || !strictLatLngPairOrNull(body.gps_latitude, body.gps_longitude)) {
+      return res.status(400).json({ code: 'INVALID_JOB_SITE_COORDINATES', error: INVALID_JOB_SITE_COORDINATES_MSG });
     }
   }
+}
+
+// ✅ Coordinate resolution order (never convert missing values to zero):
+//   1) explicit admin-supplied gps_latitude/gps_longitude
+//   2) coordinates parsed from maps_url / address_text
+//   3) best-effort resolution of a short Google Maps link
+//   4) null
+// EVERY candidate pair — explicit, parsed, or resolved — is passed through the
+// SAME strict validator, so 0,0 / out-of-range / partial / NaN / non-numeric
+// derived coordinates are never persisted.
+const explicitAdminLL = strictLatLngPairOrNull(body.gps_latitude, body.gps_longitude);
+let derivedAdminLL = null;
+if (!explicitAdminLL) {
+  const p = parseLatLngFromText(maps_url) || parseLatLngFromText(address_text);
+  derivedAdminLL = p ? strictLatLngPairOrNull(p.lat, p.lng) : null;
+  // The maps_url itself is always persisted below regardless of resolution, so a
+  // short Google Maps link stays saved even when coordinate resolution fails.
+  const m = String(maps_url || '').trim();
+  if (!derivedAdminLL && m && /maps\.app\.goo\.gl|goo\.gl/i.test(m)) {
+    try {
+      const rr = await resolveMapsUrlToLatLng(m);
+      if (rr) derivedAdminLL = strictLatLngPairOrNull(rr.lat, rr.lng);
+    } catch (e) { /* fail-open */ }
+  }
+}
+const chosenAdminLL = explicitAdminLL || derivedAdminLL;
+console.log("[latlng_parse]", { explicit: !!explicitAdminLL, derived: !!derivedAdminLL });
+
+  let final_lat = chosenAdminLL ? chosenAdminLL.lat : null;
+  let final_lng = chosenAdminLL ? chosenAdminLL.lng : null;
 
 
   // sanitize items
@@ -17234,17 +17252,27 @@ app.put("/jobs/:job_id/admin-edit", async (req, res) => {
   const wantsTeamSave = Array.isArray(nextTeamRaw) || primary_username !== undefined || technician_username !== undefined;
   const desiredPrimaryFromBody = String(primary_username || technician_username || '').trim() || null;
 
-  // Backward-compatible mapping (do not break existing callers)
-  const toFiniteOrNull = (v) => {
-    if (v === null || v === undefined) return null;
-    const s = typeof v === 'string' ? v.trim() : v;
-    if (s === '') return null;
-    const n = Number(s);
-    return Number.isFinite(n) ? n : null;
-  };
-
-  const gpsLat = gps_latitude !== undefined ? toFiniteOrNull(gps_latitude) : toFiniteOrNull(latitude);
-  const gpsLng = gps_longitude !== undefined ? toFiniteOrNull(gps_longitude) : toFiniteOrNull(longitude);
+  // --- Job-site coordinate validation (strict, canonical gps_* first) --------
+  // Reject a partial or invalid explicit pair instead of silently preserving the
+  // old coordinates while returning success. Both blank/omitted = "no explicit
+  // GPS edit"; both valid = update; anything else (one field only, invalid,
+  // out-of-range, 0,0) = HTTP 400.
+  const latRaw = gps_latitude !== undefined ? gps_latitude : latitude;
+  const lngRaw = gps_longitude !== undefined ? gps_longitude : longitude;
+  const coordProvided = (v) => v !== undefined && v !== null && String(v).trim() !== '';
+  const latProvided = coordProvided(latRaw);
+  const lngProvided = coordProvided(lngRaw);
+  const INVALID_COORD_MSG = 'พิกัดหน้างานไม่ถูกต้อง กรุณาระบุ Lat และ Lng ให้ครบทั้งคู่และอยู่ในช่วงที่ถูกต้อง (ไม่ใช่ 0,0) หรือเว้นว่างทั้งคู่';
+  let editGpsPair = null;
+  if (latProvided || lngProvided) {
+    if (!(latProvided && lngProvided)) {
+      return res.status(400).json({ code: 'INVALID_JOB_SITE_COORDINATES', error: INVALID_COORD_MSG });
+    }
+    editGpsPair = strictLatLngPairOrNull(latRaw, lngRaw);
+    if (!editGpsPair) {
+      return res.status(400).json({ code: 'INVALID_JOB_SITE_COORDINATES', error: INVALID_COORD_MSG });
+    }
+  }
 
   // ✅ FIX TIMEZONE: ถ้ามีการแก้วันนัด ให้ normalize เป็นเวลาไทยก่อนบันทึก
   const appointment_dt =
@@ -17262,7 +17290,12 @@ try {
         `SELECT appointment_datetime,
                 COALESCE(duration_min,60) AS duration_min,
                 technician_username,
-                job_type
+                job_type,
+                maps_url,
+                address_text,
+                job_zone,
+                gps_latitude,
+                gps_longitude
          FROM public.jobs WHERE job_id=$1
          FOR UPDATE`,
         [job_id]
@@ -17273,6 +17306,110 @@ try {
       }
 
       const cur = curR.rows[0];
+
+      // ---- Effective location resolution (maps_url / address / GPS / zone) ----
+      // These four must stay mutually consistent. Presence flags distinguish an
+      // OMITTED field (preserve) from an EXPLICITLY supplied empty one (clear).
+      const curMaps = String(cur.maps_url || '').trim();
+      const curAddr = String(cur.address_text || '').trim();
+      const mapsProvided = maps_url !== undefined;
+      const addrProvided = address_text !== undefined;
+      const newMaps = mapsProvided ? String(maps_url || '').trim() : curMaps;
+      const newAddr = addrProvided ? String(address_text || '').trim() : curAddr;
+      const mapsChanged = mapsProvided && newMaps !== curMaps;
+      const addrChanged = addrProvided && newAddr !== curAddr;
+      const newJobZone = job_zone !== undefined ? String(job_zone || '').trim() : String(cur.job_zone || '').trim();
+
+      // Did the admin supply an explicit pin that differs from the stored one?
+      // (editGpsPair is already strictly validated / 400'd earlier.) An explicit
+      // GPS that MOVES the pin is itself a location change.
+      const curPair = strictLatLngPairOrNull(cur.gps_latitude, cur.gps_longitude);
+      const gpsMovedByExplicit = !!editGpsPair && !(curPair && Math.abs(curPair.lat - editGpsPair.lat) < 1e-9 && Math.abs(curPair.lng - editGpsPair.lng) < 1e-9);
+      // A change to a NEW non-empty Maps URL is a "location moved" signal. Merely
+      // CLEARING the URL is not (the stored pin stays valid for nav fallback).
+      const mapsMovedToNew = mapsChanged && newMaps !== '';
+
+      // Blocker 1 + 2: maps_url write semantics.
+      //   omitted                                   → preserve
+      //   supplied non-empty                        → replace
+      //   supplied empty/null                       → clear to NULL
+      //   address OR explicit-GPS moved w/o a real replacement URL → clear the
+      //   stale URL, so a new location can never keep the old Maps URL (which
+      //   technician navigation prioritises before GPS).
+      let mapsForce = false, mapsWrite = null, mapsAction = 'preserved';
+      if (mapsProvided) {
+        mapsForce = true;
+        mapsWrite = newMaps || null;
+        mapsAction = mapsWrite ? (mapsChanged ? 'replaced' : 'preserved') : 'cleared';
+      }
+      if ((addrChanged || gpsMovedByExplicit) && !mapsMovedToNew) {
+        mapsForce = true;
+        mapsWrite = null;
+        mapsAction = 'cleared';
+      }
+
+      // Blocker 4: strict validation for EVERY derived coordinate pair (parsed
+      // from text or resolved from a short link). Source-SPECIFIC (Blocker 2): a
+      // new Maps URL never falls back to the unchanged old address.
+      async function deriveStrictLatLng(mapsText, addrText) {
+        const p = parseLatLngFromText(mapsText) || (addrText ? parseLatLngFromText(addrText) : null);
+        let pair = p ? strictLatLngPairOrNull(p.lat, p.lng) : null;
+        if (!pair && mapsText && /maps\.app\.goo\.gl|goo\.gl/i.test(mapsText)) {
+          try {
+            const rr = await resolveMapsUrlToLatLng(mapsText);
+            if (rr) pair = strictLatLngPairOrNull(rr.lat, rr.lng);
+          } catch (_) { /* fail-open → null (cleared) */ }
+        }
+        return pair;
+      }
+
+      // Choose the NEW effective coordinate source (never the old one after a move):
+      //   - maps moved to new + address changed → new maps, address as fallback
+      //   - maps moved to new only              → new maps ONLY
+      //   - address changed only                → new address only
+      let srcMaps = '', srcAddr = '';
+      if (mapsMovedToNew && addrChanged) { srcMaps = newMaps; srcAddr = newAddr; }
+      else if (mapsMovedToNew) { srcMaps = newMaps; srcAddr = ''; }
+      else if (addrChanged) { srcMaps = ''; srcAddr = newAddr; }
+      const locationMoved = mapsMovedToNew || addrChanged;
+
+      // GPS decision:
+      //   1) explicit pair (already validated)  → update
+      //   2) location moved                     → derive from the NEW source only;
+      //      save if strictly valid, else CLEAR to NULL
+      //   3) otherwise                          → preserve
+      let gpsForce = false, gpsWriteLat = null, gpsWriteLng = null, gpsAction = 'preserved';
+      if (editGpsPair) {
+        gpsForce = true; gpsWriteLat = editGpsPair.lat; gpsWriteLng = editGpsPair.lng; gpsAction = 'updated';
+      } else if (locationMoved) {
+        const pair = await deriveStrictLatLng(srcMaps, srcAddr);
+        gpsForce = true;
+        if (pair) { gpsWriteLat = pair.lat; gpsWriteLng = pair.lng; gpsAction = 'recalculated'; }
+        else { gpsWriteLat = null; gpsWriteLng = null; gpsAction = 'cleared'; }
+      }
+
+      // Blocker 3: recompute the SYSTEM service zone from the NEW effective source
+      // whenever the location moved (new maps/address or an explicit pin). Never
+      // keep the old zone; clear it (NULL) when the new location cannot be
+      // classified. The old, unchanged job_zone/address are NOT used as evidence
+      // for the new zone. Free-text job_zone is preserved separately by the UPDATE.
+      const jobZoneChanged = job_zone !== undefined && newJobZone !== String(cur.job_zone || '').trim();
+      let zoneForce = false, zoneCodeWrite = null, zoneSourceWrite = null;
+      if (locationMoved || gpsMovedByExplicit) {
+        const zoneMapsInput = editGpsPair ? `${editGpsPair.lat},${editGpsPair.lng}` : srcMaps;
+        let zoneDetected = null;
+        try {
+          zoneDetected = await detectServiceZoneFromText({
+            address_text: srcAddr,
+            job_zone: jobZoneChanged ? newJobZone : '',
+            maps_url: zoneMapsInput,
+          });
+        } catch (_) { zoneDetected = null; }
+        zoneForce = true;
+        zoneCodeWrite = zoneDetected?.service_zone_code || null;
+        zoneSourceWrite = zoneDetected?.service_zone_source || null;
+      }
+
       const apptToUse = appointment_dt || cur.appointment_datetime;
       const durToUse = Number(cur.duration_min || 60);
       const jobTypeToUse = (job_type ?? cur.job_type);
@@ -17312,13 +17449,15 @@ try {
           appointment_datetime = COALESCE($4, appointment_datetime),
           address_text = COALESCE($5, address_text),
           customer_note = COALESCE($6, customer_note),
-          maps_url = COALESCE(NULLIF($7, ''), maps_url),
-          job_zone = COALESCE(NULLIF($8, ''), job_zone),
-          gps_latitude = COALESCE($9, gps_latitude),
-          gps_longitude = COALESCE($10, gps_longitude),
-          technician_username = COALESCE(NULLIF($11, ''), technician_username),
-          technician_team = COALESCE(NULLIF($11, ''), technician_team)
-      WHERE job_id=$12
+          maps_url = CASE WHEN $7 THEN $8 ELSE maps_url END,
+          job_zone = COALESCE(NULLIF($9, ''), job_zone),
+          gps_latitude = CASE WHEN $10 THEN $11 ELSE gps_latitude END,
+          gps_longitude = CASE WHEN $10 THEN $12 ELSE gps_longitude END,
+          service_zone_code = CASE WHEN $13 THEN $14 ELSE service_zone_code END,
+          service_zone_source = CASE WHEN $13 THEN $15 ELSE service_zone_source END,
+          technician_username = COALESCE(NULLIF($16, ''), technician_username),
+          technician_team = COALESCE(NULLIF($16, ''), technician_team)
+      WHERE job_id=$17
       `,
       [
         customer_name ?? null,
@@ -17327,10 +17466,15 @@ try {
         appointment_dt,
         address_text ?? null,
         customer_note ?? null,
-        maps_url ?? null,
+        mapsForce,
+        mapsWrite,
         job_zone ?? null,
-        gpsLat,
-        gpsLng,
+        gpsForce,
+        gpsWriteLat,
+        gpsWriteLng,
+        zoneForce,
+        zoneCodeWrite,
+        zoneSourceWrite,
         headerPrimaryToSave,
         job_id,
       ]
@@ -17376,6 +17520,12 @@ try {
         },
         pricing,
         team: savedTeam,
+        // How the location fields were resolved on this save so the admin UI can
+        // tell the user what happened.
+        //   gps_action  : preserved | updated | recalculated | cleared
+        //   maps_action : preserved | replaced | cleared
+        gps_action: gpsAction,
+        maps_action: mapsAction,
       });
     } catch (innerErr) {
       try { await client.query("ROLLBACK"); } catch (_) {}
@@ -19203,6 +19353,27 @@ function strictNumericOrNaN(v) {
   }
   return NaN;
 }
+
+// STRICT coordinate-PAIR validation for admin-supplied gps fields. Returns
+// {lat,lng} only when BOTH are real finite numbers in valid range and not the
+// (0,0) null-island pair; otherwise null. null / "" / whitespace / boolean /
+// array / object never become 0 — Number(null)===0 must never persist as (0,0).
+function strictLatLngPairOrNull(latRaw, lngRaw) {
+  const lat = strictNumericOrNaN(latRaw);
+  const lng = strictNumericOrNaN(lngRaw);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+  if (lat === 0 && lng === 0) return null;
+  return { lat, lng };
+}
+
+// A coordinate field counts as "provided" only when it is a non-blank value.
+// undefined / null / "" / whitespace = not provided.
+function coordFieldProvided(v) {
+  return v !== undefined && v !== null && String(v).trim() !== '';
+}
+// Shared actionable Thai message for an invalid job-site coordinate pair.
+const INVALID_JOB_SITE_COORDINATES_MSG = 'พิกัดหน้างานไม่ถูกต้อง กรุณาระบุ Lat และ Lng ให้ครบทั้งคู่และอยู่ในช่วงที่ถูกต้อง (ไม่ใช่ 0,0) หรือเว้นว่างทั้งคู่';
 
 app.post("/jobs/:job_id/checkin", requireTechnicianSession, async (req, res) => {
   const { job_id } = req.params;

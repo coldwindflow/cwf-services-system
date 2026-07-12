@@ -615,7 +615,7 @@ async function loadJob(){
 
         <div class="row" style="margin-top:10px;gap:10px;flex-wrap:wrap;align-items:flex-end">
           <div style="flex:1;min-width:220px">
-            <label>โซน</label>
+            <label>โซน (ข้อความอิสระ)</label>
             <input id="edit_zone" value="${escapeHtml(safe(job.job_zone||''))}" />
           </div>
           <div style="flex:1;min-width:220px">
@@ -624,12 +624,17 @@ async function loadJob(){
           </div>
           <div style="width:160px">
             <label>Lat</label>
-            <input id="edit_lat" value="${escapeHtml(safe(job.latitude||''))}" />
+            <input id="edit_lat" value="${escapeHtml(safe(job.gps_latitude ?? job.latitude ?? ''))}" />
           </div>
           <div style="width:160px">
             <label>Lng</label>
-            <input id="edit_lng" value="${escapeHtml(safe(job.longitude||''))}" />
+            <input id="edit_lng" value="${escapeHtml(safe(job.gps_longitude ?? job.longitude ?? ''))}" />
           </div>
+        </div>
+        <div class="muted" style="margin-top:6px;font-size:12px;">
+          🗺️ โซนบริการที่ระบบตรวจได้:
+          <b>${escapeHtml(safe(job.service_zone_code || '—'))}</b>${job.service_zone_source ? ` <span style="opacity:.75">(${escapeHtml(safe(job.service_zone_source))})</span>` : ''}
+          <span style="opacity:.75">— ช่องนี้เป็นโซนของระบบ (แยกจากช่อง “โซน” ที่พิมพ์เอง)</span>
         </div>
 
         <div style="margin-top:12px">
@@ -1589,8 +1594,27 @@ async function loadJob(){
             address_text: String(el('edit_address')?.value||'').trim(),
             job_zone: String(el('edit_zone')?.value||'').trim(),
             maps_url: String(el('edit_maps_url')?.value||'').trim(),
-            latitude: String(el('edit_lat')?.value||'').trim(),
-            longitude: String(el('edit_lng')?.value||'').trim(),
+            // Send canonical gps_* keys (backend also accepts legacy latitude/longitude).
+            // If the admin changed the map/address but did NOT manually edit the
+            // pin, send blank coordinates so the backend recalculates (or clears)
+            // from the new location — never resubmit the old GPS with a new place.
+            ...(function(){
+              const latNow = String(el('edit_lat')?.value||'').trim();
+              const lngNow = String(el('edit_lng')?.value||'').trim();
+              const mapsNow = String(el('edit_maps_url')?.value||'').trim();
+              const addrNow = String(el('edit_address')?.value||'').trim();
+              const origMaps = String(job.maps_url||'').trim();
+              const origAddr = String(job.address_text||'').trim();
+              const origLat = String(job.gps_latitude ?? job.latitude ?? '').trim();
+              const origLng = String(job.gps_longitude ?? job.longitude ?? '').trim();
+              const locationTextChanged = (mapsNow !== origMaps) || (addrNow !== origAddr);
+              const coordsManuallyEdited = (latNow !== origLat) || (lngNow !== origLng);
+              const dropStaleGps = locationTextChanged && !coordsManuallyEdited;
+              return {
+                gps_latitude: dropStaleGps ? '' : latNow,
+                gps_longitude: dropStaleGps ? '' : lngNow,
+              };
+            })(),
             // IMPORTANT (Timezone): <input type="datetime-local"> has no timezone.
             // Using Date(...).toISOString() will convert to UTC ("Z") and cause 09:00 -> 16:00/18:00 shifts.
             // Treat the picked wall-clock time as Bangkok (+07:00).
@@ -1666,8 +1690,15 @@ async function loadJob(){
             return;
           }
 
-          showToast('บันทึกใบงานครบแล้ว', 'success');
-          if (msg) msg.textContent = `✅ บันทึกใบงานครบแล้ว${done.length ? `: ${done.join(' / ')}` : ''}`;
+          const GPS_ACTION_MSG = {
+            recalculated: 'อัปเดตพิกัดจากแผนที่/ที่อยู่ใหม่',
+            cleared: 'ล้างพิกัดเดิม (หาพิกัดจากสถานที่ใหม่ไม่ได้) — กรุณาตรวจสอบ',
+            updated: 'บันทึกพิกัดใหม่',
+          };
+          const gpsNote = result && GPS_ACTION_MSG[result.gps_action] ? ` • ${GPS_ACTION_MSG[result.gps_action]}` : '';
+          const mapsNote = result && result.maps_action === 'cleared' ? ' • ล้างลิงก์แผนที่เดิม (สถานที่เปลี่ยน)' : '';
+          showToast('บันทึกใบงานครบแล้ว' + gpsNote + mapsNote, 'success');
+          if (msg) msg.textContent = `✅ บันทึกใบงานครบแล้ว${done.length ? `: ${done.join(' / ')}` : ''}${gpsNote}${mapsNote}`;
           await loadJob();
         }catch(e){
           console.error(e);

@@ -307,7 +307,7 @@ test("admin review new-job notification uses first-load baseline and one sound p
 });
 
 test("admin/customer frontend cache versions are bumped for booking notification changes", () => {
-  assert.match(adminReviewHtml, /admin-review-v2\.js\?v=20260707_customer_booking_notify_v3_xss_guard/);
+  assert.match(adminReviewHtml, /admin-review-v2\.js\?v=20260712_job_location_roundtrip_v1/);
   assert.doesNotMatch(adminReviewHtml, /admin-review-v2\.js\?v=20260707_customer_booking_notify_v2/);
   assert.match(adminReviewHtml, /admin-review-ai-intake\.js\?v=ai-booking-intake-customer-cards-v11-admin-alert-gate/);
   assert.doesNotMatch(adminReviewHtml, /admin-review-ai-intake\.js\?v=ai-booking-intake-customer-cards-v10/);
