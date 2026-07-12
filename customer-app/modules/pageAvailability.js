@@ -35,7 +35,6 @@
   // before load() resolves, we never accidentally treat a page as enabled.
   let flags = { ...DEGRADED };
   let ready = false;
-  let observer = null;
 
   function isPlainObject(value) {
     return !!value && typeof value === "object" && !Array.isArray(value);
@@ -148,72 +147,25 @@
   }
 
   // ---- disabled-route controls ---------------------------------------------
-  // Hide every control that points at a disabled (or unknown) route. Only ever
-  // touch attributes THIS module set, and restore the element's prior
-  // disabled/hidden state so a control disabled by other business logic is never
-  // silently re-enabled.
-  function markHidden(el) {
-    if (el.getAttribute("data-cwf-avail") === "off") return;
-    el.setAttribute("data-cwf-avail", "off");
-    el.setAttribute("data-cwf-prev-hidden", el.hasAttribute("hidden") ? "1" : "0");
-    el.setAttribute("data-cwf-prev-aria", el.getAttribute("aria-hidden") || "");
-    el.setAttribute("data-cwf-prev-tabindex", el.hasAttribute("tabindex") ? String(el.getAttribute("tabindex")) : "");
-    el.setAttribute("hidden", "hidden");
-    el.setAttribute("aria-hidden", "true");
-    el.setAttribute("tabindex", "-1");
-    if ("disabled" in el) {
-      el.setAttribute("data-cwf-prev-disabled", el.disabled ? "1" : "0");
-      el.disabled = true;
-    }
-  }
+  // Design decision (locked-maintenance model): menus and CTAs are NEVER hidden
+  // or disabled. The full app structure stays intact — the Bottom Navigation
+  // keeps all its items (no reflow / no gaps) and every control remains
+  // clickable. When a control points at a disabled route, the click is caught by
+  // the central router guard, which renders a static "maintenance" screen
+  // instead of running the route handler or its API.
+  //
+  // applyToDom is kept as an intentional no-op purely for API compatibility with
+  // existing callers (router after-render, ui booking refresh, boot).
+  function applyToDom(_scope) { /* no-op: controls are never hidden */ }
 
-  function restoreShown(el) {
-    if (el.getAttribute("data-cwf-avail") !== "off") return; // not ours
-    if (el.getAttribute("data-cwf-prev-hidden") === "1") el.setAttribute("hidden", "hidden");
-    else el.removeAttribute("hidden");
-    const prevAria = el.getAttribute("data-cwf-prev-aria");
-    if (prevAria) el.setAttribute("aria-hidden", prevAria); else el.removeAttribute("aria-hidden");
-    const prevTab = el.getAttribute("data-cwf-prev-tabindex");
-    if (prevTab !== null && prevTab !== "") el.setAttribute("tabindex", prevTab); else el.removeAttribute("tabindex");
-    if ("disabled" in el) el.disabled = el.getAttribute("data-cwf-prev-disabled") === "1";
-    el.removeAttribute("data-cwf-avail");
-    el.removeAttribute("data-cwf-prev-hidden");
-    el.removeAttribute("data-cwf-prev-aria");
-    el.removeAttribute("data-cwf-prev-tabindex");
-    el.removeAttribute("data-cwf-prev-disabled");
-  }
+  // Kept for API compatibility with the boot sequence. Nothing is hidden, so
+  // there is nothing to reapply on DOM mutation — the observer is not started.
+  function startObserver() { /* no-op: nothing to re-hide */ }
 
-  function applyToDom(scope) {
-    if (!ready) return;
-    const target = scope && typeof scope.querySelectorAll === "function" ? scope : document;
-    let nodes;
-    try { nodes = target.querySelectorAll("[data-route]"); } catch (_) { return; }
-    nodes.forEach((el) => {
-      const key = availabilityKey(el.getAttribute("data-route"));
-      const disabled = !key || flags[key] !== true;
-      if (disabled) markHidden(el); else restoreShown(el);
-    });
-  }
-
-  // A single, debounced MutationObserver reapplies the filter to asynchronously
-  // rendered CTAs. It watches childList/subtree only (never attributes), so this
-  // module's own attribute writes cannot retrigger it → no loop, one observer.
-  function startObserver() {
-    if (observer || typeof MutationObserver !== "function") return;
-    const appEl = document.getElementById("app");
-    if (!appEl) return;
-    let scheduled = false;
-    observer = new MutationObserver(() => {
-      if (scheduled) return;
-      scheduled = true;
-      const run = () => { scheduled = false; applyToDom(document); };
-      if (typeof requestAnimationFrame === "function") requestAnimationFrame(run);
-      else setTimeout(run, 16);
-    });
-    observer.observe(appEl, { childList: true, subtree: true });
-  }
-
-  // ---- maintenance screen ---------------------------------------------------
+  // ---- maintenance screen (static blurred skeleton + readable overlay) ------
+  // A generic, STATIC skeleton (no real customer data, no route handler, no API)
+  // sits blurred behind a readable "under maintenance" overlay, so a disabled
+  // page keeps the shape/feel of a real screen without exposing anything live.
   function maintenanceHtml(route) {
     const esc = root.utils.escapeHtml;
     const key = availabilityKey(route);
@@ -221,16 +173,25 @@
     const backRoute = firstEnabledRoute();
     const backLabel = PAGE_LABELS[backRoute] || "หน้าที่ใช้งานได้";
     return `
-      <section class="screen maintenance-screen" role="status" aria-live="polite">
-        <div class="maintenance-card">
-          <div class="maintenance-emoji" aria-hidden="true">🛠️</div>
-          <h2>หน้านี้กำลังปรับปรุง</h2>
-          <p class="maintenance-page">หน้า: <strong>${esc(label)}</strong></p>
-          <p class="muted">ระบบกำลังเตรียมฟีเจอร์นี้ กรุณาใช้เมนูอื่นหรือติดต่อแอดมิน</p>
-          <div class="maintenance-actions">
-            <button class="primary-btn" type="button" data-route="${esc(backRoute)}" data-maintenance-back>กลับไปหน้าที่ใช้งานได้ (${esc(backLabel)})</button>
-            <a class="secondary-btn" href="${LINE_URL}" target="_blank" rel="noopener noreferrer">ติดต่อแอดมินทาง LINE</a>
-            <a class="secondary-btn" href="tel:${PHONE_TEL}">โทร ${PHONE_DISPLAY}</a>
+      <section class="screen maintenance-screen" aria-label="หน้ากำลังปรับปรุง">
+        <div class="maintenance-skeleton" aria-hidden="true">
+          <div class="sk-block sk-hero"></div>
+          <div class="sk-chips"><span class="sk-block sk-chip"></span><span class="sk-block sk-chip"></span><span class="sk-block sk-chip"></span></div>
+          <div class="sk-block sk-card"></div>
+          <div class="sk-block sk-card"></div>
+          <div class="sk-block sk-card sk-card-short"></div>
+        </div>
+        <div class="maintenance-overlay" role="status" aria-live="polite">
+          <div class="maintenance-card">
+            <div class="maintenance-lock" aria-hidden="true">🔒</div>
+            <h2>หน้านี้กำลังปรับปรุง</h2>
+            <p class="maintenance-page">หน้า: <strong>${esc(label)}</strong></p>
+            <p class="muted">ฟีเจอร์นี้ปิดปรับปรุงชั่วคราว เมนูอื่นยังใช้งานได้ตามปกติ</p>
+            <div class="maintenance-actions">
+              <button class="primary-btn" type="button" data-route="${esc(backRoute)}" data-maintenance-back>ไปหน้าที่ใช้งานได้ (${esc(backLabel)})</button>
+              <a class="secondary-btn" href="${LINE_URL}" target="_blank" rel="noopener noreferrer">ติดต่อแอดมินทาง LINE</a>
+              <a class="secondary-btn" href="tel:${PHONE_TEL}">โทร ${PHONE_DISPLAY}</a>
+            </div>
           </div>
         </div>
       </section>
@@ -239,11 +200,9 @@
 
   function renderMaintenance(container, route) {
     if (!container) return;
+    // Pure static markup — no route handler, no API, no live customer data. The
+    // back button carries data-route so it routes through the central guard.
     container.innerHTML = maintenanceHtml(route);
-    // The back button carries data-route, so the normal router click handler
-    // navigates through the central guard — no direct handler call, no loop.
-    // Ensure our own maintenance markup is filtered too (defensive).
-    applyToDom(container);
   }
 
   root.pageAvailability = {
