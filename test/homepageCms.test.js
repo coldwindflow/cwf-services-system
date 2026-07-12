@@ -290,7 +290,7 @@ test("customer homepage has no admin control, bottom nav is fixed five-tab, and 
   const sw = read("customer-app/sw.js");
   const app = read("customer-app/assets/customer-app.js");
   const manifest = read("customer-app/manifest.webmanifest");
-  const build = "20260712_page_controls_tracking_link_v1";
+  const build = "20260712_page_controls_tracking_link_v2";
 
   assert.doesNotMatch(index + ui, /โหมดแอดมิน|openCms|localStorage\.getItem\('cwfHomeCmsDemo'/);
   assert.match(index, /data-route="store"[\s\S]*ร้านค้า/);
@@ -1687,7 +1687,10 @@ test("admin CMS wires the page-availability editor (toggles, publish guard, trac
   assert.match(adminJs, /renderPageAvailabilityEditor/);
   assert.match(adminJs, /data-page-availability="/);
   // Never auto-toggle: only the toggled key changes.
-  assert.match(adminJs, /config\.page_availability\[target\.dataset\.pageAvailability\] = target\.checked/);
+  assert.match(adminJs, /config\.page_availability\[key\] = target\.checked/);
+  // Cannot disable the last enabled page (UI guard), and publish guards remain.
+  assert.match(adminJs, /function pageAvailabilityToggleAllowed\(/);
+  assert.match(adminJs, /if \(!pageAvailabilityToggleAllowed\(config\.page_availability, key, target\.checked\)\)/);
   // Publish guards: all-disabled blocked, tracking-off confirm.
   assert.match(adminJs, /ต้องเปิดอย่างน้อย 1 หน้า/);
   assert.match(adminJs, /pa\.tracking === false && !window\.confirm/);

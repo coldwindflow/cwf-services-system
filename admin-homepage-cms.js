@@ -43,6 +43,17 @@
     return out;
   }
 
+  // Pure decision for a page-availability toggle. Turning a page OFF is refused
+  // when it is the LAST enabled page, so the UI can never reach an all-disabled
+  // state (backend validation + publish guard remain as defense-in-depth).
+  // Returns true when the toggle is allowed to apply.
+  function pageAvailabilityToggleAllowed(pa, key, checked) {
+    if (checked) return true;
+    if (pa[key] !== true) return true; // already off — no-op, harmless
+    const enabledCount = PAGE_AVAILABILITY_KEYS.filter((route) => pa[route] === true).length;
+    return enabledCount > 1;
+  }
+
   const TYPE_ICONS = {
     hero: "🏠", quick: "⚡", promo_banner: "🎨",
     active_job: "🔧", announcements: "📣", featured_services: "⭐",
@@ -1079,9 +1090,18 @@
     const target = event.target;
     if (target.matches("[data-page-availability]")) {
       config.page_availability = normalizePageAvailability(config.page_availability);
+      const key = target.dataset.pageAvailability;
+      // Never let the UI reach an all-disabled state: refuse to turn off the
+      // last enabled page. Revert the checkbox, keep config unchanged, and show
+      // the same message the publish guard uses.
+      if (!pageAvailabilityToggleAllowed(config.page_availability, key, target.checked)) {
+        target.checked = true;
+        setStatus("ต้องเปิดอย่างน้อย 1 หน้า", "bad");
+        return;
+      }
       // Only ever change the one page the admin toggled — never auto-toggle a
       // related page. Re-render the editor so notes/warnings update live.
-      config.page_availability[target.dataset.pageAvailability] = target.checked;
+      config.page_availability[key] = target.checked;
       renderEditor();
       return;
     }
