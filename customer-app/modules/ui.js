@@ -3,6 +3,8 @@
 
   const root = window.CWFCustomerAppV2 = window.CWFCustomerAppV2 || {};
   let homeLoadPromise = null;
+  const FEATURED_ROTATION_INTERVAL_MS = 6000;
+  const featuredRotatorControllers = new WeakMap();
 
   function collectionState(name, emptyText, renderItems) {
     const bucket = root.state[name] || { status: "idle", items: [], error: "" };
@@ -225,11 +227,14 @@
     return root.services.catalogItemToCommerceDraft(item);
   }
 
-  function featuredCatalogItems(section) {
+  function featuredPageSize(section) {
+    const raw = Number(section?.featured_limit);
+    return Number.isFinite(raw) ? Math.max(1, Math.min(6, Math.round(raw))) : 6;
+  }
+
+  function featuredCatalogPool(section) {
     const rows = root.state.catalog?.items || [];
     const cfg = section || {};
-    const limitRaw = Number(cfg.featured_limit);
-    const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(12, Math.round(limitRaw))) : 6;
     const selectable = (item) => !!(item
       && item.item_id != null
       && item.is_active !== false
@@ -247,7 +252,7 @@
     if (cfg.featured_mode === "manual") {
       const byId = new Map(rows.map((item) => [String(item.item_id), item]));
       const selected = Array.isArray(cfg.item_ids) ? cfg.item_ids.map((id) => byId.get(String(id))) : [];
-      return unique(selected).slice(0, limit);
+      return unique(selected);
     }
     return unique(rows)
       .map((item, index) => ({ item, index }))
@@ -257,22 +262,44 @@
         const bookableOrder = Number(b.item.booking_mode === "bookable") - Number(a.item.booking_mode === "bookable");
         return bookableOrder || a.index - b.index;
       })
-      .map(({ item }) => item)
-      .slice(0, limit);
+      .map(({ item }) => item);
+  }
+
+  function buildFeaturedPages(pool, pageSize) {
+    const items = Array.isArray(pool) ? pool : [];
+    const size = Math.max(1, Math.min(6, Math.round(Number(pageSize) || 6)));
+    if (items.length <= size) return items.length ? [items.slice()] : [];
+    const pages = [];
+    for (let offset = 0; offset < items.length; offset += size) {
+      const page = items.slice(offset, offset + size);
+      if (page.length < size) {
+        const pageIds = new Set(page.map((item) => String(item.item_id)));
+        for (const item of items) {
+          if (page.length >= size) break;
+          const id = String(item.item_id);
+          if (pageIds.has(id)) continue;
+          page.push(item);
+          pageIds.add(id);
+        }
+      }
+      pages.push(page);
+    }
+    return pages;
   }
 
   // One compact featured card: image, name, price, book button — nothing else.
   // The old card also carried a two-line description and a promo line, which
   // made the homepage section very tall; customers asked for just the essentials
   // shown as small cards.
-  function renderFeaturedMiniCard(item, showPrice, showBadge) {
+  function renderFeaturedMiniCard(item, showPrice, showBadge, interactive = true) {
     const id = root.utils.escapeHtml(item.item_id);
     const imageUrl = firstCatalogImage(item);
     const bookable = item.booking_mode === "bookable";
     const price = catalogDisplayPrice(item);
+    const tabIndex = interactive ? "" : ` tabindex="-1"`;
     return `
       <article class="homepage-service-card">
-        <button type="button" class="homepage-card-link" data-home-featured-detail="${id}">
+        <button type="button" class="homepage-card-link" data-home-featured-detail="${id}"${tabIndex}>
           <div class="homepage-card-image">
             ${imageUrl
               ? `<img src="${root.utils.escapeHtml(imageUrl)}" alt="${root.utils.escapeHtml(item.item_name || "บริการ CWF")}" loading="lazy">`
@@ -284,7 +311,7 @@
             ${showPrice ? `<span>${root.utils.escapeHtml(price)}${item.unit_label && price !== "สอบถามราคา" ? ` / ${root.utils.escapeHtml(item.unit_label)}` : ""}</span>` : ""}
           </div>
         </button>
-        <button type="button" class="${bookable ? "primary-btn" : "secondary-btn"} homepage-service-action" data-home-featured-action="${id}">
+        <button type="button" class="${bookable ? "primary-btn" : "secondary-btn"} homepage-service-action" data-home-featured-action="${id}"${tabIndex}>
           ${bookable ? "จอง" : "สอบถาม"}
         </button>
       </article>
@@ -300,11 +327,34 @@
     const cfg = section || sectionByType("featured_services") || {};
     const showPrice = cfg.show_price !== false;
     const showBadge = cfg.show_badge !== false;
-    const items = featuredCatalogItems(cfg);
-    if (!items.length) return root.utils.stateBox("", "ยังไม่มีบริการแนะนำที่เปิดแสดง");
+    const pool = featuredCatalogPool(cfg);
+    const pages = buildFeaturedPages(pool, featuredPageSize(cfg));
+    if (!pages.length) return root.utils.stateBox("", "ยังไม่มีบริการแนะนำที่เปิดแสดง");
     return `
-      <div class="homepage-featured-grid" data-featured-grid>
-        ${items.map((item) => renderFeaturedMiniCard(item, showPrice, showBadge)).join("")}
+      <div class="homepage-featured-rotator" data-featured-rotator data-featured-page-count="${pages.length}">
+        <div class="homepage-featured-pages" data-featured-pages>
+          ${pages.map((items, pageIndex) => `
+            <div class="homepage-featured-page${pageIndex === 0 ? " is-active" : ""}"
+              data-featured-page="${pageIndex}"
+              aria-hidden="${pageIndex === 0 ? "false" : "true"}"
+              ${pageIndex === 0 ? "" : "inert"}>
+              <div class="homepage-featured-grid" data-featured-grid>
+                ${items.map((item) => renderFeaturedMiniCard(item, showPrice, showBadge, pageIndex === 0)).join("")}
+              </div>
+            </div>
+          `).join("")}
+        </div>
+        ${pages.length > 1 ? `
+          <div class="homepage-featured-dots" role="tablist" aria-label="ชุดบริการแนะนำ">
+            ${pages.map((_, pageIndex) => `
+              <button type="button"
+                class="${pageIndex === 0 ? "is-active" : ""}"
+                data-featured-dot="${pageIndex}"
+                aria-label="แสดงบริการแนะนำชุดที่ ${pageIndex + 1}"
+                aria-selected="${pageIndex === 0 ? "true" : "false"}"></button>
+            `).join("")}
+          </div>
+        ` : ""}
       </div>
     `;
   }
@@ -470,7 +520,7 @@
 
   function renderHomepageFeaturedSection(section) {
     const catalog = root.state.catalog || { status: "idle", items: [] };
-    if (catalog.status === "success" && !featuredCatalogItems(section).length) {
+    if (catalog.status === "success" && !featuredCatalogPool(section).length) {
       // No valid items after resolving against real Catalog data (e.g. every
       // manually-selected item became inactive/hidden) — hide the section
       // entirely rather than show admin-authored copy with an empty body.
@@ -999,6 +1049,7 @@
     bindHomepageReveal(container);
     bindHomepageHeroSliders(container);
     bindHomepagePromoBannerSlider(container);
+    bindHomepageFeaturedRotators(container);
     container.querySelectorAll("[data-home-contact]").forEach((button) => {
       button.addEventListener("click", (event) => {
         event.preventDefault?.();
@@ -1030,6 +1081,127 @@
     });
     bindHomepageSocialCards(container);
     bindHomepageFbTimelines(container);
+  }
+
+  function bindHomepageFeaturedRotators(container) {
+    const rotators = Array.from(container.querySelectorAll("[data-featured-rotator]"));
+    return rotators.map((rotator) => {
+      const existing = featuredRotatorControllers.get(rotator);
+      if (existing) return existing;
+      const pages = Array.from(rotator.querySelectorAll("[data-featured-page]"));
+      const dots = Array.from(rotator.querySelectorAll("[data-featured-dot]"));
+      if (pages.length <= 1 || !dots.length) return null;
+
+      const interactionRegion = rotator.querySelector("[data-featured-pages]") || rotator;
+      const reducedMotion = !!window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+      const paused = new Set();
+      const listeners = [];
+      let activeIndex = Math.max(0, pages.findIndex((page) => page.classList.contains("is-active")));
+      let timer = 0;
+      let destroyed = false;
+
+      const listen = (target, type, handler, options) => {
+        target?.addEventListener?.(type, handler, options);
+        listeners.push(() => target?.removeEventListener?.(type, handler, options));
+      };
+      const stopTimer = () => {
+        if (!timer) return;
+        clearTimeout(timer);
+        timer = 0;
+      };
+      const schedule = () => {
+        stopTimer();
+        if (destroyed || reducedMotion || paused.size || document.visibilityState === "hidden") return;
+        timer = setTimeout(() => {
+          timer = 0;
+          if (!rotator.isConnected) {
+            controller.cleanup();
+            return;
+          }
+          showPage((activeIndex + 1) % pages.length);
+        }, FEATURED_ROTATION_INTERVAL_MS);
+      };
+      const showPage = (requestedIndex, restart = true) => {
+        const nextIndex = ((Number(requestedIndex) || 0) % pages.length + pages.length) % pages.length;
+        activeIndex = nextIndex;
+        pages.forEach((page, index) => {
+          const active = index === nextIndex;
+          page.classList.toggle("is-active", active);
+          page.setAttribute("aria-hidden", active ? "false" : "true");
+          if (active) page.removeAttribute("inert");
+          else page.setAttribute("inert", "");
+          page.querySelectorAll("button, a, input, select, textarea, [tabindex]").forEach((control) => {
+            if (active) control.removeAttribute("tabindex");
+            else control.setAttribute("tabindex", "-1");
+          });
+        });
+        dots.forEach((dot, index) => {
+          const active = index === nextIndex;
+          dot.classList.toggle("is-active", active);
+          dot.setAttribute("aria-selected", active ? "true" : "false");
+        });
+        if (restart) schedule();
+      };
+      const pause = (reason) => {
+        paused.add(reason);
+        stopTimer();
+      };
+      const resume = (reason) => {
+        paused.delete(reason);
+        schedule();
+      };
+      const controller = {
+        showPage,
+        pause,
+        resume,
+        getActiveIndex: () => activeIndex,
+        hasTimer: () => !!timer,
+        cleanup() {
+          if (destroyed) return;
+          destroyed = true;
+          stopTimer();
+          listeners.splice(0).forEach((remove) => remove());
+          rotator.dataset.featuredBound = "";
+          featuredRotatorControllers.delete(rotator);
+        },
+      };
+
+      rotator.dataset.featuredBound = "1";
+      dots.forEach((dot, index) => {
+        listen(dot, "click", () => {
+          pause("dot");
+          showPage(index, false);
+          resume("dot");
+        });
+      });
+      listen(interactionRegion, "pointerenter", () => pause("hover"), { passive: true });
+      listen(interactionRegion, "pointerleave", () => resume("hover"), { passive: true });
+      listen(interactionRegion, "pointerdown", () => pause("press"), { passive: true });
+      listen(interactionRegion, "pointerup", () => resume("press"), { passive: true });
+      listen(interactionRegion, "pointercancel", () => resume("press"), { passive: true });
+      listen(interactionRegion, "touchstart", () => pause("press"), { passive: true });
+      listen(interactionRegion, "touchend", () => resume("press"), { passive: true });
+      listen(interactionRegion, "focusin", () => pause("focus"));
+      listen(interactionRegion, "focusout", (event) => {
+        if (!interactionRegion.contains?.(event.relatedTarget)) resume("focus");
+      });
+      listen(document, "visibilitychange", () => {
+        if (document.visibilityState === "hidden") pause("hidden");
+        else resume("hidden");
+      });
+      showPage(activeIndex, false);
+      schedule();
+      featuredRotatorControllers.set(rotator, controller);
+      return controller;
+    }).filter(Boolean);
+  }
+
+  function cleanupHomepageFeaturedRotators(container) {
+    if (!container?.querySelectorAll) return;
+    const rotators = [];
+    if (container.matches?.("[data-featured-rotator]")) rotators.push(container);
+    rotators.push(...container.querySelectorAll("[data-featured-rotator]"));
+    rotators.forEach((rotator) => featuredRotatorControllers.get(rotator)?.cleanup());
   }
 
   // Size each Facebook Page Plugin to its real container width so its cover,
@@ -1283,7 +1455,10 @@
       homepageSections().find((section) => section.id === id) || sectionByType(type);
     container.querySelectorAll("[data-home-featured-section]").forEach((mount) => {
       const cfg = sectionById(mount.getAttribute("data-section-id"), "featured_services");
-      if (cfg) mount.outerHTML = renderHomepageFeaturedSection(cfg);
+      if (cfg) {
+        cleanupHomepageFeaturedRotators(mount);
+        mount.outerHTML = renderHomepageFeaturedSection(cfg);
+      }
     });
     container.querySelectorAll("[data-home-active-job]").forEach((mount) => {
       const cfg = sectionById(mount.getAttribute("data-section-id"), "active_job");
@@ -1334,6 +1509,7 @@
     bindPageHeader,
 
     renderHome(container) {
+      cleanupHomepageFeaturedRotators(container);
       const sectionsHtml = homepageSections().map(renderHomepageSection).filter(Boolean).join("");
       container.innerHTML = `
         <section class="screen commerce-home homepage-screen">
@@ -1418,11 +1594,17 @@
     },
 
     _test: {
-      featuredCatalogItems,
+      FEATURED_ROTATION_INTERVAL_MS,
+      featuredPageSize,
+      featuredCatalogPool,
+      buildFeaturedPages,
       renderHomepageHero,
       renderHomepageFeaturedServices,
+      bindHomepageFeaturedRotators,
+      cleanupHomepageFeaturedRotators,
     },
   };
 
+  ui.renderHome.onLeave = () => cleanupHomepageFeaturedRotators(document.getElementById("app"));
   root.ui = ui;
 })();

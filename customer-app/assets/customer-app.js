@@ -3,7 +3,7 @@
 
   const App = window.CWFCustomerAppV2;
   const BOOT_TIMEOUT_MS = 3500;
-  const BUILD_ID = "20260713_home_six_cards_retire_legacy_v1";
+  const BUILD_ID = "20260714_home_six_card_rotation_v1";
 
   function withTimeout(promise, timeoutMs) {
     return Promise.race([
