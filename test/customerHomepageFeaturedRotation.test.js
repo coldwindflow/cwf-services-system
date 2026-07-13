@@ -41,6 +41,9 @@ class FakeTarget {
   listenerCount(type) {
     return this.listeners.get(type)?.size || 0;
   }
+  totalListenerCount() {
+    return Array.from(this.listeners.values()).reduce((total, handlers) => total + handlers.size, 0);
+  }
 }
 
 class FakeClassList {
@@ -48,6 +51,8 @@ class FakeClassList {
     this.values = new Set(active ? ["is-active"] : []);
   }
   contains(value) { return this.values.has(value); }
+  add(value) { this.values.add(value); }
+  remove(value) { this.values.delete(value); }
   toggle(value, force) {
     if (force) this.values.add(value);
     else this.values.delete(value);
@@ -88,21 +93,39 @@ class FakeDot extends FakeTarget {
 
 function fakeClock() {
   let nextId = 1;
+  let now = 0;
   const pending = new Map();
+  const nextEntry = () => Array.from(pending.entries()).sort((a, b) => a[1].due - b[1].due)[0];
   return {
     setTimeout(fn, delay) {
       const id = nextId++;
-      pending.set(id, { fn, delay });
+      pending.set(id, { fn, delay, due: now + delay });
       return id;
     },
     clearTimeout(id) { pending.delete(id); },
     count() { return pending.size; },
+    nextDelay() {
+      const entry = nextEntry();
+      return entry ? entry[1].due - now : null;
+    },
     runNext() {
-      const entry = pending.entries().next().value;
+      const entry = nextEntry();
       assert.ok(entry, "expected a pending timer");
       pending.delete(entry[0]);
+      now = entry[1].due;
       entry[1].fn();
       return entry[1].delay;
+    },
+    advance(delay) {
+      const target = now + delay;
+      let entry = nextEntry();
+      while (entry && entry[1].due <= target) {
+        pending.delete(entry[0]);
+        now = entry[1].due;
+        entry[1].fn();
+        entry = nextEntry();
+      }
+      now = target;
     },
   };
 }
@@ -135,6 +158,7 @@ function loadUi(items, { reducedMotion = false } = {}) {
   const document = new FakeTarget();
   document.visibilityState = "visible";
   document.getElementById = () => null;
+  document.body = { classList: new FakeClassList() };
   const app = {
     state: { catalog: { status: "success", items } },
     utils: {
@@ -154,8 +178,26 @@ function loadUi(items, { reducedMotion = false } = {}) {
     Set,
     setTimeout: clock.setTimeout,
     clearTimeout: clock.clearTimeout,
+    requestAnimationFrame: (callback) => callback(),
   });
   return { app, clock, document };
+}
+
+function fakeContactSheetContainer() {
+  const closeButton = new FakeTarget();
+  closeButton.focus = () => {};
+  const mount = {
+    innerHTML: "",
+    querySelectorAll: (selector) => selector === "[data-contact-close]" ? [closeButton] : [],
+    querySelector: (selector) => selector === ".contact-sheet-close" ? closeButton : null,
+  };
+  return {
+    mount,
+    container: {
+      querySelector: (selector) => selector === "[data-contact-sheet-mount]" ? mount : null,
+      appendChild: () => {},
+    },
+  };
 }
 
 const ids = (page) => Array.from(page, (row) => row.item_id);
@@ -242,7 +284,7 @@ test("rotator advances, loops, resets on dots, pauses safely and cleans up dupli
   assert.equal(clock.count(), 1);
   rotator.interaction.emit("pointerdown");
   assert.equal(clock.count(), 0);
-  rotator.interaction.emit("pointerup");
+  document.emit("pointerup");
   assert.equal(clock.count(), 1);
   rotator.interaction.emit("focusin");
   assert.equal(clock.count(), 0);
@@ -261,6 +303,82 @@ test("rotator advances, loops, resets on dots, pauses safely and cleans up dupli
   app.ui._test.cleanupHomepageFeaturedRotators(rotator);
   assert.equal(clock.count(), 0);
   assert.equal(document.listenerCount("visibilitychange"), 0);
+});
+
+test("featured inquiry contact sheet pauses only its rotator and restarts one fresh timer on close", () => {
+  const { app, clock } = loadUi([]);
+  const rotator = fakeRotator(3);
+  const [controller] = app.ui._test.bindHomepageFeaturedRotators({ querySelectorAll: () => [rotator] });
+  const { container } = fakeContactSheetContainer();
+  const trigger = { closest: (selector) => selector === "[data-featured-rotator]" ? rotator : null };
+
+  assert.equal(clock.count(), 1);
+  const firstSheet = app.ui._test.openFeaturedContactSheet(container, trigger, { title: "สอบถามบริการ" });
+  assert.equal(clock.count(), 0);
+  clock.advance(app.ui._test.FEATURED_ROTATION_INTERVAL_MS * 2);
+  assert.equal(controller.getActiveIndex(), 0);
+  firstSheet.close();
+  assert.equal(clock.count(), 1);
+  assert.equal(clock.nextDelay(), app.ui._test.FEATURED_ROTATION_INTERVAL_MS);
+
+  for (let index = 0; index < 3; index += 1) {
+    const sheet = app.ui._test.openFeaturedContactSheet(container, trigger, { title: "สอบถามบริการ" });
+    assert.equal(clock.count(), 0);
+    sheet.close();
+    assert.equal(clock.count(), 1);
+  }
+  controller.cleanup();
+});
+
+test("closing a featured contact sheet after route cleanup cannot restart a destroyed rotator", () => {
+  const { app, clock, document } = loadUi([]);
+  const rotator = fakeRotator(2);
+  app.ui._test.bindHomepageFeaturedRotators({ querySelectorAll: () => [rotator] });
+  const { container } = fakeContactSheetContainer();
+  const trigger = { closest: () => rotator };
+  const sheet = app.ui._test.openFeaturedContactSheet(container, trigger, { title: "สอบถามบริการ" });
+
+  app.ui._test.cleanupHomepageFeaturedRotators(rotator);
+  assert.equal(clock.count(), 0);
+  assert.equal(document.totalListenerCount(), 0);
+  sheet.close();
+  assert.equal(clock.count(), 0);
+  assert.equal(document.totalListenerCount(), 0);
+});
+
+test("outside pointer release and cancellation always release the temporary press pause", () => {
+  for (const releaseType of ["pointerup", "pointercancel", "touchcancel"]) {
+    const { app, clock, document } = loadUi([]);
+    const rotator = fakeRotator(2);
+    const [controller] = app.ui._test.bindHomepageFeaturedRotators({ querySelectorAll: () => [rotator] });
+    rotator.interaction.emit(releaseType === "touchcancel" ? "touchstart" : "pointerdown");
+    assert.equal(clock.count(), 0, `${releaseType} press must pause`);
+    assert.equal(document.listenerCount(releaseType), 1);
+
+    document.emit(releaseType);
+    assert.equal(clock.count(), 1, `${releaseType} must restart one timer`);
+    for (const type of ["pointerup", "pointercancel", "touchend", "touchcancel"]) {
+      assert.equal(document.listenerCount(type), 0, `${type} listener must be removed after ${releaseType}`);
+    }
+    controller.cleanup();
+    assert.equal(document.totalListenerCount(), 0);
+  }
+});
+
+test("cleanup during an active press removes timers and every temporary or permanent listener", () => {
+  const { app, clock, document } = loadUi([]);
+  const rotator = fakeRotator(2);
+  const [controller] = app.ui._test.bindHomepageFeaturedRotators({ querySelectorAll: () => [rotator] });
+  rotator.interaction.emit("pointerdown");
+  assert.equal(clock.count(), 0);
+  assert.equal(document.listenerCount("pointerup"), 1);
+  assert.equal(document.listenerCount("visibilitychange"), 1);
+
+  controller.cleanup();
+  assert.equal(clock.count(), 0);
+  assert.equal(document.totalListenerCount(), 0);
+  document.emit("pointerup");
+  assert.equal(clock.count(), 0);
 });
 
 test("reduced motion disables auto rotation while keeping manual dots usable", () => {

@@ -993,7 +993,7 @@
     `;
   }
 
-  function openContactSheet(container, item) {
+  function openContactSheet(container, item, options = {}) {
     let mount = container.querySelector("[data-contact-sheet-mount]");
     if (!mount) {
       mount = document.createElement("div");
@@ -1002,12 +1002,27 @@
     }
     mount.innerHTML = renderContactSheet(item);
     document.body.classList.add("has-contact-sheet");
+    let closed = false;
+    options.onOpen?.();
     const close = () => {
+      if (closed) return;
+      closed = true;
       mount.innerHTML = "";
       document.body.classList.remove("has-contact-sheet");
+      options.onClose?.();
     };
     mount.querySelectorAll("[data-contact-close]").forEach((button) => button.addEventListener("click", close, { once: true }));
     requestAnimationFrame(() => mount.querySelector(".contact-sheet-close")?.focus());
+    return { close };
+  }
+
+  function openFeaturedContactSheet(container, button, item) {
+    const rotator = button?.closest?.("[data-featured-rotator]");
+    const controller = rotator ? featuredRotatorControllers.get(rotator) : null;
+    return openContactSheet(container, item, {
+      onOpen: () => controller?.pause("contact-sheet"),
+      onClose: () => controller?.resume("contact-sheet"),
+    });
   }
 
   function bindCommerceHome(container) {
@@ -1076,7 +1091,7 @@
             return;
           }
         }
-        openContactSheet(container, { title: item.item_name || "บริการนี้" });
+        openFeaturedContactSheet(container, button, { title: item.item_name || "บริการนี้" });
       });
     });
     bindHomepageSocialCards(container);
@@ -1096,6 +1111,7 @@
       const reducedMotion = !!window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
       const paused = new Set();
       const listeners = [];
+      let pressRemovers = [];
       let activeIndex = Math.max(0, pages.findIndex((page) => page.classList.contains("is-active")));
       let timer = 0;
       let destroyed = false;
@@ -1143,12 +1159,31 @@
         if (restart) schedule();
       };
       const pause = (reason) => {
+        if (destroyed) return;
         paused.add(reason);
         stopTimer();
       };
       const resume = (reason) => {
+        if (destroyed) return;
         paused.delete(reason);
         schedule();
+      };
+      const clearPressListeners = () => {
+        pressRemovers.splice(0).forEach((remove) => remove());
+      };
+      const endPress = () => {
+        if (!pressRemovers.length) return;
+        clearPressListeners();
+        resume("press");
+      };
+      const beginPress = () => {
+        if (destroyed || pressRemovers.length) return;
+        pause("press");
+        ["pointerup", "pointercancel", "touchend", "touchcancel"].forEach((type) => {
+          const options = { passive: true };
+          document.addEventListener(type, endPress, options);
+          pressRemovers.push(() => document.removeEventListener(type, endPress, options));
+        });
       };
       const controller = {
         showPage,
@@ -1160,6 +1195,8 @@
           if (destroyed) return;
           destroyed = true;
           stopTimer();
+          clearPressListeners();
+          paused.clear();
           listeners.splice(0).forEach((remove) => remove());
           rotator.dataset.featuredBound = "";
           featuredRotatorControllers.delete(rotator);
@@ -1176,11 +1213,8 @@
       });
       listen(interactionRegion, "pointerenter", () => pause("hover"), { passive: true });
       listen(interactionRegion, "pointerleave", () => resume("hover"), { passive: true });
-      listen(interactionRegion, "pointerdown", () => pause("press"), { passive: true });
-      listen(interactionRegion, "pointerup", () => resume("press"), { passive: true });
-      listen(interactionRegion, "pointercancel", () => resume("press"), { passive: true });
-      listen(interactionRegion, "touchstart", () => pause("press"), { passive: true });
-      listen(interactionRegion, "touchend", () => resume("press"), { passive: true });
+      listen(interactionRegion, "pointerdown", beginPress, { passive: true });
+      listen(interactionRegion, "touchstart", beginPress, { passive: true });
       listen(interactionRegion, "focusin", () => pause("focus"));
       listen(interactionRegion, "focusout", (event) => {
         if (!interactionRegion.contains?.(event.relatedTarget)) resume("focus");
@@ -1600,6 +1634,7 @@
       buildFeaturedPages,
       renderHomepageHero,
       renderHomepageFeaturedServices,
+      openFeaturedContactSheet,
       bindHomepageFeaturedRotators,
       cleanupHomepageFeaturedRotators,
     },
