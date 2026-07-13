@@ -1598,6 +1598,9 @@ p { margin: 0; }
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
+.unit-inspection-item:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+}
 .unit-inspection-item {
   display: grid;
   grid-template-columns: 10px minmax(0, 1fr);
@@ -1663,21 +1666,6 @@ p { margin: 0; }
   box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.12);
 }
 .unit-inspection-item.is-issue strong { color: #b91c1c; }
-.unit-inspection-empty {
-  padding: 11px 12px;
-  border: 1px solid #d8e4f0;
-  border-radius: 12px;
-  background: #edf4fb;
-  color: #38536f;
-  font-size: 12px;
-  font-weight: 800;
-  line-height: 1.4;
-}
-.unit-inspection-empty.is-watch {
-  border-color: #f5d889;
-  background: #fff8df;
-  color: #85510a;
-}
 .unit-condition-summary {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

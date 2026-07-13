@@ -334,24 +334,23 @@
     const rawStatuses = summary.metric_statuses && typeof summary.metric_statuses === "object" ? summary.metric_statuses : {};
     const metrics = Object.entries(UNIT_METRIC_COPY).map(([key, copy]) => {
       const status = rawStatuses[key] === "normal" || rawStatuses[key] === "issue" ? rawStatuses[key] : null;
-      return {
+      return status ? {
         key,
         status,
         tone: status === "normal" ? "good" : status === "issue" ? "issue" : "unknown",
         label: copy.label,
-        detail: status ? copy[status] : (isDone(data) ? "ไม่มีข้อมูลแสดง" : "กำลังตรวจสอบ"),
-      };
-    });
-    const issueCount = Number(summary.issue_count || 0);
+        detail: copy[status],
+      } : null;
+    }).filter(Boolean);
+    const postIssueCount = Number(summary.post_issue_count || 0);
     const issues = metrics.filter((metric) => metric.status === "issue").length;
     const normal = metrics.filter((metric) => metric.status === "normal").length;
     const hasMetricData = issues + normal > 0;
     let overall = { tone: "unknown", label: isDone(data) ? "ไม่มีข้อมูลแสดง" : "กำลังตรวจสอบ", detail: isDone(data) ? "ไม่มีข้อมูลแสดงในรายงานส่วนนี้" : "ผลตรวจจะแสดงหลังบริการ" };
-    if (issues) overall = { tone: "issue", label: "ควรตรวจเพิ่มเติม", detail: `พบ ${issueCount || issues} รายการที่ควรติดตาม` };
+    if (issues) overall = { tone: "issue", label: "ควรตรวจเพิ่มเติม", detail: `พบ ${postIssueCount || issues} รายการที่ควรติดตาม` };
     else if (normal === Object.keys(UNIT_METRIC_COPY).length) overall = { tone: "good", label: "ปกติ", detail: "เครื่องอยู่ในสภาพพร้อมใช้งาน แนะนำล้างรอบถัดไปตามกำหนด" };
-    else if (issueCount) overall = { tone: "watch", label: "ควรติดตาม", detail: `พบ ${issueCount} รายการในเช็กลิสต์ โปรดดูหลักฐานการตรวจ` };
     else if (normal) overall = { tone: "watch", label: "มีผลตรวจบางส่วน", detail: "แสดงเฉพาะรายการที่มีข้อมูลยืนยัน" };
-    return { metrics, overall, issueCount, summary, hasMetricData };
+    return { metrics, overall, postIssueCount, summary, hasMetricData };
   }
 
   function metricStatusCard(metric) {
@@ -360,7 +359,7 @@
         <span class="unit-inspection-icon" aria-hidden="true"></span>
         <div>
           <b>${esc(metric.label)}</b>
-          <strong>${metric.status === "normal" ? "ปกติ" : metric.status === "issue" ? "ควรตรวจเพิ่มเติม" : "ไม่มีข้อมูลแสดง"}</strong>
+          <strong>${metric.status === "normal" ? "ปกติ" : "ควรตรวจเพิ่มเติม"}</strong>
           <small>${esc(metric.detail)}</small>
         </div>
       </div>
@@ -384,7 +383,7 @@
   }
 
   function checklistEvidenceCopy(summary, done) {
-    const issues = Number(summary && summary.issue_count || 0);
+    const issues = Number(summary && summary.post_issue_count || 0);
     if (summary && summary.post_completed) return issues > 0 ? `ตรวจครบแล้ว · พบ ${issues} รายการที่ควรติดตาม` : "ตรวจครบแล้ว · ไม่พบรายการผิดปกติ";
     if (summary && summary.pre_completed) return "บันทึกผลตรวจก่อนบริการแล้ว";
     return done ? "ไม่มีข้อมูลแสดงในรายงานส่วนนี้" : "กำลังตรวจสอบ";
@@ -445,7 +444,7 @@
                     <span>ผลตรวจหลังบริการ</span>
                     <p>${esc(inspection.overall.detail)}</p>
                   </div>
-                  ${inspection.hasMetricData ? `<div class="unit-inspection-grid">${inspection.metrics.map(metricStatusCard).join("")}</div>` : `<div class="unit-inspection-empty is-${inspection.overall.tone}">${esc(inspection.overall.detail)}</div>`}
+                  ${inspection.hasMetricData ? `<div class="unit-inspection-grid">${inspection.metrics.map(metricStatusCard).join("")}</div>` : ""}
                   ${context.coilScore == null ? "" : `
                     <div class="unit-condition-summary">
                       <div><span>ความสะอาดหลังบริการ</span><strong>${esc(coilLabel(context.coilScore))}</strong></div>

@@ -60,6 +60,7 @@ function richPayload() {
         pre_completed: true,
         post_completed: true,
         issue_count: 0,
+        post_issue_count: 0,
         metric_statuses: { refrigerant: "normal", cooling: "normal", airflow: "normal", drain: "normal" },
         raw_checklist_json: [{ note: "technician-only" }],
       },
@@ -114,6 +115,7 @@ test("booking_code gets full customer-facing detail without privileged fields", 
     airflow: "normal",
     drain: "normal",
   });
+  assert.equal(redacted.units[0].checklist_summary.post_issue_count, 0);
   assert.equal(redacted.units[0].checklist_summary.raw_checklist_json, undefined);
   assert.equal(redacted.catalog_review.eligible, false);
   assert.equal(redacted.catalog_review.review.moderation_status, undefined);
@@ -136,14 +138,15 @@ function checklist(type, completed, rows) {
   return { checklist_type: type, completed_at: completed ? "2026-07-14T12:00:00Z" : null, checklist_json: rows };
 }
 
-test("completed post checklist with zero issues marks all core service metrics normal", () => {
+test("pre issue plus completed clean post keeps after-service metrics normal", () => {
   const summary = trackingPrivacy.summarizeUnitChecklists([
-    checklist("pre", true, [{ label: "ความเย็นก่อนล้าง", checked: true, issue: false }]),
+    checklist("pre", true, [{ label: "ความเย็นก่อนล้าง", checked: false, issue: true }]),
     checklist("post", true, [{ label: "แอร์เย็นหลังล้าง", checked: true, issue: false, status: "ปกติ" }]),
   ]);
   assert.equal(summary.pre_completed, true);
   assert.equal(summary.post_completed, true);
-  assert.equal(summary.issue_count, 0);
+  assert.equal(summary.issue_count, 1);
+  assert.equal(summary.post_issue_count, 0);
   assert.deepEqual(summary.metric_statuses, {
     refrigerant: "normal",
     cooling: "normal",
@@ -152,12 +155,14 @@ test("completed post checklist with zero issues marks all core service metrics n
   });
 });
 
-test("pre-only or unfinished post checklist never marks all service metrics normal", () => {
+test("pre-only and unfinished post issues never affect after-service health", () => {
   for (const checks of [
-    [checklist("pre", true, [{ label: "ความเย็นก่อนล้าง", checked: true, issue: false }])],
-    [checklist("post", false, [{ label: "แอร์เย็นหลังล้าง", checked: true, issue: false }])],
+    [checklist("pre", true, [{ label: "ความเย็นก่อนล้าง", checked: false, issue: true }])],
+    [checklist("post", false, [{ label: "แอร์ไม่เย็น", checked: false, issue: true }])],
   ]) {
     const summary = trackingPrivacy.summarizeUnitChecklists(checks);
+    assert.equal(summary.issue_count, 1);
+    assert.equal(summary.post_issue_count, 0);
     assert.deepEqual(summary.metric_statuses, { refrigerant: null, cooling: null, airflow: null, drain: null });
   }
 });
@@ -177,6 +182,7 @@ test("post-checklist issues affect only deterministically matched metrics", () =
       ]),
     ]);
     assert.equal(summary.issue_count, 1);
+    assert.equal(summary.post_issue_count, 1);
     for (const [metric, status] of Object.entries(summary.metric_statuses)) {
       assert.equal(status, metric === expectedMetric ? "issue" : null, `${label} must not affect ${metric}`);
     }
@@ -189,6 +195,7 @@ test("unknown and multi-metric issues remain deterministic without broad warning
     checklist("post", true, [{ label: "หน้ากากประกอบไม่สนิท", issue: true, note: "internal" }]),
   ]);
   assert.equal(unknown.issue_count, 1);
+  assert.equal(unknown.post_issue_count, 1);
   assert.deepEqual(unknown.metric_statuses, { refrigerant: null, cooling: null, airflow: null, drain: null });
 
   const multiple = trackingPrivacy.summarizeUnitChecklists([

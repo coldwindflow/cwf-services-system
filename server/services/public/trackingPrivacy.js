@@ -73,9 +73,12 @@ function summarizeUnitChecklists(checks) {
     issueCount += checklistRows.reduce((total, item) => total + (checklistRowOutcome(item) === "issue" ? 1 : 0), 0);
   }
 
+  const postIssueCount = postRows.reduce(
+    (total, item) => total + (checklistRowOutcome(item) === "issue" ? 1 : 0),
+    0,
+  );
   const metricStatuses = Object.fromEntries(TRACKING_METRIC_KEYS.map((key) => [key, null]));
   if (postCompleted) {
-    const postIssueCount = postRows.reduce((total, item) => total + (checklistRowOutcome(item) === "issue" ? 1 : 0), 0);
     if (postIssueCount === 0) {
       TRACKING_METRIC_KEYS.forEach((key) => { metricStatuses[key] = "normal"; });
     } else {
@@ -93,6 +96,7 @@ function summarizeUnitChecklists(checks) {
     pre_completed: preCompleted,
     post_completed: postCompleted,
     issue_count: issueCount,
+    post_issue_count: postIssueCount,
     metric_statuses: metricStatuses,
   };
 }
@@ -175,6 +179,7 @@ function publicUnit(unit) {
           pre_completed: unit.checklist_summary.pre_completed === true,
           post_completed: unit.checklist_summary.post_completed === true,
           issue_count: Number(unit.checklist_summary.issue_count || 0),
+          post_issue_count: Number(unit.checklist_summary.post_issue_count || 0),
           metric_statuses: publicStatuses,
         }
       : null,
