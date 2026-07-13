@@ -152,6 +152,89 @@ test("completed normal checklist renders one compact green inspection grid witho
   assert.ok(html.indexOf("passport-units-card") < html.indexOf("passport-warranty-card"));
 });
 
+test("cleanliness recommendation is deterministic from last-cleaned date and score", () => {
+  const app = loadTrackingRuntime();
+  const now = Date.parse("2026-07-31T00:00:00Z");
+  const recent = app.tracking._test.cleanlinessRecommendation("2026-07-01T00:00:00Z", 95, now);
+  assert.equal(recent.elapsedDays, 30);
+  assert.equal(recent.tone, "excellent");
+  assert.equal(recent.status, "สะอาดมาก");
+  assert.match(recent.recommendation, /พร้อมใช้งาน/);
+  assert.doesNotMatch(recent.recommendation, /ควรล้าง/);
+
+  const approaching = app.tracking._test.cleanlinessRecommendation("2026-03-25T00:00:00Z", 72, now);
+  assert.equal(approaching.tone, "watch");
+  assert.equal(approaching.status, "ใกล้ถึงรอบล้าง");
+
+  const overdueDespiteHighScore = app.tracking._test.cleanlinessRecommendation("2026-02-21T00:00:00Z", 99, now);
+  assert.equal(overdueDespiteHighScore.tone, "due");
+  assert.equal(overdueDespiteHighScore.status, "ควรล้าง");
+  assert.match(overdueDespiteHighScore.recommendation, /แนะนำล้าง/);
+});
+
+test("missing last-clean date is honest and a low score never recommends immediate recleaning", () => {
+  const app = loadTrackingRuntime();
+  const now = Date.parse("2026-07-31T00:00:00Z");
+  const missing = app.tracking._test.cleanlinessRecommendation(null, 99, now);
+  assert.equal(missing.tone, "unknown");
+  assert.equal(missing.score, null);
+  assert.match(missing.recommendation, /ยังไม่มีวันที่ปิดงานล้าง/);
+  assert.doesNotMatch(missing.recommendation, /สะอาดมาก|ควรล้าง/);
+
+  const justCleanedLowScore = app.tracking._test.cleanlinessRecommendation("2026-07-30T00:00:00Z", 30, now);
+  assert.equal(justCleanedLowScore.tone, "watch");
+  assert.equal(justCleanedLowScore.status, "ควรติดตามสภาพ");
+  assert.doesNotMatch(justCleanedLowScore.recommendation, /ควรล้าง/);
+
+  const olderLowScore = app.tracking._test.cleanlinessRecommendation("2026-05-12T00:00:00Z", 30, now);
+  assert.equal(olderLowScore.tone, "due");
+  assert.equal(olderLowScore.status, "ควรวางแผนล้าง");
+});
+
+test("cleanliness day-band boundaries are explicit and high scores never hide elapsed time", () => {
+  const app = loadTrackingRuntime();
+  const now = Date.parse("2026-07-31T00:00:00Z");
+  const atDays = (days) => new Date(now - (days * 86400000)).toISOString();
+  const cases = [
+    [45, "excellent"],
+    [46, "good"],
+    [90, "good"],
+    [91, "watch"],
+    [150, "watch"],
+    [151, "due"],
+  ];
+  for (const [days, tone] of cases) {
+    assert.equal(app.tracking._test.cleanlinessRecommendation(atDays(days), 100, now).tone, tone, `${days} days`);
+  }
+});
+
+test("completed cleaning renders one prominent donut with date elapsed time and recommendation", () => {
+  const app = loadTrackingRuntime();
+  const html = app.tracking._test.renderPassport(completedHealthPayload());
+  assert.equal((html.match(/data-unit-cleanliness/g) || []).length, 1);
+  assert.match(html, /class="cleanliness-ring"/);
+  assert.match(html, />100%<|>99%</);
+  assert.match(html, /ล้างล่าสุด/);
+  assert.match(html, /ผ่านมาแล้ว/);
+  assert.match(html, /ยังอยู่ในสภาพพร้อมใช้งาน/);
+  assert.doesNotMatch(html, /unit-condition-summary/);
+  assert.doesNotMatch(html, /passport-recommend-card/);
+  assert.ok(html.indexOf("unit-inspection-grid") < html.indexOf("data-unit-cleanliness"));
+  assert.ok(html.indexOf("data-unit-cleanliness") < html.indexOf("data-unit-evidence"));
+  assert.ok(html.indexOf("passport-units-card") < html.indexOf("passport-warranty-card"));
+});
+
+test("completed cleaning without finished_at renders a neutral donut fallback without a fake score", () => {
+  const app = loadTrackingRuntime();
+  const data = completedHealthPayload({ finished_at: null, job_status: "เสร็จแล้ว" });
+  const html = app.tracking._test.renderPassport(data);
+  assert.match(html, /data-unit-cleanliness/);
+  assert.match(html, /ยังประเมินรอบล้างไม่ได้/);
+  assert.match(html, /ยังไม่มีวันที่ล้างล่าสุด/);
+  assert.match(html, />--</);
+  assert.doesNotMatch(html, />99%|>100%/);
+});
+
 test("pressure and temperature photos remain secondary evidence and never override normal status", () => {
   const app = loadTrackingRuntime();
   const html = app.tracking._test.renderPassport(completedHealthPayload());
@@ -544,7 +627,7 @@ test("tracking UI exposes loading, not-found, rate-limit and offline states", ()
 });
 
 test("tracking assets share the full-read cache build id", () => {
-  const build = "20260714_tracking_health_passport_v1";
+  const build = "20260714_tracking_cleanliness_donut_v1";
   for (const file of [
     "customer-app/index.html",
     "customer-app/sw.js",
@@ -574,4 +657,8 @@ test("tracking mobile CSS provides 360/390-safe wrapping and touch targets", () 
   assert.match(css, /\.unit-inspection-item \{[\s\S]*?min-width: 0/);
   assert.match(css, /\.unit-evidence summary \{[\s\S]*?min-height: 44px/);
   assert.match(css, /\.passport-shell \{[\s\S]*?overflow: hidden/);
+  assert.match(css, /\.unit-cleanliness-card \{[\s\S]*?min-width: 0[\s\S]*?overflow: hidden/);
+  assert.match(css, /\.unit-cleanliness-main \{[\s\S]*?grid-template-columns: 104px minmax\(0, 1fr\)/);
+  assert.match(css, /\.cleanliness-ring \{[\s\S]*?aspect-ratio: 1[\s\S]*?conic-gradient/);
+  assert.match(css, /@media \(max-width: 380px\) \{[\s\S]*?\.unit-cleanliness-main \{[\s\S]*?92px minmax\(0, 1fr\)/);
 });

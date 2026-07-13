@@ -213,8 +213,39 @@
     return days / 30.4375;
   }
 
+  function daysSince(date, nowMs = Date.now()) {
+    if (!date || !Number.isFinite(date.getTime())) return null;
+    return Math.max(0, Math.floor((Number(nowMs) - date.getTime()) / 86400000));
+  }
+
+  function elapsedCleaningText(days) {
+    if (!Number.isFinite(days)) return "";
+    if (days === 0) return "วันนี้";
+    if (days < 30) return `${days} วัน`;
+    const months = Math.max(1, Math.floor(days / 30));
+    return `ประมาณ ${months} เดือน`;
+  }
+
+  function approximateFutureText(days) {
+    if (!Number.isFinite(days) || days <= 0) return "ถึงรอบแนะนำแล้ว";
+    if (days < 60) return `${Math.ceil(days)} วัน`;
+    return `ประมาณ ${Math.max(1, Math.round(days / 30))} เดือน`;
+  }
+
+  function formatCleaningDate(date) {
+    if (!date || !Number.isFinite(date.getTime())) return "-";
+    return new Intl.DateTimeFormat("th-TH", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    }).format(date);
+  }
+
   function serviceProfile(data) {
-    const text = clean([data.job_type, data.service_summary, data.items_text].filter(Boolean).join(" ")).toLowerCase();
+    const itemText = Array.isArray(data.service_items)
+      ? data.service_items.map((item) => clean(item && item.item_name)).filter(Boolean).join(" ")
+      : "";
+    const text = clean([data.job_type, data.service_summary, data.items_text, itemText].filter(Boolean).join(" ")).toLowerCase();
     if (/full|heavy|disassembly|overhaul|ถอด|ตัดล้างใหญ่|ล้างใหญ่/.test(text)) {
       return { kind: "heavy", label: "ตัดล้างใหญ่", coilMonths: 10, nextText: "8-12 เดือน" };
     }
@@ -236,13 +267,90 @@
     return Math.max(0, Math.min(100, Math.round(score)));
   }
 
-  function coilLabel(score) {
-    if (score == null) return "รอข้อมูลงานเสร็จ";
-    if (score >= 90) return "สะอาดมาก";
-    if (score >= 70) return "ยังดี";
-    if (score >= 45) return "เริ่มมีฝุ่นสะสม";
-    if (score >= 20) return "ควรล้างเร็ว ๆ นี้";
-    return "เกินรอบแนะนำ";
+  function cleanlinessRecommendation(lastCleanedAt, rawScore, nowMs = Date.now()) {
+    const date = lastCleanedAt instanceof Date ? lastCleanedAt : parseDate(lastCleanedAt);
+    const numericScore = Number(rawScore);
+    const score = Number.isFinite(numericScore) ? Math.max(0, Math.min(100, Math.round(numericScore))) : null;
+    const elapsedDays = daysSince(date, nowMs);
+    if (elapsedDays == null) {
+      return {
+        tone: "unknown",
+        status: "ยังประเมินรอบล้างไม่ได้",
+        score: null,
+        elapsedDays: null,
+        elapsedText: "ยังไม่มีวันที่ล้างล่าสุด",
+        lastCleanedText: "-",
+        recommendation: "ยังไม่มีวันที่ปิดงานล้างสำหรับคำนวณรอบถัดไป",
+        nextText: "ติดตามสภาพการใช้งานและติดต่อ CWF หากต้องการตรวจสอบ",
+      };
+    }
+
+    let result;
+    if (elapsedDays <= 45) {
+      result = {
+        tone: "excellent",
+        status: "สะอาดมาก",
+        recommendation: "เพิ่งล้างไม่นาน ยังอยู่ในสภาพพร้อมใช้งาน",
+        nextText: `แนะนำติดตามสภาพอีกครั้งในอีก ${approximateFutureText(90 - elapsedDays)}`,
+      };
+    } else if (elapsedDays <= 90) {
+      result = {
+        tone: "good",
+        status: "ยังอยู่ในสภาพดี",
+        recommendation: "ยังใช้งานได้ดี แนะนำติดตามสภาพและล้างตามรอบ",
+        nextText: `วางแผนรอบล้างในอีก ${approximateFutureText(150 - elapsedDays)}`,
+      };
+    } else if (elapsedDays <= 150) {
+      result = {
+        tone: "watch",
+        status: "ใกล้ถึงรอบล้าง",
+        recommendation: "เริ่มเข้าใกล้รอบล้าง แนะนำวางแผนล้างครั้งถัดไป",
+        nextText: elapsedDays === 150
+          ? "ถึงรอบล้างที่แนะนำแล้ว"
+          : `เหลืออีก ${approximateFutureText(150 - elapsedDays)} ถึงรอบล้างที่แนะนำ`,
+      };
+    } else {
+      result = {
+        tone: "due",
+        status: "ควรล้าง",
+        recommendation: "ผ่านมาค่อนข้างนาน แนะนำล้างเพื่อคงประสิทธิภาพและความสะอาด",
+        nextText: `เกินรอบแนะนำมาแล้ว ${elapsedCleaningText(elapsedDays - 150)}`,
+      };
+    }
+
+    // Time remains authoritative: a high score cannot hide an overdue service.
+    // A low estimate may raise concern, but never tells a just-cleaned customer
+    // to clean again immediately.
+    if (score != null && elapsedDays > 45 && score < 45 && result.tone !== "due") {
+      result = {
+        tone: "due",
+        status: "ควรวางแผนล้าง",
+        recommendation: "คะแนนประเมินลดลง แนะนำวางแผนล้างเพื่อรักษาความสะอาด",
+        nextText: "เลือกเวลาที่สะดวกสำหรับรอบบริการครั้งถัดไป",
+      };
+    } else if (score != null && elapsedDays > 45 && score < 70 && result.tone === "good") {
+      result = {
+        tone: "watch",
+        status: "ใกล้ถึงรอบล้าง",
+        recommendation: "สภาพโดยประมาณเริ่มลดลง แนะนำติดตามและวางแผนรอบล้าง",
+        nextText: `วางแผนรอบล้างในอีก ${approximateFutureText(150 - elapsedDays)}`,
+      };
+    } else if (score != null && elapsedDays <= 45 && score < 45) {
+      result = {
+        tone: "watch",
+        status: "ควรติดตามสภาพ",
+        recommendation: "เพิ่งล้างไม่นาน แต่คะแนนประเมินต่ำกว่าปกติ",
+        nextText: "หากความเย็นหรือแรงลมลดลง ติดต่อ CWF เพื่อตรวจสอบ",
+      };
+    }
+
+    return {
+      ...result,
+      score,
+      elapsedDays,
+      elapsedText: `ผ่านมาแล้ว ${elapsedCleaningText(elapsedDays)}`,
+      lastCleanedText: formatCleaningDate(date),
+    };
   }
 
   function hasDrainRisk(data) {
@@ -366,6 +474,47 @@
     `;
   }
 
+  function renderCleanlinessHighlight(model) {
+    if (!model) return "";
+    const hasScore = Number.isFinite(model.score);
+    const score = hasScore ? Math.max(0, Math.min(100, Math.round(model.score))) : 0;
+    const ringLabel = hasScore ? `${score}%` : "--";
+    const ringAria = hasScore
+      ? `คะแนนสภาพความสะอาดโดยประมาณ ${score} เปอร์เซ็นต์`
+      : "ยังไม่มีคะแนนสภาพความสะอาด";
+    return `
+      <section class="unit-cleanliness-card tone-${esc(model.tone)}" data-unit-cleanliness>
+        <div class="unit-cleanliness-head">
+          <div>
+            <span>ความสะอาดและรอบล้าง</span>
+            <strong>สภาพความสะอาดปัจจุบัน</strong>
+          </div>
+          <span class="cleanliness-status-badge">${esc(model.status)}</span>
+        </div>
+        <div class="unit-cleanliness-main">
+          <div class="cleanliness-ring" style="--clean-score:${score}" role="img" aria-label="${esc(ringAria)}">
+            <div>
+              <strong>${esc(ringLabel)}</strong>
+              <span>คะแนนประเมิน</span>
+            </div>
+          </div>
+          <div class="cleanliness-summary">
+            <div class="cleanliness-date">
+              <span>ล้างล่าสุด</span>
+              <strong>${esc(model.lastCleanedText)}</strong>
+              <small>${esc(model.elapsedText)}</small>
+            </div>
+            <div class="cleanliness-recommendation">
+              <strong>${esc(model.recommendation)}</strong>
+              <p>${esc(model.nextText)}</p>
+            </div>
+          </div>
+        </div>
+        ${hasScore ? `<small class="cleanliness-basis">คะแนนประเมินจากรอบบริการล่าสุด</small>` : ""}
+      </section>
+    `;
+  }
+
   function structuredMeasurements(unit) {
     const source = unit.measurements && typeof unit.measurements === "object" ? unit.measurements : {};
     const definitions = [
@@ -445,12 +594,7 @@
                     <p>${esc(inspection.overall.detail)}</p>
                   </div>
                   ${inspection.hasMetricData ? `<div class="unit-inspection-grid">${inspection.metrics.map(metricStatusCard).join("")}</div>` : ""}
-                  ${context.coilScore == null ? "" : `
-                    <div class="unit-condition-summary">
-                      <div><span>ความสะอาดหลังบริการ</span><strong>${esc(coilLabel(context.coilScore))}</strong></div>
-                      <div><span>คะแนนประเมิน</span><strong>${context.coilScore}%</strong></div>
-                    </div>
-                  `}
+                  ${renderCleanlinessHighlight(context.cleanliness)}
                   ${measurements.length ? `
                     <section class="unit-measurements" data-unit-measurements>
                       <h4>ค่าตรวจวัดเพิ่มเติม</h4>
@@ -578,6 +722,9 @@
     const coilScore = done ? healthScore(months, profile.coilMonths) : null;
     const drainAlertMonths = hasDrainRisk(data) ? 4 : 6;
     const drainScore = done ? healthScore(months, drainAlertMonths) : null;
+    const cleanliness = done && profile.kind !== "general"
+      ? cleanlinessRecommendation(completedAt, coilScore)
+      : null;
     const warranty = warrantyInfo(data, completedAt);
     const units = unitList(data);
     const next = recommendation(data, coilScore, drainScore, profile, done);
@@ -614,7 +761,7 @@
             ${done && clean(data.technician_note) ? `<div class="passport-note"><b>หมายเหตุจากช่าง</b><p>${esc(data.technician_note)}</p></div>` : ""}
           </article>
 
-          ${renderUnitPassportCards(data, units, { coilScore })}
+          ${renderUnitPassportCards(data, units, { cleanliness })}
 
           <article class="passport-card passport-warranty-card">
             <div class="passport-card-head">
@@ -638,15 +785,17 @@
             </div>
           </article>
 
-          <article class="passport-card passport-recommend-card">
-            <div class="passport-card-head">
-              <span>บริการครั้งถัดไป</span>
-              <strong>คำแนะนำ</strong>
-            </div>
-            <h3>${esc(next.title)}</h3>
-            <p>${esc(next.reason)}</p>
-            <small>คะแนนประเมินอ้างอิงจาก${esc(estimateBasis)}และรอบบริการ ไม่ใช่ค่าจากเครื่องมือวัด</small>
-          </article>
+          ${cleanliness ? "" : `
+            <article class="passport-card passport-recommend-card">
+              <div class="passport-card-head">
+                <span>บริการครั้งถัดไป</span>
+                <strong>คำแนะนำ</strong>
+              </div>
+              <h3>${esc(next.title)}</h3>
+              <p>${esc(next.reason)}</p>
+              <small>คะแนนประเมินอ้างอิงจาก${esc(estimateBasis)}และรอบบริการ ไม่ใช่ค่าจากเครื่องมือวัด</small>
+            </article>
+          `}
         </div>
       </section>
     `;
@@ -1542,6 +1691,8 @@
       renderUnitPassportCards,
       renderTrackingResult,
       renderTimeline,
+      cleanlinessRecommendation,
+      renderCleanlinessHighlight,
       structuredMeasurements,
       unitInspection,
     },
