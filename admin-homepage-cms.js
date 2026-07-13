@@ -230,12 +230,29 @@
   function resolveFeaturedPreviewItems(section) {
     const rows = catalogItems || [];
     const limitRaw = Number(section.featured_limit);
-    const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(12, Math.round(limitRaw))) : 8;
+    const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(6, Math.round(limitRaw))) : 6;
     if (section.featured_mode === "manual") {
       const byId = new Map(rows.map((item) => [String(item.item_id), item]));
       return (section.item_ids || []).map((id) => byId.get(String(id))).filter(catalogIsSelectable).slice(0, limit);
     }
-    return rows.filter((item) => item && item.is_featured && catalogIsSelectable(item)).slice(0, limit);
+    const seen = new Set();
+    return rows
+      .filter((item) => {
+        if (!catalogIsSelectable(item) || item.item_id == null) return false;
+        const id = String(item.item_id);
+        if (seen.has(id)) return false;
+        seen.add(id);
+        return true;
+      })
+      .map((item, index) => ({ item, index }))
+      .sort((a, b) => {
+        const featured = Number(!!b.item.is_featured) - Number(!!a.item.is_featured);
+        if (featured) return featured;
+        const bookable = Number(b.item.booking_mode === "bookable") - Number(a.item.booking_mode === "bookable");
+        return bookable || a.index - b.index;
+      })
+      .map(({ item }) => item)
+      .slice(0, limit);
   }
 
   async function requestJson(url, options) {
@@ -897,8 +914,8 @@
       }
     }
     return `
-      <label class="field">แหล่งข้อมูล<select class="fi" data-featured-mode><option value="auto" ${mode === "auto" ? "selected" : ""}>ดึงจาก Catalog อัตโนมัติ (is_featured)</option><option value="manual" ${mode === "manual" ? "selected" : ""}>เลือกรายการเอง</option></select></label>
-      <label class="field">จำนวนสูงสุด<input class="fi" type="number" min="1" max="12" data-featured-limit value="${esc(section.featured_limit || 6)}"></label>
+      <label class="field">แหล่งข้อมูล<select class="fi" data-featured-mode><option value="auto" ${mode === "auto" ? "selected" : ""}>ดึงจาก Catalog อัตโนมัติ (Featured ก่อน)</option><option value="manual" ${mode === "manual" ? "selected" : ""}>เลือกรายการเอง</option></select></label>
+      <label class="field">จำนวนการ์ดต่อชุด (สูงสุด 6)<input class="fi" type="number" min="1" max="6" data-featured-limit value="${esc(section.featured_limit || 6)}"></label>
       <div style="display:flex;gap:14px;flex-wrap:wrap">
         <label class="switch"><input type="checkbox" data-featured-bool="show_price" ${section.show_price !== false ? "checked" : ""}> แสดงราคา</label>
         <label class="switch"><input type="checkbox" data-featured-bool="show_badge" ${section.show_badge !== false ? "checked" : ""}> แสดง Badge</label>
@@ -1081,7 +1098,7 @@
       if (target.dataset.prop === "url") { delete item[ctaName].route; delete item[ctaName].action; }
     }
     if (target.matches("[data-item]")) section.items[Number(target.dataset.item)][target.dataset.prop] = target.value;
-    if (target.matches("[data-featured-limit]")) section.featured_limit = Math.max(1, Math.min(12, Number(target.value) || 6));
+    if (target.matches("[data-featured-limit]")) section.featured_limit = Math.max(1, Math.min(6, Number(target.value) || 6));
     if (target.matches("[data-seed-urls]")) section.seed_urls = target.value.split("\n").map((l) => l.trim()).filter(Boolean).slice(0, 8);
     renderPreview();
   });

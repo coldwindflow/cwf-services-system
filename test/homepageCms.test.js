@@ -189,10 +189,16 @@ test("featured_services normalizes auto-mode defaults and validates manual selec
   assert.equal(manual.ok, true);
   const fs2 = manual.config.sections[0];
   assert.equal(fs2.featured_mode, "manual");
-  assert.equal(fs2.featured_limit, 12);
+  assert.equal(fs2.featured_limit, 6);
   assert.equal(fs2.show_price, false);
   assert.equal(fs2.show_badge, false);
   assert.deepEqual(fs2.item_ids, ["a", "b"]);
+  const adminSource = read("admin-homepage-cms.js");
+  const adminHtml = read("admin-homepage-cms.html");
+  assert.match(adminSource, /จำนวนการ์ดต่อชุด \(สูงสุด 6\)/);
+  assert.match(adminSource, /ดึงจาก Catalog อัตโนมัติ \(Featured ก่อน\)/);
+  assert.match(adminSource, /max="6"[^>]*data-featured-limit/);
+  assert.match(adminHtml, /admin-homepage-cms\.js\?v=20260714_featured_six_card_rotation_v1/);
 });
 
 test("legacy published config without featured_services fields gets safe defaults without losing existing content", () => {
@@ -290,7 +296,7 @@ test("customer homepage has no admin control, bottom nav is fixed five-tab, and 
   const sw = read("customer-app/sw.js");
   const app = read("customer-app/assets/customer-app.js");
   const manifest = read("customer-app/manifest.webmanifest");
-  const build = "20260713_home_six_cards_retire_legacy_v1";
+  const build = "20260714_home_six_card_rotation_v1";
 
   assert.doesNotMatch(index + ui, /โหมดแอดมิน|openCms|localStorage\.getItem\('cwfHomeCmsDemo'/);
   assert.match(index, /data-route="store"[\s\S]*ร้านค้า/);

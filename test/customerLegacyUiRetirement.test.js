@@ -59,7 +59,7 @@ test("featured auto mode fills six unique visible active items with featured the
     catalogItem(7, { booking_mode: "bookable" }),
     catalogItem(8),
   ]);
-  const selected = app.ui._test.featuredCatalogItems({ featured_mode: "auto", featured_limit: 6 });
+  const selected = app.ui._test.featuredCatalogPool({ featured_mode: "auto", featured_limit: 6 });
   assert.deepEqual(Array.from(selected, (item) => item.item_id), [2, 1, 5, 7, 6, 8]);
 });
 
@@ -69,17 +69,18 @@ test("featured manual mode preserves configured order, removes duplicates, and n
     catalogItem(2),
     catalogItem(3),
   ]);
-  const selected = app.ui._test.featuredCatalogItems({ featured_mode: "manual", featured_limit: 6, item_ids: [3, 1, 3] });
+  const selected = app.ui._test.featuredCatalogPool({ featured_mode: "manual", featured_limit: 6, item_ids: [3, 1, 3] });
   assert.deepEqual(Array.from(selected, (item) => item.item_id), [3, 1]);
-  assert.deepEqual(Array.from(app.ui._test.featuredCatalogItems({ featured_mode: "manual", featured_limit: 6, item_ids: [] })), []);
+  assert.deepEqual(Array.from(app.ui._test.featuredCatalogPool({ featured_mode: "manual", featured_limit: 6, item_ids: [] })), []);
 });
 
-test("homepage renders all six featured cards together without rotator pages or dots", () => {
-  const app = loadHomepage(Array.from({ length: 7 }, (_, index) => catalogItem(index + 1, { is_featured: index < 2 })));
+test("homepage renders a single compact page without timer controls when the pool has six items", () => {
+  const app = loadHomepage(Array.from({ length: 6 }, (_, index) => catalogItem(index + 1, { is_featured: index < 2 })));
   const html = app.ui._test.renderHomepageFeaturedServices({ featured_mode: "auto", featured_limit: 6 });
   assert.equal((html.match(/class="homepage-service-card"/g) || []).length, 6);
   assert.match(html, /homepage-featured-grid/);
-  assert.doesNotMatch(html, /featured-rotator|featured-page|featured-dot|aria-hidden="true"/);
+  assert.match(html, /data-featured-page-count="1"/);
+  assert.doesNotMatch(html, /data-featured-dot|aria-hidden="true"/);
 });
 
 test("homepage hero expands and six-card grid is genuinely compact without shrinking its CTA", () => {

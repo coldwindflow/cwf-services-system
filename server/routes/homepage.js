@@ -393,7 +393,7 @@ function normalizeSection(raw, index, errors) {
     const mode = cleanText(section.featured_mode, 10) === "manual" ? "manual" : "auto";
     const limit = Number(section.featured_limit);
     out.featured_mode = mode;
-    out.featured_limit = Number.isFinite(limit) ? Math.max(1, Math.min(12, Math.round(limit))) : 6;
+    out.featured_limit = Number.isFinite(limit) ? Math.max(1, Math.min(6, Math.round(limit))) : 6;
     out.show_price = section.show_price !== false;
     out.show_badge = section.show_badge !== false;
     const itemIds = Array.isArray(section.item_ids) ? section.item_ids : [];
