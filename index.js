@@ -801,6 +801,23 @@ function getJwtSecret() {
   return String(process.env.CWF_JWT_SECRET || process.env.JWT_SECRET || '').trim();
 }
 
+const CUSTOMER_APP_BOOKING_URL = "/customer-app/index.html#booking";
+const CUSTOMER_APP_PROFILE_URL = "/customer-app/index.html#profile";
+const CUSTOMER_APP_TRACKING_URL = "/customer-app/index.html#tracking";
+
+function legacyTrackingRedirectTarget(req) {
+  const credential = String(req.query?.q || req.query?.token || "").trim();
+  return credential
+    ? `${CUSTOMER_APP_TRACKING_URL}?q=${encodeURIComponent(credential)}`
+    : CUSTOMER_APP_TRACKING_URL;
+}
+
+function redirectLegacyCustomerPage(res, destination) {
+  res.set("Cache-Control", "private, no-store");
+  res.set("Referrer-Policy", "no-referrer");
+  return res.redirect(302, destination);
+}
+
 // 🔐 Customer JWT (LINE) helper (cookie: cwf_token)
 function requireCustomerJwt(req, res, next) {
   try {
@@ -847,17 +864,17 @@ app.get('/auth/line/callback', async (req, res) => {
     // always clear state cookie
     clearCookie(res, 'cwf_line_state');
 
-    if (!code) return res.redirect('/customer.html?login=failed&reason=no_code');
+    if (!code) return redirectLegacyCustomerPage(res, CUSTOMER_APP_PROFILE_URL);
     if (!state || !stateCookie || state !== stateCookie) {
-      return res.redirect('/customer.html?login=failed&reason=bad_state');
+      return redirectLegacyCustomerPage(res, CUSTOMER_APP_PROFILE_URL);
     }
 
     const clientId = String(process.env.LINE_CHANNEL_ID || '').trim();
     const clientSecret = String(process.env.LINE_CHANNEL_SECRET || '').trim();
     const callback = String(process.env.LINE_CALLBACK_URL || '').trim() || `${getReqBaseUrl(req)}/auth/line/callback`;
     const jwtSecret = getJwtSecret();
-    if (!clientId || !clientSecret) return res.redirect('/customer.html?login=failed&reason=misconfig');
-    if (!jwtSecret) return res.redirect('/customer.html?login=failed&reason=no_jwt_secret');
+    if (!clientId || !clientSecret) return redirectLegacyCustomerPage(res, CUSTOMER_APP_PROFILE_URL);
+    if (!jwtSecret) return redirectLegacyCustomerPage(res, CUSTOMER_APP_PROFILE_URL);
 
     // Exchange code for access token
     const tokenRes = await fetch('https://api.line.me/oauth2/v2.1/token', {
@@ -877,10 +894,10 @@ app.get('/auth/line/callback', async (req, res) => {
     try{ tokenJson = tokenText ? JSON.parse(tokenText) : {}; }catch(_){ tokenJson = {}; }
     if (!tokenRes.ok) {
       console.error('[LINE_TOKEN_HTTP]', tokenRes.status, tokenText);
-      return res.redirect(`/customer.html?login=failed&reason=token_http_${tokenRes.status}`);
+      return redirectLegacyCustomerPage(res, CUSTOMER_APP_PROFILE_URL);
     }
     const accessToken = String(tokenJson?.access_token || '').trim();
-    if (!accessToken) return res.redirect('/customer.html?login=failed&reason=no_access_token');
+    if (!accessToken) return redirectLegacyCustomerPage(res, CUSTOMER_APP_PROFILE_URL);
 
     // Fetch profile
     const profRes = await fetch('https://api.line.me/v2/profile', {
@@ -891,12 +908,12 @@ app.get('/auth/line/callback', async (req, res) => {
     try{ prof = profText ? JSON.parse(profText) : {}; }catch(_){ prof = {}; }
     if (!profRes.ok) {
       console.error('[LINE_PROFILE_HTTP]', profRes.status, profText);
-      return res.redirect(`/customer.html?login=failed&reason=profile_http_${profRes.status}`);
+      return redirectLegacyCustomerPage(res, CUSTOMER_APP_PROFILE_URL);
     }
     const userId = String(prof?.userId || '').trim();
     const name = String(prof?.displayName || '').trim();
     const picture = String(prof?.pictureUrl || '').trim();
-    if (!userId) return res.redirect('/customer.html?login=failed&reason=no_user');
+    if (!userId) return redirectLegacyCustomerPage(res, CUSTOMER_APP_PROFILE_URL);
 
     // Issue JWT
     const now = Math.floor(Date.now() / 1000);
@@ -911,10 +928,10 @@ app.get('/auth/line/callback', async (req, res) => {
     const token = jwtSign(payload, jwtSecret);
     const secureCookie2 = callback.startsWith('https://');
     setHttpOnlyCookie(res, 'cwf_token', token, { maxAgeSec: 7 * 24 * 60 * 60, secure: secureCookie2 });
-    return res.redirect('/customer.html?login=success');
+    return redirectLegacyCustomerPage(res, CUSTOMER_APP_PROFILE_URL);
   } catch (e) {
     console.error('[LINE_CALLBACK_ERROR]', e);
-    return res.redirect('/customer.html?login=failed&reason=server');
+    return redirectLegacyCustomerPage(res, CUSTOMER_APP_PROFILE_URL);
   }
 });
 
@@ -1130,7 +1147,7 @@ app.patch('/public/profile/address', requireCustomerJwt, async (req, res) => {
 // Customer logout (clears LINE JWT cookie)
 app.get('/public/logout', (req, res) => {
   try { clearCookie(res, 'cwf_token'); } catch (_) {}
-  return res.redirect('/customer.html?logout=1');
+  return redirectLegacyCustomerPage(res, CUSTOMER_APP_PROFILE_URL);
 });
 app.post('/public/logout', (req, res) => {
   try { clearCookie(res, 'cwf_token'); } catch (_) {}
@@ -26924,6 +26941,13 @@ app.get("/admin-partner-onboarding.html", requireAdminSession, (req, res) => res
 app.get("/admin/homepage-cms", requireAdminSession, (req, res) => res.sendFile(sendHtml("admin-homepage-cms.html")));
 app.get("/admin/homepage-cms.html", requireAdminSession, (req, res) => res.sendFile(sendHtml("admin-homepage-cms.html")));
 
+// Legacy customer entry points must resolve before express.static so the old
+// HTML applications can never render. Keep tracking credentials in the URL
+// fragment of Customer App V2, never in its query string.
+app.get(["/customer", "/customer.html"], (_req, res) => redirectLegacyCustomerPage(res, CUSTOMER_APP_BOOKING_URL));
+app.get(["/register", "/register.html"], (_req, res) => redirectLegacyCustomerPage(res, CUSTOMER_APP_PROFILE_URL));
+app.get(["/track", "/track.html"], (req, res) => redirectLegacyCustomerPage(res, legacyTrackingRedirectTarget(req)));
+
 if (fs.existsSync(FRONTEND_DIR)) app.use(express.static(FRONTEND_DIR));
 app.use(express.static(ROOT_DIR));
 
@@ -26938,7 +26962,6 @@ app.get("/admin-history", (req, res) => res.sendFile(sendHtml("admin-history-v2.
 // หน้า legacy เลิกใช้แล้ว ให้ redirect ไป V2
 app.get("/edit-profile", (req, res) => res.sendFile(sendHtml("edit-profile.html")));
 app.get("/tech", (req, res) => res.sendFile(sendHtml("tech.html")));
-app.get("/customer", (req, res) => res.sendFile(sendHtml("customer.html")));
 app.get("/partner-apply", (req, res) => res.sendFile(sendHtml("partner-apply.html")));
 app.get("/partner-status", (req, res) => res.sendFile(sendHtml("partner-status.html")));
 app.get("/partner-agreement", (req, res) => res.sendFile(sendHtml("partner-agreement.html")));
@@ -26947,8 +26970,6 @@ app.get("/partner-academy", (req, res) => res.sendFile(sendHtml("partner-academy
 app.get("/install-quote", (req, res) => res.sendFile(sendHtml("install-quote.html")));
 // Canonical path: keep short URL, redirect direct-file access
 app.get("/install-quote.html", (req, res) => res.redirect(302, "/install-quote"));
-app.get("/register", (req, res) => res.sendFile(sendHtml("register.html")));
-app.get("/track", (req, res) => res.sendFile(sendHtml("track.html")));
 app.get("/home", (req, res) => res.sendFile(sendHtml("index.html")));
 
 app.get("/admin-add-v2.html", (req, res) => res.sendFile(sendHtml("admin-add-v2.html")));
@@ -26957,7 +26978,6 @@ app.get("/admin-queue-v2.html", (req, res) => res.sendFile(sendHtml("admin-queue
 app.get("/admin-history-v2.html", (req, res) => res.sendFile(sendHtml("admin-history-v2.html")));
 app.get("/edit-profile.html", (req, res) => res.sendFile(sendHtml("edit-profile.html")));
 app.get("/tech.html", (req, res) => res.sendFile(sendHtml("tech.html")));
-app.get("/register.html", (req, res) => res.sendFile(sendHtml("register.html")));
 app.get("/partner-apply.html", (req, res) => res.sendFile(sendHtml("partner-apply.html")));
 app.get("/partner-status.html", (req, res) => res.sendFile(sendHtml("partner-status.html")));
 app.get("/partner-agreement.html", (req, res) => res.sendFile(sendHtml("partner-agreement.html")));

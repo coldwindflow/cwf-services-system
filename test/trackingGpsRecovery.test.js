@@ -3,7 +3,7 @@
 // Focused tests for the tracking + technician GPS check-in production hotfix.
 //  - Secure tracking link uses booking_token; booking_code stays limited.
 //  - /public/track aggregates the technician from every assignment source.
-//  - track.html falls back from an empty technician_team and escapes values.
+//  - track.html is a secure redirect-only compatibility stub.
 //  - Technician checkin() never strands the busy lock and maps errors to Thai.
 //  - Backend /jobs/:job_id/checkin validates coordinates + structured codes.
 
@@ -57,15 +57,12 @@ test("official confirmation tracking_url puts the credential in the FRAGMENT (#t
   assert.ok(!/\?q=|\?token=/.test(beforeHash), "no credential may appear in the query segment before #");
 });
 
-test("only the official confirmation link changed — track.html still exists and is NOT globally replaced", () => {
-  // Legacy tracking page must remain for rollback.
-  assert.ok(fs.existsSync(path.join(ROOT, "track.html")), "track.html must still exist");
-  // The /track route/redirect and track.html references elsewhere must survive:
-  // this task only repoints buildCustomerConfirmationVars, not a global swap.
-  assert.match(indexSrc, /app\.get\("\/track"/, "GET /track route must remain");
-  // customer.html (legacy) still points at track.html — proof of no global replace.
-  const customerHtml = read("customer.html");
-  assert.match(customerHtml, /\/track\.html\?q=/, "legacy customer.html must still use track.html");
+test("legacy track entries retire to the secure Customer App fragment", () => {
+  assert.ok(fs.existsSync(path.join(ROOT, "track.html")), "static redirect stub must remain");
+  assert.match(indexSrc, /app\.get\(\["\/track", "\/track\.html"\]/);
+  assert.match(trackHtml, /\/customer-app\/index\.html#tracking/);
+  assert.match(trackHtml, /params\.get\("q"\) \|\| params\.get\("token"\)/);
+  assert.doesNotMatch(trackHtml, /\/public\/track|renderCustomerESlip|data-review-submit/);
 });
 
 test("booking_token is never rendered as visible confirmation text nor logged", () => {
@@ -91,17 +88,11 @@ test("/public/track technician aggregation includes job_assignments (active only
 
 // ============================ A4. track.html fallback + escaping ==========
 
-test("track.html uses technician_team only when it is a non-empty array, else falls back", () => {
-  assert.match(trackHtml, /Array\.isArray\(data\.technician_team\) && data\.technician_team\.length/);
-  assert.match(trackHtml, /:\s*\(data\.technician \? \[data\.technician\] : \[\]\)/);
-});
-
-test("track.html escapes customer/technician/address/photo/phone values", () => {
-  assert.match(trackHtml, /ชื่อลูกค้า:<\/b> \$\{esc\(data\.customer_name/);
-  assert.match(trackHtml, /ที่อยู่:<\/b> \$\{esc\(data\.address_text/);
-  assert.match(trackHtml, /src="\$\{esc\(photo\)\}"/);
-  assert.match(trackHtml, /tel:\$\{esc\(phone\)\}/);
-  assert.match(trackHtml, /data-tel="\$\{esc\(firstTel\)\}"/);
+test("track.html is a no-store redirect stub with no legacy renderer", () => {
+  assert.match(trackHtml, /name="referrer" content="no-referrer"/);
+  assert.match(trackHtml, /http-equiv="Cache-Control" content="no-store/);
+  assert.match(trackHtml, /window\.location\.replace\(destination\)/);
+  assert.doesNotMatch(trackHtml, /fetch\(|technician_team|receipt|E-slip|timelineHTML/);
 });
 
 // ============================ A3. Customer App tracking rendering =========
@@ -350,92 +341,12 @@ test("accuracy decision: good passes, unusable-inside and boundary-overlap are r
   assert.equal(decide(900, 20), "OUTSIDE");   // confidently outside
 });
 
-// ---- track.html behavioural (vm) : blockers 2, 4, 6 ----------------------
-function loadTrackHtml({ data }) {
-  const escSrc = sliceBetween(trackHtml, "function esc(s){", "\nfunction renderRankLine");
-  const trackSrc = sliceBetween(trackHtml, "let CURRENT_TRACK_DATA = null;", "\n// 🏅");
-  const qEl = { value: "" };
-  const resultEl = { innerHTML: "", textContent: "" };
-  const els = { q: qEl, result: resultEl };
-  const stub = () => "";
-  const sandbox = {
-    API: "http://test",
-    document: { getElementById: (id) => els[id] || null },
-    fetch: async () => ({ ok: true, json: async () => data }),
-    alert: () => {},
-    window: {}, location: {}, console,
-    statusBadge: stub, timelineHTML: stub, timelineLimitedHTML: stub, derivedStatusLimited: stub, photosHTML: stub, reviewHTML: stub,
-    warrantyHTML: stub, renderRankLine: stub, renderCustomerESlip: async () => {}, openNav: () => {}, submitReview: () => {}, qs: () => "",
-    Number, String, Array, Math, JSON, Date, encodeURIComponent, RegExp, Boolean,
-  };
-  vm.createContext(sandbox);
-  vm.runInContext(`${escSrc}\n${trackSrc}\nglobalThis.__track = track;`, sandbox);
-  return { track: sandbox.__track, qEl, resultEl };
-}
-
-test("track.html (token): token absent from rendered HTML + #q shows booking_code; XSS payloads escaped", async () => {
-  const data = {
-    access_level: "token", booking_code: "CWF123ABC", booking_token: "SECRETTOKEN9",
-    customer_name: `<img src=x onerror=alert(1)>`, address_text: `'"><script>alert(1)</script>`,
-    job_type: "ล้าง", appointment_datetime: "2026-06-20T10:00:00Z",
-    technician_team: [{ full_name: `<b>evil</b>`, phone: `0812345678` }],
-  };
-  const { track, qEl, resultEl } = loadTrackHtml({ data });
-  await track("SECRETTOKEN9");
-  assert.ok(!resultEl.innerHTML.includes("SECRETTOKEN9"), "booking_token must not appear in rendered HTML");
-  assert.equal(qEl.value, "CWF123ABC", "#q must show the booking_code, not the token");
-  assert.ok(!resultEl.innerHTML.includes("<script>"), "script payload must be escaped");
-  assert.ok(!resultEl.innerHTML.includes("<img src=x"), "img/onerror payload must be escaped");
-  assert.ok(resultEl.innerHTML.includes("&lt;script&gt;") || resultEl.innerHTML.includes("&lt;img"), "payload should be HTML-escaped");
-  // Uses data-attribute handlers, not interpolated inline JS.
-  assert.ok(resultEl.innerHTML.includes("data-nav"));
-});
-
-test("track.html (code): full read details render while token actions stay unavailable", async () => {
-  const data = {
-    access_level: "code",
-    can_view_full_tracking: true,
-    can_use_token_actions: false,
-    booking_code: "CWF777",
-    job_status: "กำลังดำเนินการ",
-    appointment_datetime: "2026-06-20T10:00:00Z",
-    customer_name: "คุณลูกค้า",
-    customer_phone: "0812345678",
-    address_text: "99 ถนนสุขุมวิท",
-  };
-  const { track, qEl, resultEl } = loadTrackHtml({ data });
-  await track("CWF777");
-  assert.ok(resultEl.innerHTML.includes("คุณลูกค้า"));
-  assert.ok(resultEl.innerHTML.includes("99 ถนนสุขุมวิท"));
-  assert.ok(resultEl.innerHTML.includes("data-nav"));
-  assert.ok(!resultEl.innerHTML.includes("data-review-submit"));
-  assert.ok(!resultEl.innerHTML.includes("SECRETTOKEN"));
-  assert.equal(qEl.value, "CWF777");
-});
-
-// ---- track.html source contract : blockers 2, 4 -------------------------
-test("track.html has no interpolated inline onclick for address/phone/token and keeps the credential private", () => {
-  assert.doesNotMatch(trackHtml, /onclick="openNav\(/);
-  assert.doesNotMatch(trackHtml, /onclick="location\.href='tel:\$\{/);
-  assert.doesNotMatch(trackHtml, /submitReview\('\$\{/);
-  assert.match(trackHtml, /data-nav/);
-  assert.match(trackHtml, /data-tel="\$\{esc/);
-  assert.match(trackHtml, /data-review-submit/);
-  // Auto-load passes the credential to track(), never into #q.
-  assert.match(trackHtml, /if\(q0\)\{\s*\n\s*track\(q0\);/);
-  assert.doesNotMatch(trackHtml, /getElementById\("q"\)\.value = q0/);
-});
-
-// ---- customer.html source contract : blocker 5 --------------------------
-test("customer.html shows booking_code as the number and uses data.token for the tracking link", () => {
-  const html = read("customer.html");
-  // Visible number is booking_code only — never falls back to the token.
-  assert.match(html, /const code = data\.booking_code \|\| '';/);
-  assert.doesNotMatch(html, /const code = data\.booking_code \|\| token/);
-  // Credential prefers the token; the Tracking link uses it.
-  assert.match(html, /const cred = token \|\| code;/);
-  assert.match(html, /const trackUrl = `\$\{API\}\/track\.html\?q=\$\{encodeURIComponent\(cred\)\}`/);
-  // LINE share + ICS use the token-credentialed track_url, code is the number.
-  assert.match(html, /function shareLine\(\)/);
-  assert.match(html, /track_url: trackUrl/);
+// Legacy tracking compatibility is now redirect-only. Full read rendering and
+// token-gated actions live exclusively in Customer App V2 and are covered by
+// customerTrackingFullReadUi/customerTrackingPrivacy tests.
+test("legacy tracking stub moves q/token credentials into a fragment without storage or logging", () => {
+  assert.match(trackHtml, /params\.get\("q"\) \|\| params\.get\("token"\)/);
+  assert.match(trackHtml, /destination \+= "\?q=" \+ encodeURIComponent\(credential\)/);
+  assert.doesNotMatch(trackHtml, /localStorage|sessionStorage|console\./);
+  assert.doesNotMatch(trackHtml, /customer_name|booking_token|job_id/);
 });

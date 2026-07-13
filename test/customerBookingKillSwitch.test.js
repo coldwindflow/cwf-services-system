@@ -105,16 +105,11 @@ test("idempotency payload comparison covers every canonical material field", () 
   assert.ok(preflightIdx > 0 && preflightIdx < availabilityIdx, "idempotency replay must precede the availability gate");
 });
 
-test("legacy customer.html seeds the scheduled request key from a CSPRNG and persists it across reloads", () => {
+test("legacy customer.html is redirect-only and contains no booking implementation", () => {
   const customerHtml = fs.readFileSync(path.join(REPO_ROOT, "customer.html"), "utf8");
-  // CSPRNG only — never Math.random (the key seeds a booking token).
-  assert.match(customerHtml, /crypto\.randomUUID\(\)/);
-  assert.match(customerHtml, /crypto\.getRandomValues/);
-  assert.doesNotMatch(customerHtml, /Math\.random\(\)[^;]*scheduled_request_key|scheduled_request_key[\s\S]{0,200}Math\.random/);
-  // Survives reload via sessionStorage; cleared on confirmed success.
-  assert.match(customerHtml, /sessionStorage\.getItem\("cwf_sched_key"\)/);
-  assert.match(customerHtml, /sessionStorage\.setItem\("cwf_sched_key"/);
-  assert.match(customerHtml, /sessionStorage\.removeItem\("cwf_sched_key"\)/);
+  assert.match(customerHtml, /location\.replace\("\/customer-app\/index\.html#booking"\)/);
+  assert.match(customerHtml, /name="referrer" content="no-referrer"/);
+  assert.doesNotMatch(customerHtml, /scheduled_request_key|\/public\/book|sessionStorage|booking form/i);
 });
 
 test("each customer flag is referenced only at its declaration and the single gate (admin booking untouched)", () => {

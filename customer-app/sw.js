@@ -1,6 +1,6 @@
 "use strict";
 
-const BUILD_ID = "20260712_tracking_full_read_v1";
+const BUILD_ID = "20260713_home_six_cards_retire_legacy_v1";
 const CACHE_NAME = `cwf-customer-app-v2-${BUILD_ID}`;
 const APP_SHELL = [
   `./index.html?v=${BUILD_ID}`,

@@ -357,7 +357,7 @@ test("tracking UI exposes loading, not-found, rate-limit and offline states", ()
 });
 
 test("tracking assets share the full-read cache build id", () => {
-  const build = "20260712_tracking_full_read_v1";
+  const build = "20260713_home_six_cards_retire_legacy_v1";
   for (const file of [
     "customer-app/index.html",
     "customer-app/sw.js",

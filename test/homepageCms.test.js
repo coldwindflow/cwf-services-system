@@ -290,7 +290,7 @@ test("customer homepage has no admin control, bottom nav is fixed five-tab, and 
   const sw = read("customer-app/sw.js");
   const app = read("customer-app/assets/customer-app.js");
   const manifest = read("customer-app/manifest.webmanifest");
-  const build = "20260712_tracking_full_read_v1";
+  const build = "20260713_home_six_cards_retire_legacy_v1";
 
   assert.doesNotMatch(index + ui, /โหมดแอดมิน|openCms|localStorage\.getItem\('cwfHomeCmsDemo'/);
   assert.match(index, /data-route="store"[\s\S]*ร้านค้า/);
@@ -594,11 +594,12 @@ test("bottom navigation border and padding match the fixed-nav reference", () =>
   assert.match(css, /\.nav-item-primary::before\s*\{[\s\S]*width:\s*52px[\s\S]*height:\s*52px/);
 });
 
-test("homepage service carousel constrains card and image geometry on mobile", () => {
+test("homepage service grid constrains two-column card and image geometry on mobile", () => {
   const css = read("customer-app/assets/customer-app.css");
-  const serviceBlock = css.slice(css.lastIndexOf(".homepage-service-card {"), css.lastIndexOf(".homepage-service-card {") + 320);
-  assert.match(serviceBlock, /flex:\s*0 0 calc\(\(100% - 10px\) \/ 2\)/);
-  assert.match(serviceBlock, /max-width:\s*calc\(\(100% - 10px\) \/ 2\)/);
+  const gridBlock = css.slice(css.indexOf(".homepage-featured-grid {"), css.indexOf(".homepage-featured-grid {") + 260);
+  assert.match(gridBlock, /grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/);
+  assert.match(gridBlock, /width:\s*100%/);
+  assert.match(css, /\.homepage-featured-grid \.homepage-service-card\s*\{[^}]*min-width:\s*0/s);
   const imageBlock = css.slice(css.lastIndexOf(".homepage-card-image {"), css.lastIndexOf(".homepage-card-image {") + 180);
   assert.match(imageBlock, /overflow:\s*hidden/);
   const imageImgBlock = css.slice(css.lastIndexOf(".homepage-card-image img"), css.lastIndexOf(".homepage-card-image img") + 180);
