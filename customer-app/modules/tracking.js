@@ -267,89 +267,95 @@
     return Math.max(0, Math.min(100, Math.round(score)));
   }
 
-  function cleanlinessRecommendation(lastCleanedAt, rawScore, nowMs = Date.now()) {
-    const date = lastCleanedAt instanceof Date ? lastCleanedAt : parseDate(lastCleanedAt);
+  function cleanlinessRecommendation(serviceCompletedAt, rawScore, profile, nowMs = Date.now()) {
+    const date = serviceCompletedAt instanceof Date ? serviceCompletedAt : parseDate(serviceCompletedAt);
     const numericScore = Number(rawScore);
     const score = Number.isFinite(numericScore) ? Math.max(0, Math.min(100, Math.round(numericScore))) : null;
+    const profileMonths = Number(profile && profile.coilMonths);
+    const cycleDays = Math.max(1, Math.round((Number.isFinite(profileMonths) && profileMonths > 0 ? profileMonths : 5) * 30.4375));
+    const excellentMaxDays = Math.floor(cycleDays * 0.3);
+    const goodMaxDays = Math.floor(cycleDays * 0.6);
+    const cycleText = clean(profile && profile.nextText) || `ประมาณ ${Math.max(1, Math.round(cycleDays / 30.4375))} เดือน`;
     const elapsedDays = daysSince(date, nowMs);
     if (elapsedDays == null) {
       return {
         tone: "unknown",
         status: "ยังประเมินรอบล้างไม่ได้",
         score: null,
+        cycleDays,
+        excellentMaxDays,
+        goodMaxDays,
+        cycleText,
         elapsedDays: null,
-        elapsedText: "ยังไม่มีวันที่ล้างล่าสุด",
-        lastCleanedText: "-",
-        recommendation: "ยังไม่มีวันที่ปิดงานล้างสำหรับคำนวณรอบถัดไป",
+        elapsedText: "ยังไม่มีวันที่จบงานนี้",
+        serviceDateText: "-",
+        recommendation: "ยังไม่มีวันที่จบงานนี้สำหรับคำนวณรอบถัดไป",
         nextText: "ติดตามสภาพการใช้งานและติดต่อ CWF หากต้องการตรวจสอบ",
       };
     }
 
     let result;
-    if (elapsedDays <= 45) {
+    if (elapsedDays <= excellentMaxDays) {
       result = {
         tone: "excellent",
         status: "สะอาดมาก",
         recommendation: "เพิ่งล้างไม่นาน ยังอยู่ในสภาพพร้อมใช้งาน",
-        nextText: `แนะนำติดตามสภาพอีกครั้งในอีก ${approximateFutureText(90 - elapsedDays)}`,
+        nextText: `รอบบริการนี้แนะนำประมาณ ${cycleText} · ติดตามสภาพอีกครั้งในอีก ${approximateFutureText(goodMaxDays - elapsedDays)}`,
       };
-    } else if (elapsedDays <= 90) {
+    } else if (elapsedDays <= goodMaxDays) {
       result = {
         tone: "good",
         status: "ยังอยู่ในสภาพดี",
         recommendation: "ยังใช้งานได้ดี แนะนำติดตามสภาพและล้างตามรอบ",
-        nextText: `วางแผนรอบล้างในอีก ${approximateFutureText(150 - elapsedDays)}`,
+        nextText: `รอบบริการนี้แนะนำประมาณ ${cycleText} · วางแผนรอบล้างในอีก ${approximateFutureText(cycleDays - elapsedDays)}`,
       };
-    } else if (elapsedDays <= 150) {
+    } else if (elapsedDays <= cycleDays) {
       result = {
         tone: "watch",
         status: "ใกล้ถึงรอบล้าง",
         recommendation: "เริ่มเข้าใกล้รอบล้าง แนะนำวางแผนล้างครั้งถัดไป",
-        nextText: elapsedDays === 150
-          ? "ถึงรอบล้างที่แนะนำแล้ว"
-          : `เหลืออีก ${approximateFutureText(150 - elapsedDays)} ถึงรอบล้างที่แนะนำ`,
+        nextText: elapsedDays === cycleDays
+          ? `รอบบริการนี้แนะนำประมาณ ${cycleText} · ถึงรอบล้างที่แนะนำแล้ว`
+          : `รอบบริการนี้แนะนำประมาณ ${cycleText} · เหลืออีก ${approximateFutureText(cycleDays - elapsedDays)} ถึงรอบล้างที่แนะนำ`,
       };
     } else {
       result = {
         tone: "due",
         status: "ควรล้าง",
         recommendation: "ผ่านมาค่อนข้างนาน แนะนำล้างเพื่อคงประสิทธิภาพและความสะอาด",
-        nextText: `เกินรอบแนะนำมาแล้ว ${elapsedCleaningText(elapsedDays - 150)}`,
+        nextText: `รอบบริการนี้แนะนำประมาณ ${cycleText} · เกินรอบแนะนำมาแล้ว ${elapsedCleaningText(elapsedDays - cycleDays)}`,
       };
     }
 
     // Time remains authoritative: a high score cannot hide an overdue service.
-    // A low estimate may raise concern, but never tells a just-cleaned customer
-    // to clean again immediately.
-    if (score != null && elapsedDays > 45 && score < 45 && result.tone !== "due") {
-      result = {
-        tone: "due",
-        status: "ควรวางแผนล้าง",
-        recommendation: "คะแนนประเมินลดลง แนะนำวางแผนล้างเพื่อรักษาความสะอาด",
-        nextText: "เลือกเวลาที่สะดวกสำหรับรอบบริการครั้งถัดไป",
-      };
-    } else if (score != null && elapsedDays > 45 && score < 70 && result.tone === "good") {
-      result = {
-        tone: "watch",
-        status: "ใกล้ถึงรอบล้าง",
-        recommendation: "สภาพโดยประมาณเริ่มลดลง แนะนำติดตามและวางแผนรอบล้าง",
-        nextText: `วางแผนรอบล้างในอีก ${approximateFutureText(150 - elapsedDays)}`,
-      };
-    } else if (score != null && elapsedDays <= 45 && score < 45) {
+    // A low estimate can raise a pre-cycle result to watch, but only elapsed
+    // time beyond the profile cycle can mark the service as due.
+    if (score != null && elapsedDays <= excellentMaxDays && score < 45) {
       result = {
         tone: "watch",
         status: "ควรติดตามสภาพ",
         recommendation: "เพิ่งล้างไม่นาน แต่คะแนนประเมินต่ำกว่าปกติ",
-        nextText: "หากความเย็นหรือแรงลมลดลง ติดต่อ CWF เพื่อตรวจสอบ",
+        nextText: `รอบบริการนี้แนะนำประมาณ ${cycleText} · หากความเย็นหรือแรงลมลดลง ติดต่อ CWF เพื่อตรวจสอบ`,
+      };
+    } else if (score != null && elapsedDays <= cycleDays && score < 70 && (result.tone === "excellent" || result.tone === "good")) {
+      result = {
+        tone: "watch",
+        status: "ใกล้ถึงรอบล้าง",
+        recommendation: "สภาพโดยประมาณเริ่มลดลง แนะนำติดตามและวางแผนรอบล้าง",
+        nextText: `รอบบริการนี้แนะนำประมาณ ${cycleText} · วางแผนรอบล้างในอีก ${approximateFutureText(cycleDays - elapsedDays)}`,
       };
     }
 
     return {
       ...result,
       score,
+      cycleDays,
+      excellentMaxDays,
+      goodMaxDays,
+      cycleText,
       elapsedDays,
       elapsedText: `ผ่านมาแล้ว ${elapsedCleaningText(elapsedDays)}`,
-      lastCleanedText: formatCleaningDate(date),
+      serviceDateText: formatCleaningDate(date),
     };
   }
 
@@ -487,7 +493,7 @@
         <div class="unit-cleanliness-head">
           <div>
             <span>ความสะอาดและรอบล้าง</span>
-            <strong>สภาพความสะอาดปัจจุบัน</strong>
+            <strong>ประมาณการความสะอาดจากงานนี้</strong>
           </div>
           <span class="cleanliness-status-badge">${esc(model.status)}</span>
         </div>
@@ -500,8 +506,8 @@
           </div>
           <div class="cleanliness-summary">
             <div class="cleanliness-date">
-              <span>ล้างล่าสุด</span>
-              <strong>${esc(model.lastCleanedText)}</strong>
+              <span>วันที่ล้างของงานนี้</span>
+              <strong>${esc(model.serviceDateText)}</strong>
               <small>${esc(model.elapsedText)}</small>
             </div>
             <div class="cleanliness-recommendation">
@@ -510,7 +516,7 @@
             </div>
           </div>
         </div>
-        ${hasScore ? `<small class="cleanliness-basis">คะแนนประเมินจากรอบบริการล่าสุด</small>` : ""}
+        <small class="cleanliness-basis">อ้างอิงจากวันที่จบงานนี้และประเภทบริการ</small>
       </section>
     `;
   }
@@ -723,7 +729,7 @@
     const drainAlertMonths = hasDrainRisk(data) ? 4 : 6;
     const drainScore = done ? healthScore(months, drainAlertMonths) : null;
     const cleanliness = done && profile.kind !== "general"
-      ? cleanlinessRecommendation(completedAt, coilScore)
+      ? cleanlinessRecommendation(completedAt, coilScore, profile)
       : null;
     const warranty = warrantyInfo(data, completedAt);
     const units = unitList(data);
@@ -736,7 +742,7 @@
     const warrantyMeta = warranty
       ? `${warranty.active ? `เหลือ ${warranty.daysLeft} วัน` : "ครบ 30 วันแล้ว"} · สิ้นสุด ${root.utils.formatDateTime(warranty.end.toISOString())}`
       : "ยังไม่มีวันที่ปิดงานที่ชัดเจนสำหรับนับประกัน";
-    const estimateBasis = usesAppointmentEstimate ? "วันนัดหมาย" : "วันที่ล้างล่าสุด";
+    const estimateBasis = usesAppointmentEstimate ? "วันนัดหมาย" : "วันที่จบงานนี้";
 
     return `
       <section class="passport-shell">
@@ -1693,6 +1699,7 @@
       renderTimeline,
       cleanlinessRecommendation,
       renderCleanlinessHighlight,
+      serviceProfile,
       structuredMeasurements,
       unitInspection,
     },

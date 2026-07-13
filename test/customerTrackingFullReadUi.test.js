@@ -155,18 +155,20 @@ test("completed normal checklist renders one compact green inspection grid witho
 test("cleanliness recommendation is deterministic from last-cleaned date and score", () => {
   const app = loadTrackingRuntime();
   const now = Date.parse("2026-07-31T00:00:00Z");
-  const recent = app.tracking._test.cleanlinessRecommendation("2026-07-01T00:00:00Z", 95, now);
+  const cleanProfile = app.tracking._test.serviceProfile({ job_type: "ล้าง", service_summary: "ล้างปกติ" });
+  const recent = app.tracking._test.cleanlinessRecommendation("2026-07-01T00:00:00Z", 95, cleanProfile, now);
   assert.equal(recent.elapsedDays, 30);
   assert.equal(recent.tone, "excellent");
   assert.equal(recent.status, "สะอาดมาก");
   assert.match(recent.recommendation, /พร้อมใช้งาน/);
   assert.doesNotMatch(recent.recommendation, /ควรล้าง/);
+  assert.match(recent.nextText, /4-6 เดือน/);
 
-  const approaching = app.tracking._test.cleanlinessRecommendation("2026-03-25T00:00:00Z", 72, now);
+  const approaching = app.tracking._test.cleanlinessRecommendation("2026-03-25T00:00:00Z", 72, cleanProfile, now);
   assert.equal(approaching.tone, "watch");
   assert.equal(approaching.status, "ใกล้ถึงรอบล้าง");
 
-  const overdueDespiteHighScore = app.tracking._test.cleanlinessRecommendation("2026-02-21T00:00:00Z", 99, now);
+  const overdueDespiteHighScore = app.tracking._test.cleanlinessRecommendation("2026-02-21T00:00:00Z", 99, cleanProfile, now);
   assert.equal(overdueDespiteHighScore.tone, "due");
   assert.equal(overdueDespiteHighScore.status, "ควรล้าง");
   assert.match(overdueDespiteHighScore.recommendation, /แนะนำล้าง/);
@@ -175,37 +177,81 @@ test("cleanliness recommendation is deterministic from last-cleaned date and sco
 test("missing last-clean date is honest and a low score never recommends immediate recleaning", () => {
   const app = loadTrackingRuntime();
   const now = Date.parse("2026-07-31T00:00:00Z");
-  const missing = app.tracking._test.cleanlinessRecommendation(null, 99, now);
+  const cleanProfile = app.tracking._test.serviceProfile({ job_type: "ล้าง", service_summary: "ล้างปกติ" });
+  const missing = app.tracking._test.cleanlinessRecommendation(null, 99, cleanProfile, now);
   assert.equal(missing.tone, "unknown");
   assert.equal(missing.score, null);
-  assert.match(missing.recommendation, /ยังไม่มีวันที่ปิดงานล้าง/);
+  assert.match(missing.recommendation, /ยังไม่มีวันที่จบงานนี้/);
   assert.doesNotMatch(missing.recommendation, /สะอาดมาก|ควรล้าง/);
 
-  const justCleanedLowScore = app.tracking._test.cleanlinessRecommendation("2026-07-30T00:00:00Z", 30, now);
+  const justCleanedLowScore = app.tracking._test.cleanlinessRecommendation("2026-07-30T00:00:00Z", 30, cleanProfile, now);
   assert.equal(justCleanedLowScore.tone, "watch");
   assert.equal(justCleanedLowScore.status, "ควรติดตามสภาพ");
   assert.doesNotMatch(justCleanedLowScore.recommendation, /ควรล้าง/);
 
-  const olderLowScore = app.tracking._test.cleanlinessRecommendation("2026-05-12T00:00:00Z", 30, now);
-  assert.equal(olderLowScore.tone, "due");
-  assert.equal(olderLowScore.status, "ควรวางแผนล้าง");
+  const olderLowScore = app.tracking._test.cleanlinessRecommendation("2026-05-12T00:00:00Z", 30, cleanProfile, now);
+  assert.equal(olderLowScore.tone, "watch");
+  assert.notEqual(olderLowScore.status, "ควรล้าง");
 });
 
-test("cleanliness day-band boundaries are explicit and high scores never hide elapsed time", () => {
+test("cleanliness cycles follow normal premium deep and heavy service profiles", () => {
   const app = loadTrackingRuntime();
   const now = Date.parse("2026-07-31T00:00:00Z");
   const atDays = (days) => new Date(now - (days * 86400000)).toISOString();
+  const profiles = {
+    clean: app.tracking._test.serviceProfile({ job_type: "ล้าง", service_summary: "ล้างปกติ" }),
+    premium: app.tracking._test.serviceProfile({ job_type: "ล้าง", service_summary: "ล้างพรีเมียม" }),
+    deep: app.tracking._test.serviceProfile({ job_type: "ล้าง", service_summary: "ล้างลึก แขวนคอยล์" }),
+    heavy: app.tracking._test.serviceProfile({ job_type: "ล้าง", service_summary: "ตัดล้างใหญ่" }),
+  };
+
+  const at160 = Object.fromEntries(Object.entries(profiles).map(([key, profile]) => [
+    key,
+    app.tracking._test.cleanlinessRecommendation(atDays(160), 99, profile, now),
+  ]));
+  assert.equal(at160.clean.tone, "due");
+  assert.equal(at160.premium.tone, "watch");
+  assert.equal(at160.deep.tone, "watch");
+  assert.equal(at160.heavy.tone, "good");
+  assert.deepEqual(
+    [at160.clean.cycleDays, at160.premium.cycleDays, at160.deep.cycleDays, at160.heavy.cycleDays],
+    [152, 183, 213, 304],
+  );
+  assert.match(at160.clean.nextText, /4-6 เดือน/);
+  assert.match(at160.premium.nextText, /5-6 เดือน/);
+  assert.match(at160.deep.nextText, /6-8 เดือน/);
+  assert.match(at160.heavy.nextText, /8-12 เดือน/);
+
+  const heavyAtCycle = app.tracking._test.cleanlinessRecommendation(atDays(304), 99, profiles.heavy, now);
+  const heavyAfterCycle = app.tracking._test.cleanlinessRecommendation(atDays(305), 99, profiles.heavy, now);
+  assert.notEqual(heavyAtCycle.tone, "due");
+  assert.equal(heavyAfterCycle.tone, "due");
+  assert.equal(app.tracking._test.cleanlinessRecommendation(atDays(184), 99, profiles.premium, now).tone, "due");
+  assert.notEqual(app.tracking._test.cleanlinessRecommendation(atDays(184), 99, profiles.deep, now).tone, "due");
+});
+
+test("cleanliness profile boundaries are deterministic at 30, 60 and 100 percent", () => {
+  const app = loadTrackingRuntime();
+  const now = Date.parse("2026-07-31T00:00:00Z");
+  const atDays = (days) => new Date(now - (days * 86400000)).toISOString();
+  const profile = app.tracking._test.serviceProfile({ job_type: "ล้าง", service_summary: "ล้างปกติ" });
+  const reference = app.tracking._test.cleanlinessRecommendation(atDays(0), 100, profile, now);
+  assert.deepEqual(
+    [reference.excellentMaxDays, reference.goodMaxDays, reference.cycleDays],
+    [45, 91, 152],
+  );
   const cases = [
     [45, "excellent"],
     [46, "good"],
-    [90, "good"],
-    [91, "watch"],
-    [150, "watch"],
-    [151, "due"],
+    [91, "good"],
+    [92, "watch"],
+    [152, "watch"],
+    [153, "due"],
   ];
   for (const [days, tone] of cases) {
-    assert.equal(app.tracking._test.cleanlinessRecommendation(atDays(days), 100, now).tone, tone, `${days} days`);
+    assert.equal(app.tracking._test.cleanlinessRecommendation(atDays(days), 100, profile, now).tone, tone, `${days} days`);
   }
+  assert.equal(app.tracking._test.cleanlinessRecommendation(atDays(153), 100, profile, now).tone, "due");
 });
 
 test("completed cleaning renders one prominent donut with date elapsed time and recommendation", () => {
@@ -214,9 +260,13 @@ test("completed cleaning renders one prominent donut with date elapsed time and 
   assert.equal((html.match(/data-unit-cleanliness/g) || []).length, 1);
   assert.match(html, /class="cleanliness-ring"/);
   assert.match(html, />100%<|>99%</);
-  assert.match(html, /ล้างล่าสุด/);
+  assert.match(html, /ประมาณการความสะอาดจากงานนี้/);
+  assert.match(html, /วันที่ล้างของงานนี้/);
   assert.match(html, /ผ่านมาแล้ว/);
   assert.match(html, /ยังอยู่ในสภาพพร้อมใช้งาน/);
+  assert.match(html, /อ้างอิงจากวันที่จบงานนี้และประเภทบริการ/);
+  assert.match(html, /4-6 เดือน/);
+  assert.doesNotMatch(html, /ล้างล่าสุด|วันที่ล้างล่าสุด|สภาพความสะอาดปัจจุบัน/);
   assert.doesNotMatch(html, /unit-condition-summary/);
   assert.doesNotMatch(html, /passport-recommend-card/);
   assert.ok(html.indexOf("unit-inspection-grid") < html.indexOf("data-unit-cleanliness"));
@@ -230,7 +280,8 @@ test("completed cleaning without finished_at renders a neutral donut fallback wi
   const html = app.tracking._test.renderPassport(data);
   assert.match(html, /data-unit-cleanliness/);
   assert.match(html, /ยังประเมินรอบล้างไม่ได้/);
-  assert.match(html, /ยังไม่มีวันที่ล้างล่าสุด/);
+  assert.match(html, /ยังไม่มีวันที่จบงานนี้/);
+  assert.doesNotMatch(html, /ล้างล่าสุด|วันที่ล้างล่าสุด|สภาพความสะอาดปัจจุบัน/);
   assert.match(html, />--</);
   assert.doesNotMatch(html, />99%|>100%/);
 });
