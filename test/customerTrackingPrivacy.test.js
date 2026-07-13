@@ -51,7 +51,20 @@ function richPayload() {
     technician: { username: "tech1", full_name: "ช่าง หนึ่ง", phone: "0899999999" },
     technician_team: [{ username: "tech1", phone: "0899999999" }],
     photos: [{ photo_id: 900, public_url: "https://x/y.jpg", phase: "after" }],
-    units: [{ unit_id: 700, unit_no: 1, unit_code: "AC-01", label: "ห้องนอน", photos: [{ photo_id: 901, public_url: "https://x/u.jpg" }] }],
+    units: [{
+      unit_id: 700,
+      unit_no: 1,
+      unit_code: "AC-01",
+      label: "ห้องนอน",
+      checklist_summary: {
+        pre_completed: true,
+        post_completed: true,
+        issue_count: 0,
+        metric_statuses: { refrigerant: "normal", cooling: "normal", airflow: "normal", drain: "normal" },
+        raw_checklist_json: [{ note: "technician-only" }],
+      },
+      photos: [{ photo_id: 901, public_url: "https://x/u.jpg" }],
+    }],
     cancel_reason: "ลูกค้ายกเลิก",
     review: { review_text: "ดีมาก" },
     catalog_review: { eligible: true, already_reviewed: true, review: { rating: 5, comment: "ดี", moderation_status: "pending", created_at: "2026-07-10" } },
@@ -95,6 +108,13 @@ test("booking_code gets full customer-facing detail without privileged fields", 
   assert.equal(redacted.photos[0].photo_id, undefined);
   assert.equal(redacted.units[0].unit_id, undefined);
   assert.equal(redacted.units[0].photos[0].photo_id, undefined);
+  assert.deepEqual(redacted.units[0].checklist_summary.metric_statuses, {
+    refrigerant: "normal",
+    cooling: "normal",
+    airflow: "normal",
+    drain: "normal",
+  });
+  assert.equal(redacted.units[0].checklist_summary.raw_checklist_json, undefined);
   assert.equal(redacted.catalog_review.eligible, false);
   assert.equal(redacted.catalog_review.review.moderation_status, undefined);
 });
@@ -110,6 +130,71 @@ test("booking-code read model never advertises legacy or catalog write eligibili
   const eligible = trackingPrivacy.redactPublicTrackPayload({ ...richPayload(), legacy_review_eligible: true });
   assert.equal(eligible.legacy_review_eligible, false);
   assert.equal(eligible.booking_token, undefined);
+});
+
+function checklist(type, completed, rows) {
+  return { checklist_type: type, completed_at: completed ? "2026-07-14T12:00:00Z" : null, checklist_json: rows };
+}
+
+test("completed post checklist with zero issues marks all core service metrics normal", () => {
+  const summary = trackingPrivacy.summarizeUnitChecklists([
+    checklist("pre", true, [{ label: "ความเย็นก่อนล้าง", checked: true, issue: false }]),
+    checklist("post", true, [{ label: "แอร์เย็นหลังล้าง", checked: true, issue: false, status: "ปกติ" }]),
+  ]);
+  assert.equal(summary.pre_completed, true);
+  assert.equal(summary.post_completed, true);
+  assert.equal(summary.issue_count, 0);
+  assert.deepEqual(summary.metric_statuses, {
+    refrigerant: "normal",
+    cooling: "normal",
+    airflow: "normal",
+    drain: "normal",
+  });
+});
+
+test("pre-only or unfinished post checklist never marks all service metrics normal", () => {
+  for (const checks of [
+    [checklist("pre", true, [{ label: "ความเย็นก่อนล้าง", checked: true, issue: false }])],
+    [checklist("post", false, [{ label: "แอร์เย็นหลังล้าง", checked: true, issue: false }])],
+  ]) {
+    const summary = trackingPrivacy.summarizeUnitChecklists(checks);
+    assert.deepEqual(summary.metric_statuses, { refrigerant: null, cooling: null, airflow: null, drain: null });
+  }
+});
+
+test("post-checklist issues affect only deterministically matched metrics", () => {
+  const cases = [
+    ["ความเย็นหลังล้าง", "cooling"],
+    ["ตรวจระบบน้ำทิ้ง / ระบายน้ำ", "drain"],
+    ["แรงดันน้ำยา PSI", "refrigerant"],
+    ["แรงลมจาก blower", "airflow"],
+  ];
+  for (const [label, expectedMetric] of cases) {
+    const summary = trackingPrivacy.summarizeUnitChecklists([
+      checklist("post", true, [
+        { label, checked: false, issue: true, status: "ควรตรวจ", note: "raw private note" },
+        { label: "พื้นที่ทำงานสะอาดเรียบร้อย", checked: true, issue: false, status: "ผ่าน" },
+      ]),
+    ]);
+    assert.equal(summary.issue_count, 1);
+    for (const [metric, status] of Object.entries(summary.metric_statuses)) {
+      assert.equal(status, metric === expectedMetric ? "issue" : null, `${label} must not affect ${metric}`);
+    }
+    assert.equal(JSON.stringify(summary).includes("raw private note"), false);
+  }
+});
+
+test("unknown and multi-metric issues remain deterministic without broad warnings", () => {
+  const unknown = trackingPrivacy.summarizeUnitChecklists([
+    checklist("post", true, [{ label: "หน้ากากประกอบไม่สนิท", issue: true, note: "internal" }]),
+  ]);
+  assert.equal(unknown.issue_count, 1);
+  assert.deepEqual(unknown.metric_statuses, { refrigerant: null, cooling: null, airflow: null, drain: null });
+
+  const multiple = trackingPrivacy.summarizeUnitChecklists([
+    checklist("post", true, [{ label: "แรงดันน้ำยาและแรงลม", issue: true }]),
+  ]);
+  assert.deepEqual(multiple.metric_statuses, { refrigerant: "issue", cooling: null, airflow: "issue", drain: null });
 });
 
 test("maskPhone handles empty/short values safely", () => {
@@ -212,6 +297,7 @@ test("/public/track is rate-limited and redacts code lookups via the allowlist",
   assert.match(indexSrc, /publicTrackRateLimiter\.check\(trackingPrivacy\.clientIpKey\(req\)\)/);
   assert.match(indexSrc, /const fullAccess = trackingPrivacy\.isFullAccessQuery\(q, row\);/);
   assert.match(indexSrc, /res\.json\(fullAccess \? trackPayload : trackingPrivacy\.redactPublicTrackPayload\(trackPayload\)\);/);
+  assert.match(indexSrc, /trackingPrivacy\.summarizeUnitChecklists\(checksByUnit\.get\(String\(unit\.unit_id\)\) \|\| \[\]\)/);
 });
 
 test("/public/urgent-status is rate-limited", () => {

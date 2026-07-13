@@ -26422,13 +26422,8 @@ app.get("/public/track", async (req, res) => {
           );
           for (const check of checklistR.rows || []) {
             const key = String(check.unit_id || "");
-            const cur = checksByUnit.get(key) || { pre_completed: false, post_completed: false, issue_count: 0 };
-            const type = String(check.checklist_type || "").trim();
-            const rows = Array.isArray(check.checklist_json) ? check.checklist_json : [];
-            const issueCount = rows.reduce((sum, item) => sum + (item && item.issue ? 1 : 0), 0);
-            if (type === "pre") cur.pre_completed = !!check.completed_at;
-            if (type === "post") cur.post_completed = !!check.completed_at;
-            cur.issue_count += issueCount;
+            const cur = checksByUnit.get(key) || [];
+            cur.push(check);
             checksByUnit.set(key, cur);
           }
         }
@@ -26436,7 +26431,7 @@ app.get("/public/track", async (req, res) => {
         publicUnits = unitRows.map((unit) => {
           const labelParts = [`เครื่องที่ ${unit.unit_no || "-"}`];
           if (unit.location_label) labelParts.push(unit.location_label);
-          const checklist = checksByUnit.get(String(unit.unit_id)) || { pre_completed: false, post_completed: false, issue_count: 0 };
+          const checklist = trackingPrivacy.summarizeUnitChecklists(checksByUnit.get(String(unit.unit_id)) || []);
           return {
             unit_id: unit.unit_id,
             unit_no: unit.unit_no,
@@ -26445,11 +26440,7 @@ app.get("/public/track", async (req, res) => {
             btu: unit.btu || null,
             ac_type: unit.ac_type || null,
             service_type: unit.wash_type || unit.item_name || null,
-            checklist_summary: {
-              pre_completed: !!checklist.pre_completed,
-              post_completed: !!checklist.post_completed,
-              issue_count: Number(checklist.issue_count || 0),
-            },
+            checklist_summary: checklist,
             photos: photosByUnit.get(String(unit.unit_id)) || [],
           };
         });
