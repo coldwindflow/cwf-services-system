@@ -245,21 +245,6 @@
     return "เกินรอบแนะนำ";
   }
 
-  function drainLabel(score) {
-    if (score == null) return "รอข้อมูลงานเสร็จ";
-    if (score >= 85) return "ระบายดี";
-    if (score >= 65) return "ยังปกติ";
-    if (score >= 35) return "เริ่มควรตรวจ";
-    return "เสี่ยงตัน / ควรล้าง";
-  }
-
-  function healthTone(score) {
-    if (score == null) return "unknown";
-    if (score >= 70) return "good";
-    if (score >= 45) return "watch";
-    return "alert";
-  }
-
   function hasDrainRisk(data) {
     const text = clean([data.job_type, data.technician_note, data.customer_note, data.job_status].filter(Boolean).join(" "));
     return /น้ำหยด|ท่อตัน|ถาดตัน|น้ำทิ้ง|ระบายช้า/i.test(text);
@@ -325,6 +310,7 @@
           ac_type: clean(unit.ac_type),
           service_type: clean(unit.service_type),
           checklist_summary: unit.checklist_summary || {},
+          measurements: unit.measurements && typeof unit.measurements === "object" ? unit.measurements : {},
           photos: Array.isArray(unit.photos)
             ? unit.photos.map((photo) => ({
                 url: imageUrl(photo.public_url || photo.url || photo.photo_url || photo.path),
@@ -336,202 +322,71 @@
       : [];
   }
 
-  function measurementSummary(photos) {
-    const pressure = phaseCount(photos, "pressure");
-    const current = phaseCount(photos, "current");
-    const temp = phaseCount(photos, "temp");
-    const total = pressure + current + temp;
-    if (!total) return "ยังไม่มีข้อมูลวัดจริง";
-    return "มีรูปการตรวจวัด แต่ยังไม่มีค่าตัวเลขที่บันทึกเป็นข้อมูล";
+  const UNIT_METRIC_COPY = Object.freeze({
+    refrigerant: { label: "ระบบน้ำยา", normal: "ตรวจสอบและทดสอบระบบแล้ว", issue: "พบรายการที่ควรตรวจระบบเพิ่มเติม" },
+    cooling: { label: "ความเย็น", normal: "ทดสอบการทำความเย็นแล้ว", issue: "พบรายการที่ควรตรวจความเย็นเพิ่มเติม" },
+    airflow: { label: "แรงลม", normal: "ทดสอบแรงลมหลังบริการแล้ว", issue: "พบรายการที่ควรตรวจแรงลมเพิ่มเติม" },
+    drain: { label: "ระบบน้ำทิ้ง", normal: "ตรวจสอบการระบายน้ำแล้ว", issue: "พบรายการที่ควรตรวจการระบายน้ำเพิ่มเติม" },
+  });
+
+  function unitInspection(data, unit) {
+    const summary = unit.checklist_summary || {};
+    const rawStatuses = summary.metric_statuses && typeof summary.metric_statuses === "object" ? summary.metric_statuses : {};
+    const metrics = Object.entries(UNIT_METRIC_COPY).map(([key, copy]) => {
+      const status = rawStatuses[key] === "normal" || rawStatuses[key] === "issue" ? rawStatuses[key] : null;
+      return status ? {
+        key,
+        status,
+        tone: status === "normal" ? "good" : status === "issue" ? "issue" : "unknown",
+        label: copy.label,
+        detail: copy[status],
+      } : null;
+    }).filter(Boolean);
+    const postIssueCount = Number(summary.post_issue_count || 0);
+    const issues = metrics.filter((metric) => metric.status === "issue").length;
+    const normal = metrics.filter((metric) => metric.status === "normal").length;
+    const hasMetricData = issues + normal > 0;
+    let overall = { tone: "unknown", label: isDone(data) ? "ไม่มีข้อมูลแสดง" : "กำลังตรวจสอบ", detail: isDone(data) ? "ไม่มีข้อมูลแสดงในรายงานส่วนนี้" : "ผลตรวจจะแสดงหลังบริการ" };
+    if (issues) overall = { tone: "issue", label: "ควรตรวจเพิ่มเติม", detail: `พบ ${postIssueCount || issues} รายการที่ควรติดตาม` };
+    else if (normal === Object.keys(UNIT_METRIC_COPY).length) overall = { tone: "good", label: "ปกติ", detail: "เครื่องอยู่ในสภาพพร้อมใช้งาน แนะนำล้างรอบถัดไปตามกำหนด" };
+    else if (normal) overall = { tone: "watch", label: "มีผลตรวจบางส่วน", detail: "แสดงเฉพาะรายการที่มีข้อมูลยืนยัน" };
+    return { metrics, overall, postIssueCount, summary, hasMetricData };
   }
 
-  function checklistCopy(summary) {
-    const pre = summary && summary.pre_completed;
-    const post = summary && summary.post_completed;
-    const issues = Number(summary && summary.issue_count || 0);
-    if (!pre && !post) return "ยังไม่มีสรุปเช็คลิสต์ที่แสดงได้";
-    const parts = [];
-    if (pre) parts.push("ก่อนทำบันทึกแล้ว");
-    if (post) parts.push("หลังทำบันทึกแล้ว");
-    parts.push(issues > 0 ? `มีรายการให้ตรวจ ${issues} จุด` : "ไม่พบรายการผิดปกติในสรุป");
-    return parts.join(" · ");
-  }
-
-  function scoreTone(score) {
-    if (score == null) return "unknown";
-    if (score >= 80) return "good";
-    if (score >= 60) return "watch";
-    if (score >= 40) return "warning";
-    return "critical";
-  }
-
-  function toneLabel(score) {
-    const tone = scoreTone(score);
-    if (tone === "good") return "ปกติ";
-    if (tone === "watch") return "เฝ้าระวัง";
-    if (tone === "warning") return "ควรตรวจ";
-    if (tone === "critical") return "วิกฤต";
-    return "รอข้อมูล";
-  }
-
-  function issueScore(issueCount) {
-    if (issueCount >= 3) return 35;
-    if (issueCount >= 1) return 58;
-    return 92;
-  }
-
-  function metricBar(metric) {
-    const tone = metric.tone || scoreTone(metric.score);
+  function metricStatusCard(metric) {
     return `
-      <div class="unit-health-row is-${tone}">
-        <div class="unit-health-top">
-          <span class="unit-health-title"><i aria-hidden="true"></i>${esc(metric.label)}</span>
-          <strong class="unit-health-value">${esc(metric.value)}</strong>
+      <div class="unit-inspection-item is-${metric.tone}" data-metric="${esc(metric.key)}">
+        <span class="unit-inspection-icon" aria-hidden="true"></span>
+        <div>
+          <b>${esc(metric.label)}</b>
+          <strong>${metric.status === "normal" ? "ปกติ" : "ควรตรวจเพิ่มเติม"}</strong>
+          <small>${esc(metric.detail)}</small>
         </div>
-        <p>${esc(metric.detail)}</p>
-        ${metric.meta ? `<small class="unit-helper-text">${esc(metric.meta)}</small>` : ""}
       </div>
     `;
   }
 
-  function overallParts(metric) {
-    const value = clean(metric && metric.value);
-    if (!value) return { score: "รอข้อมูล", label: toneLabel(metric && metric.score) };
-    const parts = value.split(/\s*[—-]\s*/).map(clean).filter(Boolean);
-    return {
-      score: parts[0] || value,
-      label: parts[1] || toneLabel(metric && metric.score),
-    };
+  function structuredMeasurements(unit) {
+    const source = unit.measurements && typeof unit.measurements === "object" ? unit.measurements : {};
+    const definitions = [
+      ["refrigerant_psi", "แรงดันน้ำยา", "PSI"],
+      ["supply_air_c", "อุณหภูมิลมส่ง", "°C"],
+      ["return_air_c", "อุณหภูมิลมกลับ", "°C"],
+      ["delta_t_c", "Delta T", "°C"],
+      ["airflow_cfm", "แรงลม", "CFM"],
+    ];
+    return definitions.flatMap(([key, label, unitLabel]) => {
+      if (source[key] === "" || source[key] == null) return [];
+      const value = Number(source[key]);
+      return Number.isFinite(value) ? [{ key, label, value, unitLabel }] : [];
+    });
   }
 
-  function unitMetrics(data, unit, context) {
-    const summary = unit.checklist_summary || {};
-    const issueCount = Number(summary.issue_count || 0);
-    const hasChecklist = !!(summary.pre_completed || summary.post_completed);
-    const normal = hasChecklist && issueCount <= 0;
-    const issueBasedScore = hasChecklist ? issueScore(issueCount) : null;
-    const photos = unit.photos || [];
-    const hasPressurePhoto = phaseCount(photos, "pressure") > 0;
-    const hasTempPhoto = phaseCount(photos, "temp") > 0;
-    const coilScore = context.coilScore;
-    const drainScore = context.drainScore == null ? null : Math.max(0, context.drainScore - (issueCount * 12) - (context.drainRisk ? 8 : 0));
-
-    const psiMetric = hasPressurePhoto
-      ? {
-          label: "น้ำยาแอร์ / PSI",
-          value: "มีรูปตรวจวัดน้ำยา",
-          score: null,
-          tone: "unknown",
-          detail: "ยังไม่มีค่าตัวเลข PSI ที่บันทึกเป็นข้อมูล",
-          meta: "จะแสดงค่าตัวเลขเมื่อมีฟิลด์ที่ช่างบันทึกเป็นข้อมูลจริง",
-        }
-      : hasChecklist
-        ? {
-            label: "น้ำยาแอร์ / PSI",
-            value: normal ? "ปกติจากการประเมินหน้างาน" : "ควรตรวจ",
-            score: issueBasedScore,
-            tone: scoreTone(issueBasedScore),
-            detail: normal ? "ไม่พบสัญญาณน้ำยาขาดจากอาการและผลการทำงาน" : "มีสัญญาณให้ตรวจระบบน้ำยาเพิ่มเติม",
-            meta: normal ? "เป็นผลประเมินจากเช็คลิสต์ ไม่ใช่ค่าที่วัดด้วยเกจ" : "ประเมินจากเช็คลิสต์ ไม่ใช่ค่าที่วัดด้วยเกจ",
-          }
-        : {
-            label: "น้ำยาแอร์ / PSI",
-            value: "รอข้อมูลประเมิน",
-            score: null,
-            tone: "unknown",
-            detail: "รอข้อมูลเช็คลิสต์หรือรูปตรวจวัดสำหรับประเมินระบบน้ำยา",
-            meta: "จะแสดงค่าตัวเลขเมื่อมีฟิลด์ที่ช่างบันทึกเป็นข้อมูลจริง",
-          };
-
-    const tempMetric = hasTempPhoto
-      ? {
-          label: "อุณหภูมิ",
-          value: "มีรูปตรวจวัดอุณหภูมิ",
-          score: null,
-          tone: "unknown",
-          detail: "ยังไม่มีค่าลมส่ง / ลมกลับที่บันทึกเป็นข้อมูล",
-          meta: "จะแสดงค่าตัวเลขเมื่อมีฟิลด์ที่ช่างบันทึกเป็นข้อมูลจริง",
-        }
-      : hasChecklist
-        ? {
-            label: "อุณหภูมิ",
-            value: normal ? "เย็นปกติจากการทดสอบใช้งาน" : "ควรตรวจ",
-            score: issueBasedScore,
-            tone: scoreTone(issueBasedScore),
-            detail: normal ? "ไม่พบสัญญาณแอร์ไม่เย็นจากเช็คลิสต์หลังงาน" : "มีสัญญาณให้ตรวจอุณหภูมิ/ระบบทำความเย็นเพิ่มเติม",
-            meta: normal ? "เป็นผลประเมินจากหน้างาน ไม่ใช่ค่า Delta T แบบตัวเลข" : "ประเมินจากเช็คลิสต์ ไม่ใช่ค่า Delta T แบบตัวเลข",
-          }
-        : {
-            label: "อุณหภูมิ",
-            value: "รอข้อมูลประเมิน",
-            score: null,
-            tone: "unknown",
-            detail: "รอข้อมูลเช็คลิสต์หรือรูปตรวจวัดสำหรับประเมินอุณหภูมิ",
-            meta: "จะแสดงค่าตัวเลขเมื่อมีฟิลด์ที่ช่างบันทึกเป็นข้อมูลจริง",
-          };
-
-    const airflowMetric = !hasChecklist
-      ? {
-          label: "แรงลม",
-          value: "รอข้อมูลประเมิน",
-          score: null,
-          tone: "unknown",
-          detail: "รอข้อมูลเช็คลิสต์สำหรับประเมินแรงลม",
-          meta: "จะแสดงค่าตัวเลขเมื่อมีฟิลด์ที่ช่างบันทึกเป็นข้อมูลจริง",
-        }
-      : {
-          label: "แรงลม",
-          value: normal ? "ปกติ" : "ควรตรวจ",
-          score: issueBasedScore,
-          tone: scoreTone(issueBasedScore),
-          detail: normal ? "ประเมินจากเช็คลิสต์และการทดสอบหลังล้าง" : "ประเมินจากเช็คลิสต์: ควรตรวจแรงลมเพิ่มเติม",
-          meta: "ประเมินจากเช็คลิสต์ ไม่ใช่ค่าที่วัดด้วยเครื่องมือ",
-        };
-
-    const coilMetric = {
-      label: "ความสะอาดคอยล์",
-      value: coilScore == null ? "รอข้อมูล" : `${coilScore}%`,
-      score: coilScore,
-      tone: scoreTone(coilScore),
-      detail: coilLabel(coilScore),
-      meta: context.healthEstimateText,
-    };
-
-    const drainMetric = {
-      label: "ระบบน้ำทิ้ง",
-      value: drainScore == null ? "รอข้อมูล" : `${drainScore}%`,
-      score: drainScore,
-      tone: scoreTone(drainScore),
-      detail: drainLabel(drainScore),
-      meta: context.drainRisk ? "พบสัญญาณเกี่ยวกับน้ำหยดหรือการระบาย จึงประเมินเข้มขึ้น" : context.drainEstimateText,
-    };
-
-    const photoEvidenceScore = (hasPressurePhoto || hasTempPhoto) ? 82 : 68;
-    const checklistScore = hasChecklist ? issueBasedScore : null;
-    const usableScores = [coilMetric.score, drainMetric.score, checklistScore, photoEvidenceScore]
-      .filter((score) => score != null && Number.isFinite(score));
-    const overallScore = usableScores.length
-      ? Math.max(0, Math.min(100, Math.round(usableScores.reduce((sum, score) => sum + score, 0) / usableScores.length) - Math.min(issueCount * 4, 16)))
-      : null;
-    const overallMetric = {
-      label: "ภาพรวมสุขภาพเครื่อง",
-      value: overallScore == null ? "รอข้อมูล" : `${overallScore}% — ${toneLabel(overallScore)}`,
-      score: overallScore,
-      tone: scoreTone(overallScore),
-      detail: overallScore == null
-        ? "ยังไม่มีข้อมูลพอสำหรับสรุปสุขภาพเครื่องนี้"
-        : (overallScore >= 80
-            ? "เครื่องนี้ยังอยู่ในสภาพดี แนะนำล้างรอบถัดไปตามกำหนด"
-            : (overallScore >= 60 ? "ควรติดตามอาการและวางแผนตรวจรอบถัดไป" : "ควรให้ช่างตรวจหน้างานเพิ่มเติม")),
-      meta: "ไม่รวมค่าน้ำยาและอุณหภูมิ เพราะยังไม่มีค่าที่วัดจริง",
-    };
-
-    return {
-      overall: overallMetric,
-      rows: [psiMetric, tempMetric, airflowMetric, coilMetric, drainMetric],
-      hasChecklist,
-      issueCount,
-    };
+  function checklistEvidenceCopy(summary, done) {
+    const issues = Number(summary && summary.post_issue_count || 0);
+    if (summary && summary.post_completed) return issues > 0 ? `ตรวจครบแล้ว · พบ ${issues} รายการที่ควรติดตาม` : "ตรวจครบแล้ว · ไม่พบรายการผิดปกติ";
+    if (summary && summary.pre_completed) return "บันทึกผลตรวจก่อนบริการแล้ว";
+    return done ? "ไม่มีข้อมูลแสดงในรายงานส่วนนี้" : "กำลังตรวจสอบ";
   }
 
   function renderUnitPassportCards(data, units, context) {
@@ -547,8 +402,8 @@
           <span>สุขภาพแอร์รายเครื่อง</span>
           <strong>${units.length} เครื่อง</strong>
         </div>
-        <h3>แดชบอร์ดสุขภาพแยกรายเครื่อง</h3>
-        <p>เลือกเครื่องเพื่อดูรายงานสุขภาพ รูปงาน และสรุปเช็คลิสต์ของเครื่องนั้น</p>
+        <h3>ผลตรวจและสภาพหลังบริการ</h3>
+        <p>เลือกเครื่องเพื่อดูผลตรวจ เช็กลิสต์ และรูปงานของเครื่องนั้น</p>
         <div class="passport-unit-tabs" role="tablist" aria-label="เลือกเครื่องปรับอากาศ">
           ${units.map((unit, index) => `
             <button
@@ -566,16 +421,14 @@
             const photos = unit.photos || [];
             const before = phaseCount(photos, "before");
             const after = phaseCount(photos, "after");
-            const metrics = unitMetrics(data, unit, context);
+            const inspection = unitInspection(data, unit);
             const preview = photos.slice(0, 4);
             const meta = [unit.service_type, unit.ac_type, unit.btu ? `${unit.btu} BTU` : ""].filter(Boolean).join(" · ") || "เครื่องปรับอากาศ";
-            const overall = overallParts(metrics.overall);
-            const checklistStatus = metrics.hasChecklist
-              ? (metrics.issueCount > 0 ? "ประเมินจากเช็คลิสต์" : "ระบบปกติจากเช็คลิสต์")
-              : "รอเช็คลิสต์";
+            const measurements = structuredMeasurements(unit);
+            const measurementPhotoCount = phaseCount(photos, "pressure") + phaseCount(photos, "current") + phaseCount(photos, "temp");
             return `
               <section
-                class="passport-unit-page is-${metrics.overall.tone} ${index === 0 ? "is-active" : ""}"
+                class="passport-unit-page is-${inspection.overall.tone} ${index === 0 ? "is-active" : ""}"
                 data-unit-page="${index}"
                 role="tabpanel">
                 <div class="passport-unit-head">
@@ -584,62 +437,51 @@
                     <span>${esc(meta)}</span>
                     ${unit.unit_code ? `<small>${esc(unit.unit_code)}</small>` : ""}
                   </div>
-                  <div class="unit-score-block">
-                    <strong class="unit-score-number">${esc(overall.score)}</strong>
-                    <span class="unit-score-label">${esc(overall.label)}</span>
-                  </div>
+                  <span class="unit-overall-pill is-${inspection.overall.tone}">${esc(inspection.overall.label)}</span>
                 </div>
                 <div class="passport-unit-dashboard">
                   <div class="unit-overall-summary">
-                    <span>${esc(checklistStatus)}</span>
-                    ${metrics.issueCount > 0 ? `<strong>พบ ${metrics.issueCount} จุดที่ควรตรวจ</strong>` : ""}
-                    <p>${esc(metrics.overall.detail)}</p>
-                    ${metrics.overall.meta ? `<small>${esc(metrics.overall.meta)}</small>` : ""}
+                    <span>ผลตรวจหลังบริการ</span>
+                    <p>${esc(inspection.overall.detail)}</p>
                   </div>
-                  <div class="unit-health-grid">
-                    ${metrics.rows.map(metricBar).join("")}
-                  </div>
-                  <div class="unit-evidence-grid">
-                    <div class="unit-checklist-box">
-                      <b>เช็คลิสต์</b>
-                      <p>${esc(checklistCopy(unit.checklist_summary))}</p>
-                      <small>ประเมินจากเช็คลิสต์ ยังไม่มีค่าที่ช่างวัดเป็นตัวเลข</small>
+                  ${inspection.hasMetricData ? `<div class="unit-inspection-grid">${inspection.metrics.map(metricStatusCard).join("")}</div>` : ""}
+                  ${context.coilScore == null ? "" : `
+                    <div class="unit-condition-summary">
+                      <div><span>ความสะอาดหลังบริการ</span><strong>${esc(coilLabel(context.coilScore))}</strong></div>
+                      <div><span>คะแนนประเมิน</span><strong>${context.coilScore}%</strong></div>
                     </div>
-                    <div class="unit-photo-box">
-                      <b>รูปก่อน / หลัง</b>
-                      <div class="passport-unit-stats">
-                        <span>ก่อนทำ <b>${before}</b></span>
-                        <span>หลังทำ <b>${after}</b></span>
-                        <span>รวม <b>${photos.length}</b></span>
-                      </div>
-                      <p>${esc(measurementSummary(photos))}</p>
+                  `}
+                  ${measurements.length ? `
+                    <section class="unit-measurements" data-unit-measurements>
+                      <h4>ค่าตรวจวัดเพิ่มเติม</h4>
+                      <div>${measurements.map((measurement) => `<span><b>${esc(measurement.label)}</b><strong>${esc(measurement.value)} ${esc(measurement.unitLabel)}</strong></span>`).join("")}</div>
+                    </section>
+                  ` : ""}
+                  <details class="unit-evidence" data-unit-evidence>
+                    <summary>
+                      <span>เช็กลิสต์และรูปงาน</span>
+                      <small>ก่อนทำ ${before} · หลังทำ ${after}${measurementPhotoCount ? ` · รูปตรวจเพิ่มเติม ${measurementPhotoCount}` : ""}</small>
+                    </summary>
+                    <div class="unit-evidence-body">
+                      <p>${esc(checklistEvidenceCopy(unit.checklist_summary, isDone(data)))}</p>
+                      ${preview.length ? `
+                        <div class="passport-unit-photos">
+                          ${preview.map((photo) => `
+                            <a href="${esc(photo.url)}" target="_blank" rel="noopener" aria-label="เปิดรูปงานรายเครื่อง">
+                              <img src="${esc(photo.url)}" alt="${esc(photo.phase || "รูปงาน")}" loading="lazy">
+                            </a>
+                          `).join("")}
+                        </div>
+                        <a class="unit-photo-link" href="${esc(preview[0].url)}" target="_blank" rel="noopener">ดูรูปเครื่องนี้</a>
+                      ` : ""}
                     </div>
-                  </div>
-                  ${preview.length ? `
-                    <div class="passport-unit-photos">
-                      ${preview.map((photo) => `
-                        <a href="${esc(photo.url)}" target="_blank" rel="noopener" aria-label="เปิดรูปงานรายเครื่อง">
-                          <img src="${esc(photo.url)}" alt="${esc(photo.phase || "รูปงาน")}" loading="lazy">
-                        </a>
-                      `).join("")}
-                    </div>
-                    <a class="unit-photo-link" href="${esc(preview[0].url)}" target="_blank" rel="noopener">ดูรูปเครื่องนี้</a>
-                  ` : `<small>ยังไม่มีรูปที่แยกกับเครื่องนี้</small>`}
+                  </details>
                 </div>
               </section>
             `;
           }).join("")}
         </div>
       </article>
-    `;
-  }
-
-  function renderHealthBar(score) {
-    const value = score == null ? 0 : score;
-    return `
-      <div class="passport-health-bar is-${healthTone(score)}" aria-hidden="true">
-        <span style="width:${value}%"></span>
-      </div>
     `;
   }
 
@@ -738,9 +580,8 @@
     const drainScore = done ? healthScore(months, drainAlertMonths) : null;
     const warranty = warrantyInfo(data, completedAt);
     const units = unitList(data);
-    const unitMeasurementPhotos = units.reduce((sum, unit) => sum + phaseCount(unit.photos || [], "pressure") + phaseCount(unit.photos || [], "current") + phaseCount(unit.photos || [], "temp"), 0);
     const next = recommendation(data, coilScore, drainScore, profile, done);
-    const completionText = done ? "งานเสร็จสิ้นแล้ว" : "รอข้อมูลงานเสร็จสิ้น";
+    const completionText = done ? "งานเสร็จสิ้นแล้ว" : "อยู่ระหว่างให้บริการ";
     const serviceDateText = date ? root.utils.formatDateTime(date.toISOString()) : "-";
     const warrantyStatus = warranty
       ? (warranty.active ? "อยู่ในประกันงานล้าง" : "หมดประกันงานล้างแล้ว")
@@ -748,12 +589,7 @@
     const warrantyMeta = warranty
       ? `${warranty.active ? `เหลือ ${warranty.daysLeft} วัน` : "ครบ 30 วันแล้ว"} · สิ้นสุด ${root.utils.formatDateTime(warranty.end.toISOString())}`
       : "ยังไม่มีวันที่ปิดงานที่ชัดเจนสำหรับนับประกัน";
-    const healthEstimateText = usesAppointmentEstimate
-      ? "ประเมินจากวันนัดหมาย เนื่องจากยังไม่มีวันที่ปิดงาน"
-      : "ประเมินจากวันที่ล้างล่าสุด";
-    const drainEstimateText = usesAppointmentEstimate
-      ? "ประเมินจากวันนัดหมาย เนื่องจากยังไม่มีวันที่ปิดงาน"
-      : "ประเมินจากวันที่ล้างล่าสุดและประวัติงาน";
+    const estimateBasis = usesAppointmentEstimate ? "วันนัดหมาย" : "วันที่ล้างล่าสุด";
 
     return `
       <section class="passport-shell">
@@ -778,51 +614,11 @@
             ${done && clean(data.technician_note) ? `<div class="passport-note"><b>หมายเหตุจากช่าง</b><p>${esc(data.technician_note)}</p></div>` : ""}
           </article>
 
-          <article class="passport-card">
-            <div class="passport-card-head">
-              <span>Coil Cleanliness</span>
-              <strong>${coilScore == null ? "-" : `${coilScore}%`}</strong>
-            </div>
-            ${renderHealthBar(coilScore)}
-            <h3>${esc(coilLabel(coilScore))}</h3>
-            <p>${esc(healthEstimateText)}</p>
-            <small>รอบแนะนำสำหรับ ${esc(profile.label)}: ${esc(profile.nextText)}</small>
-          </article>
-
-          <article class="passport-card">
-            <div class="passport-card-head">
-              <span>Drain Health</span>
-              <strong>${drainScore == null ? "-" : `${drainScore}%`}</strong>
-            </div>
-            ${renderHealthBar(drainScore)}
-            <h3>${esc(drainLabel(drainScore))}</h3>
-            <p>${esc(drainEstimateText)}</p>
-            <small>${hasDrainRisk(data) ? "พบสัญญาณเกี่ยวกับระบบน้ำทิ้งในประวัติงาน จึงแนะนำตรวจเร็วขึ้น" : "ยังไม่พบสัญญาณเสี่ยงจากข้อมูลที่เปิดให้ลูกค้าเห็น"}</small>
-          </article>
-
-          <article class="passport-card passport-muted-card">
-            <div class="passport-card-head">
-              <span>Refrigerant / PSI</span>
-              <strong>${unitMeasurementPhotos ? "มีรูปตรวจวัด" : "ไม่มีค่าวัด"}</strong>
-            </div>
-            <h3>สถานะน้ำยา: ${unitMeasurementPhotos ? "มีรูปการตรวจวัด แต่ยังไม่มีค่าตัวเลข" : "ยังไม่มีข้อมูลวัดจริง"}</h3>
-            <p>ค่า PSI จะแสดงเมื่อช่างบันทึกค่าที่วัดจริง</p>
-            <small>ค่าแรงดันต้องดูร่วมกับชนิดน้ำยา อุณหภูมิ กระแสไฟ รุ่นเครื่อง และสภาพหน้างาน</small>
-          </article>
-
-          <article class="passport-card passport-muted-card">
-            <div class="passport-card-head">
-              <span>Temperature</span>
-              <strong>${unitMeasurementPhotos ? "มีรูปตรวจวัด" : "ไม่มีค่าวัด"}</strong>
-            </div>
-            <h3>สถานะอุณหภูมิ: ${unitMeasurementPhotos ? "มีรูปการตรวจวัด แต่ยังไม่มีค่าตัวเลข" : "ยังไม่มีข้อมูลวัดจริง"}</h3>
-            <p>ระบบจะแสดงลมส่ง / ลมกลับ เมื่อมีการบันทึกค่าจากช่าง</p>
-            <small>ยังไม่มี delta T เพราะระบบยังไม่ได้รับค่าที่วัดจริง</small>
-          </article>
+          ${renderUnitPassportCards(data, units, { coilScore })}
 
           <article class="passport-card passport-warranty-card">
             <div class="passport-card-head">
-              <span>Warranty</span>
+              <span>รับประกันงานล้าง</span>
               <strong>${esc(warrantyStatus)}</strong>
             </div>
             <p>${esc(warrantyMeta)}</p>
@@ -844,15 +640,13 @@
 
           <article class="passport-card passport-recommend-card">
             <div class="passport-card-head">
-              <span>Next Service</span>
+              <span>บริการครั้งถัดไป</span>
               <strong>คำแนะนำ</strong>
             </div>
             <h3>${esc(next.title)}</h3>
             <p>${esc(next.reason)}</p>
+            <small>คะแนนประเมินอ้างอิงจาก${esc(estimateBasis)}และรอบบริการ ไม่ใช่ค่าจากเครื่องมือวัด</small>
           </article>
-
-          ${renderUnitPassportCards(data, units, { coilScore, drainScore, drainRisk: hasDrainRisk(data), healthEstimateText, drainEstimateText })}
-
         </div>
       </section>
     `;
@@ -1744,8 +1538,12 @@
       renderReview,
       renderCatalogReview,
       renderAftercare,
+      renderPassport,
+      renderUnitPassportCards,
       renderTrackingResult,
       renderTimeline,
+      structuredMeasurements,
+      unitInspection,
     },
   };
 })();

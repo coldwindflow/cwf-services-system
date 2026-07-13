@@ -1394,25 +1394,6 @@ p { margin: 0; }
   margin-top: 5px;
   white-space: pre-wrap;
 }
-.passport-health-bar {
-  height: 12px;
-  overflow: hidden;
-  border-radius: var(--radius-pill);
-  background: #dbe7f7;
-}
-.passport-health-bar span {
-  display: block;
-  height: 100%;
-  min-width: 8px;
-  border-radius: inherit;
-  background: linear-gradient(90deg, #0b4bb3, #19b36b);
-}
-.passport-health-bar.is-watch span { background: linear-gradient(90deg, #ffcc00, #ff9f1c); }
-.passport-health-bar.is-alert span { background: linear-gradient(90deg, #f97316, #dc2626); }
-.passport-health-bar.is-unknown span { background: #94a3b8; }
-.passport-muted-card {
-  background: linear-gradient(180deg, #f8fbff, #ffffff);
-}
 .passport-warranty-card {
   background: linear-gradient(180deg, #fffdf0, #ffffff);
 }
@@ -1525,7 +1506,7 @@ p { margin: 0; }
   border: 1px solid rgba(11, 75, 179, 0.14);
   border-top: 0;
   border-radius: 0 0 18px 18px;
-  background: #ffffff;
+  background: #f6f9fd;
   box-shadow: 0 16px 34px -28px rgba(6, 24, 47, 0.5);
 }
 .passport-unit-page.is-active {
@@ -1557,43 +1538,15 @@ p { margin: 0; }
   font-weight: 800;
   line-height: 1.35;
 }
-.unit-score-block {
-  display: grid;
-  gap: 2px;
-  min-width: 74px;
-  text-align: right;
-}
-.unit-score-number {
-  color: #047857;
-  font-size: 27px;
-  font-weight: 950;
-  line-height: 1;
-  letter-spacing: 0;
-}
-.unit-score-label {
-  color: #047857;
-  font-size: 12px;
-  font-weight: 950;
-  line-height: 1.3;
-}
-.passport-unit-page.is-watch .unit-score-number,
-.passport-unit-page.is-watch .unit-score-label { color: #9a6500; }
-.passport-unit-page.is-warning .unit-score-number,
-.passport-unit-page.is-warning .unit-score-label { color: #c2410c; }
-.passport-unit-page.is-critical .unit-score-number,
-.passport-unit-page.is-critical .unit-score-label { color: #b91c1c; }
-.passport-unit-page.is-unknown .unit-score-number,
-.passport-unit-page.is-unknown .unit-score-label { color: #475569; }
 .passport-unit-dashboard {
   display: grid;
-  gap: 0;
-  padding: 0 14px 14px;
+  gap: 12px;
+  padding: 12px;
 }
 .unit-overall-summary {
   display: grid;
-  gap: 6px;
-  padding: 13px 0;
-  border-bottom: 1px solid rgba(11, 75, 179, 0.1);
+  gap: 4px;
+  padding: 0 2px;
 }
 .unit-overall-summary span,
 .unit-overall-summary strong {
@@ -1613,156 +1566,192 @@ p { margin: 0; }
   font-weight: 750;
   line-height: 1.5;
 }
-.unit-health-grid {
-  display: grid;
-  gap: 0;
-}
-.unit-health-row {
-  display: grid;
-  gap: 5px;
-  padding: 10px 0;
-  border-bottom: 1px solid rgba(11, 75, 179, 0.1);
-  background: transparent;
-}
-.unit-health-top {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-  align-items: flex-start;
-}
-.unit-health-title {
+.unit-overall-pill {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  max-width: 128px;
+  padding: 6px 10px;
+  border-radius: var(--radius-pill);
+  background: #e9f0f8;
+  color: #38536f;
+  font-size: 12px;
+  font-weight: 950;
+  line-height: 1.2;
+  text-align: center;
+}
+.unit-overall-pill.is-good {
+  background: #dcfce7;
+  color: #047857;
+}
+.unit-overall-pill.is-watch {
+  background: #fef3c7;
+  color: #92400e;
+}
+.unit-overall-pill.is-issue {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+.unit-inspection-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.unit-inspection-item:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+}
+.unit-inspection-item {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr);
+  gap: 8px;
   min-width: 0;
-  gap: 7px;
+  padding: 10px;
+  border: 1px solid #d8e4f0;
+  border-radius: 12px;
+  background: #edf4fb;
+}
+.unit-inspection-icon {
+  width: 10px;
+  height: 10px;
+  margin-top: 4px;
+  border-radius: 50%;
+  background: #64748b;
+  box-shadow: 0 0 0 3px rgba(100, 116, 139, 0.12);
+}
+.unit-inspection-item > div {
+  min-width: 0;
+}
+.unit-inspection-item b,
+.unit-inspection-item strong,
+.unit-inspection-item small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.unit-inspection-item b {
+  color: #173a60;
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1.3;
+}
+.unit-inspection-item strong {
+  margin-top: 2px;
+  color: #38536f;
+  font-size: 13px;
+  font-weight: 950;
+  line-height: 1.25;
+}
+.unit-inspection-item small {
+  margin-top: 3px;
+  color: #52677d;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+.unit-inspection-item.is-good {
+  border-color: #bce8ce;
+  background: #edfbf3;
+}
+.unit-inspection-item.is-good .unit-inspection-icon {
+  background: #16a366;
+  box-shadow: 0 0 0 3px rgba(22, 163, 102, 0.13);
+}
+.unit-inspection-item.is-good strong { color: #047857; }
+.unit-inspection-item.is-issue {
+  border-color: #fecaca;
+  background: #fff1f1;
+}
+.unit-inspection-item.is-issue .unit-inspection-icon {
+  background: #dc2626;
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.12);
+}
+.unit-inspection-item.is-issue strong { color: #b91c1c; }
+.unit-condition-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  padding: 11px 12px;
+  border-left: 4px solid #0b4bb3;
+  border-radius: 10px;
+  background: #fff;
+}
+.unit-condition-summary div {
+  min-width: 0;
+}
+.unit-condition-summary span,
+.unit-condition-summary strong {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.unit-condition-summary span {
+  color: #52677d;
+  font-size: 11px;
+  font-weight: 800;
+}
+.unit-condition-summary strong {
+  margin-top: 2px;
   color: #0a2a57;
   font-size: 13px;
   font-weight: 950;
 }
-.unit-health-title i {
-  display: inline-block;
-  flex: 0 0 10px;
-  width: 10px;
-  height: 10px;
-  border-radius: 999px;
-  background: #19b36b;
-  box-shadow: 0 0 0 4px rgba(25, 179, 107, 0.12);
+.unit-measurements {
+  padding: 12px;
+  border: 1px solid #c9dcf0;
+  border-radius: 12px;
+  background: #fff;
 }
-.unit-health-value,
-.unit-status-pill {
-  flex: 0 0 auto;
-  max-width: 46%;
-  padding: 0;
-  border-radius: 0;
-  background: transparent;
-  color: #047857;
-  font-size: 11px;
-  font-weight: 950;
+.unit-measurements h4 {
+  margin: 0 0 8px;
+  color: #0a2a57;
+  font-size: 14px;
+}
+.unit-measurements > div {
+  display: grid;
+  gap: 7px;
+}
+.unit-measurements span {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  color: #52677d;
+  font-size: 12px;
+}
+.unit-measurements strong {
+  color: #0a2a57;
   text-align: right;
-  line-height: 1.25;
-  overflow-wrap: anywhere;
 }
-.unit-health-row.is-watch .unit-health-title i { background: #facc15; box-shadow: 0 0 0 4px rgba(250, 204, 21, 0.16); }
-.unit-health-row.is-warning .unit-health-title i { background: #f97316; box-shadow: 0 0 0 4px rgba(249, 115, 22, 0.14); }
-.unit-health-row.is-critical .unit-health-title i { background: #dc2626; box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.14); }
-.unit-health-row.is-unknown .unit-health-title i { background: #64748b; box-shadow: 0 0 0 4px rgba(100, 116, 139, 0.12); }
-.unit-health-row.is-watch .unit-health-value,
-.unit-health-row.is-watch .unit-status-pill { color: #9a6500; }
-.unit-health-row.is-warning .unit-health-value,
-.unit-health-row.is-warning .unit-status-pill { color: #c2410c; }
-.unit-health-row.is-critical .unit-health-value,
-.unit-health-row.is-critical .unit-status-pill { color: #b91c1c; }
-.unit-health-row.is-unknown .unit-health-value,
-.unit-health-row.is-unknown .unit-status-pill { color: #475569; }
-.unit-health-row p,
-.unit-health-row small {
-  margin: 0;
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 750;
-  line-height: 1.42;
+.unit-evidence {
+  overflow: hidden;
+  border: 1px solid #d8e4f0;
+  border-radius: 12px;
+  background: #fff;
 }
-.unit-helper-text {
-  opacity: 0.68;
-  font-size: 11px !important;
-  font-weight: 680 !important;
-  line-height: 1.36 !important;
-}
-.unit-badges {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
-}
-.unit-badges span {
-  display: inline-flex;
-  align-items: center;
-  width: fit-content;
-  padding: 6px 9px;
-  border-radius: var(--radius-pill);
-  background: #eef6ff;
-  color: #0b4bb3;
-  font-size: 12px;
-  font-weight: 900;
-  text-decoration: none;
-}
-.unit-badges .is-warning {
-  background: #fff7ed;
-  color: #c2410c;
-}
-.unit-evidence-grid {
+.unit-evidence summary {
   display: grid;
-  gap: 0;
-  border-bottom: 1px solid rgba(11, 75, 179, 0.1);
-}
-.unit-checklist-box,
-.unit-photo-box {
-  display: grid;
-  gap: 7px;
-  padding: 13px 0;
-  border-radius: 0;
-  background: transparent;
-  border: 0;
-}
-.unit-checklist-box + .unit-photo-box {
-  border-top: 1px solid rgba(11, 75, 179, 0.1);
-}
-.unit-checklist-box b,
-.unit-photo-box b {
-  color: #0b4bb3;
-  font-size: 12px;
+  gap: 2px;
+  min-height: 44px;
+  padding: 10px 34px 10px 12px;
+  color: #0a2a57;
+  cursor: pointer;
+  font-size: 13px;
   font-weight: 950;
 }
-.unit-checklist-box p,
-.unit-checklist-box small,
-.unit-photo-box p,
-.passport-unit-dashboard > small {
-  display: block;
-  margin: 0;
-  color: var(--muted);
+.unit-evidence summary small {
+  color: #52677d;
+  font-size: 11px;
+  font-weight: 750;
+  line-height: 1.3;
+}
+.unit-evidence-body {
+  padding: 0 12px 12px;
+  border-top: 1px solid #e5edf5;
+}
+.unit-evidence-body > p {
+  margin: 10px 0 0;
+  color: #52677d;
   font-size: 12px;
   font-weight: 750;
-  line-height: 1.5;
-}
-.passport-unit-dashboard > small {
-  padding-top: 13px;
-}
-.passport-unit-stats {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 12px;
-}
-.passport-unit-stats span {
-  padding: 0;
-  border-radius: 0;
-  background: transparent;
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 850;
-  text-align: left;
-}
-.passport-unit-stats b {
-  color: #0b4bb3;
-  font-size: 15px;
+  line-height: 1.45;
 }
 .passport-unit-photos {
   display: grid;
@@ -1822,12 +1811,6 @@ p { margin: 0; }
   .passport-warranty-lists {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  .unit-health-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .unit-evidence-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
   .passport-unit-head {
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: start;
@@ -1852,22 +1835,6 @@ p { margin: 0; }
     min-height: 42px;
     padding: 8px 0 11px;
     font-size: 12px;
-  }
-  .unit-score-block {
-    min-width: 64px;
-  }
-  .unit-score-number {
-    font-size: 25px;
-  }
-  .unit-health-top {
-    align-items: flex-start;
-  }
-  .unit-health-value,
-  .unit-status-pill {
-    max-width: 48%;
-  }
-  .passport-unit-stats {
-    grid-template-columns: 1fr;
   }
   .passport-unit-photos {
     grid-template-columns: repeat(2, minmax(0, 1fr));

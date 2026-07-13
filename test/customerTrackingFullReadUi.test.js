@@ -87,6 +87,193 @@ function codeReadPayload() {
   };
 }
 
+function completedHealthPayload(overrides = {}) {
+  return {
+    ...codeReadPayload(),
+    job_status: "เสร็จแล้ว",
+    finished_at: "2026-07-15T11:00:00+07:00",
+    units: [{
+      unit_no: 1,
+      unit_code: "AC-01",
+      label: "เครื่องที่ 1 / ห้องนอน",
+      ac_type: "ผนัง",
+      btu: 18000,
+      service_type: "ล้างปกติ",
+      checklist_summary: {
+        pre_completed: true,
+        post_completed: true,
+        issue_count: 0,
+        post_issue_count: 0,
+        metric_statuses: {
+          refrigerant: "normal",
+          cooling: "normal",
+          airflow: "normal",
+          drain: "normal",
+        },
+      },
+      photos: [
+        { url: "https://example.test/pressure.jpg", phase: "pressure" },
+        { url: "https://example.test/temp.jpg", phase: "temp" },
+      ],
+    }],
+    ...overrides,
+  };
+}
+
+const FORBIDDEN_HEALTH_COPY = [
+  "รอข้อมูลประเมิน",
+  "ไม่มีค่าวัด",
+  "ยังไม่มีข้อมูลวัดจริง",
+  "ยังไม่มีค่าที่วัดจริง",
+  "ค่า PSI จะแสดงเมื่อช่างบันทึก",
+  "จะแสดงค่าตัวเลขเมื่อ",
+  "ยังไม่มี delta T",
+  "ไม่ใช่ค่าที่วัดด้วยเกจ",
+  "ไม่ใช่ค่า Delta T",
+  "ไม่ใช่ค่าที่วัดด้วยเครื่องมือ",
+  "ประเมินจากเช็คลิสต์ ยังไม่มีค่าที่ช่างวัดเป็นตัวเลข",
+  "ไม่รวมค่าน้ำยาและอุณหภูมิ เพราะยังไม่มีค่าที่วัดจริง",
+  "REFRIGERANT / PSI",
+  "TEMPERATURE",
+];
+
+test("completed normal checklist renders one compact green inspection grid without empty measurements", () => {
+  const app = loadTrackingRuntime();
+  const html = app.tracking._test.renderPassport(completedHealthPayload());
+  assert.equal((html.match(/unit-inspection-item is-good/g) || []).length, 4);
+  assert.match(html, /ระบบน้ำยา/);
+  assert.match(html, /ความเย็น/);
+  assert.match(html, /แรงลม/);
+  assert.match(html, /ระบบน้ำทิ้ง/);
+  assert.equal((html.match(/ผลตรวจหลังบริการ/g) || []).length, 1);
+  assert.doesNotMatch(html, /data-unit-measurements/);
+  assert.doesNotMatch(html, /passport-muted-card/);
+  for (const copy of FORBIDDEN_HEALTH_COPY) assert.doesNotMatch(html, new RegExp(copy));
+  assert.ok(html.indexOf("passport-units-card") < html.indexOf("passport-warranty-card"));
+});
+
+test("pressure and temperature photos remain secondary evidence and never override normal status", () => {
+  const app = loadTrackingRuntime();
+  const html = app.tracking._test.renderPassport(completedHealthPayload());
+  assert.equal((html.match(/unit-inspection-item is-good/g) || []).length, 4);
+  assert.match(html, /รูปตรวจเพิ่มเติม 2/);
+  assert.doesNotMatch(html, /data-unit-measurements/);
+});
+
+test("a classified issue warns only its metric while unconfirmed metrics remain neutral", () => {
+  const app = loadTrackingRuntime();
+  const data = completedHealthPayload();
+  data.units[0].checklist_summary = {
+    pre_completed: true,
+    post_completed: true,
+    issue_count: 1,
+    post_issue_count: 1,
+    metric_statuses: { refrigerant: null, cooling: "issue", airflow: null, drain: null },
+  };
+  const html = app.tracking._test.renderPassport(data);
+  assert.equal((html.match(/unit-inspection-item is-issue/g) || []).length, 1);
+  assert.equal((html.match(/unit-inspection-item/g) || []).length, 1);
+  assert.match(html, /data-metric="cooling"[\s\S]*?ควรตรวจเพิ่มเติม/);
+  assert.doesNotMatch(html, /data-metric="(?:refrigerant|airflow|drain)"/);
+  assert.doesNotMatch(html, /ไม่มีข้อมูลแสดง/);
+});
+
+test("known cooling issue plus normal drain renders only those two metrics", () => {
+  const app = loadTrackingRuntime();
+  const data = completedHealthPayload();
+  data.units[0].checklist_summary = {
+    pre_completed: true,
+    post_completed: true,
+    issue_count: 1,
+    post_issue_count: 1,
+    metric_statuses: { refrigerant: null, cooling: "issue", airflow: null, drain: "normal" },
+  };
+  const html = app.tracking._test.renderPassport(data);
+  assert.equal((html.match(/unit-inspection-item/g) || []).length, 2);
+  assert.match(html, /data-metric="cooling"/);
+  assert.match(html, /data-metric="drain"/);
+  assert.doesNotMatch(html, /data-metric="(?:refrigerant|airflow)"/);
+});
+
+test("three known metrics render three cards without a placeholder fourth card", () => {
+  const app = loadTrackingRuntime();
+  const data = completedHealthPayload();
+  data.units[0].checklist_summary = {
+    pre_completed: true,
+    post_completed: true,
+    issue_count: 1,
+    post_issue_count: 1,
+    metric_statuses: { refrigerant: "normal", cooling: "issue", airflow: null, drain: "normal" },
+  };
+  const html = app.tracking._test.renderPassport(data);
+  assert.equal((html.match(/unit-inspection-item/g) || []).length, 3);
+  assert.doesNotMatch(html, /data-metric="airflow"/);
+  assert.doesNotMatch(html, /ไม่มีข้อมูลแสดง/);
+});
+
+test("unknown completed issue uses one neutral summary instead of four no-data cards", () => {
+  const app = loadTrackingRuntime();
+  const data = completedHealthPayload();
+  data.units[0].checklist_summary = {
+    pre_completed: true,
+    post_completed: true,
+    issue_count: 1,
+    post_issue_count: 1,
+    metric_statuses: { refrigerant: null, cooling: null, airflow: null, drain: null },
+  };
+  const html = app.tracking._test.renderPassport(data);
+  assert.doesNotMatch(html, /unit-inspection-item/);
+  assert.equal((html.match(/ไม่มีข้อมูลแสดงในรายงานส่วนนี้/g) || []).length, 1);
+});
+
+test("pre-service issue cannot warn a completed clean after-service report or evidence", () => {
+  const app = loadTrackingRuntime();
+  const data = completedHealthPayload();
+  data.units[0].checklist_summary = {
+    pre_completed: true,
+    post_completed: true,
+    issue_count: 1,
+    post_issue_count: 0,
+    metric_statuses: { refrigerant: "normal", cooling: "normal", airflow: "normal", drain: "normal" },
+  };
+  const html = app.tracking._test.renderPassport(data);
+  assert.match(html, /unit-overall-pill is-good">ปกติ/);
+  assert.match(html, /ตรวจครบแล้ว · ไม่พบรายการผิดปกติ/);
+  assert.doesNotMatch(html, /พบ 1 รายการที่ควรติดตาม/);
+});
+
+test("structured numeric measurements render only when finite values actually exist", () => {
+  const app = loadTrackingRuntime();
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(app.tracking._test.structuredMeasurements({ measurements: {} }))),
+    [],
+  );
+  const values = app.tracking._test.structuredMeasurements({
+    measurements: { refrigerant_psi: 135, supply_air_c: 12, return_air_c: 27, delta_t_c: 15 },
+  });
+  assert.deepEqual(JSON.parse(JSON.stringify(values.map((item) => [item.key, item.value]))), [
+    ["refrigerant_psi", 135],
+    ["supply_air_c", 12],
+    ["return_air_c", 27],
+    ["delta_t_c", 15],
+  ]);
+});
+
+test("in-progress checklist without post completion stays neutral", () => {
+  const app = loadTrackingRuntime();
+  const data = completedHealthPayload({ job_status: "กำลังดำเนินการ", finished_at: null });
+  data.units[0].checklist_summary = {
+    pre_completed: true,
+    post_completed: false,
+    issue_count: 1,
+    post_issue_count: 0,
+    metric_statuses: { refrigerant: null, cooling: null, airflow: null, drain: null },
+  };
+  const html = app.tracking._test.renderPassport(data);
+  assert.match(html, /กำลังตรวจสอบ/);
+  assert.doesNotMatch(html, /unit-inspection-item is-good/);
+});
+
 test("code-only result renders full read details but no document or write controls", () => {
   const app = loadTrackingRuntime();
   app.state.tracking = { status: "success", data: codeReadPayload(), error: "" };
@@ -357,7 +544,7 @@ test("tracking UI exposes loading, not-found, rate-limit and offline states", ()
 });
 
 test("tracking assets share the full-read cache build id", () => {
-  const build = "20260714_home_six_card_rotation_v1";
+  const build = "20260714_tracking_health_passport_v1";
   for (const file of [
     "customer-app/index.html",
     "customer-app/sw.js",
@@ -382,4 +569,9 @@ test("tracking mobile CSS provides 360/390-safe wrapping and touch targets", () 
   assert.match(css, /\.tracking-copy-btn \{[\s\S]*?min-height: 44px/);
   assert.match(css, /\.tracking-code-pill \{[\s\S]*?overflow-wrap: anywhere/);
   assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
+  assert.match(css, /\.unit-inspection-grid \{[\s\S]*?grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/);
+  assert.match(css, /\.unit-inspection-item:last-child:nth-child\(odd\) \{[\s\S]*?grid-column: 1 \/ -1/);
+  assert.match(css, /\.unit-inspection-item \{[\s\S]*?min-width: 0/);
+  assert.match(css, /\.unit-evidence summary \{[\s\S]*?min-height: 44px/);
+  assert.match(css, /\.passport-shell \{[\s\S]*?overflow: hidden/);
 });

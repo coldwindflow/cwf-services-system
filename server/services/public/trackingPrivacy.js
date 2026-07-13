@@ -16,6 +16,91 @@
 
 const crypto = require("crypto");
 
+const TRACKING_METRIC_KEYS = Object.freeze(["refrigerant", "cooling", "airflow", "drain"]);
+const TRACKING_METRIC_PATTERNS = Object.freeze({
+  refrigerant: [/น้ำยา/u, /แรงดัน/u, /\bpressure\b/i, /\bpsi\b/i, /\brefrigerant\b/i, /\bgas\b/i],
+  cooling: [/ความเย็น/u, /ไม่เย็น/u, /เย็นช้า/u, /\bcooling\b/i, /\btemperature\b/i, /\btemp\b/i, /\bdelta\s*t\b/i],
+  airflow: [/แรงลม/u, /ลมเบา/u, /ลมไม่ออก/u, /\bfan\b/i, /\bairflow\b/i, /\bblower\b/i],
+  drain: [/น้ำหยด/u, /น้ำทิ้ง/u, /ระบายน้ำ/u, /ท่อตัน/u, /ถาดน้ำ/u, /\bdrain(?:age)?\b/i, /(?:น้ำ.*(?:รั่ว|หยด)|(?:รั่ว|หยด).*น้ำ)/u],
+});
+
+function normalizedChecklistText(value) {
+  return String(value == null ? "" : value).normalize("NFC").toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function checklistRowOutcome(row) {
+  const source = row && typeof row === "object" ? row : {};
+  if (source.issue === true) return "issue";
+  const status = normalizedChecklistText(source.status);
+  if (["ผิดปกติ", "issue", "abnormal", "fail", "failed", "ควรตรวจ", "พบปัญหาใหม่", "มีปัญหาอยู่ก่อน"].includes(status)) return "issue";
+  if (["ปกติ", "normal", "ok", "pass", "passed"].includes(status)) return "normal";
+  if (source.checked === true && source.issue !== true) return "normal";
+  return null;
+}
+
+function checklistRowMetricKeys(row) {
+  const source = row && typeof row === "object" ? row : {};
+  const primary = normalizedChecklistText([
+    source.key,
+    source.metric_key,
+    source.code,
+    source.label,
+    source.name,
+  ].filter(Boolean).join(" "));
+  const match = (text) => TRACKING_METRIC_KEYS.filter((key) => TRACKING_METRIC_PATTERNS[key].some((pattern) => pattern.test(text)));
+  const primaryMatches = match(primary);
+  if (primaryMatches.length) return primaryMatches;
+  return match(normalizedChecklistText(source.note));
+}
+
+function summarizeUnitChecklists(checks) {
+  const rows = Array.isArray(checks) ? checks : [];
+  let preCompleted = false;
+  let postCompleted = false;
+  let issueCount = 0;
+  const postRows = [];
+
+  for (const check of rows) {
+    const source = check && typeof check === "object" ? check : {};
+    const type = normalizedChecklistText(source.checklist_type);
+    const completed = Boolean(source.completed_at);
+    const checklistRows = Array.isArray(source.checklist_json) ? source.checklist_json : [];
+    if (type === "pre" && completed) preCompleted = true;
+    if (type === "post" && completed) {
+      postCompleted = true;
+      postRows.push(...checklistRows);
+    }
+    issueCount += checklistRows.reduce((total, item) => total + (checklistRowOutcome(item) === "issue" ? 1 : 0), 0);
+  }
+
+  const postIssueCount = postRows.reduce(
+    (total, item) => total + (checklistRowOutcome(item) === "issue" ? 1 : 0),
+    0,
+  );
+  const metricStatuses = Object.fromEntries(TRACKING_METRIC_KEYS.map((key) => [key, null]));
+  if (postCompleted) {
+    if (postIssueCount === 0) {
+      TRACKING_METRIC_KEYS.forEach((key) => { metricStatuses[key] = "normal"; });
+    } else {
+      for (const item of postRows) {
+        const outcome = checklistRowOutcome(item);
+        if (!outcome) continue;
+        for (const key of checklistRowMetricKeys(item)) {
+          if (outcome === "issue" || metricStatuses[key] == null) metricStatuses[key] = outcome;
+        }
+      }
+    }
+  }
+
+  return {
+    pre_completed: preCompleted,
+    post_completed: postCompleted,
+    issue_count: issueCount,
+    post_issue_count: postIssueCount,
+    metric_statuses: metricStatuses,
+  };
+}
+
 // Constant-time string comparison (length leak is fine — both sides are
 // non-secret formats; we only care about content comparison).
 function timingSafeEqualStr(a, b) {
@@ -77,6 +162,11 @@ function publicTechnician(technician) {
 
 function publicUnit(unit) {
   if (!unit || typeof unit !== "object") return null;
+  const statuses = unit.checklist_summary && unit.checklist_summary.metric_statuses;
+  const publicStatuses = Object.fromEntries(TRACKING_METRIC_KEYS.map((key) => {
+    const status = statuses && (statuses[key] === "normal" || statuses[key] === "issue") ? statuses[key] : null;
+    return [key, status];
+  }));
   return {
     unit_no: unit.unit_no == null ? null : unit.unit_no,
     unit_code: unit.unit_code || null,
@@ -89,6 +179,8 @@ function publicUnit(unit) {
           pre_completed: unit.checklist_summary.pre_completed === true,
           post_completed: unit.checklist_summary.post_completed === true,
           issue_count: Number(unit.checklist_summary.issue_count || 0),
+          post_issue_count: Number(unit.checklist_summary.post_issue_count || 0),
+          metric_statuses: publicStatuses,
         }
       : null,
     photos: Array.isArray(unit.photos) ? unit.photos.map(publicPhoto).filter(Boolean) : [],
@@ -243,5 +335,6 @@ module.exports = {
   maskPhone,
   redactPublicTrackPayload,
   shortenAddress,
+  summarizeUnitChecklists,
   timingSafeEqualStr,
 };
