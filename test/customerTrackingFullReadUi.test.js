@@ -8,6 +8,7 @@ const vm = require("node:vm");
 
 const ROOT = path.resolve(__dirname, "..");
 const TRACKING_SOURCE = fs.readFileSync(path.join(ROOT, "customer-app/modules/tracking.js"), "utf8");
+const CSS_SOURCE = fs.readFileSync(path.join(ROOT, "customer-app/assets/customer-app.css"), "utf8");
 
 function escapeHtml(value) {
   return String(value == null ? "" : value)
@@ -150,6 +151,96 @@ test("completed normal checklist renders one compact green inspection grid witho
   assert.doesNotMatch(html, /passport-muted-card/);
   for (const copy of FORBIDDEN_HEALTH_COPY) assert.doesNotMatch(html, new RegExp(copy));
   assert.ok(html.indexOf("passport-units-card") < html.indexOf("passport-warranty-card"));
+});
+
+test("wall next-service guidance follows deterministic elapsed-day bands", () => {
+  const app = loadTrackingRuntime();
+  const data = completedHealthPayload();
+  const profile = app.tracking._test.serviceProfile(data);
+  const cases = [
+    [60, /ยังไม่ถึงรอบล้าง/, /ล้างธรรมดา.*4–5 เดือน/],
+    [150, /ล้างธรรมดา/, /4–5 เดือน/],
+    [210, /ล้างพรีเมียม/, /6–8 เดือน/],
+    [300, /ประเมินล้างแขวนคอยล์/, /9–12 เดือน/],
+    [390, /ประเมินล้างแขวนคอยล์หรือตัดล้าง/, /ไม่ฟันธงจากเวลา/],
+  ];
+  for (const [elapsedDays, label, reason] of cases) {
+    const guidance = app.tracking._test.nextServiceGuidance(data, data.units[0], profile, { elapsedDays });
+    assert.match(guidance.label, label, `${elapsedDays} days`);
+    assert.match(guidance.reason, reason, `${elapsedDays} days`);
+  }
+  const html = app.tracking._test.renderNextServiceGuidance(
+    app.tracking._test.nextServiceGuidance(data, data.units[0], profile, { elapsedDays: 150 }),
+  );
+  assert.match(html, /คำแนะนำเบื้องต้น ควรพิจารณาอาการจริงร่วมด้วย/);
+});
+
+test("non-wall and missing-date next-service guidance fail closed", () => {
+  const app = loadTrackingRuntime();
+  const data = completedHealthPayload();
+  const profile = app.tracking._test.serviceProfile(data);
+  for (const acType of ["สี่ทิศทาง", "แขวน", "เปลือยใต้ฝ้า", "ไม่ทราบ"] ) {
+    const unit = { ...data.units[0], ac_type: acType };
+    const guidance = app.tracking._test.nextServiceGuidance(data, unit, profile, { elapsedDays: 300 });
+    assert.match(guidance.reason, /ล้างให้ตรงชนิดเครื่องและให้ทีมประเมินรูปแบบหน้างาน/);
+    assert.doesNotMatch(`${guidance.label} ${guidance.reason}`, /ล้างพรีเมียม|แขวนคอยล์|ตัดล้าง/);
+  }
+  const missing = app.tracking._test.nextServiceGuidance(data, data.units[0], profile, { elapsedDays: null });
+  assert.equal(missing.tone, "neutral");
+  assert.match(missing.reason, /ยังไม่มีวันที่จบงานนี้สำหรับประเมินรอบบริการครั้งถัดไป/);
+});
+
+test("cooling and refrigerant issues recommend repair-first without using raw notes", () => {
+  const app = loadTrackingRuntime();
+  for (const key of ["cooling", "refrigerant"]) {
+    const data = completedHealthPayload();
+    data.technician_note = "ข้อความภายในที่ต้องไม่ใช้วินิจฉัย";
+    data.units[0].checklist_summary.post_issue_count = 1;
+    data.units[0].checklist_summary.metric_statuses = { refrigerant: null, cooling: null, airflow: null, drain: null, [key]: "issue" };
+    const profile = app.tracking._test.serviceProfile(data);
+    const guidance = app.tracking._test.nextServiceGuidance(data, data.units[0], profile, { elapsedDays: 150 });
+    assert.equal(guidance.tone, "repair");
+    assert.match(guidance.label, /ตรวจเช็คระบบก่อน/);
+    assert.doesNotMatch(guidance.label, /ล้างธรรมดา/);
+    assert.doesNotMatch(JSON.stringify(guidance), /ข้อความภายใน/);
+  }
+});
+
+test("drain airflow and unclassified issues use cautious customer-safe guidance", () => {
+  const app = loadTrackingRuntime();
+  const cases = [
+    ["drain", /ระบบน้ำทิ้ง/],
+    ["airflow", /ตรวจสภาพก่อนเลือกล้าง/],
+  ];
+  for (const [key, expected] of cases) {
+    const data = completedHealthPayload();
+    data.units[0].checklist_summary.post_issue_count = 1;
+    data.units[0].checklist_summary.metric_statuses = { refrigerant: null, cooling: null, airflow: null, drain: null, [key]: "issue" };
+    const guidance = app.tracking._test.nextServiceGuidance(data, data.units[0], app.tracking._test.serviceProfile(data), { elapsedDays: 300 });
+    assert.equal(guidance.tone, "watch");
+    assert.match(`${guidance.label} ${guidance.reason}`, expected);
+    if (key === "drain") assert.doesNotMatch(guidance.label, /แขวนคอยล์/);
+  }
+  const unknown = completedHealthPayload();
+  unknown.units[0].checklist_summary.post_issue_count = 1;
+  unknown.units[0].checklist_summary.metric_statuses = { refrigerant: null, cooling: null, airflow: null, drain: null };
+  const guidance = app.tracking._test.nextServiceGuidance(unknown, unknown.units[0], app.tracking._test.serviceProfile(unknown), null);
+  assert.equal(guidance.tone, "neutral");
+  assert.match(guidance.label, /ให้ทีมประเมินอาการ/);
+});
+
+test("Health Passport renders finite motion hooks while warranty and capability gates remain intact", () => {
+  const app = loadTrackingRuntime();
+  const html = app.tracking._test.renderPassport(completedHealthPayload());
+  assert.match(html, /passport-shell has-health-motion/);
+  assert.match(html, /data-health-motion/);
+  assert.match(html, /data-health-reveal/);
+  assert.match(html, /data-next-service-guidance/);
+  assert.match(html, /passport-warranty-card/);
+  assert.match(CSS_SOURCE, /@keyframes health-ring-sweep/);
+  assert.match(CSS_SOURCE, /@keyframes health-item-in/);
+  assert.match(CSS_SOURCE, /prefers-reduced-motion: reduce/);
+  assert.doesNotMatch(TRACKING_SOURCE, /setInterval\s*\(/);
 });
 
 test("cleanliness recommendation is deterministic from last-cleaned date and score", () => {
@@ -679,7 +770,7 @@ test("tracking UI exposes loading, not-found, rate-limit and offline states", ()
 });
 
 test("tracking assets share the full-read cache build id", () => {
-  const build = "20260714_tracking_cleanliness_donut_v1";
+  const build = "20260714_customer_smart_advisor_motion_v1";
   for (const file of [
     "customer-app/index.html",
     "customer-app/sw.js",

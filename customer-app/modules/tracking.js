@@ -469,7 +469,7 @@
 
   function metricStatusCard(metric) {
     return `
-      <div class="unit-inspection-item is-${metric.tone}" data-metric="${esc(metric.key)}">
+      <div class="unit-inspection-item is-${metric.tone}" data-metric="${esc(metric.key)}" data-health-reveal>
         <span class="unit-inspection-icon" aria-hidden="true"></span>
         <div>
           <b>${esc(metric.label)}</b>
@@ -480,7 +480,118 @@
     `;
   }
 
-  function renderCleanlinessHighlight(model) {
+  function trackingAcType(unit) {
+    const value = clean(unit && unit.ac_type).toLowerCase();
+    if (/ผนัง|wall/.test(value)) return "wall";
+    if (/สี่ทิศ|four.?way|cassette/.test(value)) return "fourway";
+    if (/เปลือยใต้ฝ้า|ใต้ฝ้า|ceiling|concealed|duct/.test(value)) return "ceiling";
+    if (/แขวน|hanging/.test(value)) return "hanging";
+    return "unknown";
+  }
+
+  function nextServiceGuidance(data, unit, profile, cleanliness) {
+    const inspection = unitInspection(data, unit || { checklist_summary: {} });
+    const issueKeys = inspection.metrics.filter((metric) => metric.status === "issue").map((metric) => metric.key);
+    if (issueKeys.includes("refrigerant") || issueKeys.includes("cooling")) {
+      return {
+        tone: "repair",
+        label: "ครั้งถัดไปแนะนำ: ตรวจเช็คระบบก่อน",
+        reason: "พบผลตรวจด้านความเย็นหรือระบบน้ำยา ควรตรวจหาสาเหตุก่อนเลือกวิธีล้าง",
+      };
+    }
+    if (issueKeys.includes("drain")) {
+      return {
+        tone: "watch",
+        label: "ครั้งถัดไปแนะนำ: ประเมินระบบน้ำทิ้ง",
+        reason: "ควรตรวจการระบายน้ำและสภาพหน้างานก่อนเลือกรอบล้างครั้งถัดไป",
+      };
+    }
+    if (issueKeys.includes("airflow")) {
+      return {
+        tone: "watch",
+        label: "ครั้งถัดไปแนะนำ: ตรวจสภาพก่อนเลือกล้าง",
+        reason: "ผลตรวจแรงลมควรใช้ร่วมกับสภาพคอยล์และอาการจริงก่อนเลือกระดับการล้าง",
+      };
+    }
+    if (inspection.postIssueCount > 0) {
+      return {
+        tone: "neutral",
+        label: "ครั้งถัดไปแนะนำ: ให้ทีมประเมินอาการ",
+        reason: "มีรายการที่ควรติดตามแต่ยังระบุประเภทไม่ได้ จึงไม่ควรฟันธงรูปแบบบริการ",
+      };
+    }
+    const elapsedDays = cleanliness && Number.isFinite(cleanliness.elapsedDays) ? cleanliness.elapsedDays : null;
+    if (elapsedDays == null) {
+      return {
+        tone: "neutral",
+        label: "ครั้งถัดไปแนะนำ: ยังประเมินรอบบริการไม่ได้",
+        reason: "ยังไม่มีวันที่จบงานนี้สำหรับประเมินรอบบริการครั้งถัดไป",
+      };
+    }
+    if (trackingAcType(unit) !== "wall") {
+      let timing = "ยังไม่ถึงรอบล้าง";
+      let tone = "good";
+      if (elapsedDays >= 120 && elapsedDays <= 255) {
+        timing = "เริ่มเข้าใกล้รอบบริการ";
+        tone = "watch";
+      } else if (elapsedDays > 255) {
+        timing = "ควรตรวจสภาพเพื่อวางแผนบริการ";
+        tone = "due";
+      }
+      return {
+        tone,
+        label: `ครั้งถัดไปแนะนำ: ${timing}`,
+        reason: "แนะนำล้างให้ตรงชนิดเครื่องและให้ทีมประเมินรูปแบบหน้างาน",
+      };
+    }
+    if (elapsedDays < 120) {
+      return {
+        tone: "good",
+        label: "ครั้งถัดไปแนะนำ: ยังไม่ถึงรอบล้าง",
+        reason: "แนะนำติดตามสภาพและวางแผนล้างธรรมดาเมื่อครบประมาณ 4–5 เดือน",
+      };
+    }
+    if (elapsedDays <= 165) {
+      return {
+        tone: "good",
+        label: "ครั้งถัดไปแนะนำ: ล้างธรรมดา",
+        reason: "ระยะจากงานนี้อยู่ในรอบดูแลทั่วไปประมาณ 4–5 เดือน",
+      };
+    }
+    if (elapsedDays <= 255) {
+      return {
+        tone: "watch",
+        label: "ครั้งถัดไปแนะนำ: ล้างพรีเมียม",
+        reason: "ระยะจากงานนี้ประมาณ 6–8 เดือน เหมาะกับการดูแลที่ละเอียดขึ้น",
+      };
+    }
+    if (elapsedDays <= 365) {
+      return {
+        tone: "watch",
+        label: "ครั้งถัดไปแนะนำ: ประเมินล้างแขวนคอยล์",
+        reason: "ระยะจากงานนี้ประมาณ 9–12 เดือน ควรตรวจสภาพจริงก่อนเลือกรูปแบบล้าง",
+      };
+    }
+    return {
+      tone: "due",
+      label: "ครั้งถัดไปแนะนำ: ประเมินล้างแขวนคอยล์หรือตัดล้าง",
+      reason: "เกินหนึ่งปีจากงานนี้ ควรให้ทีมเลือกวิธีตามสภาพจริง ไม่ฟันธงจากเวลาเพียงอย่างเดียว",
+    };
+  }
+
+  function renderNextServiceGuidance(guidance) {
+    if (!guidance) return "";
+    return `
+      <div class="next-service-guidance tone-${esc(guidance.tone)}" data-next-service-guidance data-health-reveal>
+        <span>คำแนะนำบริการครั้งถัดไป</span>
+        <strong>${esc(guidance.label)}</strong>
+        <p>${esc(guidance.reason)}</p>
+        <small>คำแนะนำเบื้องต้น ควรพิจารณาอาการจริงร่วมด้วย</small>
+      </div>
+    `;
+  }
+
+  function renderCleanlinessHighlight(model, guidance) {
     if (!model) return "";
     const hasScore = Number.isFinite(model.score);
     const score = hasScore ? Math.max(0, Math.min(100, Math.round(model.score))) : 0;
@@ -489,7 +600,7 @@
       ? `คะแนนสภาพความสะอาดโดยประมาณ ${score} เปอร์เซ็นต์`
       : "ยังไม่มีคะแนนสภาพความสะอาด";
     return `
-      <section class="unit-cleanliness-card tone-${esc(model.tone)}" data-unit-cleanliness>
+      <section class="unit-cleanliness-card tone-${esc(model.tone)}" data-unit-cleanliness data-health-motion>
         <div class="unit-cleanliness-head">
           <div>
             <span>ความสะอาดและรอบล้าง</span>
@@ -516,6 +627,7 @@
             </div>
           </div>
         </div>
+        ${renderNextServiceGuidance(guidance)}
         ${model.elapsedDays == null ? "" : `<small class="cleanliness-basis">อ้างอิงจากวันที่จบงานนี้และประเภทบริการ</small>`}
       </section>
     `;
@@ -580,6 +692,7 @@
             const preview = photos.slice(0, 4);
             const meta = [unit.service_type, unit.ac_type, unit.btu ? `${unit.btu} BTU` : ""].filter(Boolean).join(" · ") || "เครื่องปรับอากาศ";
             const measurements = structuredMeasurements(unit);
+            const nextGuidance = nextServiceGuidance(data, unit, context.profile, context.cleanliness);
             const measurementPhotoCount = phaseCount(photos, "pressure") + phaseCount(photos, "current") + phaseCount(photos, "temp");
             return `
               <section
@@ -600,7 +713,7 @@
                     <p>${esc(inspection.overall.detail)}</p>
                   </div>
                   ${inspection.hasMetricData ? `<div class="unit-inspection-grid">${inspection.metrics.map(metricStatusCard).join("")}</div>` : ""}
-                  ${renderCleanlinessHighlight(context.cleanliness)}
+                  ${renderCleanlinessHighlight(context.cleanliness, nextGuidance)}
                   ${measurements.length ? `
                     <section class="unit-measurements" data-unit-measurements>
                       <h4>ค่าตรวจวัดเพิ่มเติม</h4>
@@ -745,7 +858,7 @@
     const estimateBasis = usesAppointmentEstimate ? "วันนัดหมาย" : "วันที่จบงานนี้";
 
     return `
-      <section class="passport-shell">
+      <section class="passport-shell has-health-motion">
         <div class="passport-hero">
           <span class="passport-kicker">สุขภาพแอร์</span>
           <h2>รายงานสุขภาพแอร์ CWF</h2>
@@ -767,7 +880,7 @@
             ${done && clean(data.technician_note) ? `<div class="passport-note"><b>หมายเหตุจากช่าง</b><p>${esc(data.technician_note)}</p></div>` : ""}
           </article>
 
-          ${renderUnitPassportCards(data, units, { cleanliness })}
+          ${renderUnitPassportCards(data, units, { cleanliness, profile })}
 
           <article class="passport-card passport-warranty-card">
             <div class="passport-card-head">
@@ -1699,6 +1812,8 @@
       renderTimeline,
       cleanlinessRecommendation,
       renderCleanlinessHighlight,
+      nextServiceGuidance,
+      renderNextServiceGuidance,
       serviceProfile,
       structuredMeasurements,
       unitInspection,
