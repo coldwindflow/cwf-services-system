@@ -8,6 +8,7 @@ const vm = require("node:vm");
 
 const ROOT = path.resolve(__dirname, "..");
 const TRACKING_SOURCE = fs.readFileSync(path.join(ROOT, "customer-app/modules/tracking.js"), "utf8");
+const CSS_SOURCE = fs.readFileSync(path.join(ROOT, "customer-app/assets/customer-app.css"), "utf8");
 
 function escapeHtml(value) {
   return String(value == null ? "" : value)
@@ -150,6 +151,69 @@ test("completed normal checklist renders one compact green inspection grid witho
   assert.doesNotMatch(html, /passport-muted-card/);
   for (const copy of FORBIDDEN_HEALTH_COPY) assert.doesNotMatch(html, new RegExp(copy));
   assert.ok(html.indexOf("passport-units-card") < html.indexOf("passport-warranty-card"));
+});
+
+test("normal metrics keep profile-based next-service guidance", () => {
+  const app = loadTrackingRuntime();
+  const data = completedHealthPayload();
+  const profile = app.tracking._test.serviceProfile(data);
+  const cleanliness = app.tracking._test.cleanlinessRecommendation(data.finished_at, 90, profile, new Date("2026-08-15T00:00:00Z").getTime());
+  const guidance = app.tracking._test.nextServiceGuidance(data, data.units[0], profile, cleanliness);
+  assert.equal(guidance.tone, "good");
+  assert.match(guidance.label, /ล้างปกติ/);
+  const html = app.tracking._test.renderNextServiceGuidance(guidance);
+  assert.match(html, /คำแนะนำเบื้องต้น ควรพิจารณาอาการจริงร่วมด้วย/);
+});
+
+test("cooling and refrigerant issues recommend repair-first without using raw notes", () => {
+  const app = loadTrackingRuntime();
+  for (const key of ["cooling", "refrigerant"]) {
+    const data = completedHealthPayload();
+    data.technician_note = "ข้อความภายในที่ต้องไม่ใช้วินิจฉัย";
+    data.units[0].checklist_summary.post_issue_count = 1;
+    data.units[0].checklist_summary.metric_statuses = { refrigerant: null, cooling: null, airflow: null, drain: null, [key]: "issue" };
+    const profile = app.tracking._test.serviceProfile(data);
+    const guidance = app.tracking._test.nextServiceGuidance(data, data.units[0], profile, null);
+    assert.equal(guidance.tone, "repair");
+    assert.match(guidance.label, /ตรวจเช็คระบบก่อน/);
+    assert.doesNotMatch(JSON.stringify(guidance), /ข้อความภายใน/);
+  }
+});
+
+test("drain airflow and unclassified issues use cautious customer-safe guidance", () => {
+  const app = loadTrackingRuntime();
+  const cases = [
+    ["drain", /ระบบน้ำทิ้ง/],
+    ["airflow", /ตรวจสภาพก่อนเลือกล้าง/],
+  ];
+  for (const [key, expected] of cases) {
+    const data = completedHealthPayload();
+    data.units[0].checklist_summary.post_issue_count = 1;
+    data.units[0].checklist_summary.metric_statuses = { refrigerant: null, cooling: null, airflow: null, drain: null, [key]: "issue" };
+    const guidance = app.tracking._test.nextServiceGuidance(data, data.units[0], app.tracking._test.serviceProfile(data), null);
+    assert.equal(guidance.tone, "watch");
+    assert.match(`${guidance.label} ${guidance.reason}`, expected);
+  }
+  const unknown = completedHealthPayload();
+  unknown.units[0].checklist_summary.post_issue_count = 1;
+  unknown.units[0].checklist_summary.metric_statuses = { refrigerant: null, cooling: null, airflow: null, drain: null };
+  const guidance = app.tracking._test.nextServiceGuidance(unknown, unknown.units[0], app.tracking._test.serviceProfile(unknown), null);
+  assert.equal(guidance.tone, "neutral");
+  assert.match(guidance.label, /ให้ทีมประเมินอาการ/);
+});
+
+test("Health Passport renders finite motion hooks while warranty and capability gates remain intact", () => {
+  const app = loadTrackingRuntime();
+  const html = app.tracking._test.renderPassport(completedHealthPayload());
+  assert.match(html, /passport-shell has-health-motion/);
+  assert.match(html, /data-health-motion/);
+  assert.match(html, /data-health-reveal/);
+  assert.match(html, /data-next-service-guidance/);
+  assert.match(html, /passport-warranty-card/);
+  assert.match(CSS_SOURCE, /@keyframes health-ring-sweep/);
+  assert.match(CSS_SOURCE, /@keyframes health-item-in/);
+  assert.match(CSS_SOURCE, /prefers-reduced-motion: reduce/);
+  assert.doesNotMatch(TRACKING_SOURCE, /setInterval\s*\(/);
 });
 
 test("cleanliness recommendation is deterministic from last-cleaned date and score", () => {
@@ -679,7 +743,7 @@ test("tracking UI exposes loading, not-found, rate-limit and offline states", ()
 });
 
 test("tracking assets share the full-read cache build id", () => {
-  const build = "20260714_tracking_cleanliness_donut_v1";
+  const build = "20260714_customer_smart_advisor_motion_v1";
   for (const file of [
     "customer-app/index.html",
     "customer-app/sw.js",

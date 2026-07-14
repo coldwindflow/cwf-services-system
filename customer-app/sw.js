@@ -1,6 +1,6 @@
 "use strict";
 
-const BUILD_ID = "20260714_tracking_cleanliness_donut_v1";
+const BUILD_ID = "20260714_customer_smart_advisor_motion_v1";
 const CACHE_NAME = `cwf-customer-app-v2-${BUILD_ID}`;
 const APP_SHELL = [
   `./index.html?v=${BUILD_ID}`,
@@ -14,6 +14,7 @@ const APP_SHELL = [
   `./modules/api.js?v=${BUILD_ID}`,
   `./modules/pageAvailability.js?v=${BUILD_ID}`,
   `./modules/services.js?v=${BUILD_ID}`,
+  `./modules/advisor.js?v=${BUILD_ID}`,
   `./modules/ui.js?v=${BUILD_ID}`,
   `./modules/store.js?v=${BUILD_ID}`,
   `./modules/auth.js?v=${BUILD_ID}`,

@@ -782,6 +782,18 @@
     return "";
   }
 
+  function renderHomepageSectionsWithAdvisor() {
+    const sections = homepageSections();
+    const rendered = sections.map((section) => ({ section, html: renderHomepageSection(section) })).filter((entry) => entry.html);
+    if (!root.advisor || typeof root.advisor.renderSection !== "function") return rendered.map((entry) => entry.html).join("");
+    const quickIndex = rendered.findIndex((entry) => entry.section.type === "quick");
+    const heroIndex = rendered.findIndex((entry) => entry.section.type === "hero");
+    const insertAfter = quickIndex >= 0 ? quickIndex : heroIndex >= 0 ? heroIndex : -1;
+    const advisorHtml = root.advisor.renderSection(root.state.catalog || { status: "idle", items: [] });
+    if (insertAfter < 0) return `${advisorHtml}${rendered.map((entry) => entry.html).join("")}`;
+    return rendered.map((entry, index) => `${entry.html}${index === insertAfter ? advisorHtml : ""}`).join("");
+  }
+
   function renderAccountShortcut() {
     const customer = root.state.customer;
     if (root.state.authStatus === "loading" && !customer) {
@@ -1062,6 +1074,7 @@
   function bindHomepage(container) {
     bindCommerceHome(container);
     bindHomepageReveal(container);
+    root.advisor?.bind?.(container);
     bindHomepageHeroSliders(container);
     bindHomepagePromoBannerSlider(container);
     bindHomepageFeaturedRotators(container);
@@ -1503,6 +1516,7 @@
       if (card) mount.innerHTML = renderQuickPrice(card);
     });
     bindHomepage(container);
+    root.advisor?.refreshCatalog?.(container);
     // Re-hide any CTA pointing at a disabled route that this refresh re-rendered.
     root.pageAvailability?.applyToDom?.(container);
   }
@@ -1544,7 +1558,8 @@
 
     renderHome(container) {
       cleanupHomepageFeaturedRotators(container);
-      const sectionsHtml = homepageSections().map(renderHomepageSection).filter(Boolean).join("");
+      root.advisor?.cleanup?.(container);
+      const sectionsHtml = renderHomepageSectionsWithAdvisor();
       container.innerHTML = `
         <section class="screen commerce-home homepage-screen">
           ${sectionsHtml}
@@ -1633,6 +1648,7 @@
       featuredCatalogPool,
       buildFeaturedPages,
       renderHomepageHero,
+      renderHomepageSectionsWithAdvisor,
       renderHomepageFeaturedServices,
       openFeaturedContactSheet,
       bindHomepageFeaturedRotators,
@@ -1640,6 +1656,10 @@
     },
   };
 
-  ui.renderHome.onLeave = () => cleanupHomepageFeaturedRotators(document.getElementById("app"));
+  ui.renderHome.onLeave = () => {
+    const container = document.getElementById("app");
+    cleanupHomepageFeaturedRotators(container);
+    root.advisor?.cleanup?.(container);
+  };
   root.ui = ui;
 })();
