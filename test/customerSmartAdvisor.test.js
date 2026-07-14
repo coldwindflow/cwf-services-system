@@ -50,16 +50,19 @@ class FakeClassList {
 }
 
 class FakeElement {
-  constructor(onFocus) {
+  constructor(onFocus, onHtmlChange) {
     this.classList = new FakeClassList();
     this.attributes = new Map();
-    this.innerHTML = "";
+    this._innerHTML = "";
     this.textContent = "";
     this.scrollTop = 99;
     this.hidden = false;
     this.disabled = false;
     this.onFocus = onFocus;
+    this.onHtmlChange = onHtmlChange;
   }
+  get innerHTML() { return this._innerHTML; }
+  set innerHTML(value) { this._innerHTML = String(value); this.onHtmlChange?.(this._innerHTML); }
   setAttribute(name, value) { this.attributes.set(name, String(value)); }
   getAttribute(name) { return this.attributes.get(name) ?? null; }
   removeAttribute(name) { this.attributes.delete(name); }
@@ -74,8 +77,15 @@ class FakeMount {
     this.listeners = new Map();
     this.classList = new FakeClassList();
     this.document = fakeDocument;
+    this.shellWrites = 0;
     this.launcher = new FakeElement((node) => { this.launcherFocuses += 1; if (this.document) this.document.activeElement = node; });
-    this.host = new FakeElement();
+    this.host = new FakeElement(null, () => { this.shellWrites += 1; });
+    this.layer = new FakeElement();
+    this.body = new FakeElement();
+    this.actions = new FakeElement();
+    this.stepLabel = new FakeElement();
+    this.progress = new FakeElement();
+    this.catalog = new FakeElement();
     this.closeButton = new FakeElement((node) => { if (this.document) this.document.activeElement = node; });
     this.nextButton = new FakeElement((node) => { if (this.document) this.document.activeElement = node; });
     this.question = new FakeElement((node) => { this.questionFocuses += 1; if (this.document) this.document.activeElement = node; });
@@ -89,18 +99,24 @@ class FakeMount {
   }
   addEventListener(type, handler) { this.listeners.set(type, handler); }
   removeEventListener(type, handler) { if (this.listeners.get(type) === handler) this.listeners.delete(type); }
+  html() { return [this.host.innerHTML, this.body.innerHTML, this.catalog.innerHTML, this.actions.innerHTML].join(""); }
   querySelector(selector) {
     const open = this.host.innerHTML.includes("data-advisor-dialog");
     if (selector === "[data-advisor-launcher-content]") return this.launcher;
     if (selector === "[data-advisor-sheet-host]") return this.host;
     if (selector === "[data-advisor-launch]") return this.launcher;
-    if (selector === "[data-advisor-backdrop]") return open ? new FakeElement() : null;
+    if (selector === "[data-advisor-backdrop]") return open ? this.layer : null;
     if (selector === "[data-advisor-dialog]") return open ? this.dialog : null;
     if (selector === "[data-advisor-close]") return open ? this.closeButton : null;
     if (selector === "[data-advisor-next]") return open ? this.nextButton : null;
     if (selector === "[data-advisor-scroll]") return open ? this.scroll : null;
-    if (selector === "[data-advisor-question-title]") return open && !this.host.innerHTML.includes("data-advisor-result") ? this.question : null;
-    if (selector === "[data-advisor-result]") return open && this.host.innerHTML.includes("data-advisor-result") ? this.result : null;
+    if (selector === "[data-advisor-body]") return open ? this.body : null;
+    if (selector === "[data-advisor-actions]") return open ? this.actions : null;
+    if (selector === "[data-advisor-step-label]") return open ? this.stepLabel : null;
+    if (selector === "[data-advisor-progress]") return open ? this.progress : null;
+    if (selector === "[data-advisor-catalog]") return open && this.body.innerHTML.includes("data-advisor-catalog") ? this.catalog : null;
+    if (selector === "[data-advisor-question-title]") return open && !this.body.innerHTML.includes("data-advisor-result") ? this.question : null;
+    if (selector === "[data-advisor-result]") return open && this.body.innerHTML.includes("data-advisor-result") ? this.result : null;
     return null;
   }
   querySelectorAll() { return []; }
@@ -334,19 +350,19 @@ test("wizard advances, supports multi-select, refreshes Catalog, resets, and bin
   mount.click({ "data-advisor-repair": "none" });
   mount.click({ "data-advisor-next": "" });
   assert.equal(first.state().recommendation.verdict, "premium_clean");
-  assert.match(mount.host.innerHTML, /กำลังค้นหาบริการที่ตรงจาก Catalog/);
+  assert.match(mount.html(), /กำลังค้นหาบริการที่ตรงจาก Catalog/);
   assert.equal(mount.resultFocuses, 1);
 
   app.state.catalog.status = "success";
   app.state.catalog.items = [catalogItem(2, { booking_wash_variant: "ล้างพรีเมียม", item_name: "ล้างแอร์พรีเมียม" })];
   app.advisor.refreshCatalog(container);
-  assert.match(mount.host.innerHTML, /ล้างแอร์พรีเมียม/);
+  assert.match(mount.html(), /ล้างแอร์พรีเมียม/);
   mount.click({ "data-advisor-back": "" });
   assert.equal(first.state().step, 3);
   mount.click({ "data-advisor-reset": "" });
   assert.equal(first.state().step, 0);
   assert.equal(first.state().recommendation, null);
-  assert.match(mount.host.innerHTML, /แอร์ของคุณเป็นแบบไหน/);
+  assert.match(mount.html(), /แอร์ของคุณเป็นแบบไหน/);
   first.cleanup();
   assert.equal(mount.listeners.size, 0);
 });
@@ -363,7 +379,7 @@ test("launcher opens an accessible sheet and close resumes the saved step", () =
   assert.match(mount.launcher.innerHTML, /aria-expanded="true"/);
   assert.match(mount.host.innerHTML, /role="dialog"/);
   assert.match(mount.host.innerHTML, /aria-modal="true"/);
-  assert.match(mount.host.innerHTML, /data-advisor-ac/);
+  assert.match(mount.html(), /data-advisor-ac/);
   assert.ok(runtime.document.body.classList.contains("has-advisor-sheet"));
   assert.equal(mount.questionFocuses, 1);
 
@@ -383,8 +399,62 @@ test("launcher opens an accessible sheet and close resumes the saved step", () =
 
   mount.click({ "data-advisor-launch": "" });
   assert.equal(controller.state().step, 1);
-  assert.match(mount.host.innerHTML, /data-advisor-months/);
-  assert.doesNotMatch(mount.host.innerHTML, /data-advisor-ac=/);
+  assert.match(mount.html(), /data-advisor-months/);
+  assert.doesNotMatch(mount.html(), /data-advisor-ac=/);
+});
+
+test("sheet shell opens once while steps and Catalog refresh update in place", () => {
+  const runtime = loadAdvisor({ catalog: { status: "loading", items: [] } });
+  const mount = new FakeMount(runtime.document);
+  const container = { querySelector: () => mount };
+  const controller = runtime.app.advisor.bind(container);
+
+  mount.click({ "data-advisor-launch": "" });
+  const openingShell = mount.host.innerHTML;
+  assert.equal(mount.shellWrites, 1);
+  assert.match(openingShell, /advisor-sheet-layer is-opening/);
+  assert.ok(mount.layer.classList.contains("is-opening"));
+
+  mount.click({ "data-advisor-ac": "wall" });
+  mount.click({ "data-advisor-next": "" });
+  assert.equal(mount.shellWrites, 1);
+  assert.equal(mount.host.innerHTML, openingShell);
+  assert.ok(!mount.layer.classList.contains("is-opening"));
+  assert.ok(mount.body.classList.contains("is-step-forward"));
+
+  mount.click({ "data-advisor-back": "" });
+  assert.equal(mount.shellWrites, 1);
+  assert.ok(mount.body.classList.contains("is-step-back"));
+
+  mount.click({ "data-advisor-next": "" });
+  mount.click({ "data-advisor-months": "m4_5" });
+  mount.click({ "data-advisor-next": "" });
+  mount.click({ "data-advisor-symptom": "routine" });
+  mount.click({ "data-advisor-next": "" });
+  mount.click({ "data-advisor-repair": "none" });
+  mount.click({ "data-advisor-next": "" });
+  assert.equal(controller.state().step, 4);
+  assert.equal(mount.shellWrites, 1);
+
+  const focusedBeforeRefresh = new FakeElement();
+  runtime.document.activeElement = focusedBeforeRefresh;
+  mount.scroll.scrollTop = 173;
+  const resultFocuses = mount.resultFocuses;
+  runtime.app.state.catalog.status = "success";
+  runtime.app.state.catalog.items = [catalogItem(1)];
+  runtime.app.advisor.refreshCatalog(container);
+  assert.equal(mount.shellWrites, 1);
+  assert.equal(mount.host.innerHTML, openingShell);
+  assert.equal(mount.scroll.scrollTop, 173);
+  assert.equal(runtime.document.activeElement, focusedBeforeRefresh);
+  assert.equal(mount.resultFocuses, resultFocuses);
+  assert.match(mount.catalog.innerHTML, /data-advisor-product="1"/);
+
+  mount.click({ "data-advisor-close": "" });
+  assert.equal(mount.host.innerHTML, "");
+  mount.click({ "data-advisor-launch": "" });
+  assert.equal(mount.shellWrites, 3);
+  assert.ok(mount.layer.classList.contains("is-opening"));
 });
 
 test("multi-select exclusive choices and Back preserve the existing answers", () => {
@@ -438,7 +508,7 @@ test("closed result stays compact and never exposes Catalog cards on Home", () =
   const controller = runtime.app.advisor.bind({ querySelector: () => mount });
   completeWallStandardAdvisor(mount);
   assert.equal(controller.state().recommendation.verdict, "standard_clean");
-  assert.match(mount.host.innerHTML, /advisor-result-products/);
+  assert.match(mount.html(), /advisor-result-products/);
   mount.click({ "data-advisor-close": "" });
   assert.match(mount.launcher.innerHTML, /ผลล่าสุด/);
   assert.match(mount.launcher.innerHTML, /ดูผลประเมิน/);
@@ -448,7 +518,7 @@ test("closed result stays compact and never exposes Catalog cards on Home", () =
   assert.equal(controller.state().recommendation, null);
   assert.equal(controller.state().step, 0);
   assert.equal(controller.state().isOpen, true);
-  assert.match(mount.host.innerHTML, /data-advisor-ac=/);
+  assert.match(mount.html(), /data-advisor-ac=/);
 });
 
 test("booking handoff routes only after both existing adapters succeed and otherwise contacts", () => {
@@ -542,6 +612,13 @@ test("advisor render contract is accessible, compact, motion-safe, and has no au
   assert.match(CSS_SOURCE, /@keyframes advisor-sheet-up/);
   assert.match(CSS_SOURCE, /@keyframes advisor-question-forward/);
   assert.match(CSS_SOURCE, /@keyframes advisor-result-reveal/);
+  assert.match(CSS_SOURCE, /\.advisor-sheet-layer\.is-opening \{ animation: advisor-backdrop-in/);
+  assert.match(CSS_SOURCE, /\.advisor-sheet-layer\.is-opening \.advisor-sheet \{ animation: advisor-sheet-up/);
+  assert.doesNotMatch(CSS_SOURCE.match(/\.advisor-sheet-layer \{[\s\S]*?\}/)?.[0] || "", /animation:/);
+  assert.doesNotMatch(CSS_SOURCE.match(/\.advisor-sheet \{[\s\S]*?\}/)?.[0] || "", /animation:/);
+  assert.match(CSS_SOURCE, /\.advisor-sheet-body\.is-step-forward > \.advisor-step/);
+  assert.match(CSS_SOURCE, /\.advisor-sheet-body\.is-step-back > \.advisor-step/);
+  assert.match(CSS_SOURCE, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.advisor-sheet-layer[\s\S]*?animation: none !important/);
   assert.doesNotMatch(SOURCE, /setInterval\s*\(/);
   assert.match(SOURCE, /matchMedia\?\.\("\(prefers-reduced-motion: reduce\)"\)/);
   const reduced = loadAdvisor({ reducedMotion: true });

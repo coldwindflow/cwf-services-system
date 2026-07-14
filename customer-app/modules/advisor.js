@@ -495,27 +495,27 @@
     `;
   }
 
-  function sheetHtml(state, catalogState, direction = "forward") {
-    const result = state.step === 4;
-    const stepNumber = result ? 4 : state.step + 1;
+  function sheetProgressHtml(stepNumber) {
+    return [0, 1, 2, 3].map((index) => `<span class="${index < stepNumber ? "is-active" : ""}" ${index === Math.min(stepNumber - 1, 3) ? `aria-current="step"` : ""}></span>`).join("");
+  }
+
+  function sheetHtml() {
     return `
-      <div class="advisor-sheet-layer direction-${esc(direction)}" data-advisor-backdrop>
-        <section class="advisor-sheet" id="advisor-sheet-dialog" data-advisor-dialog data-step="${stepNumber}" role="dialog" aria-modal="true" aria-labelledby="advisor-sheet-title">
+      <div class="advisor-sheet-layer is-opening" data-advisor-backdrop>
+        <section class="advisor-sheet" id="advisor-sheet-dialog" data-advisor-dialog role="dialog" aria-modal="true" aria-labelledby="advisor-sheet-title">
           <header class="advisor-sheet-header">
             <div class="advisor-sheet-brand" aria-hidden="true">${icon("sparkle", 18)}</div>
             <div>
               <h2 id="advisor-sheet-title">ผู้ช่วยเลือกบริการ</h2>
-              <span>${result ? "ผลประเมิน" : `ขั้นที่ ${stepNumber} จาก 4`}</span>
+              <span data-advisor-step-label></span>
             </div>
             <button class="advisor-sheet-close" type="button" data-advisor-close aria-label="ปิดผู้ช่วยเลือกบริการ">×</button>
-            <div class="advisor-sheet-progress" aria-label="ความคืบหน้าการประเมิน">
-              ${[0, 1, 2, 3].map((index) => `<span class="${index < stepNumber ? "is-active" : ""}" ${index === Math.min(stepNumber - 1, 3) ? `aria-current="step"` : ""}></span>`).join("")}
-            </div>
+            <div class="advisor-sheet-progress" data-advisor-progress aria-label="ความคืบหน้าการประเมิน"></div>
           </header>
           <div class="advisor-sheet-scroll" data-advisor-scroll>
-            <div class="advisor-sheet-body" data-advisor-body>${stepContent(state, catalogState)}</div>
+            <div class="advisor-sheet-body" data-advisor-body></div>
           </div>
-          <footer class="advisor-sheet-actions" data-advisor-actions>${sheetActions(state)}</footer>
+          <footer class="advisor-sheet-actions" data-advisor-actions></footer>
         </section>
       </div>
     `;
@@ -555,15 +555,41 @@
         || mount.querySelector("[data-advisor-close]");
       target?.focus?.({ preventScroll: true });
     });
-    const renderSheet = (direction = "forward", focus = true) => {
+    const renderSheet = (direction = "forward", options = {}) => {
       if (destroyed || !isOpen || !mount.isConnected) return;
       const host = sheetHost();
       if (!host) return;
-      host.innerHTML = sheetHtml(state, catalogState(), direction);
+      let dialog = mount.querySelector("[data-advisor-dialog]");
+      const opening = !dialog;
+      if (opening) {
+        host.innerHTML = sheetHtml();
+        dialog = mount.querySelector("[data-advisor-dialog]");
+      }
+      if (!dialog) return;
       mount.classList?.toggle?.("is-sheet-open", true);
+      const result = state.step === 4;
+      const stepNumber = result ? 4 : state.step + 1;
+      const layer = mount.querySelector("[data-advisor-backdrop]");
+      const body = mount.querySelector("[data-advisor-body]");
+      const actions = mount.querySelector("[data-advisor-actions]");
+      const stepLabel = mount.querySelector("[data-advisor-step-label]");
+      const progress = mount.querySelector("[data-advisor-progress]");
+      dialog.setAttribute("data-step", stepNumber);
+      if (stepLabel) stepLabel.textContent = result ? "ผลประเมิน" : `ขั้นที่ ${stepNumber} จาก 4`;
+      if (progress) progress.innerHTML = sheetProgressHtml(stepNumber);
+      if (actions) actions.innerHTML = sheetActions(state);
+      if (body) {
+        body.classList.remove("is-step-forward");
+        body.classList.remove("is-step-back");
+        body.classList.remove("is-refresh");
+        body.classList.add(direction === "back" ? "is-step-back" : direction === "refresh" ? "is-refresh" : "is-step-forward");
+        body.innerHTML = stepContent(state, catalogState());
+      }
+      if (opening) layer?.classList?.add?.("is-opening");
+      else layer?.classList?.remove?.("is-opening");
       const scroll = mount.querySelector("[data-advisor-scroll]");
-      if (scroll) scroll.scrollTop = 0;
-      if (focus) focusCurrent();
+      if (scroll && options.resetScroll !== false) scroll.scrollTop = 0;
+      if (options.focus !== false) focusCurrent();
     };
     const toggleExclusive = (values, value, exclusive) => {
       const selected = new Set(values);
@@ -617,13 +643,15 @@
       if (closeTimer) {
         clearTimeout(closeTimer);
         closeTimer = null;
+        const host = sheetHost();
+        if (host) host.innerHTML = "";
       }
       state.started = true;
       isOpen = true;
       document.body.classList.add("has-advisor-sheet");
       document.addEventListener("keydown", onDocumentKeydown);
       renderLauncher();
-      renderSheet("open");
+      renderSheet("forward");
     };
     const closeSheet = (options = {}) => {
       if (!isOpen && !options.immediate) return;
@@ -643,7 +671,9 @@
         finish();
       } else {
         layer.classList?.add?.("is-closing");
-        closeTimer = setTimeout(finish, 220);
+        closeTimer = true;
+        const timerId = setTimeout(finish, 220);
+        if (closeTimer !== null) closeTimer = timerId;
       }
     };
     const contact = (title) => {
@@ -725,7 +755,9 @@
     renderLauncher();
     const controller = {
       refreshCatalog() {
-        if (!destroyed && isOpen && state.step === 4) renderSheet("refresh", false);
+        if (destroyed || !isOpen || state.step !== 4) return;
+        const catalog = mount.querySelector("[data-advisor-catalog]");
+        if (catalog) catalog.innerHTML = renderCatalogResults(state.recommendation, catalogState());
       },
       state() {
         return { ...state, isOpen, symptoms: [...state.symptoms], repairSignals: [...state.repairSignals] };
