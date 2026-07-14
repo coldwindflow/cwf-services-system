@@ -199,16 +199,34 @@ function loadAdvisor(options = {}) {
     visualViewport,
     matchMedia: () => ({ matches: options.reducedMotion === true }),
   });
+  const timers = new Map();
+  let nextTimerId = 1;
+  const setTimer = options.deferTimers
+    ? (callback) => {
+      const id = nextTimerId++;
+      timers.set(id, callback);
+      return id;
+    }
+    : (callback) => {
+      callback();
+      return nextTimerId++;
+    };
+  const clearTimer = (id) => timers.delete(id);
+  const runTimers = () => {
+    const callbacks = Array.from(timers.values());
+    timers.clear();
+    callbacks.forEach((callback) => callback());
+  };
   vm.runInNewContext(SOURCE, {
     window: fakeWindow,
     document,
     Set,
     WeakMap,
     requestAnimationFrame: (fn) => fn(),
-    setTimeout: (fn) => { fn(); return 1; },
-    clearTimeout() {},
+    setTimeout: setTimer,
+    clearTimeout: clearTimer,
   }, { filename: "advisor.js" });
-  return { app, routes, contacts, applied, document, window: fakeWindow, visualViewport };
+  return { app, routes, contacts, applied, document, window: fakeWindow, visualViewport, timers, runTimers };
 }
 
 function plain(value) {
@@ -357,7 +375,47 @@ test("no exact Catalog match renders assessment CTA instead of a wrong direct-bo
     recommendation,
   }, { status: "success", items: [catalogItem(9, { booking_ac_type: "สี่ทิศทาง" })] });
   assert.match(html, /ให้ทีมช่วยประเมิน/);
+  assert.match(html, /class="primary-btn"[^>]*data-advisor-contact/);
   assert.doesNotMatch(html, /จองบริการนี้/);
+});
+
+test("result footer keeps reset secondary while business actions remain primary", () => {
+  const { app } = loadAdvisor();
+  const resultState = {
+    ...app.advisor._test.initialState(),
+    step: 4,
+    recommendation: app.advisor._test.evaluateRecommendation({
+      acType: "wall",
+      monthsBand: "m4_5",
+      symptoms: ["routine"],
+      repairSignals: ["none"],
+    }),
+  };
+  const footer = app.advisor._test.sheetActions(resultState);
+  assert.match(footer, /data-advisor-back/);
+  assert.match(footer, /data-advisor-reset/);
+  assert.doesNotMatch(footer, /primary-btn/);
+
+  const exactHtml = app.advisor._test.stepContent(resultState, {
+    status: "success",
+    items: [catalogItem(1)],
+  });
+  assert.match(exactHtml, /class="primary-btn"[^>]*data-advisor-item-action/);
+
+  const repairState = {
+    ...resultState,
+    recommendation: app.advisor._test.evaluateRecommendation({
+      acType: "wall",
+      monthsBand: "m4_5",
+      symptoms: ["routine"],
+      repairSignals: ["error_code"],
+    }),
+  };
+  const repairHtml = app.advisor._test.stepContent(repairState, {
+    status: "success",
+    items: [],
+  });
+  assert.match(repairHtml, /class="primary-btn"[^>]*data-advisor-contact/);
 });
 
 test("wizard advances, supports multi-select, refreshes Catalog, resets, and binds once", () => {
@@ -482,6 +540,67 @@ test("visualViewport drives the mobile panel and listeners clean up on close and
   mount.click({ "data-advisor-launch": "" });
   controller.cleanup();
   assert.equal(runtime.visualViewport.listeners.size, 0);
+});
+
+test("animated close preserves viewport geometry until the panel is removed", () => {
+  const runtime = loadAdvisor({
+    deferTimers: true,
+    visualViewport: { height: 486.2, offsetTop: 71.7 },
+  });
+  const mount = new FakeMount(runtime.document);
+  runtime.app.advisor.bind({ querySelector: () => mount });
+  mount.click({ "data-advisor-launch": "" });
+  assert.equal(mount.style.getPropertyValue("--advisor-viewport-height"), "486px");
+  assert.equal(mount.style.getPropertyValue("--advisor-viewport-top"), "72px");
+
+  mount.click({ "data-advisor-close": "" });
+  assert.equal(runtime.visualViewport.listeners.size, 0);
+  assert.equal(mount.style.getPropertyValue("--advisor-viewport-height"), "486px");
+  assert.equal(mount.style.getPropertyValue("--advisor-viewport-top"), "72px");
+  assert.match(mount.host.innerHTML, /data-advisor-dialog/);
+  assert.ok(mount.layer.classList.contains("is-closing"));
+
+  runtime.visualViewport.height = 760;
+  runtime.visualViewport.offsetTop = 0;
+  runtime.visualViewport.emit("resize");
+  assert.equal(mount.style.getPropertyValue("--advisor-viewport-height"), "486px");
+  assert.equal(mount.style.getPropertyValue("--advisor-viewport-top"), "72px");
+
+  runtime.runTimers();
+  assert.equal(mount.host.innerHTML, "");
+  assert.equal(mount.style.getPropertyValue("--advisor-viewport-height"), "");
+  assert.equal(mount.style.getPropertyValue("--advisor-viewport-top"), "");
+});
+
+test("immediate close and cleanup remove viewport listeners and variables without delay", () => {
+  const immediateRuntime = loadAdvisor({
+    deferTimers: true,
+    visualViewport: { height: 520, offsetTop: 36 },
+  });
+  const immediateMount = new FakeMount(immediateRuntime.document);
+  const immediateController = immediateRuntime.app.advisor.bind({ querySelector: () => immediateMount });
+  immediateMount.click({ "data-advisor-launch": "" });
+  immediateController.close({ immediate: true });
+  assert.equal(immediateRuntime.visualViewport.listeners.size, 0);
+  assert.equal(immediateMount.style.getPropertyValue("--advisor-viewport-height"), "");
+  assert.equal(immediateMount.style.getPropertyValue("--advisor-viewport-top"), "");
+  assert.equal(immediateMount.host.innerHTML, "");
+
+  const cleanupRuntime = loadAdvisor({
+    deferTimers: true,
+    visualViewport: { height: 440, offsetTop: 84 },
+  });
+  const cleanupMount = new FakeMount(cleanupRuntime.document);
+  const cleanupController = cleanupRuntime.app.advisor.bind({ querySelector: () => cleanupMount });
+  cleanupMount.click({ "data-advisor-launch": "" });
+  cleanupMount.click({ "data-advisor-close": "" });
+  assert.equal(cleanupRuntime.timers.size, 1);
+  cleanupController.cleanup();
+  assert.equal(cleanupRuntime.timers.size, 0);
+  assert.equal(cleanupRuntime.visualViewport.listeners.size, 0);
+  assert.equal(cleanupMount.style.getPropertyValue("--advisor-viewport-height"), "");
+  assert.equal(cleanupMount.style.getPropertyValue("--advisor-viewport-top"), "");
+  assert.ok(!cleanupRuntime.document.body.classList.contains("has-advisor-sheet"));
 });
 
 test("visualViewport fallback uses window height and removes its resize listener", () => {
@@ -666,8 +785,11 @@ test("manipulated unrelated Catalog item id is rejected before booking adapters 
 
 test("repair result always opens Contact Sheet even when a repair item has adapter-compatible metadata", () => {
   const repairItem = catalogItem(9, { item_name: "ตรวจเช็คแอร์", job_category: "ตรวจเช็ค" });
-  const runtime = loadAdvisor({ catalog: { status: "success", items: [repairItem] } });
-  const mount = new FakeMount();
+  const runtime = loadAdvisor({
+    catalog: { status: "success", items: [repairItem] },
+    visualViewport: { height: 520, offsetTop: 32 },
+  });
+  const mount = new FakeMount(runtime.document);
   const container = { querySelector: () => mount };
   const controller = runtime.app.advisor.bind(container);
   mount.click({ "data-advisor-launch": "" });
@@ -684,6 +806,9 @@ test("repair result always opens Contact Sheet even when a repair item has adapt
   assert.equal(runtime.routes.length, 0);
   assert.equal(runtime.applied.length, 0);
   assert.equal(runtime.contacts.length, 1);
+  assert.equal(runtime.visualViewport.listeners.size, 0);
+  assert.equal(mount.style.getPropertyValue("--advisor-viewport-height"), "");
+  assert.equal(mount.style.getPropertyValue("--advisor-viewport-top"), "");
 });
 
 test("advisor render contract is accessible, compact, motion-safe, and has no autoplay timer", () => {

@@ -519,8 +519,8 @@
   function sheetActions(state) {
     if (state.step === 4) {
       return `
-        <button class="secondary-btn" type="button" data-advisor-back>ย้อนกลับแก้อาการ</button>
-        <button class="primary-btn" type="button" data-advisor-reset>เริ่มประเมินใหม่</button>
+        <button class="secondary-btn advisor-result-edit-btn" type="button" data-advisor-back>แก้คำตอบ</button>
+        <button class="advisor-reset-btn advisor-result-reset-btn" type="button" data-advisor-reset>ประเมินใหม่</button>
       `;
     }
     return `
@@ -598,11 +598,13 @@
       if (window.visualViewport) viewportTarget.addEventListener?.("scroll", updateViewport);
       updateViewport();
     };
-    const unbindViewport = () => {
+    const stopViewportListeners = () => {
       if (!viewportListenersBound) return;
       viewportListenersBound = false;
       viewportTarget.removeEventListener?.("resize", updateViewport);
       if (window.visualViewport) viewportTarget.removeEventListener?.("scroll", updateViewport);
+    };
+    const clearViewportVariables = () => {
       mount.style?.removeProperty?.("--advisor-viewport-height");
       mount.style?.removeProperty?.("--advisor-viewport-top");
     };
@@ -717,9 +719,13 @@
     };
     const closeSheet = (options = {}) => {
       if (!isOpen && !options.immediate) return;
+      if (options.immediate && closeTimer) {
+        clearTimeout(closeTimer);
+        closeTimer = null;
+      }
       isOpen = false;
       removeOpenListeners();
-      unbindViewport();
+      stopViewportListeners();
       document.body.classList.remove("has-advisor-sheet");
       renderLauncher();
       const host = sheetHost();
@@ -728,6 +734,7 @@
         closeTimer = null;
         if (host && !isOpen) host.innerHTML = "";
         mount.classList?.toggle?.("is-sheet-open", false);
+        clearViewportVariables();
         if (options.restoreFocus !== false && !destroyed) mount.querySelector("[data-advisor-launch]")?.focus?.({ preventScroll: true });
       };
       if (options.immediate || reducedMotion || !layer) {
@@ -835,7 +842,8 @@
         if (closeTimer) clearTimeout(closeTimer);
         closeTimer = null;
         removeOpenListeners();
-        unbindViewport();
+        stopViewportListeners();
+        clearViewportVariables();
         document.body.classList.remove("has-advisor-sheet");
         mount.removeEventListener("click", onClick);
         controllers.delete(mount);
@@ -880,6 +888,7 @@
       stepContent,
       launcherContent,
       sheetHtml,
+      sheetActions,
       stepIsValid,
     },
   };
