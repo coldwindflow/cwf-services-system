@@ -6509,6 +6509,305 @@ textarea.purchase-input { min-height: 66px; resize: vertical; }
   .advisor-chip,
   .advisor-progress span { transition: none !important; }
 }
+
+/* Compact Smart Advisor launcher and focused sheet */
+body.has-advisor-sheet { overflow: hidden; }
+.smart-advisor-section {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: 13px;
+  align-items: start;
+  min-height: 0;
+  padding: 16px;
+  overflow: hidden;
+  border-radius: 15px;
+  background: linear-gradient(140deg, #eef8ff 0%, #fff 62%, #fff8d8 100%);
+}
+.advisor-launcher-orb {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  margin-top: 2px;
+  border-radius: 50%;
+  background: #0b62ad;
+  color: #fff;
+  box-shadow: 0 10px 24px -15px rgba(7, 69, 128, 0.9), 0 0 0 7px rgba(255, 205, 43, 0.14);
+}
+.advisor-launcher-orb::after {
+  position: absolute;
+  inset: -7px;
+  border: 1px solid rgba(21, 112, 187, 0.38);
+  border-top-color: #f2c328;
+  border-radius: 50%;
+  content: "";
+  animation: advisor-orbit 5s linear infinite;
+}
+.is-sheet-open .advisor-launcher-orb::after { animation-play-state: paused; }
+.smart-advisor-section.is-sheet-open { isolation: auto; overflow: visible; }
+.advisor-launcher-content,
+.advisor-launcher-copy { min-width: 0; }
+.advisor-launcher-copy h2 {
+  margin: 3px 0 0;
+  color: #092d58;
+  font-size: 18px;
+  line-height: 1.28;
+  overflow-wrap: anywhere;
+}
+.advisor-launcher-copy p {
+  display: -webkit-box;
+  margin: 5px 0 0;
+  overflow: hidden;
+  color: #526b82;
+  font-size: 12px;
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.advisor-launcher-status {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  min-width: 0;
+  margin-top: 7px;
+  color: #315d85;
+  font-size: 10.5px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.advisor-launcher-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-top: 11px;
+}
+.advisor-launcher-actions .primary-btn {
+  min-height: 44px;
+  padding-inline: 16px;
+}
+.advisor-launcher-actions small { color: #6b7d8f; font-size: 10px; }
+.advisor-launcher-actions .advisor-reset-btn { min-height: 44px; }
+
+.advisor-sheet-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-top: max(20px, env(safe-area-inset-top, 0px));
+  background: rgba(5, 24, 44, 0.54);
+  -webkit-backdrop-filter: blur(7px);
+  backdrop-filter: blur(7px);
+  animation: advisor-backdrop-in 220ms ease both;
+}
+.advisor-sheet-layer.is-closing { animation: advisor-backdrop-out 220ms ease both; }
+.advisor-sheet {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  width: min(100%, 480px);
+  max-height: 90vh;
+  max-height: 90dvh;
+  overflow: hidden;
+  border: 1px solid rgba(188, 214, 235, 0.8);
+  border-bottom: 0;
+  border-radius: 22px 22px 0 0;
+  background: #f8fbfd;
+  box-shadow: 0 -22px 55px -32px rgba(1, 24, 48, 0.9);
+  animation: advisor-sheet-up 280ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+.advisor-sheet-layer.is-closing .advisor-sheet { animation: advisor-sheet-down 220ms ease both; }
+.advisor-sheet-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) 44px;
+  gap: 9px;
+  align-items: center;
+  padding: 12px 14px 9px;
+  border-bottom: 1px solid #dbe7f0;
+  background: rgba(255, 255, 255, 0.94);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+.advisor-sheet-brand {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: #0b62ad;
+  color: #fff;
+}
+.advisor-sheet-header h2 { margin: 0; color: #092d58; font-size: 15px; line-height: 1.25; }
+.advisor-sheet-header span { color: #62788c; font-size: 10.5px; font-weight: 750; }
+.advisor-sheet-close {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: #294b6e;
+  font: inherit;
+  font-size: 25px;
+  cursor: pointer;
+}
+.advisor-sheet-close:focus-visible,
+.advisor-launcher-actions button:focus-visible,
+.advisor-sheet-actions button:focus-visible {
+  outline: 3px solid rgba(240, 190, 34, 0.58);
+  outline-offset: 2px;
+}
+.advisor-sheet-progress {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 5px;
+}
+.advisor-sheet-progress span {
+  height: 3px;
+  border-radius: 99px;
+  background: #dbe7f1;
+  transition: background 220ms ease, transform 220ms ease;
+}
+.advisor-sheet-progress span.is-active { background: #e9b91e; transform: scaleY(1.2); }
+.advisor-sheet-scroll {
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.advisor-sheet-body { min-width: 0; padding: 18px 16px 22px; }
+.advisor-sheet .advisor-step,
+.advisor-sheet .advisor-result { animation: advisor-question-forward 280ms cubic-bezier(0.22, 0.61, 0.36, 1) both; }
+.advisor-sheet-layer.direction-back .advisor-step,
+.advisor-sheet-layer.direction-back .advisor-result { animation-name: advisor-question-back; }
+.advisor-sheet-layer.direction-refresh .advisor-result { animation: none; }
+.advisor-sheet .advisor-step-copy h3 { margin-top: 0; font-size: 19px; }
+.advisor-sheet .advisor-step-copy p { font-size: 12px; }
+.advisor-sheet .advisor-choice-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+  margin-top: 15px;
+}
+.advisor-sheet .advisor-chip-grid {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 9px;
+  margin-top: 15px;
+}
+.advisor-sheet .advisor-choice,
+.advisor-sheet .advisor-chip {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 24px;
+  gap: 9px;
+  align-items: center;
+  min-height: 54px;
+  padding: 9px 11px;
+  text-align: left;
+  font-size: 12px;
+  transition: transform 160ms ease, border-color 190ms ease, background 190ms ease, box-shadow 190ms ease;
+}
+.advisor-choice-icon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  background: #edf4f9;
+  color: #1768ac;
+}
+.advisor-choice-label { min-width: 0; overflow-wrap: anywhere; }
+.advisor-choice-check {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid #c7d7e4;
+  border-radius: 50%;
+  background: #fff;
+  color: #fff;
+  transform: scale(0.82);
+  transition: transform 180ms ease, background 180ms ease, border-color 180ms ease, opacity 180ms ease;
+}
+.advisor-sheet .is-selected .advisor-choice-check {
+  border-color: #1670bd;
+  background: #1670bd;
+  transform: scale(1);
+}
+.advisor-sheet .is-selected .advisor-choice-icon { background: #dcefff; color: #075899; }
+.advisor-sheet-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  gap: 9px;
+  padding: 10px 14px calc(10px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid #dbe7f0;
+  background: rgba(255, 255, 255, 0.96);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+.advisor-sheet-actions button { min-height: 46px; }
+.advisor-sheet-actions .primary-btn:disabled { opacity: 0.48; cursor: not-allowed; transform: none; }
+.advisor-sheet .advisor-result { animation-name: advisor-result-reveal; }
+.advisor-sheet .advisor-reason-list > div { animation: advisor-reason-in 260ms ease both; }
+.advisor-sheet .advisor-reason-list > div:nth-child(2) { animation-delay: 45ms; }
+.advisor-sheet .advisor-reason-list > div:nth-child(3) { animation-delay: 90ms; }
+.advisor-sheet .advisor-reason-list > div:nth-child(4) { animation-delay: 135ms; }
+.advisor-sheet .advisor-result .advisor-product { animation-name: advisor-product-in; }
+.advisor-sheet .advisor-result .primary-btn { animation: advisor-cta-glow 650ms ease 1 260ms both; }
+
+@keyframes advisor-orbit { to { transform: rotate(360deg); } }
+@keyframes advisor-backdrop-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes advisor-backdrop-out { from { opacity: 1; } to { opacity: 0; } }
+@keyframes advisor-sheet-up { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes advisor-sheet-down { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(24px); } }
+@keyframes advisor-question-forward { from { opacity: 0; transform: translateX(10px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes advisor-question-back { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes advisor-result-reveal { from { opacity: 0; transform: scale(0.985); } to { opacity: 1; transform: scale(1); } }
+@keyframes advisor-reason-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes advisor-cta-glow { 50% { box-shadow: 0 0 0 5px rgba(240, 190, 34, 0.2); } }
+
+@media (max-width: 380px) {
+  .smart-advisor-section { grid-template-columns: 48px minmax(0, 1fr); gap: 10px; padding: 14px; }
+  .advisor-launcher-orb { width: 46px; height: 46px; }
+  .advisor-launcher-copy h2 { font-size: 16px; }
+  .advisor-launcher-actions { align-items: stretch; flex-direction: column; gap: 4px; }
+  .advisor-launcher-actions .primary-btn { width: 100%; }
+  .advisor-sheet .advisor-choice-grid { grid-template-columns: minmax(0, 1fr); }
+  .advisor-sheet-body { padding-inline: 13px; }
+  .advisor-product-actions { grid-template-columns: 1fr; }
+}
+
+@media (max-height: 620px) {
+  .advisor-sheet { max-height: 92dvh; }
+  .advisor-sheet-body { padding-top: 13px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .advisor-launcher-orb::after,
+  .advisor-sheet-layer,
+  .advisor-sheet,
+  .advisor-sheet .advisor-step,
+  .advisor-sheet .advisor-result,
+  .advisor-sheet .advisor-reason-list > div,
+  .advisor-sheet .advisor-product,
+  .advisor-sheet .advisor-result .primary-btn {
+    animation: none !important;
+    transition: none !important;
+    transform: none !important;
+  }
+  .advisor-sheet .advisor-choice,
+  .advisor-sheet .advisor-chip,
+  .advisor-choice-check,
+  .advisor-sheet-progress span { transition: none !important; }
+}
 /* Readable overlay on top of the blurred shell. */
 .maintenance-overlay {
   position: absolute;
