@@ -300,7 +300,7 @@
   }
 
   function initialState() {
-    return { step: 0, acType: "", monthsBand: "", symptoms: [], repairSignals: [], recommendation: null };
+    return { step: 0, acType: "", monthsBand: "", symptoms: [], repairSignals: [], recommendation: null, started: false };
   }
 
   function esc(value) {
@@ -315,18 +315,21 @@
     return `<div class="advisor-choice-grid">${items.map((item) => `
       <button class="advisor-choice ${selected === item.value ? "is-selected" : ""}" type="button"
         ${attribute}="${esc(item.value)}" aria-pressed="${selected === item.value ? "true" : "false"}">
-        <span>${esc(item.label)}</span>
+        <span class="advisor-choice-icon">${icon(attribute === "data-advisor-months" ? "calendar" : "sparkle", 17)}</span>
+        <span class="advisor-choice-label">${esc(item.label)}</span>
+        <span class="advisor-choice-check" aria-hidden="true">${selected === item.value ? "✓" : ""}</span>
       </button>
     `).join("")}</div>`;
   }
 
   function chipButtons(items, selected, attribute) {
     const values = new Set(selected || []);
-    return `<div class="advisor-chip-grid">${items.map((item) => `
+    return `<div class="advisor-chip-grid ${attribute === "data-advisor-repair" ? "is-repair-list" : ""}">${items.map((item) => `
       <button class="advisor-chip ${values.has(item.value) ? "is-selected" : ""}" type="button"
         ${attribute}="${esc(item.value)}" aria-pressed="${values.has(item.value) ? "true" : "false"}">
-        <span class="advisor-chip-check" aria-hidden="true">${values.has(item.value) ? "✓" : "+"}</span>
-        <span>${esc(item.label)}</span>
+        <span class="advisor-choice-icon">${icon(attribute === "data-advisor-repair" ? "bolt" : "sparkle", 17)}</span>
+        <span class="advisor-choice-label">${esc(item.label)}</span>
+        <span class="advisor-choice-check" aria-hidden="true">${values.has(item.value) ? "✓" : ""}</span>
       </button>
     `).join("")}</div>`;
   }
@@ -414,46 +417,106 @@
         ${alternative ? `<div class="advisor-alternative"><span>ทางเลือกสำรอง</span><strong>${esc(alternative.label)}</strong></div>` : ""}
         <p class="advisor-note">${esc(recommendation.note)}</p>
         <div class="advisor-catalog" data-advisor-catalog>${renderCatalogResults(recommendation, catalogState)}</div>
-        <div class="advisor-result-footer">
-          <button class="secondary-btn" type="button" data-advisor-back>ย้อนกลับแก้อาการ</button>
-          <button class="advisor-reset-btn" type="button" data-advisor-reset>เริ่มประเมินใหม่</button>
-        </div>
       </div>
     `;
   }
 
+  const STEP_COPY = Object.freeze([
+    { title: "แอร์ของคุณเป็นแบบไหน", copy: "เลือกชนิดเครื่องก่อน เพื่อไม่แนะนำวิธีล้างผิดประเภท" },
+    { title: "ล้างครั้งก่อนเมื่อไร", copy: "ใช้ช่วงเวลาโดยประมาณได้ ไม่จำเป็นต้องจำวันที่แน่นอน" },
+    { title: "ตอนนี้มีอาการอะไรบ้าง", copy: "เลือกได้หลายข้อ ระบบจะใช้ร่วมกับรอบล้าง" },
+    { title: "มีอาการที่ควรตรวจซ่อมก่อนไหม", copy: "อาการกลุ่มนี้จะถูกส่งไปตรวจเช็คก่อนงานล้าง" },
+  ]);
+
+  function stepIsValid(state) {
+    return Boolean((state.step === 0 && state.acType)
+      || (state.step === 1 && state.monthsBand)
+      || (state.step === 2 && state.symptoms.length)
+      || (state.step === 3 && state.repairSignals.length));
+  }
+
   function stepContent(state, catalogState) {
     if (state.step === 4) return renderResult(state, catalogState);
-    const steps = [
-      { title: "แอร์ของคุณเป็นแบบไหน", copy: "เลือกชนิดเครื่องก่อน เพื่อไม่แนะนำวิธีล้างผิดประเภท" },
-      { title: "ล้างครั้งก่อนเมื่อไร", copy: "ใช้ช่วงเวลาโดยประมาณได้ ไม่จำเป็นต้องจำวันที่แน่นอน" },
-      { title: "ตอนนี้มีอาการอะไรบ้าง", copy: "เลือกได้หลายข้อ ระบบจะใช้ร่วมกับรอบล้าง" },
-      { title: "มีอาการที่ควรตรวจซ่อมก่อนไหม", copy: "อาการกลุ่มนี้จะถูกส่งไปตรวจเช็คก่อนงานล้าง" },
-    ];
-    const current = steps[state.step];
+    const current = STEP_COPY[state.step];
     let controls = "";
     if (state.step === 0) controls = choiceButtons(AC_TYPES, state.acType, "data-advisor-ac");
     if (state.step === 1) controls = choiceButtons(MONTH_BANDS, state.monthsBand, "data-advisor-months");
     if (state.step === 2) controls = chipButtons(SYMPTOMS, state.symptoms, "data-advisor-symptom");
     if (state.step === 3) controls = chipButtons(REPAIR_SIGNALS, state.repairSignals, "data-advisor-repair");
-    const valid = (state.step === 0 && state.acType)
-      || (state.step === 1 && state.monthsBand)
-      || (state.step === 2 && state.symptoms.length)
-      || (state.step === 3 && state.repairSignals.length);
     return `
-      <div class="advisor-step" data-advisor-step="${state.step + 1}">
+      <div class="advisor-step advisor-step-${state.step + 1}" data-advisor-step="${state.step + 1}">
         <div class="advisor-step-copy">
-          <span>ขั้นที่ ${state.step + 1} จาก 4</span>
-          <h3>${esc(current.title)}</h3>
+          <h3 data-advisor-question-title tabindex="-1">${esc(current.title)}</h3>
           <p>${esc(current.copy)}</p>
         </div>
         ${controls}
-        <div class="advisor-step-actions">
-          ${state.step ? `<button class="secondary-btn" type="button" data-advisor-back>ย้อนกลับ</button>` : `<span></span>`}
-          <button class="primary-btn" type="button" data-advisor-next ${valid ? "" : "disabled"}>
-            ${state.step === 3 ? "ดูผลประเมิน" : "ขั้นต่อไป"}
-          </button>
-        </div>
+      </div>
+    `;
+  }
+
+  function launcherContent(state, isOpen) {
+    const hasResult = Boolean(state.recommendation);
+    const started = Boolean(state.started);
+    const meta = hasResult ? VERDICT_META[state.recommendation.verdict] : null;
+    const cta = hasResult ? "ดูผลประเมิน" : started ? "ทำแบบประเมินต่อ" : "เริ่มประเมิน";
+    const status = hasResult
+      ? `<span class="advisor-launcher-status">ผลล่าสุด: <strong>${esc(meta.label)}</strong></span>`
+      : started
+        ? `<span class="advisor-launcher-status">ทำถึงขั้นที่ ${Math.min(state.step + 1, 4)} จาก 4</span>`
+        : `<span class="advisor-launcher-status">${icon("clock", 15)} ใช้เวลาประมาณ 1 นาที</span>`;
+    return `
+      <div class="advisor-launcher-copy">
+        <span class="section-kicker">CWF SMART ADVISOR</span>
+        <h2>${hasResult ? esc(meta.label) : "ไม่แน่ใจว่าควรล้างหรือซ่อม?"}</h2>
+        <p>${hasResult ? "เปิดดูเหตุผลและบริการจริงที่ระบบแนะนำ" : "ตอบคำถามสั้น ๆ แล้วให้ระบบช่วยเลือกบริการที่เหมาะ"}</p>
+        ${status}
+      </div>
+      <div class="advisor-launcher-actions">
+        <button class="primary-btn" type="button" data-advisor-launch aria-expanded="${isOpen ? "true" : "false"}" aria-controls="advisor-sheet-dialog">
+          ${icon(hasResult ? "sparkle" : "play", 18)} ${cta}
+        </button>
+        ${hasResult ? `<button class="advisor-reset-btn" type="button" data-advisor-reset-launcher>ประเมินใหม่</button>` : `<small>ดูบริการจริงจาก Catalog</small>`}
+      </div>
+    `;
+  }
+
+  function sheetActions(state) {
+    if (state.step === 4) {
+      return `
+        <button class="secondary-btn" type="button" data-advisor-back>ย้อนกลับแก้อาการ</button>
+        <button class="primary-btn" type="button" data-advisor-reset>เริ่มประเมินใหม่</button>
+      `;
+    }
+    return `
+      ${state.step > 0 ? `<button class="secondary-btn" type="button" data-advisor-back>ย้อนกลับ</button>` : `<span aria-hidden="true"></span>`}
+      <button class="primary-btn" type="button" data-advisor-next ${stepIsValid(state) ? "" : "disabled"}>
+        ${state.step === 3 ? "ดูผลประเมิน" : "ขั้นต่อไป"}
+      </button>
+    `;
+  }
+
+  function sheetProgressHtml(stepNumber) {
+    return [0, 1, 2, 3].map((index) => `<span class="${index < stepNumber ? "is-active" : ""}" ${index === Math.min(stepNumber - 1, 3) ? `aria-current="step"` : ""}></span>`).join("");
+  }
+
+  function sheetHtml() {
+    return `
+      <div class="advisor-sheet-layer is-opening" data-advisor-backdrop>
+        <section class="advisor-sheet" id="advisor-sheet-dialog" data-advisor-dialog role="dialog" aria-modal="true" aria-labelledby="advisor-sheet-title">
+          <header class="advisor-sheet-header">
+            <div class="advisor-sheet-brand" aria-hidden="true">${icon("sparkle", 18)}</div>
+            <div>
+              <h2 id="advisor-sheet-title">ผู้ช่วยเลือกบริการ</h2>
+              <span data-advisor-step-label></span>
+            </div>
+            <button class="advisor-sheet-close" type="button" data-advisor-close aria-label="ปิดผู้ช่วยเลือกบริการ">×</button>
+            <div class="advisor-sheet-progress" data-advisor-progress aria-label="ความคืบหน้าการประเมิน"></div>
+          </header>
+          <div class="advisor-sheet-scroll" data-advisor-scroll>
+            <div class="advisor-sheet-body" data-advisor-body></div>
+          </div>
+          <footer class="advisor-sheet-actions" data-advisor-actions></footer>
+        </section>
       </div>
     `;
   }
@@ -462,19 +525,9 @@
     const state = initialState();
     return `
       <section class="smart-advisor-section homepage-section" data-smart-advisor data-home-reveal>
-        <div class="advisor-aura" aria-hidden="true"><span></span><span></span><span></span></div>
-        <div class="advisor-heading">
-          <div class="advisor-brand-mark">${icon("sparkle", 23)}</div>
-          <div>
-            <span class="section-kicker">CWF Smart Advisor</span>
-            <h2>ช่วยเลือกแบบล้างหรือซ่อมให้เหมาะกับอาการ</h2>
-            <p>ตอบคำถามสั้น ๆ แล้วดูบริการจริงที่เหมาะกับเครื่องของคุณ</p>
-          </div>
-        </div>
-        <div class="advisor-progress" aria-label="ความคืบหน้าการประเมิน">
-          ${[0, 1, 2, 3].map((index) => `<span class="${index === 0 ? "is-active" : ""}" data-advisor-progress="${index}"></span>`).join("")}
-        </div>
-        <div class="advisor-body" data-advisor-body>${stepContent(state, catalogState)}</div>
+        <div class="advisor-launcher-orb" aria-hidden="true"><span>${icon("sparkle", 24)}</span></div>
+        <div class="advisor-launcher-content" data-advisor-launcher-content>${launcherContent(state, false)}</div>
+        <div data-advisor-sheet-host></div>
       </section>
     `;
   }
@@ -486,25 +539,57 @@
     if (existing) return existing;
     let state = initialState();
     let destroyed = false;
+    let isOpen = false;
+    let closeTimer = null;
     const reducedMotion = Boolean(window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches);
     mount.classList?.toggle?.("is-reduced-motion", reducedMotion);
     const catalogState = () => root.state.catalog || { status: "idle", items: [] };
-
-    const updateProgress = () => {
-      mount.querySelectorAll("[data-advisor-progress]").forEach((node, index) => {
-        const active = state.step === 4 ? true : index <= state.step;
-        node.classList.toggle("is-active", active);
-        if (index === Math.min(state.step, 3)) node.setAttribute("aria-current", "step");
-        else node.removeAttribute("aria-current");
-      });
+    const sheetHost = () => mount.querySelector("[data-advisor-sheet-host]");
+    const renderLauncher = () => {
+      const launcher = mount.querySelector("[data-advisor-launcher-content]");
+      if (launcher) launcher.innerHTML = launcherContent(state, isOpen);
     };
-    const render = (focusResult = false) => {
-      if (destroyed || !mount.isConnected) return;
+    const focusCurrent = () => requestAnimationFrame(() => {
+      if (destroyed || !isOpen) return;
+      const target = mount.querySelector(state.step === 4 ? "[data-advisor-result]" : "[data-advisor-question-title]")
+        || mount.querySelector("[data-advisor-close]");
+      target?.focus?.({ preventScroll: true });
+    });
+    const renderSheet = (direction = "forward", options = {}) => {
+      if (destroyed || !isOpen || !mount.isConnected) return;
+      const host = sheetHost();
+      if (!host) return;
+      let dialog = mount.querySelector("[data-advisor-dialog]");
+      const opening = !dialog;
+      if (opening) {
+        host.innerHTML = sheetHtml();
+        dialog = mount.querySelector("[data-advisor-dialog]");
+      }
+      if (!dialog) return;
+      mount.classList?.toggle?.("is-sheet-open", true);
+      const result = state.step === 4;
+      const stepNumber = result ? 4 : state.step + 1;
+      const layer = mount.querySelector("[data-advisor-backdrop]");
       const body = mount.querySelector("[data-advisor-body]");
-      if (!body) return;
-      body.innerHTML = stepContent(state, catalogState());
-      updateProgress();
-      if (focusResult) requestAnimationFrame(() => mount.querySelector("[data-advisor-result]")?.focus({ preventScroll: true }));
+      const actions = mount.querySelector("[data-advisor-actions]");
+      const stepLabel = mount.querySelector("[data-advisor-step-label]");
+      const progress = mount.querySelector("[data-advisor-progress]");
+      dialog.setAttribute("data-step", stepNumber);
+      if (stepLabel) stepLabel.textContent = result ? "ผลประเมิน" : `ขั้นที่ ${stepNumber} จาก 4`;
+      if (progress) progress.innerHTML = sheetProgressHtml(stepNumber);
+      if (actions) actions.innerHTML = sheetActions(state);
+      if (body) {
+        body.classList.remove("is-step-forward");
+        body.classList.remove("is-step-back");
+        body.classList.remove("is-refresh");
+        body.classList.add(direction === "back" ? "is-step-back" : direction === "refresh" ? "is-refresh" : "is-step-forward");
+        body.innerHTML = stepContent(state, catalogState());
+      }
+      if (opening) layer?.classList?.add?.("is-opening");
+      else layer?.classList?.remove?.("is-opening");
+      const scroll = mount.querySelector("[data-advisor-scroll]");
+      if (scroll && options.resetScroll !== false) scroll.scrollTop = 0;
+      if (options.focus !== false) focusCurrent();
     };
     const toggleExclusive = (values, value, exclusive) => {
       const selected = new Set(values);
@@ -514,38 +599,134 @@
       else selected.add(value);
       return Array.from(selected);
     };
-    const contact = (title) => root.ui.openContactSheet(container, { title: title || "ให้ทีม CWF ช่วยประเมินบริการ" });
+    const syncChoices = (attribute, selectedValues) => {
+      const selected = new Set(Array.isArray(selectedValues) ? selectedValues : [selectedValues]);
+      mount.querySelectorAll(`[${attribute}]`).forEach((button) => {
+        const active = selected.has(button.getAttribute(attribute));
+        button.classList.toggle("is-selected", active);
+        button.setAttribute("aria-pressed", active ? "true" : "false");
+        const check = button.querySelector?.(".advisor-choice-check");
+        if (check) check.textContent = active ? "✓" : "";
+      });
+      const next = mount.querySelector("[data-advisor-next]");
+      if (next) next.disabled = !stepIsValid(state);
+    };
+    const focusableNodes = () => {
+      const dialog = mount.querySelector("[data-advisor-dialog]");
+      if (!dialog) return [];
+      return Array.from(dialog.querySelectorAll("button:not([disabled]), a[href], [tabindex]:not([tabindex='-1'])"))
+        .filter((node) => !node.hidden);
+    };
+    const onDocumentKeydown = (event) => {
+      if (!isOpen || destroyed) return;
+      if (event.key === "Escape") {
+        event.preventDefault?.();
+        closeSheet();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const nodes = focusableNodes();
+      if (!nodes.length) return;
+      const first = nodes[0];
+      const last = nodes[nodes.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault?.();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault?.();
+        first.focus();
+      }
+    };
+    const removeOpenListeners = () => document.removeEventListener("keydown", onDocumentKeydown);
+    const openSheet = () => {
+      if (destroyed || isOpen) return;
+      if (closeTimer) {
+        clearTimeout(closeTimer);
+        closeTimer = null;
+        const host = sheetHost();
+        if (host) host.innerHTML = "";
+      }
+      state.started = true;
+      isOpen = true;
+      document.body.classList.add("has-advisor-sheet");
+      document.addEventListener("keydown", onDocumentKeydown);
+      renderLauncher();
+      renderSheet("forward");
+    };
+    const closeSheet = (options = {}) => {
+      if (!isOpen && !options.immediate) return;
+      isOpen = false;
+      removeOpenListeners();
+      document.body.classList.remove("has-advisor-sheet");
+      renderLauncher();
+      const host = sheetHost();
+      const layer = mount.querySelector("[data-advisor-backdrop]");
+      const finish = () => {
+        closeTimer = null;
+        if (host && !isOpen) host.innerHTML = "";
+        mount.classList?.toggle?.("is-sheet-open", false);
+        if (options.restoreFocus !== false && !destroyed) mount.querySelector("[data-advisor-launch]")?.focus?.({ preventScroll: true });
+      };
+      if (options.immediate || reducedMotion || !layer) {
+        finish();
+      } else {
+        layer.classList?.add?.("is-closing");
+        closeTimer = true;
+        const timerId = setTimeout(finish, 220);
+        if (closeTimer !== null) closeTimer = timerId;
+      }
+    };
+    const contact = (title) => {
+      closeSheet({ immediate: true, restoreFocus: false });
+      root.ui.openContactSheet(container, { title: title || "ให้ทีม CWF ช่วยประเมินบริการ" });
+    };
     const onClick = (event) => {
       const button = event.target.closest("button");
-      if (!button || destroyed) return;
-      if (button.hasAttribute("data-advisor-ac")) {
+      if (destroyed) return;
+      if (!button) {
+        const backdrop = event.target.closest?.("[data-advisor-backdrop]");
+        const dialog = event.target.closest?.("[data-advisor-dialog]");
+        if (backdrop && !dialog) closeSheet();
+        return;
+      }
+      if (button.hasAttribute("data-advisor-launch")) {
+        openSheet();
+      } else if (button.hasAttribute("data-advisor-close")) {
+        closeSheet();
+      } else if (button.hasAttribute("data-advisor-reset-launcher")) {
+        state = initialState();
+        renderLauncher();
+        openSheet();
+      } else if (button.hasAttribute("data-advisor-ac")) {
         state.acType = button.getAttribute("data-advisor-ac");
-        render();
+        syncChoices("data-advisor-ac", state.acType);
       } else if (button.hasAttribute("data-advisor-months")) {
         state.monthsBand = button.getAttribute("data-advisor-months");
-        render();
+        syncChoices("data-advisor-months", state.monthsBand);
       } else if (button.hasAttribute("data-advisor-symptom")) {
         state.symptoms = toggleExclusive(state.symptoms, button.getAttribute("data-advisor-symptom"), "routine");
-        render();
+        syncChoices("data-advisor-symptom", state.symptoms);
       } else if (button.hasAttribute("data-advisor-repair")) {
         state.repairSignals = toggleExclusive(state.repairSignals, button.getAttribute("data-advisor-repair"), "none");
-        render();
+        syncChoices("data-advisor-repair", state.repairSignals);
       } else if (button.hasAttribute("data-advisor-next")) {
         if (state.step < 3) state.step += 1;
         else {
           state.recommendation = evaluateRecommendation(state);
           state.step = 4;
         }
-        render(state.step === 4);
+        renderSheet("forward");
       } else if (button.hasAttribute("data-advisor-back")) {
         state.step = state.step === 4 ? 3 : Math.max(0, state.step - 1);
         state.recommendation = null;
-        render();
+        renderSheet("back");
       } else if (button.hasAttribute("data-advisor-reset")) {
         state = initialState();
-        render();
-        mount.querySelector("[data-advisor-ac]")?.focus();
+        state.started = true;
+        renderLauncher();
+        renderSheet("back");
       } else if (button.hasAttribute("data-advisor-detail")) {
+        closeSheet({ immediate: true, restoreFocus: false });
         root.utils.routeTo(`storeItem-${button.getAttribute("data-advisor-detail")}`);
       } else if (button.hasAttribute("data-advisor-item-action")) {
         const id = button.getAttribute("data-advisor-item-action");
@@ -571,18 +752,27 @@
       }
     };
     mount.addEventListener("click", onClick);
-    updateProgress();
+    renderLauncher();
     const controller = {
       refreshCatalog() {
-        if (!destroyed && state.step === 4) render();
+        if (destroyed || !isOpen || state.step !== 4) return;
+        const catalog = mount.querySelector("[data-advisor-catalog]");
+        if (catalog) catalog.innerHTML = renderCatalogResults(state.recommendation, catalogState());
       },
       state() {
-        return { ...state, symptoms: [...state.symptoms], repairSignals: [...state.repairSignals] };
+        return { ...state, isOpen, symptoms: [...state.symptoms], repairSignals: [...state.repairSignals] };
       },
+      open: openSheet,
+      close: closeSheet,
       reducedMotion,
       cleanup() {
         if (destroyed) return;
+        closeSheet({ immediate: true, restoreFocus: false });
         destroyed = true;
+        if (closeTimer) clearTimeout(closeTimer);
+        closeTimer = null;
+        removeOpenListeners();
+        document.body.classList.remove("has-advisor-sheet");
         mount.removeEventListener("click", onClick);
         controllers.delete(mount);
       },
@@ -624,6 +814,9 @@
       initialState,
       renderSection,
       stepContent,
+      launcherContent,
+      sheetHtml,
+      stepIsValid,
     },
   };
 })();

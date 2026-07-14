@@ -44,32 +44,82 @@ function catalogItem(id, overrides = {}) {
 class FakeClassList {
   constructor() { this.values = new Set(); }
   toggle(value, force) { if (force) this.values.add(value); else this.values.delete(value); }
+  add(value) { this.values.add(value); }
+  remove(value) { this.values.delete(value); }
+  contains(value) { return this.values.has(value); }
 }
 
-class FakeProgress {
-  constructor() { this.classList = new FakeClassList(); this.attributes = new Map(); }
+class FakeElement {
+  constructor(onFocus, onHtmlChange) {
+    this.classList = new FakeClassList();
+    this.attributes = new Map();
+    this._innerHTML = "";
+    this.textContent = "";
+    this.scrollTop = 99;
+    this.hidden = false;
+    this.disabled = false;
+    this.onFocus = onFocus;
+    this.onHtmlChange = onHtmlChange;
+  }
+  get innerHTML() { return this._innerHTML; }
+  set innerHTML(value) { this._innerHTML = String(value); this.onHtmlChange?.(this._innerHTML); }
   setAttribute(name, value) { this.attributes.set(name, String(value)); }
+  getAttribute(name) { return this.attributes.get(name) ?? null; }
   removeAttribute(name) { this.attributes.delete(name); }
+  focus() { this.onFocus?.(this); }
+  querySelector() { return null; }
+  querySelectorAll() { return []; }
 }
 
 class FakeMount {
-  constructor() {
+  constructor(fakeDocument = null) {
     this.isConnected = true;
     this.listeners = new Map();
-    this.body = { innerHTML: "" };
-    this.progress = [new FakeProgress(), new FakeProgress(), new FakeProgress(), new FakeProgress()];
+    this.classList = new FakeClassList();
+    this.document = fakeDocument;
+    this.shellWrites = 0;
+    this.launcher = new FakeElement((node) => { this.launcherFocuses += 1; if (this.document) this.document.activeElement = node; });
+    this.host = new FakeElement(null, () => { this.shellWrites += 1; });
+    this.layer = new FakeElement();
+    this.body = new FakeElement();
+    this.actions = new FakeElement();
+    this.stepLabel = new FakeElement();
+    this.progress = new FakeElement();
+    this.catalog = new FakeElement();
+    this.closeButton = new FakeElement((node) => { if (this.document) this.document.activeElement = node; });
+    this.nextButton = new FakeElement((node) => { if (this.document) this.document.activeElement = node; });
+    this.question = new FakeElement((node) => { this.questionFocuses += 1; if (this.document) this.document.activeElement = node; });
+    this.result = new FakeElement((node) => { this.resultFocuses += 1; if (this.document) this.document.activeElement = node; });
+    this.scroll = new FakeElement();
+    this.dialog = new FakeElement();
+    this.dialog.querySelectorAll = () => [this.closeButton, this.nextButton];
     this.resultFocuses = 0;
-    this.firstFocuses = 0;
+    this.questionFocuses = 0;
+    this.launcherFocuses = 0;
   }
   addEventListener(type, handler) { this.listeners.set(type, handler); }
   removeEventListener(type, handler) { if (this.listeners.get(type) === handler) this.listeners.delete(type); }
+  html() { return [this.host.innerHTML, this.body.innerHTML, this.catalog.innerHTML, this.actions.innerHTML].join(""); }
   querySelector(selector) {
-    if (selector === "[data-advisor-body]") return this.body;
-    if (selector === "[data-advisor-result]") return { focus: () => { this.resultFocuses += 1; } };
-    if (selector === "[data-advisor-ac]") return { focus: () => { this.firstFocuses += 1; } };
+    const open = this.host.innerHTML.includes("data-advisor-dialog");
+    if (selector === "[data-advisor-launcher-content]") return this.launcher;
+    if (selector === "[data-advisor-sheet-host]") return this.host;
+    if (selector === "[data-advisor-launch]") return this.launcher;
+    if (selector === "[data-advisor-backdrop]") return open ? this.layer : null;
+    if (selector === "[data-advisor-dialog]") return open ? this.dialog : null;
+    if (selector === "[data-advisor-close]") return open ? this.closeButton : null;
+    if (selector === "[data-advisor-next]") return open ? this.nextButton : null;
+    if (selector === "[data-advisor-scroll]") return open ? this.scroll : null;
+    if (selector === "[data-advisor-body]") return open ? this.body : null;
+    if (selector === "[data-advisor-actions]") return open ? this.actions : null;
+    if (selector === "[data-advisor-step-label]") return open ? this.stepLabel : null;
+    if (selector === "[data-advisor-progress]") return open ? this.progress : null;
+    if (selector === "[data-advisor-catalog]") return open && this.body.innerHTML.includes("data-advisor-catalog") ? this.catalog : null;
+    if (selector === "[data-advisor-question-title]") return open && !this.body.innerHTML.includes("data-advisor-result") ? this.question : null;
+    if (selector === "[data-advisor-result]") return open && this.body.innerHTML.includes("data-advisor-result") ? this.result : null;
     return null;
   }
-  querySelectorAll(selector) { return selector === "[data-advisor-progress]" ? this.progress : []; }
+  querySelectorAll() { return []; }
   click(attributes) {
     const button = {
       hasAttribute: (name) => Object.hasOwn(attributes, name),
@@ -77,12 +127,33 @@ class FakeMount {
     };
     this.listeners.get("click")?.({ target: { closest: () => button } });
   }
+  clickBackdrop() {
+    const backdrop = new FakeElement();
+    this.listeners.get("click")?.({ target: { closest: (selector) => selector === "[data-advisor-backdrop]" ? backdrop : null } });
+  }
+}
+
+function fakeDocument() {
+  const listeners = new Map();
+  return {
+    activeElement: null,
+    body: { classList: new FakeClassList() },
+    listeners,
+    addEventListener(type, handler) { listeners.set(type, handler); },
+    removeEventListener(type, handler) { if (listeners.get(type) === handler) listeners.delete(type); },
+    keydown(key, options = {}) {
+      let prevented = false;
+      listeners.get("keydown")?.({ key, shiftKey: options.shiftKey === true, preventDefault: () => { prevented = true; } });
+      return prevented;
+    },
+  };
 }
 
 function loadAdvisor(options = {}) {
   const routes = [];
   const contacts = [];
   const applied = [];
+  const document = fakeDocument();
   const catalog = options.catalog || { status: "success", items: [] };
   const app = {
     state: { catalog },
@@ -100,11 +171,14 @@ function loadAdvisor(options = {}) {
   };
   vm.runInNewContext(SOURCE, {
     window: { CWFCustomerAppV2: app, matchMedia: () => ({ matches: options.reducedMotion === true }) },
+    document,
     Set,
     WeakMap,
     requestAnimationFrame: (fn) => fn(),
+    setTimeout: (fn) => { fn(); return 1; },
+    clearTimeout() {},
   }, { filename: "advisor.js" });
-  return { app, routes, contacts, applied };
+  return { app, routes, contacts, applied, document };
 }
 
 function plain(value) {
@@ -112,6 +186,7 @@ function plain(value) {
 }
 
 function completeWallStandardAdvisor(mount) {
+  mount.click({ "data-advisor-launch": "" });
   mount.click({ "data-advisor-ac": "wall" });
   mount.click({ "data-advisor-next": "" });
   mount.click({ "data-advisor-months": "m4_5" });
@@ -256,14 +331,15 @@ test("no exact Catalog match renders assessment CTA instead of a wrong direct-bo
 });
 
 test("wizard advances, supports multi-select, refreshes Catalog, resets, and binds once", () => {
-  const { app } = loadAdvisor({ catalog: { status: "loading", items: [] } });
-  const mount = new FakeMount();
+  const { app, document } = loadAdvisor({ catalog: { status: "loading", items: [] } });
+  const mount = new FakeMount(document);
   const container = { querySelector: (selector) => selector === "[data-smart-advisor]" ? mount : null };
   const first = app.advisor.bind(container);
   const second = app.advisor.bind(container);
   assert.equal(first, second);
   assert.equal(mount.listeners.size, 1);
 
+  mount.click({ "data-advisor-launch": "" });
   mount.click({ "data-advisor-ac": "wall" });
   mount.click({ "data-advisor-next": "" });
   mount.click({ "data-advisor-months": "m6_8" });
@@ -274,20 +350,175 @@ test("wizard advances, supports multi-select, refreshes Catalog, resets, and bin
   mount.click({ "data-advisor-repair": "none" });
   mount.click({ "data-advisor-next": "" });
   assert.equal(first.state().recommendation.verdict, "premium_clean");
-  assert.match(mount.body.innerHTML, /กำลังค้นหาบริการที่ตรงจาก Catalog/);
+  assert.match(mount.html(), /กำลังค้นหาบริการที่ตรงจาก Catalog/);
   assert.equal(mount.resultFocuses, 1);
 
   app.state.catalog.status = "success";
   app.state.catalog.items = [catalogItem(2, { booking_wash_variant: "ล้างพรีเมียม", item_name: "ล้างแอร์พรีเมียม" })];
   app.advisor.refreshCatalog(container);
-  assert.match(mount.body.innerHTML, /ล้างแอร์พรีเมียม/);
+  assert.match(mount.html(), /ล้างแอร์พรีเมียม/);
   mount.click({ "data-advisor-back": "" });
   assert.equal(first.state().step, 3);
   mount.click({ "data-advisor-reset": "" });
   assert.equal(first.state().step, 0);
-  assert.equal(mount.firstFocuses, 1);
+  assert.equal(first.state().recommendation, null);
+  assert.match(mount.html(), /แอร์ของคุณเป็นแบบไหน/);
   first.cleanup();
   assert.equal(mount.listeners.size, 0);
+});
+
+test("launcher opens an accessible sheet and close resumes the saved step", () => {
+  const runtime = loadAdvisor();
+  const mount = new FakeMount(runtime.document);
+  const controller = runtime.app.advisor.bind({ querySelector: () => mount });
+  assert.equal(mount.host.innerHTML, "");
+  assert.doesNotMatch(mount.launcher.innerHTML, /data-advisor-ac/);
+
+  mount.click({ "data-advisor-launch": "" });
+  assert.equal(controller.state().isOpen, true);
+  assert.match(mount.launcher.innerHTML, /aria-expanded="true"/);
+  assert.match(mount.host.innerHTML, /role="dialog"/);
+  assert.match(mount.host.innerHTML, /aria-modal="true"/);
+  assert.match(mount.html(), /data-advisor-ac/);
+  assert.ok(runtime.document.body.classList.contains("has-advisor-sheet"));
+  assert.equal(mount.questionFocuses, 1);
+
+  mount.click({ "data-advisor-ac": "wall" });
+  mount.click({ "data-advisor-next": "" });
+  assert.equal(controller.state().step, 1);
+  assert.equal(mount.scroll.scrollTop, 0);
+  mount.click({ "data-advisor-close": "" });
+  assert.equal(controller.state().isOpen, false);
+  assert.equal(controller.state().acType, "wall");
+  assert.equal(mount.host.innerHTML, "");
+  assert.match(mount.launcher.innerHTML, /ทำแบบประเมินต่อ/);
+  assert.match(mount.launcher.innerHTML, /ทำถึงขั้นที่ 2 จาก 4/);
+  assert.ok(!runtime.document.body.classList.contains("has-advisor-sheet"));
+  assert.equal(mount.launcherFocuses, 1);
+  assert.match(mount.launcher.innerHTML, /aria-expanded="false"/);
+
+  mount.click({ "data-advisor-launch": "" });
+  assert.equal(controller.state().step, 1);
+  assert.match(mount.html(), /data-advisor-months/);
+  assert.doesNotMatch(mount.html(), /data-advisor-ac=/);
+});
+
+test("sheet shell opens once while steps and Catalog refresh update in place", () => {
+  const runtime = loadAdvisor({ catalog: { status: "loading", items: [] } });
+  const mount = new FakeMount(runtime.document);
+  const container = { querySelector: () => mount };
+  const controller = runtime.app.advisor.bind(container);
+
+  mount.click({ "data-advisor-launch": "" });
+  const openingShell = mount.host.innerHTML;
+  assert.equal(mount.shellWrites, 1);
+  assert.match(openingShell, /advisor-sheet-layer is-opening/);
+  assert.ok(mount.layer.classList.contains("is-opening"));
+
+  mount.click({ "data-advisor-ac": "wall" });
+  mount.click({ "data-advisor-next": "" });
+  assert.equal(mount.shellWrites, 1);
+  assert.equal(mount.host.innerHTML, openingShell);
+  assert.ok(!mount.layer.classList.contains("is-opening"));
+  assert.ok(mount.body.classList.contains("is-step-forward"));
+
+  mount.click({ "data-advisor-back": "" });
+  assert.equal(mount.shellWrites, 1);
+  assert.ok(mount.body.classList.contains("is-step-back"));
+
+  mount.click({ "data-advisor-next": "" });
+  mount.click({ "data-advisor-months": "m4_5" });
+  mount.click({ "data-advisor-next": "" });
+  mount.click({ "data-advisor-symptom": "routine" });
+  mount.click({ "data-advisor-next": "" });
+  mount.click({ "data-advisor-repair": "none" });
+  mount.click({ "data-advisor-next": "" });
+  assert.equal(controller.state().step, 4);
+  assert.equal(mount.shellWrites, 1);
+
+  const focusedBeforeRefresh = new FakeElement();
+  runtime.document.activeElement = focusedBeforeRefresh;
+  mount.scroll.scrollTop = 173;
+  const resultFocuses = mount.resultFocuses;
+  runtime.app.state.catalog.status = "success";
+  runtime.app.state.catalog.items = [catalogItem(1)];
+  runtime.app.advisor.refreshCatalog(container);
+  assert.equal(mount.shellWrites, 1);
+  assert.equal(mount.host.innerHTML, openingShell);
+  assert.equal(mount.scroll.scrollTop, 173);
+  assert.equal(runtime.document.activeElement, focusedBeforeRefresh);
+  assert.equal(mount.resultFocuses, resultFocuses);
+  assert.match(mount.catalog.innerHTML, /data-advisor-product="1"/);
+
+  mount.click({ "data-advisor-close": "" });
+  assert.equal(mount.host.innerHTML, "");
+  mount.click({ "data-advisor-launch": "" });
+  assert.equal(mount.shellWrites, 3);
+  assert.ok(mount.layer.classList.contains("is-opening"));
+});
+
+test("multi-select exclusive choices and Back preserve the existing answers", () => {
+  const runtime = loadAdvisor();
+  const mount = new FakeMount(runtime.document);
+  const controller = runtime.app.advisor.bind({ querySelector: () => mount });
+  mount.click({ "data-advisor-launch": "" });
+  mount.click({ "data-advisor-ac": "wall" });
+  mount.click({ "data-advisor-next": "" });
+  mount.click({ "data-advisor-months": "m6_8" });
+  mount.click({ "data-advisor-next": "" });
+  mount.click({ "data-advisor-symptom": "routine" });
+  mount.click({ "data-advisor-symptom": "heavy_use" });
+  assert.deepEqual(Array.from(controller.state().symptoms), ["heavy_use"]);
+  mount.click({ "data-advisor-next": "" });
+  mount.click({ "data-advisor-repair": "none" });
+  mount.click({ "data-advisor-repair": "error_code" });
+  assert.deepEqual(Array.from(controller.state().repairSignals), ["error_code"]);
+  mount.click({ "data-advisor-back": "" });
+  assert.equal(controller.state().step, 2);
+  assert.deepEqual(Array.from(controller.state().symptoms), ["heavy_use"]);
+  assert.equal(mount.scroll.scrollTop, 0);
+});
+
+test("Escape, backdrop, focus trap and cleanup close the sheet without leaking listeners", () => {
+  const runtime = loadAdvisor();
+  const mount = new FakeMount(runtime.document);
+  const controller = runtime.app.advisor.bind({ querySelector: () => mount });
+  mount.click({ "data-advisor-launch": "" });
+  assert.equal(runtime.document.listeners.size, 1);
+  runtime.document.activeElement = mount.nextButton;
+  assert.equal(runtime.document.keydown("Tab"), true);
+  assert.equal(runtime.document.activeElement, mount.closeButton);
+  assert.equal(runtime.document.keydown("Escape"), true);
+  assert.equal(controller.state().isOpen, false);
+  assert.equal(runtime.document.listeners.size, 0);
+
+  mount.click({ "data-advisor-launch": "" });
+  mount.clickBackdrop();
+  assert.equal(controller.state().isOpen, false);
+  mount.click({ "data-advisor-launch": "" });
+  controller.cleanup();
+  assert.equal(runtime.document.listeners.size, 0);
+  assert.ok(!runtime.document.body.classList.contains("has-advisor-sheet"));
+  assert.equal(mount.listeners.size, 0);
+});
+
+test("closed result stays compact and never exposes Catalog cards on Home", () => {
+  const runtime = loadAdvisor({ catalog: { status: "success", items: [catalogItem(1)] } });
+  const mount = new FakeMount(runtime.document);
+  const controller = runtime.app.advisor.bind({ querySelector: () => mount });
+  completeWallStandardAdvisor(mount);
+  assert.equal(controller.state().recommendation.verdict, "standard_clean");
+  assert.match(mount.html(), /advisor-result-products/);
+  mount.click({ "data-advisor-close": "" });
+  assert.match(mount.launcher.innerHTML, /ผลล่าสุด/);
+  assert.match(mount.launcher.innerHTML, /ดูผลประเมิน/);
+  assert.doesNotMatch(mount.launcher.innerHTML, /advisor-product|data-advisor-item-action/);
+  assert.equal(mount.host.innerHTML, "");
+  mount.click({ "data-advisor-reset-launcher": "" });
+  assert.equal(controller.state().recommendation, null);
+  assert.equal(controller.state().step, 0);
+  assert.equal(controller.state().isOpen, true);
+  assert.match(mount.html(), /data-advisor-ac=/);
 });
 
 test("booking handoff routes only after both existing adapters succeed and otherwise contacts", () => {
@@ -344,6 +575,7 @@ test("repair result always opens Contact Sheet even when a repair item has adapt
   const mount = new FakeMount();
   const container = { querySelector: () => mount };
   const controller = runtime.app.advisor.bind(container);
+  mount.click({ "data-advisor-launch": "" });
   mount.click({ "data-advisor-ac": "wall" });
   mount.click({ "data-advisor-next": "" });
   mount.click({ "data-advisor-months": "m4_5" });
@@ -363,16 +595,34 @@ test("advisor render contract is accessible, compact, motion-safe, and has no au
   const { app } = loadAdvisor();
   const html = app.advisor.renderSection({ status: "success", items: [] });
   assert.match(html, /data-smart-advisor/);
-  assert.match(html, /แอร์ของคุณเป็นแบบไหน/);
-  assert.match(html, /aria-label="ความคืบหน้าการประเมิน"/);
+  assert.match(html, /ไม่แน่ใจว่าควรล้างหรือซ่อม/);
+  assert.match(html, /data-advisor-launch/);
+  assert.match(html, /aria-expanded="false"/);
+  assert.doesNotMatch(html, /data-advisor-ac|data-advisor-months|data-advisor-symptom|data-advisor-repair/);
+  assert.doesNotMatch(html, /ความคืบหน้าการประเมิน|ขั้นที่ 1 จาก 4/);
   assert.match(CSS_SOURCE, /@media \(prefers-reduced-motion: reduce\)/);
-  assert.match(CSS_SOURCE, /\.advisor-choice,[\s\S]*?min-height: 44px/);
-  assert.match(CSS_SOURCE, /@keyframes advisor-step-in/);
-  assert.match(CSS_SOURCE, /@keyframes health-ring-sweep/);
+  assert.match(CSS_SOURCE, /\.advisor-sheet[\s\S]*?max-height: 90dvh/);
+  assert.match(CSS_SOURCE, /\.advisor-sheet-actions[\s\S]*?safe-area-inset-bottom/);
+  assert.match(CSS_SOURCE, /\.advisor-sheet-layer[\s\S]*?z-index: 100/);
+  assert.match(CSS_SOURCE, /\.advisor-sheet \.advisor-chip-grid[\s\S]*?grid-template-columns: minmax\(0, 1fr\)/);
+  assert.match(CSS_SOURCE, /@media \(max-width: 380px\)[\s\S]*?\.advisor-sheet \.advisor-choice-grid \{ grid-template-columns: minmax\(0, 1fr\)/);
+  assert.match(CSS_SOURCE, /@media \(max-height: 620px\)[\s\S]*?max-height: 92dvh/);
+  assert.match(CSS_SOURCE, /body\.has-advisor-sheet \{ overflow: hidden/);
+  assert.match(CSS_SOURCE, /@keyframes advisor-orbit/);
+  assert.match(CSS_SOURCE, /@keyframes advisor-sheet-up/);
+  assert.match(CSS_SOURCE, /@keyframes advisor-question-forward/);
+  assert.match(CSS_SOURCE, /@keyframes advisor-result-reveal/);
+  assert.match(CSS_SOURCE, /\.advisor-sheet-layer\.is-opening \{ animation: advisor-backdrop-in/);
+  assert.match(CSS_SOURCE, /\.advisor-sheet-layer\.is-opening \.advisor-sheet \{ animation: advisor-sheet-up/);
+  assert.doesNotMatch(CSS_SOURCE.match(/\.advisor-sheet-layer \{[\s\S]*?\}/)?.[0] || "", /animation:/);
+  assert.doesNotMatch(CSS_SOURCE.match(/\.advisor-sheet \{[\s\S]*?\}/)?.[0] || "", /animation:/);
+  assert.match(CSS_SOURCE, /\.advisor-sheet-body\.is-step-forward > \.advisor-step/);
+  assert.match(CSS_SOURCE, /\.advisor-sheet-body\.is-step-back > \.advisor-step/);
+  assert.match(CSS_SOURCE, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.advisor-sheet-layer[\s\S]*?animation: none !important/);
   assert.doesNotMatch(SOURCE, /setInterval\s*\(/);
   assert.match(SOURCE, /matchMedia\?\.\("\(prefers-reduced-motion: reduce\)"\)/);
   const reduced = loadAdvisor({ reducedMotion: true });
-  const mount = new FakeMount();
+  const mount = new FakeMount(reduced.document);
   assert.equal(reduced.app.advisor.bind({ querySelector: () => mount }).reducedMotion, true);
 });
 
@@ -404,7 +654,7 @@ test("Home places built-in advisor after Quick Actions and before Featured Servi
 });
 
 test("advisor module is loaded before ui.js and precached under the shared build id", () => {
-  const build = "20260714_customer_smart_advisor_motion_v1";
+  const build = "20260714_smart_advisor_compact_sheet_v1";
   assert.ok(INDEX_SOURCE.indexOf(`modules/advisor.js?v=${build}`) < INDEX_SOURCE.indexOf(`modules/ui.js?v=${build}`));
   assert.match(SW_SOURCE, new RegExp(`BUILD_ID = "${build}"`));
   assert.match(SW_SOURCE, /modules\/advisor\.js\?v=\$\{BUILD_ID\}/);
