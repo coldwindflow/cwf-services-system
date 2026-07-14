@@ -259,23 +259,43 @@
     const intent = recommendation && recommendation.catalogIntent;
     if (!intent) return [];
     const adapter = typeof options.adapter === "function" ? options.adapter : null;
+    const alternativeVariant = recommendation.alternative && VERDICT_META[recommendation.alternative]
+      ? VERDICT_META[recommendation.alternative].variant
+      : null;
     return eligibleCatalogItems(items).map((item, index) => {
       const job = canonicalJobCategory(item);
       const acType = canonicalAcType(item);
       const variant = canonicalWashVariant(item);
       let rank = 99;
-      let exact = false;
+      let matchType = null;
       if (intent.kind === "repair") {
-        if (job === "repair") { rank = 0; exact = true; }
-        else if (job === "inspection") { rank = 1; exact = true; }
+        if (job === "repair") { rank = 0; matchType = "primary"; }
+        else if (job === "inspection") { rank = 1; matchType = "primary"; }
       } else if (intent.kind === "clean" && job === "wash") {
-        if (acType === intent.acType && (!intent.variant || variant === intent.variant)) { rank = 0; exact = true; }
-        else if (acType === intent.acType) rank = 2;
-        else rank = 5;
+        if (acType !== intent.acType) return null;
+        if (!intent.variant || variant === intent.variant) {
+          rank = 0;
+          matchType = "primary";
+        } else if (alternativeVariant && variant === alternativeVariant) {
+          rank = 1;
+          matchType = "alternative";
+        }
       }
-      if (rank === 99) return null;
-      const draft = intent.kind === "clean" && item.booking_mode === "bookable" && adapter ? adapter(item) : null;
-      return { item, exact, directBook: Boolean(draft), rank: rank + (draft ? 0 : 0.5), index };
+      if (rank === 99 || !matchType) return null;
+      const mayBook = intent.kind === "clean"
+        && matchType === "primary"
+        && item.booking_mode === "bookable"
+        && (recommendation.action === "catalog" || recommendation.action === "catalog_or_contact");
+      const draft = mayBook && adapter ? adapter(item) : null;
+      return {
+        item,
+        exact: matchType === "primary",
+        matchType,
+        directBook: Boolean(draft),
+        draft,
+        rank: rank + (draft ? 0 : 0.5),
+        index,
+      };
     }).filter(Boolean).sort((a, b) => a.rank - b.rank || a.index - b.index).slice(0, 3);
   }
 
@@ -335,7 +355,7 @@
         <div class="advisor-catalog-empty">
           <strong>ยังไม่มีรายการที่ตรงสำหรับจองอัตโนมัติ</strong>
           <p>ให้ทีม CWF ตรวจชนิดเครื่องและอาการก่อนเลือกบริการ</p>
-          <button class="primary-btn" type="button" data-advisor-contact>${icon("chat", 18)} ติดต่อให้ทีมประเมิน</button>
+          <button class="primary-btn" type="button" data-advisor-contact>${icon("chat", 18)} ให้ทีมช่วยประเมิน</button>
         </div>
       `;
     }
@@ -345,13 +365,13 @@
         <span>เลือกดูรายละเอียดหรือดำเนินการต่อ</span>
       </div>
       <div class="advisor-result-products">
-        ${matches.map(({ item, directBook, exact }) => {
+        ${matches.map(({ item, directBook, exact, matchType }) => {
           const image = firstImage(item);
           return `
             <article class="advisor-product ${exact ? "is-exact" : ""}" data-advisor-product="${esc(item.item_id)}">
               <div class="advisor-product-image">${image ? `<img src="${esc(image)}" alt="" loading="lazy">` : icon("sparkle", 24)}</div>
               <div class="advisor-product-body">
-                <span>${exact ? "ตรงกับผลประเมิน" : "ตัวเลือกที่เกี่ยวข้อง"}</span>
+                <span>${matchType === "alternative" ? "ทางเลือกสำรอง" : "ตรงกับผลประเมิน"}</span>
                 <h4>${esc(item.item_name)}</h4>
                 <p>${esc(priceText(item))}${item.unit_label ? ` / ${esc(item.unit_label)}` : ""}</p>
                 <div class="advisor-product-actions">
@@ -365,6 +385,11 @@
           `;
         }).join("")}
       </div>
+      ${recommendation.confidence === "assessment" || String(recommendation.action || "").includes("contact") ? `
+        <div class="advisor-assessment-cta">
+          <button class="primary-btn" type="button" data-advisor-contact>${icon("chat", 18)} ให้ทีมช่วยประเมิน</button>
+        </div>
+      ` : ""}
     `;
   }
 
@@ -524,16 +549,22 @@
         root.utils.routeTo(`storeItem-${button.getAttribute("data-advisor-detail")}`);
       } else if (button.hasAttribute("data-advisor-item-action")) {
         const id = button.getAttribute("data-advisor-item-action");
-        const item = (catalogState().items || []).find((row) => String(row.item_id) === String(id));
         if (state.recommendation?.verdict === "repair_check") {
-          contact(item && item.item_name);
+          contact();
           return;
         }
-        const draft = item ? root.services.catalogItemToCommerceDraft(item) : null;
-        if (draft && root.services.applyCommerceDraft("scheduled", draft)) {
+        const allowedMatches = mapCatalogItems(state.recommendation, catalogState().items, {
+          adapter: (item) => root.services.catalogItemToCommerceDraft(item),
+        });
+        const match = allowedMatches.find((candidate) => String(candidate.item.item_id) === String(id));
+        if (!match || !match.directBook || !match.draft) {
+          contact(match && match.item.item_name);
+          return;
+        }
+        if (root.services.applyCommerceDraft("scheduled", match.draft)) {
           root.utils.routeTo("scheduled");
         } else {
-          contact(item && item.item_name);
+          contact(match.item.item_name);
         }
       } else if (button.hasAttribute("data-advisor-contact")) {
         contact();

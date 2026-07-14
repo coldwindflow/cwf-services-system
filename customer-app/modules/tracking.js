@@ -480,6 +480,15 @@
     `;
   }
 
+  function trackingAcType(unit) {
+    const value = clean(unit && unit.ac_type).toLowerCase();
+    if (/ผนัง|wall/.test(value)) return "wall";
+    if (/สี่ทิศ|four.?way|cassette/.test(value)) return "fourway";
+    if (/เปลือยใต้ฝ้า|ใต้ฝ้า|ceiling|concealed|duct/.test(value)) return "ceiling";
+    if (/แขวน|hanging/.test(value)) return "hanging";
+    return "unknown";
+  }
+
   function nextServiceGuidance(data, unit, profile, cleanliness) {
     const inspection = unitInspection(data, unit || { checklist_summary: {} });
     const issueKeys = inspection.metrics.filter((metric) => metric.status === "issue").map((metric) => metric.key);
@@ -511,14 +520,62 @@
         reason: "มีรายการที่ควรติดตามแต่ยังระบุประเภทไม่ได้ จึงไม่ควรฟันธงรูปแบบบริการ",
       };
     }
-    const profileLabel = profile && profile.kind !== "general" ? profile.label : "บริการที่เหมาะกับอาการ";
-    const cycleText = cleanliness && cleanliness.cycleText ? cleanliness.cycleText : profile && profile.nextText;
+    const elapsedDays = cleanliness && Number.isFinite(cleanliness.elapsedDays) ? cleanliness.elapsedDays : null;
+    if (elapsedDays == null) {
+      return {
+        tone: "neutral",
+        label: "ครั้งถัดไปแนะนำ: ยังประเมินรอบบริการไม่ได้",
+        reason: "ยังไม่มีวันที่จบงานนี้สำหรับประเมินรอบบริการครั้งถัดไป",
+      };
+    }
+    if (trackingAcType(unit) !== "wall") {
+      let timing = "ยังไม่ถึงรอบล้าง";
+      let tone = "good";
+      if (elapsedDays >= 120 && elapsedDays <= 255) {
+        timing = "เริ่มเข้าใกล้รอบบริการ";
+        tone = "watch";
+      } else if (elapsedDays > 255) {
+        timing = "ควรตรวจสภาพเพื่อวางแผนบริการ";
+        tone = "due";
+      }
+      return {
+        tone,
+        label: `ครั้งถัดไปแนะนำ: ${timing}`,
+        reason: "แนะนำล้างให้ตรงชนิดเครื่องและให้ทีมประเมินรูปแบบหน้างาน",
+      };
+    }
+    if (elapsedDays < 120) {
+      return {
+        tone: "good",
+        label: "ครั้งถัดไปแนะนำ: ยังไม่ถึงรอบล้าง",
+        reason: "แนะนำติดตามสภาพและวางแผนล้างธรรมดาเมื่อครบประมาณ 4–5 เดือน",
+      };
+    }
+    if (elapsedDays <= 165) {
+      return {
+        tone: "good",
+        label: "ครั้งถัดไปแนะนำ: ล้างธรรมดา",
+        reason: "ระยะจากงานนี้อยู่ในรอบดูแลทั่วไปประมาณ 4–5 เดือน",
+      };
+    }
+    if (elapsedDays <= 255) {
+      return {
+        tone: "watch",
+        label: "ครั้งถัดไปแนะนำ: ล้างพรีเมียม",
+        reason: "ระยะจากงานนี้ประมาณ 6–8 เดือน เหมาะกับการดูแลที่ละเอียดขึ้น",
+      };
+    }
+    if (elapsedDays <= 365) {
+      return {
+        tone: "watch",
+        label: "ครั้งถัดไปแนะนำ: ประเมินล้างแขวนคอยล์",
+        reason: "ระยะจากงานนี้ประมาณ 9–12 เดือน ควรตรวจสภาพจริงก่อนเลือกรูปแบบล้าง",
+      };
+    }
     return {
-      tone: cleanliness && cleanliness.tone === "due" ? "due" : "good",
-      label: `ครั้งถัดไปแนะนำ: ${profileLabel}`,
-      reason: cycleText
-        ? `วางแผนตามรอบประมาณ ${cycleText} และติดตามอาการจริงระหว่างใช้งาน`
-        : "ติดตามสภาพการใช้งานและเลือกบริการตามอาการจริง",
+      tone: "due",
+      label: "ครั้งถัดไปแนะนำ: ประเมินล้างแขวนคอยล์หรือตัดล้าง",
+      reason: "เกินหนึ่งปีจากงานนี้ ควรให้ทีมเลือกวิธีตามสภาพจริง ไม่ฟันธงจากเวลาเพียงอย่างเดียว",
     };
   }
 
