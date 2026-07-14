@@ -282,6 +282,7 @@ test("completed cleaning without finished_at renders a neutral donut fallback wi
   assert.match(html, /ยังประเมินรอบล้างไม่ได้/);
   assert.match(html, /ยังไม่มีวันที่จบงานนี้/);
   assert.doesNotMatch(html, /ล้างล่าสุด|วันที่ล้างล่าสุด|สภาพความสะอาดปัจจุบัน/);
+  assert.doesNotMatch(html, /อ้างอิงจากวันที่จบงานนี้และประเภทบริการ/);
   assert.match(html, />--</);
   assert.doesNotMatch(html, />99%|>100%/);
 });

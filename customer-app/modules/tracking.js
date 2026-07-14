@@ -516,7 +516,7 @@
             </div>
           </div>
         </div>
-        <small class="cleanliness-basis">อ้างอิงจากวันที่จบงานนี้และประเภทบริการ</small>
+        ${model.elapsedDays == null ? "" : `<small class="cleanliness-basis">อ้างอิงจากวันที่จบงานนี้และประเภทบริการ</small>`}
       </section>
     `;
   }
