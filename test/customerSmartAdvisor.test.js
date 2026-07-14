@@ -588,6 +588,9 @@ test("single choices auto-flow while symptoms remain multi-select and Back prese
   mount.click({ "data-advisor-ac": "wall" });
   assert.equal(controller.state().step, 1);
   assert.match(runtime.document.portal.leading.innerHTML, /data-advisor-back/);
+  assert.match(runtime.document.portal.leading.innerHTML, /aria-label="ย้อนกลับ"/);
+  assert.match(runtime.document.portal.leading.innerHTML, /data-advisor-icon="arrow-left"/);
+  assert.doesNotMatch(runtime.document.portal.leading.innerHTML, /data-icon="sparkle"/);
   mount.click({ "data-advisor-months": "m6_8" });
   assert.equal(controller.state().step, 2);
 
@@ -609,6 +612,16 @@ test("single choices auto-flow while symptoms remain multi-select and Back prese
   mount.click({ "data-advisor-repair": "error_code" });
   assert.equal(controller.state().step, 4);
   assert.equal(controller.state().recommendation.verdict, "repair_check");
+});
+
+test("semantic Back icon has its own arrow path instead of a utility fallback", () => {
+  assert.match(SOURCE, /"arrow-left":\s*'<path d="M19 12H5M11 18l-6-6 6-6"\/>'/);
+  assert.match(SOURCE, /data-advisor-back[^>]*aria-label="ย้อนกลับ"[^>]*>\$\{semanticIcon\("arrow-left", 19\)\}/);
+  assert.doesNotMatch(SOURCE, /data-advisor-back[^>]*>\$\{icon\("arrow-left"/);
+  assert.match(CSS_SOURCE, /\.advisor-sheet-back\s*\{[^}]*width:\s*44px[^}]*height:\s*44px/s);
+  assert.match(CSS_SOURCE, /\.advisor-portal-root\s*\{[^}]*pointer-events:\s*none/s);
+  assert.match(CSS_SOURCE, /\.advisor-portal-root\.is-open\s*\{\s*pointer-events:\s*auto;?\s*\}/);
+  assert.match(CSS_SOURCE, /\.advisor-portal-root\.is-closing\s*\{\s*pointer-events:\s*none;?\s*\}/);
 });
 
 test("routine and no-repair choices auto-flow without dropping exclusive state", () => {
@@ -749,6 +762,8 @@ test("animated close preserves viewport geometry until the panel is removed", ()
 
   mount.click({ "data-advisor-close": "" });
   assert.equal(runtime.visualViewport.listeners.size, 0);
+  assert.ok(!portal.classList.contains("is-open"));
+  assert.ok(portal.classList.contains("is-closing"));
   assert.equal(portal.style.getPropertyValue("--advisor-viewport-height"), "486px");
   assert.equal(portal.style.getPropertyValue("--advisor-viewport-top"), "72px");
   assert.match(mount.host.innerHTML, /data-advisor-dialog/);
@@ -765,6 +780,85 @@ test("animated close preserves viewport geometry until the panel is removed", ()
   assert.equal(portal.style.getPropertyValue("--advisor-viewport-height"), "");
   assert.equal(portal.style.getPropertyValue("--advisor-viewport-top"), "");
   assert.equal(runtime.document.portal, null);
+});
+
+test("animated close blocks every Portal action before the node is removed", () => {
+  let adapterCalls = 0;
+  let applyCalls = 0;
+  const runtime = loadAdvisor({
+    deferTimers: true,
+    catalog: { status: "success", items: [catalogItem(1)] },
+    adapter: (item) => { adapterCalls += 1; return { id: item.item_id, draft: {} }; },
+    apply: () => { applyCalls += 1; return true; },
+  });
+  const mount = new FakeMount(runtime.document);
+  const controller = runtime.app.advisor.bind({ querySelector: () => mount });
+  mount.click({ "data-advisor-launch": "" });
+  mount.click({ "data-advisor-ac": "wall" });
+  runtime.runTimers();
+  mount.click({ "data-advisor-months": "m4_5" });
+  runtime.runTimers();
+  mount.click({ "data-advisor-symptom": "routine" });
+  runtime.runTimers();
+  mount.click({ "data-advisor-repair": "none" });
+  runtime.runTimers();
+  assert.equal(controller.state().step, 4);
+
+  const portal = runtime.document.portal;
+  const stateBeforeClose = controller.state();
+  const adapterCallsBeforeClose = adapterCalls;
+  const applyCallsBeforeClose = applyCalls;
+  mount.click({ "data-advisor-close": "" });
+  assert.ok(!portal.classList.contains("is-open"));
+  assert.ok(portal.classList.contains("is-closing"));
+  assert.equal(portal.listeners.size, 1);
+
+  mount.click({ "data-advisor-ac": "fourway" });
+  mount.click({ "data-advisor-back": "" });
+  mount.click({ "data-advisor-repair": "error_code" });
+  mount.click({ "data-advisor-item-action": "1" });
+  mount.click({ "data-advisor-detail": "1" });
+  mount.click({ "data-advisor-contact": "" });
+  mount.click({ "data-advisor-reset": "" });
+
+  assert.deepEqual(plain(controller.state()), plain({ ...stateBeforeClose, isOpen: false }));
+  assert.equal(adapterCalls, adapterCallsBeforeClose);
+  assert.equal(applyCalls, applyCallsBeforeClose);
+  assert.deepEqual(runtime.routes, []);
+  assert.deepEqual(runtime.contacts, []);
+  assert.equal(runtime.timers.size, 1);
+
+  runtime.runTimers();
+  assert.equal(runtime.document.portal, null);
+  assert.equal(portal.listeners.size, 0);
+});
+
+test("reopening during a pending close replaces the Portal and binds one working listener", () => {
+  const runtime = loadAdvisor({ deferTimers: true });
+  const mount = new FakeMount(runtime.document);
+  const controller = runtime.app.advisor.bind({ querySelector: () => mount });
+  mount.click({ "data-advisor-launch": "" });
+  const closingPortal = runtime.document.portal;
+  mount.click({ "data-advisor-close": "" });
+  assert.equal(runtime.timers.size, 1);
+  assert.ok(closingPortal.classList.contains("is-closing"));
+
+  mount.click({ "data-advisor-launch": "" });
+  const reopenedPortal = runtime.document.portal;
+  assert.notEqual(reopenedPortal, closingPortal);
+  assert.equal(runtime.timers.size, 0);
+  assert.equal(runtime.document.body.children.length, 1);
+  assert.equal(closingPortal.listeners.size, 0);
+  assert.equal(reopenedPortal.listeners.size, 1);
+  assert.ok(reopenedPortal.classList.contains("is-open"));
+  assert.ok(!reopenedPortal.classList.contains("is-closing"));
+
+  mount.click({ "data-advisor-ac": "wall" });
+  assert.equal(runtime.timers.size, 1);
+  runtime.runTimers();
+  assert.equal(controller.state().step, 1);
+  assert.equal(controller.state().acType, "wall");
+  controller.cleanup();
 });
 
 test("immediate close and cleanup remove viewport listeners and variables without delay", () => {

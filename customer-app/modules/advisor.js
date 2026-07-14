@@ -312,6 +312,7 @@
   }
 
   const ADVISOR_ICON_PATHS = Object.freeze({
+    "arrow-left": '<path d="M19 12H5M11 18l-6-6 6-6"/>',
     "wall-ac": '<rect x="3" y="5" width="18" height="8" rx="2"/><path d="M7 9h10M8 16c1.2 1.2 2.5 1.8 4 1.8s2.8-.6 4-1.8"/>',
     fourway: '<rect x="6" y="6" width="12" height="12" rx="2"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4M9 9h6v6H9z"/>',
     "hanging-ac": '<path d="M6 3v3M18 3v3"/><rect x="3" y="6" width="18" height="8" rx="2"/><path d="M7 18h10M9 14v4M15 14v4"/>',
@@ -657,7 +658,7 @@
       if (stepLabel) stepLabel.textContent = result ? "ผลประเมิน" : `ขั้นที่ ${stepNumber} จาก 4`;
       if (progress) progress.innerHTML = sheetProgressHtml(stepNumber);
       if (leading) leading.innerHTML = state.step > 0
-        ? `<button class="advisor-sheet-back" type="button" data-advisor-back aria-label="ย้อนกลับ">${icon("arrow-left", 19)}</button>`
+        ? `<button class="advisor-sheet-back" type="button" data-advisor-back aria-label="ย้อนกลับ">${semanticIcon("arrow-left", 19)}</button>`
         : `<div class="advisor-sheet-brand" aria-hidden="true">${icon("sparkle", 18)}</div>`;
       if (actions) {
         actions.innerHTML = sheetActions(state);
@@ -768,6 +769,8 @@
         closeTimer = null;
       }
       isOpen = false;
+      portalRoot?.classList?.remove?.("is-open");
+      portalRoot?.classList?.add?.("is-closing");
       clearTransition();
       removeOpenListeners();
       stopViewportListeners();
@@ -809,8 +812,8 @@
       }
     };
     const onPortalClick = (event) => {
+      if (destroyed || !isOpen) return;
       const button = event.target.closest?.("button");
-      if (destroyed) return;
       if (!button) {
         const backdrop = event.target.closest?.("[data-advisor-backdrop]");
         const dialog = event.target.closest?.("[data-advisor-dialog]");

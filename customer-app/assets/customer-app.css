@@ -6652,6 +6652,7 @@ body.has-advisor-sheet { overflow: hidden; }
   pointer-events: none;
 }
 .advisor-portal-root.is-open { pointer-events: auto; }
+.advisor-portal-root.is-closing { pointer-events: none; }
 .advisor-sheet-layer {
   position: absolute;
   inset: 0;
