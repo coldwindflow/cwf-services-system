@@ -49,6 +49,24 @@ class FakeClassList {
   contains(value) { return this.values.has(value); }
 }
 
+class FakeStyle {
+  constructor() { this.values = new Map(); }
+  setProperty(name, value) { this.values.set(name, String(value)); }
+  removeProperty(name) { this.values.delete(name); }
+  getPropertyValue(name) { return this.values.get(name) || ""; }
+}
+
+function fakeEventTarget(properties = {}) {
+  const listeners = new Map();
+  return {
+    ...properties,
+    listeners,
+    addEventListener(type, handler) { listeners.set(type, handler); },
+    removeEventListener(type, handler) { if (listeners.get(type) === handler) listeners.delete(type); },
+    emit(type) { listeners.get(type)?.(); },
+  };
+}
+
 class FakeElement {
   constructor(onFocus, onHtmlChange) {
     this.classList = new FakeClassList();
@@ -76,6 +94,7 @@ class FakeMount {
     this.isConnected = true;
     this.listeners = new Map();
     this.classList = new FakeClassList();
+    this.style = new FakeStyle();
     this.document = fakeDocument;
     this.shellWrites = 0;
     this.launcher = new FakeElement((node) => { this.launcherFocuses += 1; if (this.document) this.document.activeElement = node; });
@@ -138,6 +157,7 @@ function fakeDocument() {
   return {
     activeElement: null,
     body: { classList: new FakeClassList() },
+    documentElement: { clientHeight: 760 },
     listeners,
     addEventListener(type, handler) { listeners.set(type, handler); },
     removeEventListener(type, handler) { if (listeners.get(type) === handler) listeners.delete(type); },
@@ -169,8 +189,18 @@ function loadAdvisor(options = {}) {
     },
     ui: { openContactSheet: (_container, item) => contacts.push(item) },
   };
+  const visualViewport = options.visualViewport ? fakeEventTarget({
+    height: options.visualViewport.height,
+    offsetTop: options.visualViewport.offsetTop || 0,
+  }) : null;
+  const fakeWindow = fakeEventTarget({
+    CWFCustomerAppV2: app,
+    innerHeight: options.innerHeight || 760,
+    visualViewport,
+    matchMedia: () => ({ matches: options.reducedMotion === true }),
+  });
   vm.runInNewContext(SOURCE, {
-    window: { CWFCustomerAppV2: app, matchMedia: () => ({ matches: options.reducedMotion === true }) },
+    window: fakeWindow,
     document,
     Set,
     WeakMap,
@@ -178,7 +208,7 @@ function loadAdvisor(options = {}) {
     setTimeout: (fn) => { fn(); return 1; },
     clearTimeout() {},
   }, { filename: "advisor.js" });
-  return { app, routes, contacts, applied, document };
+  return { app, routes, contacts, applied, document, window: fakeWindow, visualViewport };
 }
 
 function plain(value) {
@@ -403,6 +433,71 @@ test("launcher opens an accessible sheet and close resumes the saved step", () =
   assert.doesNotMatch(mount.html(), /data-advisor-ac=/);
 });
 
+test("semantic choice icons are deterministic, distinct, and emoji-free", () => {
+  const { app } = loadAdvisor();
+  const renderIcons = (step) => Array.from(app.advisor._test.stepContent({
+    step,
+    acType: "",
+    monthsBand: "",
+    symptoms: [],
+    repairSignals: [],
+    recommendation: null,
+  }, { status: "success", items: [] }).matchAll(/data-advisor-icon="([^"]+)"/g), (match) => match[1]);
+  const acIcons = renderIcons(0);
+  const monthIcons = renderIcons(1);
+  const symptomIcons = renderIcons(2);
+  const repairIcons = renderIcons(3);
+  assert.equal(acIcons.length, 5);
+  assert.equal(new Set(acIcons).size, 5);
+  assert.equal(monthIcons.length, 6);
+  assert.ok(new Set(monthIcons).size > 3);
+  assert.equal(symptomIcons.length, 12);
+  assert.equal(new Set(symptomIcons).size, 12);
+  assert.equal(repairIcons.length, 7);
+  assert.equal(new Set(repairIcons).size, 7);
+  assert.doesNotMatch([acIcons, monthIcons, symptomIcons, repairIcons].flat().join(""), /[\u{1F300}-\u{1FAFF}]/u);
+});
+
+test("visualViewport drives the mobile panel and listeners clean up on close and route leave", () => {
+  const runtime = loadAdvisor({ visualViewport: { height: 612.4, offsetTop: 48.6 } });
+  const mount = new FakeMount(runtime.document);
+  const controller = runtime.app.advisor.bind({ querySelector: () => mount });
+  mount.click({ "data-advisor-launch": "" });
+  assert.equal(mount.style.getPropertyValue("--advisor-viewport-height"), "612px");
+  assert.equal(mount.style.getPropertyValue("--advisor-viewport-top"), "49px");
+  assert.deepEqual(Array.from(runtime.visualViewport.listeners.keys()).sort(), ["resize", "scroll"]);
+
+  runtime.visualViewport.height = 488.2;
+  runtime.visualViewport.offsetTop = 72.1;
+  runtime.visualViewport.emit("resize");
+  assert.equal(mount.style.getPropertyValue("--advisor-viewport-height"), "488px");
+  assert.equal(mount.style.getPropertyValue("--advisor-viewport-top"), "72px");
+  runtime.visualViewport.offsetTop = 16;
+  runtime.visualViewport.emit("scroll");
+  assert.equal(mount.style.getPropertyValue("--advisor-viewport-top"), "16px");
+
+  mount.click({ "data-advisor-close": "" });
+  assert.equal(runtime.visualViewport.listeners.size, 0);
+  assert.equal(mount.style.getPropertyValue("--advisor-viewport-height"), "");
+  mount.click({ "data-advisor-launch": "" });
+  controller.cleanup();
+  assert.equal(runtime.visualViewport.listeners.size, 0);
+});
+
+test("visualViewport fallback uses window height and removes its resize listener", () => {
+  const runtime = loadAdvisor({ innerHeight: 701 });
+  const mount = new FakeMount(runtime.document);
+  const controller = runtime.app.advisor.bind({ querySelector: () => mount });
+  mount.click({ "data-advisor-launch": "" });
+  assert.equal(mount.style.getPropertyValue("--advisor-viewport-height"), "701px");
+  assert.deepEqual(Array.from(runtime.window.listeners.keys()), ["resize"]);
+  runtime.window.innerHeight = 640;
+  runtime.window.emit("resize");
+  assert.equal(mount.style.getPropertyValue("--advisor-viewport-height"), "640px");
+  controller.cleanup();
+  assert.equal(runtime.window.listeners.size, 0);
+});
+
 test("sheet shell opens once while steps and Catalog refresh update in place", () => {
   const runtime = loadAdvisor({ catalog: { status: "loading", items: [] } });
   const mount = new FakeMount(runtime.document);
@@ -600,15 +695,28 @@ test("advisor render contract is accessible, compact, motion-safe, and has no au
   assert.match(html, /aria-expanded="false"/);
   assert.doesNotMatch(html, /data-advisor-ac|data-advisor-months|data-advisor-symptom|data-advisor-repair/);
   assert.doesNotMatch(html, /ความคืบหน้าการประเมิน|ขั้นที่ 1 จาก 4/);
+  assert.doesNotMatch(html, /ดูบริการจริงจาก Catalog/);
   assert.match(CSS_SOURCE, /@media \(prefers-reduced-motion: reduce\)/);
   assert.match(CSS_SOURCE, /\.advisor-sheet[\s\S]*?max-height: 90dvh/);
   assert.match(CSS_SOURCE, /\.advisor-sheet-actions[\s\S]*?safe-area-inset-bottom/);
   assert.match(CSS_SOURCE, /\.advisor-sheet-layer[\s\S]*?z-index: 100/);
   assert.match(CSS_SOURCE, /\.advisor-sheet \.advisor-chip-grid[\s\S]*?grid-template-columns: minmax\(0, 1fr\)/);
   assert.match(CSS_SOURCE, /@media \(max-width: 380px\)[\s\S]*?\.advisor-sheet \.advisor-choice-grid \{ grid-template-columns: minmax\(0, 1fr\)/);
-  assert.match(CSS_SOURCE, /@media \(max-height: 620px\)[\s\S]*?max-height: 92dvh/);
+  assert.match(CSS_SOURCE, /@media \(max-width: 600px\)[\s\S]*?height: var\(--advisor-viewport-height, 100dvh\)/);
+  assert.match(CSS_SOURCE, /@media \(max-width: 600px\)[\s\S]*?max-height: none[\s\S]*?border-radius: 0/);
   assert.match(CSS_SOURCE, /body\.has-advisor-sheet \{ overflow: hidden/);
+  assert.match(CSS_SOURCE, /\.smart-advisor-section \{[\s\S]*?min-height: 112px[\s\S]*?padding: 12px/);
+  assert.match(CSS_SOURCE, /\.advisor-launcher-orb \{[\s\S]*?width: 40px[\s\S]*?height: 40px/);
+  assert.match(CSS_SOURCE, /\.advisor-launcher-actions \.primary-btn \{[\s\S]*?min-height: 42px/);
+  assert.match(CSS_SOURCE, /@media \(max-width: 600px\)[\s\S]*?\.advisor-launcher-copy p \{ display: none; \}/);
+  assert.match(CSS_SOURCE, /\.advisor-sheet-scroll \{[\s\S]*?overflow-y: auto[\s\S]*?overscroll-behavior: contain/);
+  assert.match(CSS_SOURCE, /\.advisor-sheet-actions \{[\s\S]*?safe-area-inset-bottom/);
   assert.match(CSS_SOURCE, /@keyframes advisor-orbit/);
+  assert.match(CSS_SOURCE, /@keyframes advisor-orb-breathe/);
+  assert.match(CSS_SOURCE, /@keyframes advisor-launcher-sheen/);
+  assert.match(CSS_SOURCE, /@keyframes advisor-choice-sweep/);
+  assert.match(CSS_SOURCE, /@keyframes advisor-check-spring/);
+  assert.match(CSS_SOURCE, /@keyframes advisor-confidence-pop/);
   assert.match(CSS_SOURCE, /@keyframes advisor-sheet-up/);
   assert.match(CSS_SOURCE, /@keyframes advisor-question-forward/);
   assert.match(CSS_SOURCE, /@keyframes advisor-result-reveal/);
@@ -621,6 +729,7 @@ test("advisor render contract is accessible, compact, motion-safe, and has no au
   assert.match(CSS_SOURCE, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.advisor-sheet-layer[\s\S]*?animation: none !important/);
   assert.doesNotMatch(SOURCE, /setInterval\s*\(/);
   assert.match(SOURCE, /matchMedia\?\.\("\(prefers-reduced-motion: reduce\)"\)/);
+  assert.match(SOURCE, /window\.visualViewport/);
   const reduced = loadAdvisor({ reducedMotion: true });
   const mount = new FakeMount(reduced.document);
   assert.equal(reduced.app.advisor.bind({ querySelector: () => mount }).reducedMotion, true);
@@ -654,7 +763,7 @@ test("Home places built-in advisor after Quick Actions and before Featured Servi
 });
 
 test("advisor module is loaded before ui.js and precached under the shared build id", () => {
-  const build = "20260714_smart_advisor_compact_sheet_v1";
+  const build = "20260715_smart_advisor_mobile_polish_v2";
   assert.ok(INDEX_SOURCE.indexOf(`modules/advisor.js?v=${build}`) < INDEX_SOURCE.indexOf(`modules/ui.js?v=${build}`));
   assert.match(SW_SOURCE, new RegExp(`BUILD_ID = "${build}"`));
   assert.match(SW_SOURCE, /modules\/advisor\.js\?v=\$\{BUILD_ID\}/);

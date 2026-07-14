@@ -5,45 +5,45 @@
   const controllers = new WeakMap();
 
   const AC_TYPES = Object.freeze([
-    { value: "wall", label: "แอร์ผนัง", bookingValue: "ผนัง" },
-    { value: "fourway", label: "แอร์สี่ทิศทาง", bookingValue: "สี่ทิศทาง" },
-    { value: "hanging", label: "แอร์แขวน", bookingValue: "แขวน" },
-    { value: "ceiling", label: "แอร์เปลือยใต้ฝ้า", bookingValue: "เปลือยใต้ฝ้า" },
-    { value: "unknown", label: "ไม่แน่ใจ", bookingValue: null },
+    { value: "wall", label: "แอร์ผนัง", bookingValue: "ผนัง", icon: "wall-ac" },
+    { value: "fourway", label: "แอร์สี่ทิศทาง", bookingValue: "สี่ทิศทาง", icon: "fourway" },
+    { value: "hanging", label: "แอร์แขวน", bookingValue: "แขวน", icon: "hanging-ac" },
+    { value: "ceiling", label: "แอร์เปลือยใต้ฝ้า", bookingValue: "เปลือยใต้ฝ้า", icon: "ceiling-ac" },
+    { value: "unknown", label: "ไม่แน่ใจ", bookingValue: null, icon: "question" },
   ]);
 
   const MONTH_BANDS = Object.freeze([
-    { value: "recent", label: "ไม่เกิน 3 เดือน" },
-    { value: "m4_5", label: "4–5 เดือน" },
-    { value: "m6_8", label: "6–8 เดือน" },
-    { value: "m9_12", label: "9–12 เดือน" },
-    { value: "over12", label: "เกิน 1 ปี" },
-    { value: "unknown", label: "จำไม่ได้ / ไม่แน่ใจ" },
+    { value: "recent", label: "ไม่เกิน 3 เดือน", icon: "calendar-check" },
+    { value: "m4_5", label: "4–5 เดือน", icon: "calendar" },
+    { value: "m6_8", label: "6–8 เดือน", icon: "clock" },
+    { value: "m9_12", label: "9–12 เดือน", icon: "history" },
+    { value: "over12", label: "เกิน 1 ปี", icon: "calendar-alert" },
+    { value: "unknown", label: "จำไม่ได้ / ไม่แน่ใจ", icon: "question" },
   ]);
 
   const SYMPTOMS = Object.freeze([
-    { value: "routine", label: "ไม่มีอาการ แค่ถึงรอบล้าง" },
-    { value: "reduced_cooling", label: "เย็นน้อยลง" },
-    { value: "weak_airflow", label: "ลมอ่อน" },
-    { value: "odor", label: "มีกลิ่น" },
-    { value: "drain", label: "น้ำหยด / ระบายน้ำไม่ดี" },
-    { value: "dusty", label: "มีฝุ่นหรือคราบมาก" },
-    { value: "heavy_dirt", label: "สกปรกหนัก / หมักหมม" },
-    { value: "noise", label: "เสียงดัง" },
-    { value: "heavy_use", label: "ใช้งานหนักทุกวัน" },
-    { value: "pets", label: "มีสัตว์เลี้ยง" },
-    { value: "allergy", label: "มีผู้แพ้ง่ายหรือเด็กเล็ก" },
-    { value: "never_deep", label: "ไม่เคยล้างลึก" },
+    { value: "routine", label: "ไม่มีอาการ แค่ถึงรอบล้าง", icon: "check-circle" },
+    { value: "reduced_cooling", label: "เย็นน้อยลง", icon: "thermometer" },
+    { value: "weak_airflow", label: "ลมอ่อน", icon: "wind" },
+    { value: "odor", label: "มีกลิ่น", icon: "air-wave" },
+    { value: "drain", label: "น้ำหยด / ระบายน้ำไม่ดี", icon: "droplet" },
+    { value: "dusty", label: "มีฝุ่นหรือคราบมาก", icon: "filter" },
+    { value: "heavy_dirt", label: "สกปรกหนัก / หมักหมม", icon: "warning" },
+    { value: "noise", label: "เสียงดัง", icon: "sound" },
+    { value: "heavy_use", label: "ใช้งานหนักทุกวัน", icon: "activity" },
+    { value: "pets", label: "มีสัตว์เลี้ยง", icon: "paw" },
+    { value: "allergy", label: "มีผู้แพ้ง่ายหรือเด็กเล็ก", icon: "health-shield" },
+    { value: "never_deep", label: "ไม่เคยล้างลึก", icon: "layers" },
   ]);
 
   const REPAIR_SIGNALS = Object.freeze([
-    { value: "error_code", label: "มี Error Code" },
-    { value: "ac_not_running", label: "แอร์ไม่ทำงาน" },
-    { value: "outdoor_not_running", label: "คอยร้อนไม่ทำงาน" },
-    { value: "indoor_not_running", label: "คอยล์เย็นไม่ทำงาน" },
-    { value: "breaker_trip", label: "เบรกเกอร์ตัด" },
-    { value: "burning_smell", label: "มีเสียงหรือกลิ่นไหม้" },
-    { value: "none", label: "ไม่มีอาการเหล่านี้" },
+    { value: "error_code", label: "มี Error Code", icon: "code-alert" },
+    { value: "ac_not_running", label: "แอร์ไม่ทำงาน", icon: "power-off" },
+    { value: "outdoor_not_running", label: "คอยร้อนไม่ทำงาน", icon: "fan" },
+    { value: "indoor_not_running", label: "คอยล์เย็นไม่ทำงาน", icon: "snow-vent" },
+    { value: "breaker_trip", label: "เบรกเกอร์ตัด", icon: "breaker" },
+    { value: "burning_smell", label: "มีเสียงหรือกลิ่นไหม้", icon: "flame-alert" },
+    { value: "none", label: "ไม่มีอาการเหล่านี้", icon: "check-circle" },
   ]);
 
   const VERDICT_META = Object.freeze({
@@ -311,11 +311,47 @@
     return typeof root.utils.icon === "function" ? root.utils.icon(name, size) : "";
   }
 
+  const ADVISOR_ICON_PATHS = Object.freeze({
+    "wall-ac": '<rect x="3" y="5" width="18" height="8" rx="2"/><path d="M7 9h10M8 16c1.2 1.2 2.5 1.8 4 1.8s2.8-.6 4-1.8"/>',
+    fourway: '<rect x="6" y="6" width="12" height="12" rx="2"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4M9 9h6v6H9z"/>',
+    "hanging-ac": '<path d="M6 3v3M18 3v3"/><rect x="3" y="6" width="18" height="8" rx="2"/><path d="M7 18h10M9 14v4M15 14v4"/>',
+    "ceiling-ac": '<path d="M3 5h18M6 5v8h12V5M9 16h6M8 20c1.1-1.2 2.4-1.8 4-1.8s2.9.6 4 1.8"/>',
+    question: '<circle cx="12" cy="12" r="9"/><path d="M9.8 9a2.4 2.4 0 1 1 3.6 2.1c-.9.5-1.4 1-1.4 2M12 17h.01"/>',
+    "calendar-check": '<rect x="3" y="4" width="18" height="17" rx="3"/><path d="M8 2v4M16 2v4M3 9h18M8 15l2 2 5-5"/>',
+    calendar: '<rect x="3" y="4" width="18" height="17" rx="3"/><path d="M8 2v4M16 2v4M3 9h18M8 13h2M14 13h2M8 17h2"/>',
+    clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/>',
+    history: '<path d="M4 5v5h5M5.5 18A9 9 0 1 0 4 10"/><path d="M12 7v5l3 2"/>',
+    "calendar-alert": '<rect x="3" y="4" width="18" height="17" rx="3"/><path d="M8 2v4M16 2v4M3 9h18M12 12v4M12 18h.01"/>',
+    "check-circle": '<circle cx="12" cy="12" r="9"/><path d="m8 12 2.5 2.5L16 9"/>',
+    thermometer: '<path d="M10 5a2 2 0 0 1 4 0v8.2a4 4 0 1 1-4 0V5zM12 9v7"/><path d="M17 6h3M18 10h2"/>',
+    wind: '<path d="M3 8h11a2 2 0 1 0-2-2M3 12h16a2 2 0 1 1-2 2M3 16h9"/>',
+    "air-wave": '<path d="M3 8c3-3 6 3 9 0s6 3 9 0M3 13c3-3 6 3 9 0s6 3 9 0M5 18c2-2 4 2 6 0"/>',
+    droplet: '<path d="M12 3s6 6.2 6 11a6 6 0 0 1-12 0c0-4.8 6-11 6-11z"/><path d="M9 15c.5 1.2 1.5 1.8 3 1.8"/>',
+    filter: '<path d="M4 5h16l-6 7v6l-4 2v-8L4 5z"/><path d="M7 8h10"/>',
+    warning: '<path d="M12 3 2.8 20h18.4L12 3z"/><path d="M12 9v5M12 17h.01"/>',
+    sound: '<path d="M4 10v4h4l5 4V6L8 10H4zM17 9c1.5 1.5 1.5 4.5 0 6M19.5 6.5c3 3 3 8 0 11"/>',
+    activity: '<path d="M3 12h4l2-6 4 12 2-6h6"/>',
+    paw: '<circle cx="8" cy="8" r="1.8"/><circle cx="16" cy="8" r="1.8"/><circle cx="5.5" cy="12" r="1.6"/><circle cx="18.5" cy="12" r="1.6"/><path d="M8 17c0-2.2 1.8-4 4-4s4 1.8 4 4c0 2-1.5 3-4 3s-4-1-4-3z"/>',
+    "health-shield": '<path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z"/><path d="M12 8v8M8 12h8"/>',
+    layers: '<path d="m12 3 9 5-9 5-9-5 9-5zM3 12l9 5 9-5M3 16l9 5 9-5"/>',
+    "code-alert": '<path d="m8 8-4 4 4 4M16 8l4 4-4 4M13 6l-2 12"/><circle cx="19" cy="5" r="3"/><path d="M19 3.8v1.4M19 6.2h.01"/>',
+    "power-off": '<path d="M12 3v8M6.3 5.8A8 8 0 1 0 18.5 6M3 3l18 18"/>',
+    fan: '<circle cx="12" cy="12" r="2"/><path d="M12 10c-1-4 1-7 4-7 2 3 1 6-2 8M14 12c4-1 7 1 7 4-3 2-6 1-8-2M12 14c1 4-1 7-4 7-2-3-1-6 2-8M10 12c-4 1-7-1-7-4 3-2 6-1 8 2"/>',
+    "snow-vent": '<path d="M12 3v18M5 7l14 10M19 7 5 17M8 4l4 3 4-3M8 20l4-3 4 3"/>',
+    breaker: '<path d="M13 2 5 13h6l-1 9 9-12h-6l0-8z"/><path d="M3 3l18 18"/>',
+    "flame-alert": '<path d="M13 3c1 4-2 5-2 8 0 1.5 1 2.5 2 3.5 1.5-1 2.5-2.5 2-5 3 2 4 4.5 3 7a6.5 6.5 0 0 1-12 0c-1-3 1-6 4-8-.5 3 1 4 1 4"/><path d="M20 4v3M20 9h.01"/>',
+  });
+
+  function semanticIcon(name, size = 20) {
+    const key = ADVISOR_ICON_PATHS[name] ? name : "question";
+    return `<span class="advisor-semantic-icon" data-advisor-icon="${esc(key)}" aria-hidden="true"><svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${ADVISOR_ICON_PATHS[key]}</svg></span>`;
+  }
+
   function choiceButtons(items, selected, attribute) {
     return `<div class="advisor-choice-grid">${items.map((item) => `
       <button class="advisor-choice ${selected === item.value ? "is-selected" : ""}" type="button"
         ${attribute}="${esc(item.value)}" aria-pressed="${selected === item.value ? "true" : "false"}">
-        <span class="advisor-choice-icon">${icon(attribute === "data-advisor-months" ? "calendar" : "sparkle", 17)}</span>
+        <span class="advisor-choice-icon">${semanticIcon(item.icon, 20)}</span>
         <span class="advisor-choice-label">${esc(item.label)}</span>
         <span class="advisor-choice-check" aria-hidden="true">${selected === item.value ? "✓" : ""}</span>
       </button>
@@ -327,7 +363,7 @@
     return `<div class="advisor-chip-grid ${attribute === "data-advisor-repair" ? "is-repair-list" : ""}">${items.map((item) => `
       <button class="advisor-chip ${values.has(item.value) ? "is-selected" : ""}" type="button"
         ${attribute}="${esc(item.value)}" aria-pressed="${values.has(item.value) ? "true" : "false"}">
-        <span class="advisor-choice-icon">${icon(attribute === "data-advisor-repair" ? "bolt" : "sparkle", 17)}</span>
+        <span class="advisor-choice-icon">${semanticIcon(item.icon, 20)}</span>
         <span class="advisor-choice-label">${esc(item.label)}</span>
         <span class="advisor-choice-check" aria-hidden="true">${values.has(item.value) ? "✓" : ""}</span>
       </button>
@@ -475,7 +511,7 @@
         <button class="primary-btn" type="button" data-advisor-launch aria-expanded="${isOpen ? "true" : "false"}" aria-controls="advisor-sheet-dialog">
           ${icon(hasResult ? "sparkle" : "play", 18)} ${cta}
         </button>
-        ${hasResult ? `<button class="advisor-reset-btn" type="button" data-advisor-reset-launcher>ประเมินใหม่</button>` : `<small>ดูบริการจริงจาก Catalog</small>`}
+        ${hasResult ? `<button class="advisor-reset-btn" type="button" data-advisor-reset-launcher>ประเมินใหม่</button>` : ""}
       </div>
     `;
   }
@@ -542,9 +578,34 @@
     let isOpen = false;
     let closeTimer = null;
     const reducedMotion = Boolean(window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches);
+    const viewportTarget = window.visualViewport || window;
+    let viewportListenersBound = false;
     mount.classList?.toggle?.("is-reduced-motion", reducedMotion);
     const catalogState = () => root.state.catalog || { status: "idle", items: [] };
     const sheetHost = () => mount.querySelector("[data-advisor-sheet-host]");
+    const updateViewport = () => {
+      if (destroyed || !isOpen) return;
+      const viewport = window.visualViewport;
+      const height = Number(viewport?.height || window.innerHeight || document.documentElement?.clientHeight || 0);
+      const offsetTop = Number(viewport?.offsetTop || 0);
+      if (height > 0) mount.style?.setProperty?.("--advisor-viewport-height", `${Math.round(height)}px`);
+      mount.style?.setProperty?.("--advisor-viewport-top", `${Math.max(0, Math.round(offsetTop))}px`);
+    };
+    const bindViewport = () => {
+      if (viewportListenersBound) return;
+      viewportListenersBound = true;
+      viewportTarget.addEventListener?.("resize", updateViewport);
+      if (window.visualViewport) viewportTarget.addEventListener?.("scroll", updateViewport);
+      updateViewport();
+    };
+    const unbindViewport = () => {
+      if (!viewportListenersBound) return;
+      viewportListenersBound = false;
+      viewportTarget.removeEventListener?.("resize", updateViewport);
+      if (window.visualViewport) viewportTarget.removeEventListener?.("scroll", updateViewport);
+      mount.style?.removeProperty?.("--advisor-viewport-height");
+      mount.style?.removeProperty?.("--advisor-viewport-top");
+    };
     const renderLauncher = () => {
       const launcher = mount.querySelector("[data-advisor-launcher-content]");
       if (launcher) launcher.innerHTML = launcherContent(state, isOpen);
@@ -650,6 +711,7 @@
       isOpen = true;
       document.body.classList.add("has-advisor-sheet");
       document.addEventListener("keydown", onDocumentKeydown);
+      bindViewport();
       renderLauncher();
       renderSheet("forward");
     };
@@ -657,6 +719,7 @@
       if (!isOpen && !options.immediate) return;
       isOpen = false;
       removeOpenListeners();
+      unbindViewport();
       document.body.classList.remove("has-advisor-sheet");
       renderLauncher();
       const host = sheetHost();
@@ -772,6 +835,7 @@
         if (closeTimer) clearTimeout(closeTimer);
         closeTimer = null;
         removeOpenListeners();
+        unbindViewport();
         document.body.classList.remove("has-advisor-sheet");
         mount.removeEventListener("click", onClick);
         controllers.delete(mount);

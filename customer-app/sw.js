@@ -1,6 +1,6 @@
 "use strict";
 
-const BUILD_ID = "20260714_smart_advisor_compact_sheet_v1";
+const BUILD_ID = "20260715_smart_advisor_mobile_polish_v2";
 const CACHE_NAME = `cwf-customer-app-v2-${BUILD_ID}`;
 const APP_SHELL = [
   `./index.html?v=${BUILD_ID}`,
