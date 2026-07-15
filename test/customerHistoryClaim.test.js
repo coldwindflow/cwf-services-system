@@ -544,7 +544,7 @@ test("Customer App profile opens history detail with opaque job_ref and clears c
 });
 
 test("Customer App cache version is bumped consistently", () => {
-  const expected = "20260715_smart_advisor_mobile_polish_v2";
+  const expected = "20260715_smart_advisor_portal_autoflow_v3";
   for (const file of [
     "customer-app/index.html",
     "customer-app/sw.js",

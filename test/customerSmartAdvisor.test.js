@@ -96,46 +96,29 @@ class FakeMount {
     this.classList = new FakeClassList();
     this.style = new FakeStyle();
     this.document = fakeDocument;
-    this.shellWrites = 0;
+    if (this.document) this.document.mount = this;
     this.launcher = new FakeElement((node) => { this.launcherFocuses += 1; if (this.document) this.document.activeElement = node; });
-    this.host = new FakeElement(null, () => { this.shellWrites += 1; });
-    this.layer = new FakeElement();
-    this.body = new FakeElement();
-    this.actions = new FakeElement();
-    this.stepLabel = new FakeElement();
-    this.progress = new FakeElement();
-    this.catalog = new FakeElement();
-    this.closeButton = new FakeElement((node) => { if (this.document) this.document.activeElement = node; });
-    this.nextButton = new FakeElement((node) => { if (this.document) this.document.activeElement = node; });
-    this.question = new FakeElement((node) => { this.questionFocuses += 1; if (this.document) this.document.activeElement = node; });
-    this.result = new FakeElement((node) => { this.resultFocuses += 1; if (this.document) this.document.activeElement = node; });
-    this.scroll = new FakeElement();
-    this.dialog = new FakeElement();
-    this.dialog.querySelectorAll = () => [this.closeButton, this.nextButton];
     this.resultFocuses = 0;
     this.questionFocuses = 0;
     this.launcherFocuses = 0;
   }
   addEventListener(type, handler) { this.listeners.set(type, handler); }
   removeEventListener(type, handler) { if (this.listeners.get(type) === handler) this.listeners.delete(type); }
-  html() { return [this.host.innerHTML, this.body.innerHTML, this.catalog.innerHTML, this.actions.innerHTML].join(""); }
+  get portal() { return this.document?.portal || null; }
+  get shellWrites() { return this.portal?.shellWrites || 0; }
+  get host() { return this.portal || new FakeElement(); }
+  get layer() { return this.portal?.layer || new FakeElement(); }
+  get body() { return this.portal?.body || new FakeElement(); }
+  get actions() { return this.portal?.actions || new FakeElement(); }
+  get catalog() { return this.portal?.catalog || new FakeElement(); }
+  get scroll() { return this.portal?.scroll || new FakeElement(); }
+  get result() { return this.portal?.result || new FakeElement(); }
+  get nextButton() { return this.portal?.nextButton || new FakeElement(); }
+  get closeButton() { return this.portal?.closeButton || new FakeElement(); }
+  html() { return [this.portal?.innerHTML, this.portal?.body.innerHTML, this.portal?.catalog.innerHTML, this.portal?.actions.innerHTML].join(""); }
   querySelector(selector) {
-    const open = this.host.innerHTML.includes("data-advisor-dialog");
     if (selector === "[data-advisor-launcher-content]") return this.launcher;
-    if (selector === "[data-advisor-sheet-host]") return this.host;
     if (selector === "[data-advisor-launch]") return this.launcher;
-    if (selector === "[data-advisor-backdrop]") return open ? this.layer : null;
-    if (selector === "[data-advisor-dialog]") return open ? this.dialog : null;
-    if (selector === "[data-advisor-close]") return open ? this.closeButton : null;
-    if (selector === "[data-advisor-next]") return open ? this.nextButton : null;
-    if (selector === "[data-advisor-scroll]") return open ? this.scroll : null;
-    if (selector === "[data-advisor-body]") return open ? this.body : null;
-    if (selector === "[data-advisor-actions]") return open ? this.actions : null;
-    if (selector === "[data-advisor-step-label]") return open ? this.stepLabel : null;
-    if (selector === "[data-advisor-progress]") return open ? this.progress : null;
-    if (selector === "[data-advisor-catalog]") return open && this.body.innerHTML.includes("data-advisor-catalog") ? this.catalog : null;
-    if (selector === "[data-advisor-question-title]") return open && !this.body.innerHTML.includes("data-advisor-result") ? this.question : null;
-    if (selector === "[data-advisor-result]") return open && this.body.innerHTML.includes("data-advisor-result") ? this.result : null;
     return null;
   }
   querySelectorAll() { return []; }
@@ -144,19 +127,80 @@ class FakeMount {
       hasAttribute: (name) => Object.hasOwn(attributes, name),
       getAttribute: (name) => attributes[name] ?? null,
     };
-    this.listeners.get("click")?.({ target: { closest: () => button } });
+    const launcherClick = Object.hasOwn(attributes, "data-advisor-launch") || Object.hasOwn(attributes, "data-advisor-reset-launcher");
+    (launcherClick ? this.listeners.get("click") : this.portal?.listeners.get("click"))?.({ target: { closest: () => button } });
   }
   clickBackdrop() {
     const backdrop = new FakeElement();
-    this.listeners.get("click")?.({ target: { closest: (selector) => selector === "[data-advisor-backdrop]" ? backdrop : null } });
+    this.portal?.listeners.get("click")?.({ target: { closest: (selector) => selector === "[data-advisor-backdrop]" ? backdrop : null } });
   }
+}
+
+class FakePortal {
+  constructor(fakeDocument) {
+    this.document = fakeDocument;
+    this.isConnected = false;
+    this.parentElement = null;
+    this.listeners = new Map();
+    this.classList = new FakeClassList();
+    this.style = new FakeStyle();
+    this.attributes = new Map();
+    this._innerHTML = "";
+    this.shellWrites = 0;
+    this.layer = new FakeElement();
+    this.body = new FakeElement();
+    this.actions = new FakeElement();
+    this.stepLabel = new FakeElement();
+    this.progress = new FakeElement();
+    this.leading = new FakeElement();
+    this.catalog = new FakeElement();
+    this.closeButton = new FakeElement((node) => { this.document.activeElement = node; });
+    this.nextButton = new FakeElement((node) => { this.document.activeElement = node; });
+    this.question = new FakeElement((node) => {
+      this.document.activeElement = node;
+      if (this.document.mount) this.document.mount.questionFocuses += 1;
+    });
+    this.result = new FakeElement((node) => {
+      this.document.activeElement = node;
+      if (this.document.mount) this.document.mount.resultFocuses += 1;
+    });
+    this.scroll = new FakeElement();
+    this.dialog = new FakeElement();
+    this.dialog.querySelectorAll = () => [this.closeButton, this.nextButton];
+  }
+  set className(value) { this.classList.values = new Set(String(value).split(/\s+/).filter(Boolean)); }
+  get className() { return Array.from(this.classList.values).join(" "); }
+  get innerHTML() { return this._innerHTML; }
+  set innerHTML(value) { this._innerHTML = String(value); this.shellWrites += 1; }
+  setAttribute(name, value) { this.attributes.set(name, String(value)); }
+  getAttribute(name) { return this.attributes.get(name) ?? null; }
+  addEventListener(type, handler) { this.listeners.set(type, handler); }
+  removeEventListener(type, handler) { if (this.listeners.get(type) === handler) this.listeners.delete(type); }
+  remove() { this.document.body.removeChild(this); }
+  querySelector(selector) {
+    const open = this.innerHTML.includes("data-advisor-dialog");
+    if (selector === "[data-advisor-backdrop]") return open ? this.layer : null;
+    if (selector === "[data-advisor-dialog]") return open ? this.dialog : null;
+    if (selector === "[data-advisor-close]") return open ? this.closeButton : null;
+    if (selector === "[data-advisor-scroll]") return open ? this.scroll : null;
+    if (selector === "[data-advisor-body]") return open ? this.body : null;
+    if (selector === "[data-advisor-actions]") return open ? this.actions : null;
+    if (selector === "[data-advisor-step-label]") return open ? this.stepLabel : null;
+    if (selector === "[data-advisor-progress]") return open ? this.progress : null;
+    if (selector === "[data-advisor-header-leading]") return open ? this.leading : null;
+    if (selector === "[data-advisor-catalog]") return open && this.body.innerHTML.includes("data-advisor-catalog") ? this.catalog : null;
+    if (selector === "[data-advisor-question-title]") return open && !this.body.innerHTML.includes("data-advisor-result") ? this.question : null;
+    if (selector === "[data-advisor-result]") return open && this.body.innerHTML.includes("data-advisor-result") ? this.result : null;
+    return null;
+  }
+  querySelectorAll() { return []; }
 }
 
 function fakeDocument() {
   const listeners = new Map();
-  return {
+  const document = {
     activeElement: null,
-    body: { classList: new FakeClassList() },
+    portal: null,
     documentElement: { clientHeight: 760 },
     listeners,
     addEventListener(type, handler) { listeners.set(type, handler); },
@@ -167,6 +211,25 @@ function fakeDocument() {
       return prevented;
     },
   };
+  document.createElement = () => new FakePortal(document);
+  document.body = {
+    classList: new FakeClassList(),
+    children: [],
+    appendChild(node) {
+      node.parentElement = this;
+      node.isConnected = true;
+      this.children.push(node);
+      document.portal = node;
+      return node;
+    },
+    removeChild(node) {
+      this.children = this.children.filter((child) => child !== node);
+      node.parentElement = null;
+      node.isConnected = false;
+      if (document.portal === node) document.portal = null;
+    },
+  };
+  return document;
 }
 
 function loadAdvisor(options = {}) {
@@ -236,13 +299,9 @@ function plain(value) {
 function completeWallStandardAdvisor(mount) {
   mount.click({ "data-advisor-launch": "" });
   mount.click({ "data-advisor-ac": "wall" });
-  mount.click({ "data-advisor-next": "" });
   mount.click({ "data-advisor-months": "m4_5" });
-  mount.click({ "data-advisor-next": "" });
   mount.click({ "data-advisor-symptom": "routine" });
-  mount.click({ "data-advisor-next": "" });
   mount.click({ "data-advisor-repair": "none" });
-  mount.click({ "data-advisor-next": "" });
 }
 
 test("wall recommendation engine covers standard premium coil overhaul and uncertain overdue cases", () => {
@@ -429,14 +488,11 @@ test("wizard advances, supports multi-select, refreshes Catalog, resets, and bin
 
   mount.click({ "data-advisor-launch": "" });
   mount.click({ "data-advisor-ac": "wall" });
-  mount.click({ "data-advisor-next": "" });
   mount.click({ "data-advisor-months": "m6_8" });
-  mount.click({ "data-advisor-next": "" });
   mount.click({ "data-advisor-symptom": "heavy_use" });
   mount.click({ "data-advisor-symptom": "pets" });
-  mount.click({ "data-advisor-next": "" });
+  mount.click({ "data-advisor-symptoms-done": "" });
   mount.click({ "data-advisor-repair": "none" });
-  mount.click({ "data-advisor-next": "" });
   assert.equal(first.state().recommendation.verdict, "premium_clean");
   assert.match(mount.html(), /กำลังค้นหาบริการที่ตรงจาก Catalog/);
   assert.equal(mount.resultFocuses, 1);
@@ -472,7 +528,6 @@ test("launcher opens an accessible sheet and close resumes the saved step", () =
   assert.equal(mount.questionFocuses, 1);
 
   mount.click({ "data-advisor-ac": "wall" });
-  mount.click({ "data-advisor-next": "" });
   assert.equal(controller.state().step, 1);
   assert.equal(mount.scroll.scrollTop, 0);
   mount.click({ "data-advisor-close": "" });
@@ -489,6 +544,156 @@ test("launcher opens an accessible sheet and close resumes the saved step", () =
   assert.equal(controller.state().step, 1);
   assert.match(mount.html(), /data-advisor-months/);
   assert.doesNotMatch(mount.html(), /data-advisor-ac=/);
+});
+
+test("sheet uses one body-level portal with separate event delegation and no orphan nodes", () => {
+  const runtime = loadAdvisor();
+  const mount = new FakeMount(runtime.document);
+  const controller = runtime.app.advisor.bind({ querySelector: () => mount });
+  assert.equal(runtime.document.body.children.length, 0);
+
+  mount.click({ "data-advisor-launch": "" });
+  const firstPortal = runtime.document.portal;
+  assert.ok(firstPortal);
+  assert.equal(firstPortal.parentElement, runtime.document.body);
+  assert.equal(firstPortal.getAttribute("data-advisor-portal"), "");
+  assert.equal(runtime.document.body.children.length, 1);
+  assert.equal(mount.listeners.size, 1);
+  assert.equal(firstPortal.listeners.size, 1);
+  assert.equal(mount.querySelector("[data-advisor-dialog]"), null);
+  assert.match(firstPortal.innerHTML, /data-advisor-dialog/);
+
+  mount.click({ "data-advisor-close": "" });
+  assert.equal(runtime.document.portal, null);
+  assert.equal(runtime.document.body.children.length, 0);
+  assert.equal(firstPortal.listeners.size, 0);
+
+  mount.click({ "data-advisor-launch": "" });
+  assert.notEqual(runtime.document.portal, firstPortal);
+  assert.equal(runtime.document.body.children.length, 1);
+  controller.cleanup();
+  assert.equal(runtime.document.portal, null);
+  assert.equal(runtime.document.body.children.length, 0);
+  assert.equal(mount.listeners.size, 0);
+});
+
+test("single choices auto-flow while symptoms remain multi-select and Back preserves answers", () => {
+  const runtime = loadAdvisor();
+  const mount = new FakeMount(runtime.document);
+  const controller = runtime.app.advisor.bind({ querySelector: () => mount });
+  mount.click({ "data-advisor-launch": "" });
+  assert.equal(controller.state().step, 0);
+  assert.equal(mount.actions.hidden, true);
+
+  mount.click({ "data-advisor-ac": "wall" });
+  assert.equal(controller.state().step, 1);
+  assert.match(runtime.document.portal.leading.innerHTML, /data-advisor-back/);
+  assert.match(runtime.document.portal.leading.innerHTML, /aria-label="ย้อนกลับ"/);
+  assert.match(runtime.document.portal.leading.innerHTML, /data-advisor-icon="arrow-left"/);
+  assert.doesNotMatch(runtime.document.portal.leading.innerHTML, /data-icon="sparkle"/);
+  mount.click({ "data-advisor-months": "m6_8" });
+  assert.equal(controller.state().step, 2);
+
+  mount.click({ "data-advisor-symptom": "heavy_use" });
+  mount.click({ "data-advisor-symptom": "pets" });
+  assert.equal(controller.state().step, 2);
+  assert.deepEqual(Array.from(controller.state().symptoms), ["heavy_use", "pets"]);
+  assert.match(mount.actions.innerHTML, /data-advisor-symptoms-done/);
+  assert.doesNotMatch(mount.actions.innerHTML, /ขั้นต่อไป/);
+  mount.click({ "data-advisor-symptoms-done": "" });
+  assert.equal(controller.state().step, 3);
+  assert.equal(mount.actions.hidden, true);
+  assert.doesNotMatch(mount.actions.innerHTML, /ดูผลประเมิน/);
+
+  mount.click({ "data-advisor-back": "" });
+  assert.equal(controller.state().step, 2);
+  assert.deepEqual(Array.from(controller.state().symptoms), ["heavy_use", "pets"]);
+  mount.click({ "data-advisor-symptoms-done": "" });
+  mount.click({ "data-advisor-repair": "error_code" });
+  assert.equal(controller.state().step, 4);
+  assert.equal(controller.state().recommendation.verdict, "repair_check");
+});
+
+test("semantic Back icon has its own arrow path instead of a utility fallback", () => {
+  assert.match(SOURCE, /"arrow-left":\s*'<path d="M19 12H5M11 18l-6-6 6-6"\/>'/);
+  assert.match(SOURCE, /data-advisor-back[^>]*aria-label="ย้อนกลับ"[^>]*>\$\{semanticIcon\("arrow-left", 19\)\}/);
+  assert.doesNotMatch(SOURCE, /data-advisor-back[^>]*>\$\{icon\("arrow-left"/);
+  assert.match(CSS_SOURCE, /\.advisor-sheet-back\s*\{[^}]*width:\s*44px[^}]*height:\s*44px/s);
+  assert.match(CSS_SOURCE, /\.advisor-portal-root\s*\{[^}]*pointer-events:\s*none/s);
+  assert.match(CSS_SOURCE, /\.advisor-portal-root\.is-open\s*\{\s*pointer-events:\s*auto;?\s*\}/);
+  assert.match(CSS_SOURCE, /\.advisor-portal-root\.is-closing\s*\{\s*pointer-events:\s*none;?\s*\}/);
+});
+
+test("routine and no-repair choices auto-flow without dropping exclusive state", () => {
+  const runtime = loadAdvisor();
+  const mount = new FakeMount(runtime.document);
+  const controller = runtime.app.advisor.bind({ querySelector: () => mount });
+  mount.click({ "data-advisor-launch": "" });
+  mount.click({ "data-advisor-ac": "wall" });
+  mount.click({ "data-advisor-months": "m4_5" });
+  mount.click({ "data-advisor-symptom": "heavy_use" });
+  mount.click({ "data-advisor-symptom": "routine" });
+  assert.equal(controller.state().step, 3);
+  assert.deepEqual(Array.from(controller.state().symptoms), ["routine"]);
+  mount.click({ "data-advisor-repair": "none" });
+  assert.equal(controller.state().step, 4);
+  assert.equal(controller.state().recommendation.verdict, "standard_clean");
+  mount.click({ "data-advisor-back": "" });
+  assert.equal(controller.state().step, 3);
+  mount.click({ "data-advisor-back": "" });
+  assert.equal(controller.state().step, 2);
+  mount.click({ "data-advisor-symptom": "routine" });
+  assert.equal(controller.state().step, 3);
+  assert.deepEqual(Array.from(controller.state().symptoms), ["routine"]);
+});
+
+test("repair choices evaluate immediately with repair-first outcomes", () => {
+  for (const signal of ["error_code", "outdoor_not_running", "breaker_trip"]) {
+    const runtime = loadAdvisor();
+    const mount = new FakeMount(runtime.document);
+    const controller = runtime.app.advisor.bind({ querySelector: () => mount });
+    mount.click({ "data-advisor-launch": "" });
+    mount.click({ "data-advisor-ac": "wall" });
+    mount.click({ "data-advisor-months": "m4_5" });
+    mount.click({ "data-advisor-symptom": "routine" });
+    assert.equal(controller.state().step, 3, signal);
+    assert.equal(mount.actions.hidden, true, signal);
+    mount.click({ "data-advisor-repair": signal });
+    assert.equal(controller.state().step, 4, signal);
+    assert.equal(controller.state().recommendation.verdict, "repair_check", signal);
+    controller.cleanup();
+  }
+});
+
+test("selection lock prevents double advance and close cancels ghost navigation", () => {
+  const runtime = loadAdvisor({ deferTimers: true });
+  const mount = new FakeMount(runtime.document);
+  const controller = runtime.app.advisor.bind({ querySelector: () => mount });
+  mount.click({ "data-advisor-launch": "" });
+  mount.click({ "data-advisor-ac": "wall" });
+  mount.click({ "data-advisor-ac": "fourway" });
+  assert.equal(controller.state().step, 0);
+  assert.equal(controller.state().acType, "wall");
+  assert.equal(runtime.timers.size, 1);
+  runtime.runTimers();
+  assert.equal(controller.state().step, 1);
+
+  mount.click({ "data-advisor-months": "m4_5" });
+  assert.equal(runtime.timers.size, 1);
+  mount.click({ "data-advisor-close": "" });
+  assert.equal(controller.state().isOpen, false);
+  assert.equal(runtime.timers.size, 1);
+  runtime.runTimers();
+  assert.equal(controller.state().step, 1);
+  assert.equal(runtime.document.portal, null);
+
+  const reduced = loadAdvisor({ reducedMotion: true });
+  const reducedMount = new FakeMount(reduced.document);
+  const reducedController = reduced.app.advisor.bind({ querySelector: () => reducedMount });
+  reducedMount.click({ "data-advisor-launch": "" });
+  reducedMount.click({ "data-advisor-ac": "wall" });
+  assert.equal(reducedController.state().step, 1);
+  assert.equal(reduced.timers.size, 0);
 });
 
 test("semantic choice icons are deterministic, distinct, and emoji-free", () => {
@@ -521,22 +726,23 @@ test("visualViewport drives the mobile panel and listeners clean up on close and
   const mount = new FakeMount(runtime.document);
   const controller = runtime.app.advisor.bind({ querySelector: () => mount });
   mount.click({ "data-advisor-launch": "" });
-  assert.equal(mount.style.getPropertyValue("--advisor-viewport-height"), "612px");
-  assert.equal(mount.style.getPropertyValue("--advisor-viewport-top"), "49px");
+  const portal = runtime.document.portal;
+  assert.equal(portal.style.getPropertyValue("--advisor-viewport-height"), "612px");
+  assert.equal(portal.style.getPropertyValue("--advisor-viewport-top"), "49px");
   assert.deepEqual(Array.from(runtime.visualViewport.listeners.keys()).sort(), ["resize", "scroll"]);
 
   runtime.visualViewport.height = 488.2;
   runtime.visualViewport.offsetTop = 72.1;
   runtime.visualViewport.emit("resize");
-  assert.equal(mount.style.getPropertyValue("--advisor-viewport-height"), "488px");
-  assert.equal(mount.style.getPropertyValue("--advisor-viewport-top"), "72px");
+  assert.equal(portal.style.getPropertyValue("--advisor-viewport-height"), "488px");
+  assert.equal(portal.style.getPropertyValue("--advisor-viewport-top"), "72px");
   runtime.visualViewport.offsetTop = 16;
   runtime.visualViewport.emit("scroll");
-  assert.equal(mount.style.getPropertyValue("--advisor-viewport-top"), "16px");
+  assert.equal(portal.style.getPropertyValue("--advisor-viewport-top"), "16px");
 
   mount.click({ "data-advisor-close": "" });
   assert.equal(runtime.visualViewport.listeners.size, 0);
-  assert.equal(mount.style.getPropertyValue("--advisor-viewport-height"), "");
+  assert.equal(runtime.document.portal, null);
   mount.click({ "data-advisor-launch": "" });
   controller.cleanup();
   assert.equal(runtime.visualViewport.listeners.size, 0);
@@ -550,26 +756,109 @@ test("animated close preserves viewport geometry until the panel is removed", ()
   const mount = new FakeMount(runtime.document);
   runtime.app.advisor.bind({ querySelector: () => mount });
   mount.click({ "data-advisor-launch": "" });
-  assert.equal(mount.style.getPropertyValue("--advisor-viewport-height"), "486px");
-  assert.equal(mount.style.getPropertyValue("--advisor-viewport-top"), "72px");
+  const portal = runtime.document.portal;
+  assert.equal(portal.style.getPropertyValue("--advisor-viewport-height"), "486px");
+  assert.equal(portal.style.getPropertyValue("--advisor-viewport-top"), "72px");
 
   mount.click({ "data-advisor-close": "" });
   assert.equal(runtime.visualViewport.listeners.size, 0);
-  assert.equal(mount.style.getPropertyValue("--advisor-viewport-height"), "486px");
-  assert.equal(mount.style.getPropertyValue("--advisor-viewport-top"), "72px");
+  assert.ok(!portal.classList.contains("is-open"));
+  assert.ok(portal.classList.contains("is-closing"));
+  assert.equal(portal.style.getPropertyValue("--advisor-viewport-height"), "486px");
+  assert.equal(portal.style.getPropertyValue("--advisor-viewport-top"), "72px");
   assert.match(mount.host.innerHTML, /data-advisor-dialog/);
   assert.ok(mount.layer.classList.contains("is-closing"));
 
   runtime.visualViewport.height = 760;
   runtime.visualViewport.offsetTop = 0;
   runtime.visualViewport.emit("resize");
-  assert.equal(mount.style.getPropertyValue("--advisor-viewport-height"), "486px");
-  assert.equal(mount.style.getPropertyValue("--advisor-viewport-top"), "72px");
+  assert.equal(portal.style.getPropertyValue("--advisor-viewport-height"), "486px");
+  assert.equal(portal.style.getPropertyValue("--advisor-viewport-top"), "72px");
 
   runtime.runTimers();
   assert.equal(mount.host.innerHTML, "");
-  assert.equal(mount.style.getPropertyValue("--advisor-viewport-height"), "");
-  assert.equal(mount.style.getPropertyValue("--advisor-viewport-top"), "");
+  assert.equal(portal.style.getPropertyValue("--advisor-viewport-height"), "");
+  assert.equal(portal.style.getPropertyValue("--advisor-viewport-top"), "");
+  assert.equal(runtime.document.portal, null);
+});
+
+test("animated close blocks every Portal action before the node is removed", () => {
+  let adapterCalls = 0;
+  let applyCalls = 0;
+  const runtime = loadAdvisor({
+    deferTimers: true,
+    catalog: { status: "success", items: [catalogItem(1)] },
+    adapter: (item) => { adapterCalls += 1; return { id: item.item_id, draft: {} }; },
+    apply: () => { applyCalls += 1; return true; },
+  });
+  const mount = new FakeMount(runtime.document);
+  const controller = runtime.app.advisor.bind({ querySelector: () => mount });
+  mount.click({ "data-advisor-launch": "" });
+  mount.click({ "data-advisor-ac": "wall" });
+  runtime.runTimers();
+  mount.click({ "data-advisor-months": "m4_5" });
+  runtime.runTimers();
+  mount.click({ "data-advisor-symptom": "routine" });
+  runtime.runTimers();
+  mount.click({ "data-advisor-repair": "none" });
+  runtime.runTimers();
+  assert.equal(controller.state().step, 4);
+
+  const portal = runtime.document.portal;
+  const stateBeforeClose = controller.state();
+  const adapterCallsBeforeClose = adapterCalls;
+  const applyCallsBeforeClose = applyCalls;
+  mount.click({ "data-advisor-close": "" });
+  assert.ok(!portal.classList.contains("is-open"));
+  assert.ok(portal.classList.contains("is-closing"));
+  assert.equal(portal.listeners.size, 1);
+
+  mount.click({ "data-advisor-ac": "fourway" });
+  mount.click({ "data-advisor-back": "" });
+  mount.click({ "data-advisor-repair": "error_code" });
+  mount.click({ "data-advisor-item-action": "1" });
+  mount.click({ "data-advisor-detail": "1" });
+  mount.click({ "data-advisor-contact": "" });
+  mount.click({ "data-advisor-reset": "" });
+
+  assert.deepEqual(plain(controller.state()), plain({ ...stateBeforeClose, isOpen: false }));
+  assert.equal(adapterCalls, adapterCallsBeforeClose);
+  assert.equal(applyCalls, applyCallsBeforeClose);
+  assert.deepEqual(runtime.routes, []);
+  assert.deepEqual(runtime.contacts, []);
+  assert.equal(runtime.timers.size, 1);
+
+  runtime.runTimers();
+  assert.equal(runtime.document.portal, null);
+  assert.equal(portal.listeners.size, 0);
+});
+
+test("reopening during a pending close replaces the Portal and binds one working listener", () => {
+  const runtime = loadAdvisor({ deferTimers: true });
+  const mount = new FakeMount(runtime.document);
+  const controller = runtime.app.advisor.bind({ querySelector: () => mount });
+  mount.click({ "data-advisor-launch": "" });
+  const closingPortal = runtime.document.portal;
+  mount.click({ "data-advisor-close": "" });
+  assert.equal(runtime.timers.size, 1);
+  assert.ok(closingPortal.classList.contains("is-closing"));
+
+  mount.click({ "data-advisor-launch": "" });
+  const reopenedPortal = runtime.document.portal;
+  assert.notEqual(reopenedPortal, closingPortal);
+  assert.equal(runtime.timers.size, 0);
+  assert.equal(runtime.document.body.children.length, 1);
+  assert.equal(closingPortal.listeners.size, 0);
+  assert.equal(reopenedPortal.listeners.size, 1);
+  assert.ok(reopenedPortal.classList.contains("is-open"));
+  assert.ok(!reopenedPortal.classList.contains("is-closing"));
+
+  mount.click({ "data-advisor-ac": "wall" });
+  assert.equal(runtime.timers.size, 1);
+  runtime.runTimers();
+  assert.equal(controller.state().step, 1);
+  assert.equal(controller.state().acType, "wall");
+  controller.cleanup();
 });
 
 test("immediate close and cleanup remove viewport listeners and variables without delay", () => {
@@ -580,10 +869,12 @@ test("immediate close and cleanup remove viewport listeners and variables withou
   const immediateMount = new FakeMount(immediateRuntime.document);
   const immediateController = immediateRuntime.app.advisor.bind({ querySelector: () => immediateMount });
   immediateMount.click({ "data-advisor-launch": "" });
+  const immediatePortal = immediateRuntime.document.portal;
   immediateController.close({ immediate: true });
   assert.equal(immediateRuntime.visualViewport.listeners.size, 0);
-  assert.equal(immediateMount.style.getPropertyValue("--advisor-viewport-height"), "");
-  assert.equal(immediateMount.style.getPropertyValue("--advisor-viewport-top"), "");
+  assert.equal(immediatePortal.style.getPropertyValue("--advisor-viewport-height"), "");
+  assert.equal(immediatePortal.style.getPropertyValue("--advisor-viewport-top"), "");
+  assert.equal(immediateRuntime.document.portal, null);
   assert.equal(immediateMount.host.innerHTML, "");
 
   const cleanupRuntime = loadAdvisor({
@@ -598,8 +889,7 @@ test("immediate close and cleanup remove viewport listeners and variables withou
   cleanupController.cleanup();
   assert.equal(cleanupRuntime.timers.size, 0);
   assert.equal(cleanupRuntime.visualViewport.listeners.size, 0);
-  assert.equal(cleanupMount.style.getPropertyValue("--advisor-viewport-height"), "");
-  assert.equal(cleanupMount.style.getPropertyValue("--advisor-viewport-top"), "");
+  assert.equal(cleanupRuntime.document.portal, null);
   assert.ok(!cleanupRuntime.document.body.classList.contains("has-advisor-sheet"));
 });
 
@@ -608,11 +898,11 @@ test("visualViewport fallback uses window height and removes its resize listener
   const mount = new FakeMount(runtime.document);
   const controller = runtime.app.advisor.bind({ querySelector: () => mount });
   mount.click({ "data-advisor-launch": "" });
-  assert.equal(mount.style.getPropertyValue("--advisor-viewport-height"), "701px");
+  assert.equal(runtime.document.portal.style.getPropertyValue("--advisor-viewport-height"), "701px");
   assert.deepEqual(Array.from(runtime.window.listeners.keys()), ["resize"]);
   runtime.window.innerHeight = 640;
   runtime.window.emit("resize");
-  assert.equal(mount.style.getPropertyValue("--advisor-viewport-height"), "640px");
+  assert.equal(runtime.document.portal.style.getPropertyValue("--advisor-viewport-height"), "640px");
   controller.cleanup();
   assert.equal(runtime.window.listeners.size, 0);
 });
@@ -624,13 +914,13 @@ test("sheet shell opens once while steps and Catalog refresh update in place", (
   const controller = runtime.app.advisor.bind(container);
 
   mount.click({ "data-advisor-launch": "" });
+  const openingPortal = runtime.document.portal;
   const openingShell = mount.host.innerHTML;
   assert.equal(mount.shellWrites, 1);
   assert.match(openingShell, /advisor-sheet-layer is-opening/);
   assert.ok(mount.layer.classList.contains("is-opening"));
 
   mount.click({ "data-advisor-ac": "wall" });
-  mount.click({ "data-advisor-next": "" });
   assert.equal(mount.shellWrites, 1);
   assert.equal(mount.host.innerHTML, openingShell);
   assert.ok(!mount.layer.classList.contains("is-opening"));
@@ -640,13 +930,10 @@ test("sheet shell opens once while steps and Catalog refresh update in place", (
   assert.equal(mount.shellWrites, 1);
   assert.ok(mount.body.classList.contains("is-step-back"));
 
-  mount.click({ "data-advisor-next": "" });
+  mount.click({ "data-advisor-ac": "wall" });
   mount.click({ "data-advisor-months": "m4_5" });
-  mount.click({ "data-advisor-next": "" });
   mount.click({ "data-advisor-symptom": "routine" });
-  mount.click({ "data-advisor-next": "" });
   mount.click({ "data-advisor-repair": "none" });
-  mount.click({ "data-advisor-next": "" });
   assert.equal(controller.state().step, 4);
   assert.equal(mount.shellWrites, 1);
 
@@ -667,7 +954,8 @@ test("sheet shell opens once while steps and Catalog refresh update in place", (
   mount.click({ "data-advisor-close": "" });
   assert.equal(mount.host.innerHTML, "");
   mount.click({ "data-advisor-launch": "" });
-  assert.equal(mount.shellWrites, 3);
+  assert.notEqual(runtime.document.portal, openingPortal);
+  assert.equal(mount.shellWrites, 1);
   assert.ok(mount.layer.classList.contains("is-opening"));
 });
 
@@ -677,19 +965,17 @@ test("multi-select exclusive choices and Back preserve the existing answers", ()
   const controller = runtime.app.advisor.bind({ querySelector: () => mount });
   mount.click({ "data-advisor-launch": "" });
   mount.click({ "data-advisor-ac": "wall" });
-  mount.click({ "data-advisor-next": "" });
   mount.click({ "data-advisor-months": "m6_8" });
-  mount.click({ "data-advisor-next": "" });
-  mount.click({ "data-advisor-symptom": "routine" });
   mount.click({ "data-advisor-symptom": "heavy_use" });
-  assert.deepEqual(Array.from(controller.state().symptoms), ["heavy_use"]);
-  mount.click({ "data-advisor-next": "" });
-  mount.click({ "data-advisor-repair": "none" });
-  mount.click({ "data-advisor-repair": "error_code" });
-  assert.deepEqual(Array.from(controller.state().repairSignals), ["error_code"]);
+  mount.click({ "data-advisor-symptom": "pets" });
+  assert.deepEqual(Array.from(controller.state().symptoms), ["heavy_use", "pets"]);
+  assert.equal(controller.state().step, 2);
+  assert.match(mount.actions.innerHTML, /data-advisor-symptoms-done/);
+  mount.click({ "data-advisor-symptoms-done": "" });
+  assert.equal(controller.state().step, 3);
   mount.click({ "data-advisor-back": "" });
   assert.equal(controller.state().step, 2);
-  assert.deepEqual(Array.from(controller.state().symptoms), ["heavy_use"]);
+  assert.deepEqual(Array.from(controller.state().symptoms), ["heavy_use", "pets"]);
   assert.equal(mount.scroll.scrollTop, 0);
 });
 
@@ -738,7 +1024,7 @@ test("closed result stays compact and never exposes Catalog cards on Home", () =
 test("booking handoff routes only after both existing adapters succeed and otherwise contacts", () => {
   const item = catalogItem(8);
   const success = loadAdvisor({ catalog: { status: "success", items: [item] } });
-  const mount = new FakeMount();
+  const mount = new FakeMount(success.document);
   const container = { querySelector: (selector) => selector === "[data-smart-advisor]" ? mount : null };
   success.app.advisor.bind(container);
   completeWallStandardAdvisor(mount);
@@ -748,7 +1034,7 @@ test("booking handoff routes only after both existing adapters succeed and other
   assert.equal(success.contacts.length, 0);
 
   const denied = loadAdvisor({ catalog: { status: "success", items: [item] }, adapter: () => null });
-  const deniedMount = new FakeMount();
+  const deniedMount = new FakeMount(denied.document);
   denied.app.advisor.bind({ querySelector: () => deniedMount });
   completeWallStandardAdvisor(deniedMount);
   deniedMount.click({ "data-advisor-item-action": "8" });
@@ -756,7 +1042,7 @@ test("booking handoff routes only after both existing adapters succeed and other
   assert.equal(denied.contacts.length, 1);
 
   const applyDenied = loadAdvisor({ catalog: { status: "success", items: [item] }, apply: () => false });
-  const applyMount = new FakeMount();
+  const applyMount = new FakeMount(applyDenied.document);
   applyDenied.app.advisor.bind({ querySelector: () => applyMount });
   completeWallStandardAdvisor(applyMount);
   applyMount.click({ "data-advisor-item-action": "8" });
@@ -773,7 +1059,7 @@ test("manipulated unrelated Catalog item id is rejected before booking adapters 
     adapter: () => { adapterCalls += 1; return { draft: {} }; },
     apply: () => { applyCalls += 1; return true; },
   });
-  const mount = new FakeMount();
+  const mount = new FakeMount(runtime.document);
   runtime.app.advisor.bind({ querySelector: () => mount });
   completeWallStandardAdvisor(mount);
   mount.click({ "data-advisor-item-action": "9" });
@@ -794,21 +1080,16 @@ test("repair result always opens Contact Sheet even when a repair item has adapt
   const controller = runtime.app.advisor.bind(container);
   mount.click({ "data-advisor-launch": "" });
   mount.click({ "data-advisor-ac": "wall" });
-  mount.click({ "data-advisor-next": "" });
   mount.click({ "data-advisor-months": "m4_5" });
-  mount.click({ "data-advisor-next": "" });
   mount.click({ "data-advisor-symptom": "routine" });
-  mount.click({ "data-advisor-next": "" });
   mount.click({ "data-advisor-repair": "error_code" });
-  mount.click({ "data-advisor-next": "" });
   assert.equal(controller.state().recommendation.verdict, "repair_check");
   mount.click({ "data-advisor-item-action": "9" });
   assert.equal(runtime.routes.length, 0);
   assert.equal(runtime.applied.length, 0);
   assert.equal(runtime.contacts.length, 1);
   assert.equal(runtime.visualViewport.listeners.size, 0);
-  assert.equal(mount.style.getPropertyValue("--advisor-viewport-height"), "");
-  assert.equal(mount.style.getPropertyValue("--advisor-viewport-top"), "");
+  assert.equal(runtime.document.portal, null);
 });
 
 test("advisor render contract is accessible, compact, motion-safe, and has no autoplay timer", () => {
@@ -818,21 +1099,25 @@ test("advisor render contract is accessible, compact, motion-safe, and has no au
   assert.match(html, /ไม่แน่ใจว่าควรล้างหรือซ่อม/);
   assert.match(html, /data-advisor-launch/);
   assert.match(html, /aria-expanded="false"/);
+  assert.doesNotMatch(html, /data-advisor-sheet-host|data-advisor-portal/);
+  assert.doesNotMatch(html, /data-icon="play"/);
+  assert.doesNotMatch(SOURCE, /data-advisor-next|>ขั้นต่อไป<|>ดูผลประเมิน</);
   assert.doesNotMatch(html, /data-advisor-ac|data-advisor-months|data-advisor-symptom|data-advisor-repair/);
   assert.doesNotMatch(html, /ความคืบหน้าการประเมิน|ขั้นที่ 1 จาก 4/);
   assert.doesNotMatch(html, /ดูบริการจริงจาก Catalog/);
   assert.match(CSS_SOURCE, /@media \(prefers-reduced-motion: reduce\)/);
   assert.match(CSS_SOURCE, /\.advisor-sheet[\s\S]*?max-height: 90dvh/);
   assert.match(CSS_SOURCE, /\.advisor-sheet-actions[\s\S]*?safe-area-inset-bottom/);
-  assert.match(CSS_SOURCE, /\.advisor-sheet-layer[\s\S]*?z-index: 100/);
+  assert.match(CSS_SOURCE, /\.advisor-portal-root \{[\s\S]*?position: fixed[\s\S]*?z-index: 10000[\s\S]*?isolation: isolate/);
   assert.match(CSS_SOURCE, /\.advisor-sheet \.advisor-chip-grid[\s\S]*?grid-template-columns: minmax\(0, 1fr\)/);
   assert.match(CSS_SOURCE, /@media \(max-width: 380px\)[\s\S]*?\.advisor-sheet \.advisor-choice-grid \{ grid-template-columns: minmax\(0, 1fr\)/);
   assert.match(CSS_SOURCE, /@media \(max-width: 600px\)[\s\S]*?height: var\(--advisor-viewport-height, 100dvh\)/);
   assert.match(CSS_SOURCE, /@media \(max-width: 600px\)[\s\S]*?max-height: none[\s\S]*?border-radius: 0/);
   assert.match(CSS_SOURCE, /body\.has-advisor-sheet \{ overflow: hidden/);
-  assert.match(CSS_SOURCE, /\.smart-advisor-section \{[\s\S]*?min-height: 112px[\s\S]*?padding: 12px/);
-  assert.match(CSS_SOURCE, /\.advisor-launcher-orb \{[\s\S]*?width: 40px[\s\S]*?height: 40px/);
-  assert.match(CSS_SOURCE, /\.advisor-launcher-actions \.primary-btn \{[\s\S]*?min-height: 42px/);
+  assert.match(CSS_SOURCE, /\.smart-advisor-section \{[\s\S]*?min-height: 96px[\s\S]*?padding: 10px/);
+  assert.match(CSS_SOURCE, /\.advisor-launcher-orb \{[\s\S]*?width: 34px[\s\S]*?height: 34px/);
+  assert.match(CSS_SOURCE, /\.advisor-launcher-copy h2 \{[\s\S]*?white-space: nowrap/);
+  assert.match(CSS_SOURCE, /\.advisor-launcher-actions \.primary-btn \{[\s\S]*?justify-content: center[\s\S]*?min-height: 38px/);
   assert.match(CSS_SOURCE, /@media \(max-width: 600px\)[\s\S]*?\.advisor-launcher-copy p \{ display: none; \}/);
   assert.match(CSS_SOURCE, /\.advisor-sheet-scroll \{[\s\S]*?overflow-y: auto[\s\S]*?overscroll-behavior: contain/);
   assert.match(CSS_SOURCE, /\.advisor-sheet-actions \{[\s\S]*?safe-area-inset-bottom/);
@@ -853,6 +1138,7 @@ test("advisor render contract is accessible, compact, motion-safe, and has no au
   assert.match(CSS_SOURCE, /\.advisor-sheet-body\.is-step-back > \.advisor-step/);
   assert.match(CSS_SOURCE, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.advisor-sheet-layer[\s\S]*?animation: none !important/);
   assert.doesNotMatch(SOURCE, /setInterval\s*\(/);
+  assert.match(SOURCE, /document\.body\.appendChild\(portalRoot\)/);
   assert.match(SOURCE, /matchMedia\?\.\("\(prefers-reduced-motion: reduce\)"\)/);
   assert.match(SOURCE, /window\.visualViewport/);
   const reduced = loadAdvisor({ reducedMotion: true });
@@ -888,7 +1174,7 @@ test("Home places built-in advisor after Quick Actions and before Featured Servi
 });
 
 test("advisor module is loaded before ui.js and precached under the shared build id", () => {
-  const build = "20260715_smart_advisor_mobile_polish_v2";
+  const build = "20260715_smart_advisor_portal_autoflow_v3";
   assert.ok(INDEX_SOURCE.indexOf(`modules/advisor.js?v=${build}`) < INDEX_SOURCE.indexOf(`modules/ui.js?v=${build}`));
   assert.match(SW_SOURCE, new RegExp(`BUILD_ID = "${build}"`));
   assert.match(SW_SOURCE, /modules\/advisor\.js\?v=\$\{BUILD_ID\}/);
