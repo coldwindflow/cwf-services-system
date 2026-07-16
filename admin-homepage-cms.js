@@ -328,13 +328,13 @@
     const list = sections();
     $("sectionList").innerHTML = list.map((section, index) => `
       <div class="sec-row ${section.id === selected ? "is-active" : ""} ${section.enabled !== false ? "" : "is-disabled"}">
-        <div class="sec-row-body" data-edit="${section.id}">
+        <button type="button" class="sec-row-body" data-edit="${section.id}">
           <div class="sec-icon">${TYPE_ICONS[section.type] || "📄"}</div>
           <div class="sec-info">
             <div class="sec-name">${esc(section.title || section.type)}</div>
             <div class="sec-type">${section.type}</div>
           </div>
-        </div>
+        </button>
         <div class="sec-controls">
           <button class="mini" data-move="${section.id}" data-dir="-1" ${index === 0 ? "disabled" : ""}>↑</button>
           <button class="mini" data-move="${section.id}" data-dir="1" ${index === list.length - 1 ? "disabled" : ""}>↓</button>
@@ -348,13 +348,13 @@
       const rowId = `head:${key}`;
       return `
       <div class="sec-row ${rowId === selected ? "is-active" : ""} ${header.enabled !== false ? "" : "is-disabled"}">
-        <div class="sec-row-body" data-edit="${rowId}">
+        <button type="button" class="sec-row-body" data-edit="${rowId}">
           <div class="sec-icon">${icon}</div>
           <div class="sec-info">
             <div class="sec-name">${esc(label)}</div>
             <div class="sec-type">page header · ${(header.items || []).length} slide</div>
           </div>
-        </div>
+        </button>
         <div class="sec-controls">
           <label class="tog"><input type="checkbox" data-head-toggle="${key}" ${header.enabled !== false ? "checked" : ""}><span></span></label>
         </div>
@@ -362,36 +362,36 @@
     }).join("");
     const themeRow = `
       <div class="sec-row ${selected === "theme" ? "is-active" : ""}">
-        <div class="sec-row-body" data-edit="theme">
+        <button type="button" class="sec-row-body" data-edit="theme">
           <div class="sec-icon">🎨</div>
           <div class="sec-info">
             <div class="sec-name">ธีม / สีแบรนด์</div>
             <div class="sec-type">สีทั้งแอป</div>
           </div>
-        </div>
+        </button>
       </div>`;
     const availabilityRow = `
       <div class="sec-row ${selected === "page-availability" ? "is-active" : ""}">
-        <div class="sec-row-body" data-edit="page-availability">
+        <button type="button" class="sec-row-body" data-edit="page-availability">
           <div class="sec-icon">🚦</div>
           <div class="sec-info">
             <div class="sec-name">สถานะหน้าแอปลูกค้า</div>
             <div class="sec-type">เปิด/ปิดหน้าแต่ละหน้า</div>
           </div>
-        </div>
+        </button>
       </div>`;
     $("sectionList").innerHTML += `<div class="nav-hd" style="margin-top:8px">แบนเนอร์หัวหน้า (แยกแต่ละหน้า)</div>${headerRows}`
       + `<div class="nav-hd" style="margin-top:8px">การเผยแพร่หน้า</div>${availabilityRow}`
       + `<div class="nav-hd" style="margin-top:8px">รูปลักษณ์</div>${themeRow}`;
     const iconCmsRow = `
       <div class="sec-row ${selected === "icon-cms" ? "is-active" : ""}">
-        <div class="sec-row-body" data-edit="icon-cms">
+        <button type="button" class="sec-row-body" data-edit="icon-cms">
           <div class="sec-icon">${iconRegistry.iconSvg("sparkle", 22)}</div>
           <div class="sec-info">
             <div class="sec-name">Icon CMS</div>
             <div class="sec-type">เมนู ไอคอน และชื่อเมนูล่าง</div>
           </div>
-        </div>
+        </button>
       </div>`;
     $("sectionList").innerHTML += iconCmsRow;
     $("sectionPicker").innerHTML = list.map((section) => `<option value="${esc(section.id)}">${esc(section.title || section.type)}</option>`).join("")
@@ -931,7 +931,7 @@
             <div class="icon-library-grid">${libraryChoices || '<p class="muted">ไม่พบไอคอน</p>'}</div>
             <div class="toolbar">
               <button class="btn btn-ghost btn-sm" type="button" data-reset-icon-slot>Reset slot</button>
-              <label class="btn btn-ghost btn-sm icon-upload-button">ใช้รูป PNG/WebP<input type="file" accept="image/png,image/webp,image/jpeg" data-icon-upload hidden></label>
+              <label class="btn btn-ghost btn-sm icon-upload-button">ใช้รูป PNG/WebP<input class="visually-hidden-file" type="file" accept="image/png,image/webp,image/jpeg" data-icon-upload></label>
             </div>
             <p class="icon-security-note">รับเฉพาะ allowlisted library หรือรูปจาก media pipeline เดิม ไม่รับ SVG, HTML, JavaScript, data URI หรือ URL ภายนอก</p>
           </div>

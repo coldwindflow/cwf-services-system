@@ -7059,6 +7059,10 @@ body.has-advisor-sheet { overflow: hidden; }
    minimum touch targets of the existing bottom navigation. */
 .bottom-nav .nav-item::before { display: none !important; }
 .bottom-nav .nav-item { min-height: 52px; }
+.bottom-nav .nav-item:focus-visible {
+  outline: 3px solid rgba(20, 99, 255, .55);
+  outline-offset: -3px;
+}
 .bottom-nav .nav-item .nav-item-icon {
   display: inline-flex;
   align-items: center;
@@ -7119,6 +7123,17 @@ body.has-advisor-sheet { overflow: hidden; }
 .page-icon-heading > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .profile-slot-icon { display: inline-flex; margin: 0 0 8px; color: var(--blue); }
 [data-cwf-action-icon] { display: inline-flex; margin-right: 6px; vertical-align: middle; }
+
+/* Keep the final content reachable above the fixed navigation on browser and
+   installed-PWA viewports, including devices with a bottom home indicator. */
+.app-main {
+  padding-bottom: calc(var(--nav-h) + env(safe-area-inset-bottom, 0px) + 24px);
+  scroll-padding-bottom: calc(var(--nav-h) + env(safe-area-inset-bottom, 0px) + 24px);
+}
+.bottom-nav {
+  min-height: calc(var(--nav-h) + env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(7px + env(safe-area-inset-bottom, 0px));
+}
 
 @media (max-width: 390px) {
   .bottom-nav { grid-template-columns: repeat(5, minmax(0, 1fr)); }
