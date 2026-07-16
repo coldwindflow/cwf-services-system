@@ -177,9 +177,115 @@ async function schemaReady(db) {
         WHERE table_schema='public' AND table_name='jobs' AND column_name='customer_sub'
       ) AS has_customer_sub
   `);
+  const tableExists = !!r.rows?.[0]?.has_claims;
+  const hasCustomerSub = !!r.rows?.[0]?.has_customer_sub;
+  if (!tableExists) {
+    return {
+      has_claims: false,
+      has_customer_sub: hasCustomerSub,
+      claims_table_exists: false,
+      diagnostic_code: "TABLE_MISSING",
+    };
+  }
+
+  const columns = await db.query(`
+    SELECT column_name, data_type, is_nullable
+      FROM information_schema.columns
+     WHERE table_schema='public'
+       AND table_name='customer_history_claims'
+  `);
+  const actual = new Map((columns.rows || []).map((row) => [row.column_name, row]));
+  const expected = {
+    claim_id: ["bigint", "NO"],
+    customer_sub: ["text", "NO"],
+    phone_norm: ["text", "NO"],
+    phone_last4: ["text", "NO"],
+    proof_job_id: ["bigint", "NO"],
+    claim_method: ["text", "NO"],
+    claimed_at: ["timestamp with time zone", "NO"],
+    last_verified_at: ["timestamp with time zone", "NO"],
+    revoked_at: ["timestamp with time zone", "YES"],
+    revoke_reason: ["text", "YES"],
+  };
+  const columnsValid = Object.entries(expected).every(([name, [type, nullable]]) => {
+    const row = actual.get(name);
+    return row && row.data_type === type && row.is_nullable === nullable;
+  });
+
+  const shape = await db.query(`
+    SELECT
+      EXISTS (
+        SELECT 1
+          FROM pg_constraint con
+          JOIN pg_class rel ON rel.oid=con.conrelid
+          JOIN pg_namespace nsp ON nsp.oid=rel.relnamespace
+         WHERE nsp.nspname='public' AND rel.relname='customer_history_claims'
+           AND con.contype='f'
+           AND pg_get_constraintdef(con.oid) ILIKE '%FOREIGN KEY (customer_sub) REFERENCES customer_profiles(sub)%'
+      ) AS has_customer_fk,
+      EXISTS (
+        SELECT 1
+          FROM pg_constraint con
+          JOIN pg_class rel ON rel.oid=con.conrelid
+          JOIN pg_namespace nsp ON nsp.oid=rel.relnamespace
+         WHERE nsp.nspname='public' AND rel.relname='customer_history_claims'
+           AND con.contype='f'
+           AND pg_get_constraintdef(con.oid) ILIKE '%FOREIGN KEY (proof_job_id) REFERENCES jobs(job_id)%'
+      ) AS has_job_fk,
+      EXISTS (
+        SELECT 1
+          FROM pg_constraint con
+          JOIN pg_class rel ON rel.oid=con.conrelid
+          JOIN pg_namespace nsp ON nsp.oid=rel.relnamespace
+         WHERE nsp.nspname='public' AND rel.relname='customer_history_claims'
+           AND con.contype='c' AND pg_get_constraintdef(con.oid) ILIKE '%booking_code_phone%'
+      ) AS has_method_check,
+      EXISTS (
+        SELECT 1
+          FROM pg_constraint con
+          JOIN pg_class rel ON rel.oid=con.conrelid
+          JOIN pg_namespace nsp ON nsp.oid=rel.relnamespace
+         WHERE nsp.nspname='public' AND rel.relname='customer_history_claims'
+           AND con.contype='c' AND pg_get_constraintdef(con.oid) LIKE '%phone_norm%'
+           AND pg_get_constraintdef(con.oid) LIKE '%^0[0-9]{8,9}$%'
+      ) AS has_phone_norm_check,
+      EXISTS (
+        SELECT 1
+          FROM pg_constraint con
+          JOIN pg_class rel ON rel.oid=con.conrelid
+          JOIN pg_namespace nsp ON nsp.oid=rel.relnamespace
+         WHERE nsp.nspname='public' AND rel.relname='customer_history_claims'
+           AND con.contype='c' AND pg_get_constraintdef(con.oid) LIKE '%phone_last4%'
+           AND pg_get_constraintdef(con.oid) ILIKE '%right(phone_norm, 4)%'
+      ) AS has_phone_last4_check,
+      EXISTS (
+        SELECT 1 FROM pg_indexes
+         WHERE schemaname='public' AND tablename='customer_history_claims'
+           AND indexname='ux_customer_history_claims_active_phone'
+           AND indexdef ILIKE '%UNIQUE%' AND indexdef ILIKE '%revoked_at IS NULL%'
+      ) AS has_active_phone_index,
+      EXISTS (
+        SELECT 1 FROM pg_indexes
+         WHERE schemaname='public' AND tablename='customer_history_claims'
+           AND indexname='ux_customer_history_claims_active_proof_job'
+           AND indexdef ILIKE '%UNIQUE%' AND indexdef ILIKE '%revoked_at IS NULL%'
+      ) AS has_active_proof_index,
+      EXISTS (
+        SELECT 1 FROM pg_indexes
+         WHERE schemaname='public' AND tablename='customer_history_claims'
+           AND indexname='idx_customer_history_claims_customer_sub'
+           AND indexdef ILIKE '%customer_sub%' AND indexdef ILIKE '%revoked_at IS NULL%'
+      ) AS has_active_sub_index
+  `);
+  const s = shape.rows?.[0] || {};
+  const shapeValid = !!s.has_customer_fk && !!s.has_job_fk
+    && !!s.has_method_check && !!s.has_phone_norm_check && !!s.has_phone_last4_check
+    && !!s.has_active_phone_index && !!s.has_active_proof_index && !!s.has_active_sub_index;
   return {
-    has_claims: !!r.rows?.[0]?.has_claims,
-    has_customer_sub: !!r.rows?.[0]?.has_customer_sub,
+    has_claims: columnsValid && shapeValid,
+    has_customer_sub: hasCustomerSub,
+    claims_table_exists: true,
+    diagnostic_code: columnsValid && shapeValid ? "READY" : "SCHEMA_DRIFT",
   };
 }
 

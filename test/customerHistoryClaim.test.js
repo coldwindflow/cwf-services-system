@@ -13,13 +13,15 @@ const history = require("../server/services/public/customerHistory");
 
 const REPO_ROOT = path.resolve(__dirname, "..");
 
-function makePool({ jobs = [], claims = [], hasClaims = true, hasCustomerSub = true, failInsert = false, uniqueConflictClaim = null } = {}) {
+function makePool({ jobs = [], claims = [], hasClaims = true, hasCustomerSub = true, schemaDrift = false, schemaReadyError = null, failInsert = false, uniqueConflictClaim = null } = {}) {
   const state = {
     jobs: jobs.map((x) => ({ ...x })),
     claims: claims.map((x) => ({ ...x })),
     queries: [],
     hasClaims,
     hasCustomerSub,
+    schemaDrift,
+    schemaReadyError,
     failInsert,
     uniqueConflictClaim,
   };
@@ -28,7 +30,31 @@ function makePool({ jobs = [], claims = [], hasClaims = true, hasCustomerSub = t
     state.queries.push({ sql: s, params });
     if (/BEGIN|COMMIT|ROLLBACK/.test(s)) return { rows: [] };
     if (/to_regclass\('public\.customer_history_claims'\)/.test(s)) {
+      if (state.schemaReadyError) throw state.schemaReadyError;
       return { rows: [{ has_claims: state.hasClaims, has_customer_sub: state.hasCustomerSub }] };
+    }
+    if (/information_schema\.columns/.test(s) && /table_name='customer_history_claims'/.test(s)) {
+      const rows = [
+        ["claim_id", "bigint", "NO"], ["customer_sub", "text", "NO"],
+        ["phone_norm", "text", "NO"], ["phone_last4", "text", "NO"],
+        ["proof_job_id", "bigint", "NO"], ["claim_method", "text", "NO"],
+        ["claimed_at", "timestamp with time zone", "NO"],
+        ["last_verified_at", "timestamp with time zone", "NO"],
+        ["revoked_at", "timestamp with time zone", "YES"], ["revoke_reason", "text", "YES"],
+      ].map(([column_name, data_type, is_nullable]) => ({ column_name, data_type, is_nullable }));
+      return { rows: state.schemaDrift ? rows.filter((row) => row.column_name !== "phone_norm") : rows };
+    }
+    if (/AS has_customer_fk/.test(s)) {
+      return { rows: [{
+        has_customer_fk: true,
+        has_job_fk: true,
+        has_method_check: true,
+        has_phone_norm_check: true,
+        has_phone_last4_check: true,
+        has_active_phone_index: true,
+        has_active_proof_index: true,
+        has_active_sub_index: true,
+      }] };
     }
     if (/FROM public\.jobs\s+WHERE upper\(btrim/.test(s)) {
       const code = String(params[0] || "").toUpperCase();
@@ -169,6 +195,49 @@ test("unauthenticated claim returns 401", async () => {
   });
 });
 
+test("missing or drifted claim schema returns 503 with safe diagnostics and no proof PII", async () => {
+  for (const options of [{ hasClaims: false }, { hasClaims: true, schemaDrift: true }]) {
+    const logs = [];
+    const pool = makePool({ jobs: [LEGACY_JOB], ...options });
+    await withServer({ pool, logger: { warn: (...args) => logs.push(args) } }, async (base) => {
+      const res = await fetch(`${base}/public/customer-history/claim`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ phone: "0812345678", booking_code: "CWFABC123" }),
+      });
+      assert.equal(res.status, 503);
+      assert.equal((await json(res)).error, "CUSTOMER_HISTORY_SCHEMA_NOT_READY");
+    });
+    const output = JSON.stringify(logs);
+    assert.match(output, /CUSTOMER_HISTORY_SCHEMA_NOT_READY/);
+    assert.doesNotMatch(output, /0812345678|CWFABC123/);
+  }
+});
+
+test("claim schema readiness query exceptions roll back and return safe 503 without proof PII", async () => {
+  const phone = "0812345678";
+  const bookingCode = "CWFABC123";
+  const logs = [];
+  const schemaReadyError = Object.assign(new Error(`catalog failed for ${phone} ${bookingCode}`), { code: "42501" });
+  const pool = makePool({ jobs: [LEGACY_JOB], schemaReadyError });
+
+  await withServer({ pool, logger: { warn: (...args) => logs.push(args) } }, async (base) => {
+    const res = await fetch(`${base}/public/customer-history/claim`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ phone, booking_code: bookingCode }),
+    });
+    assert.equal(res.status, 503);
+    assert.deepEqual(await json(res), { error: "CUSTOMER_HISTORY_SCHEMA_NOT_READY" });
+  });
+
+  assert.ok(pool.state.queries.some(({ sql }) => /ROLLBACK/.test(sql)));
+  const output = JSON.stringify(logs);
+  assert.match(output, /CUSTOMER_HISTORY_SCHEMA_NOT_READY/);
+  assert.match(output, /42501/);
+  assert.doesNotMatch(output, new RegExp(`${phone}|${bookingCode}`));
+});
+
 test("wrong phone/code cases use generic CLAIM_FAILED and never fallback to partial phone sources", async () => {
   const pool = makePool({ jobs: [{ ...LEGACY_JOB, customer_note: "0812345678", address_text: "phone 0812345678 but not customer_phone", customer_phone: "0899999999" }] });
   await withServer({ pool }, async (base) => {
@@ -217,6 +286,36 @@ test("claim succeeds, retries by same account are idempotent, and other accounts
     });
     assert.equal(res.status, 400);
     assert.equal((await json(res)).error, "CLAIM_FAILED");
+  });
+});
+
+test("successful claim immediately authorizes history and location prefill data", async () => {
+  const pool = makePool({ jobs: [LEGACY_JOB] });
+  await withServer({ pool, sub: "line:u1" }, async (base) => {
+    const claim = await fetch(`${base}/public/customer-history/claim`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ phone: "0812345678", booking_code: "CWFABC123" }),
+    });
+    assert.equal(claim.status, 200);
+
+    const [historyRes, locationsRes] = await Promise.all([
+      fetch(`${base}/public/customer-history`),
+      fetch(`${base}/public/customer-history/locations`),
+    ]);
+    assert.equal(historyRes.status, 200);
+    assert.equal(locationsRes.status, 200);
+    const historyBody = await json(historyRes);
+    const locationsBody = await json(locationsRes);
+    assert.equal(historyBody.claimed, true);
+    assert.equal(historyBody.items.length, 1);
+    assert.equal(locationsBody.claimed, true);
+    assert.equal(locationsBody.locations[0].address_text, LEGACY_JOB.address_text);
+
+    const stateContext = makeBrowserContext();
+    const stateRoot = loadModule(stateContext, "customer-app/modules/state.js");
+    assert.equal(stateRoot.state.applyHistoryLocation("scheduled", locationsBody.locations[0]), true);
+    assert.equal(stateRoot.state.draft.scheduled.address_text, LEGACY_JOB.address_text);
   });
 });
 
@@ -543,8 +642,17 @@ test("Customer App profile opens history detail with opaque job_ref and clears c
   assert.equal(submitState.claimBookingCode, "");
 });
 
+test("Customer App schema-not-ready state offers retry and admin contact without weakening generic proof failure", () => {
+  const src = fs.readFileSync(path.join(REPO_ROOT, "customer-app/modules/profile.js"), "utf8");
+  assert.match(src, /schemaUnavailable \? "ลองใหม่" : "โหลดประวัติ"/);
+  assert.match(src, /ติดต่อแอดมิน/);
+  assert.match(src, /error\?\.status === 503/);
+  assert.match(src, /ไม่สามารถยืนยันประวัติงานได้ กรุณาตรวจสอบข้อมูลอีกครั้ง/);
+  assert.doesNotMatch(src, /เบอร์โทรไม่ถูก|Booking Code ไม่ถูก/);
+});
+
 test("Customer App cache version is bumped consistently", () => {
-  const expected = "20260715_smart_advisor_portal_autoflow_v3";
+  const expected = "20260716_customer_history_production_ready_v1";
   for (const file of [
     "customer-app/index.html",
     "customer-app/sw.js",

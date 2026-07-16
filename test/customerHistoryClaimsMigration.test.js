@@ -148,7 +148,10 @@ test("default mode is read-only preflight and does not write", async () => {
   const client = new FakeClient({ hasClaims: false });
   const result = await runWithClient(client);
   assert.equal(result.code, 0);
-  assert.deepEqual(result.log.lines, ["CUSTOMER_HISTORY_CLAIMS_MIGRATION_PREFLIGHT_OK"]);
+  assert.deepEqual(result.log.lines, [
+    "CUSTOMER_HISTORY_CLAIMS_MIGRATION_STATUS=READY_TO_APPLY",
+    "CUSTOMER_HISTORY_CLAIMS_MIGRATION_PREFLIGHT_OK",
+  ]);
   assert.equal(client.queries.some((q) => q.sql.includes("pg_try_advisory_lock")), false);
   assert.equal(client.queries.some((q) => q.sql.includes("CREATE TABLE IF NOT EXISTS public.customer_history_claims")), false);
   assert.equal(client.ended, true);
@@ -179,37 +182,41 @@ test("checksum mismatch fails before DB write", async () => {
     logger: log,
     clientFactory: () => client,
   });
-  assert.equal(code, 1);
+  assert.equal(code, runner.EXIT_CODE.SCHEMA_DRIFT);
   assert.equal(client.connected, false);
   assert.match(log.lines.join("\n"), /CUSTOMER_HISTORY_CLAIMS_MIGRATION_FAILED/);
 });
 
 test("missing prerequisite schema and incorrect jobs.job_id type fail closed", async () => {
   const missing = await runWithClient(new FakeClient({ hasCustomerProfiles: false }));
-  assert.equal(missing.code, 1);
+  assert.equal(missing.code, runner.EXIT_CODE.PREREQUISITE_MISSING);
+  assert.match(missing.log.lines.join("\n"), /STATUS=PREREQUISITE_MISSING/);
 
   const wrongType = await runWithClient(new FakeClient({ jobIdType: "integer" }));
-  assert.equal(wrongType.code, 1);
+  assert.equal(wrongType.code, runner.EXIT_CODE.PREREQUISITE_MISSING);
 });
 
 test("already-applied exact schema exits successfully without running migration", async () => {
   const client = new FakeClient({ hasClaims: true });
   const result = await runWithClient(client);
   assert.equal(result.code, 0);
-  assert.deepEqual(result.log.lines, ["CUSTOMER_HISTORY_CLAIMS_MIGRATION_ALREADY_APPLIED"]);
+  assert.deepEqual(result.log.lines, [
+    "CUSTOMER_HISTORY_CLAIMS_MIGRATION_STATUS=ALREADY_APPLIED",
+    "CUSTOMER_HISTORY_CLAIMS_MIGRATION_ALREADY_APPLIED",
+  ]);
   assert.equal(client.queries.some((q) => q.sql.includes("CREATE TABLE IF NOT EXISTS public.customer_history_claims")), false);
 });
 
 test("schema drift fails closed", async () => {
   const result = await runWithClient(new FakeClient({ hasClaims: true, schemaDrift: "missing_index" }));
-  assert.equal(result.code, 1);
-  assert.match(result.log.lines.join("\n"), /CUSTOMER_HISTORY_CLAIMS_MIGRATION_FAILED/);
+  assert.equal(result.code, runner.EXIT_CODE.SCHEMA_DRIFT);
+  assert.match(result.log.lines.join("\n"), /STATUS=SCHEMA_DRIFT/);
 });
 
 test("advisory lock unavailable fails before migration SQL", async () => {
   const client = new FakeClient({ locked: false });
   const result = await runWithClient(client, { argv: ["--apply"], env: { [runner.CONFIRM_ENV]: runner.CONFIRM_VALUE } });
-  assert.equal(result.code, 1);
+  assert.equal(result.code, runner.EXIT_CODE.FAILED);
   assert.equal(client.queries.some((q) => q.sql.includes("CREATE TABLE IF NOT EXISTS public.customer_history_claims")), false);
   assert.equal(client.ended, true);
 });
@@ -246,7 +253,7 @@ test("migration SQL failure rolls back, unlocks, and closes", async () => {
 test("post-apply verification failure exits non-zero and still unlocks", async () => {
   const client = new FakeClient({ schemaDrift: "missing_check" });
   const result = await runWithClient(client, { argv: ["--apply"], env: { [runner.CONFIRM_ENV]: runner.CONFIRM_VALUE } });
-  assert.equal(result.code, 1);
+  assert.equal(result.code, runner.EXIT_CODE.SCHEMA_DRIFT);
   assert.ok(client.queries.some((q) => q.sql.includes("pg_advisory_unlock")));
   assert.equal(client.ended, true);
 });
@@ -273,4 +280,13 @@ test("package exposes explicit check and apply commands", () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, "package.json"), "utf8"));
   assert.equal(pkg.scripts["migrate:customer-history-claims:check"], "node scripts/run-customer-history-claims-migration.js");
   assert.equal(pkg.scripts["migrate:customer-history-claims"], "node scripts/run-customer-history-claims-migration.js");
+});
+
+test("migration checksum is stable across LF and CRLF checkouts", () => {
+  assert.equal(runner.migrationChecksum(REPO_ROOT), runner.EXPECTED_SHA256);
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "cwf-history-claims-eol-"));
+  fs.mkdirSync(path.join(tmp, "migrations"), { recursive: true });
+  const sql = fs.readFileSync(path.join(REPO_ROOT, runner.MIGRATION_RELATIVE_PATH), "utf8").replace(/\r?\n/g, "\r\n");
+  fs.writeFileSync(path.join(tmp, runner.MIGRATION_RELATIVE_PATH), sql, "utf8");
+  assert.equal(runner.migrationChecksum(tmp), runner.EXPECTED_SHA256);
 });

@@ -3,7 +3,7 @@
 
   const App = window.CWFCustomerAppV2;
   const BOOT_TIMEOUT_MS = 3500;
-  const BUILD_ID = "20260715_smart_advisor_portal_autoflow_v3";
+  const BUILD_ID = "20260716_customer_history_production_ready_v1";
 
   function withTimeout(promise, timeoutMs) {
     return Promise.race([

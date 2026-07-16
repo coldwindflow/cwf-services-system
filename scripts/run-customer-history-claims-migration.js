@@ -10,6 +10,17 @@ const EXPECTED_SHA256 = "745446126557ec50d726bdd73a6d4ba8a6c67ba5f9239895186d075
 const CONFIRM_ENV = "CONFIRM_CUSTOMER_HISTORY_CLAIMS_MIGRATION";
 const CONFIRM_VALUE = "APPLY_20260710_CUSTOMER_HISTORY_CLAIMS";
 const ADVISORY_LOCK_KEY = "202607100152";
+const STATUS = Object.freeze({
+  READY_TO_APPLY: "READY_TO_APPLY",
+  ALREADY_APPLIED: "ALREADY_APPLIED",
+  PREREQUISITE_MISSING: "PREREQUISITE_MISSING",
+  SCHEMA_DRIFT: "SCHEMA_DRIFT",
+});
+const EXIT_CODE = Object.freeze({
+  FAILED: 1,
+  PREREQUISITE_MISSING: 2,
+  SCHEMA_DRIFT: 3,
+});
 
 function clean(value) {
   return String(value == null ? "" : value).trim();
@@ -28,6 +39,12 @@ function safeErrorMessage(error) {
     .replace(/\blocalhost(?::\d+)?\b/gi, "[REDACTED_HOST]");
 }
 
+function migrationError(status, message) {
+  const error = new Error(message);
+  error.migrationStatus = status;
+  return error;
+}
+
 function resolveMigrationPath(repoRoot = path.resolve(__dirname, "..")) {
   const root = path.resolve(repoRoot);
   const migrationPath = path.resolve(root, MIGRATION_RELATIVE_PATH);
@@ -43,13 +60,16 @@ function readMigrationSql(repoRoot) {
 }
 
 function migrationChecksum(repoRoot) {
-  return crypto.createHash("sha256").update(readMigrationSql(repoRoot), "utf8").digest("hex");
+  // Git may materialize the checked-in SQL with CRLF on Windows. Hash the
+  // canonical repository content so the immutable checksum is cross-platform.
+  const canonicalSql = readMigrationSql(repoRoot).replace(/\r\n/g, "\n");
+  return crypto.createHash("sha256").update(canonicalSql, "utf8").digest("hex");
 }
 
 function verifyChecksum(repoRoot) {
   const actual = migrationChecksum(repoRoot);
   if (actual !== EXPECTED_SHA256) {
-    throw new Error("migration checksum mismatch");
+    throw migrationError(STATUS.SCHEMA_DRIFT, "migration checksum mismatch");
   }
   return actual;
 }
@@ -76,8 +96,8 @@ async function inspectPreflight(client) {
       to_regclass('public.customer_history_claims') IS NOT NULL AS has_claims
   `);
   const t = tables.rows?.[0] || {};
-  if (!t.has_customer_profiles) throw new Error("customer_profiles prerequisite missing");
-  if (!t.has_jobs) throw new Error("jobs prerequisite missing");
+  if (!t.has_customer_profiles) throw migrationError(STATUS.PREREQUISITE_MISSING, "customer_profiles prerequisite missing");
+  if (!t.has_jobs) throw migrationError(STATUS.PREREQUISITE_MISSING, "jobs prerequisite missing");
 
   const columns = await client.query(`
     SELECT table_name, column_name, data_type, is_nullable
@@ -87,8 +107,12 @@ async function inspectPreflight(client) {
          OR (table_name='customer_profiles' AND column_name='sub'))
   `);
   const byTableColumn = new Map((columns.rows || []).map((row) => [`${row.table_name}.${row.column_name}`, row]));
-  if (byTableColumn.get("jobs.job_id")?.data_type !== "bigint") throw new Error("jobs.job_id must be bigint");
-  if (!byTableColumn.has("customer_profiles.sub")) throw new Error("customer_profiles.sub missing");
+  if (byTableColumn.get("jobs.job_id")?.data_type !== "bigint") {
+    throw migrationError(STATUS.PREREQUISITE_MISSING, "jobs.job_id must be bigint");
+  }
+  if (!byTableColumn.has("customer_profiles.sub")) {
+    throw migrationError(STATUS.PREREQUISITE_MISSING, "customer_profiles.sub missing");
+  }
 
   const subKey = await client.query(`
     SELECT con.conname,
@@ -107,14 +131,14 @@ async function inspectPreflight(client) {
     const names = Array.isArray(row.column_names) ? row.column_names : [];
     return names.length === 1 && names[0] === "sub";
   });
-  if (!supportsSubFk) throw new Error("customer_profiles.sub does not support FK");
+  if (!supportsSubFk) throw migrationError(STATUS.PREREQUISITE_MISSING, "customer_profiles.sub does not support FK");
 
   return { claimsExists: !!t.has_claims };
 }
 
 async function verifyAppliedSchema(client, options = {}) {
   const table = await client.query("SELECT to_regclass('public.customer_history_claims') AS table_name");
-  if (!table.rows?.[0]?.table_name) throw new Error("customer_history_claims table missing");
+  if (!table.rows?.[0]?.table_name) throw migrationError(STATUS.SCHEMA_DRIFT, "customer_history_claims table missing");
 
   const columns = await client.query(`
     SELECT column_name, data_type, is_nullable
@@ -139,7 +163,7 @@ async function verifyAppliedSchema(client, options = {}) {
   for (const [name, [type, nullable]] of Object.entries(expectedColumns)) {
     const row = cols.get(name);
     if (!row || row.data_type !== type || row.is_nullable !== nullable) {
-      throw new Error(`customer_history_claims column drift: ${name}`);
+      throw migrationError(STATUS.SCHEMA_DRIFT, `customer_history_claims column drift: ${name}`);
     }
   }
 
@@ -167,8 +191,8 @@ async function verifyAppliedSchema(client, options = {}) {
   const hasJobFk = (fks.rows || []).some((row) => row.foreign_table === "jobs"
     && (row.column_names || []).join(",") === "proof_job_id"
     && (row.foreign_column_names || []).join(",") === "job_id");
-  if (!hasCustomerFk) throw new Error("customer_sub FK missing");
-  if (!hasJobFk) throw new Error("proof_job_id FK missing");
+  if (!hasCustomerFk) throw migrationError(STATUS.SCHEMA_DRIFT, "customer_sub FK missing");
+  if (!hasJobFk) throw migrationError(STATUS.SCHEMA_DRIFT, "proof_job_id FK missing");
 
   const checks = await client.query(`
     SELECT conname, pg_get_constraintdef(oid) AS definition
@@ -177,9 +201,13 @@ async function verifyAppliedSchema(client, options = {}) {
        AND contype='c'
   `);
   const checkText = (checks.rows || []).map((row) => `${row.conname} ${row.definition}`).join("\n");
-  if (!/booking_code_phone/.test(checkText)) throw new Error("claim_method CHECK missing");
-  if (!/phone_norm/.test(checkText) || !/\^0\[0-9\]\{8,9\}\$/.test(checkText)) throw new Error("canonical phone_norm CHECK missing");
-  if (!/phone_last4/.test(checkText) || !/right\(phone_norm,\s*4\)/i.test(checkText)) throw new Error("phone_last4 CHECK missing");
+  if (!/booking_code_phone/.test(checkText)) throw migrationError(STATUS.SCHEMA_DRIFT, "claim_method CHECK missing");
+  if (!/phone_norm/.test(checkText) || !/\^0\[0-9\]\{8,9\}\$/.test(checkText)) {
+    throw migrationError(STATUS.SCHEMA_DRIFT, "canonical phone_norm CHECK missing");
+  }
+  if (!/phone_last4/.test(checkText) || !/right\(phone_norm,\s*4\)/i.test(checkText)) {
+    throw migrationError(STATUS.SCHEMA_DRIFT, "phone_last4 CHECK missing");
+  }
 
   const indexes = await client.query(`
     SELECT indexname, indexdef
@@ -192,18 +220,20 @@ async function verifyAppliedSchema(client, options = {}) {
   const activeProof = indexDefs.get("ux_customer_history_claims_active_proof_job") || "";
   const activeSub = indexDefs.get("idx_customer_history_claims_customer_sub") || "";
   if (!/UNIQUE/i.test(activePhone) || !/phone_norm/.test(activePhone) || !/revoked_at IS NULL/i.test(activePhone)) {
-    throw new Error("active phone partial unique index missing");
+    throw migrationError(STATUS.SCHEMA_DRIFT, "active phone partial unique index missing");
   }
   if (!/UNIQUE/i.test(activeProof) || !/proof_job_id/.test(activeProof) || !/revoked_at IS NULL/i.test(activeProof)) {
-    throw new Error("active proof job partial unique index missing");
+    throw migrationError(STATUS.SCHEMA_DRIFT, "active proof job partial unique index missing");
   }
   if (!/customer_sub/.test(activeSub) || !/revoked_at IS NULL/i.test(activeSub)) {
-    throw new Error("active customer_sub index missing");
+    throw migrationError(STATUS.SCHEMA_DRIFT, "active customer_sub index missing");
   }
 
   const count = await client.query("SELECT COUNT(*)::bigint AS count FROM public.customer_history_claims");
   const rowCount = Number(count.rows?.[0]?.count || 0);
-  if (options.expectEmpty && rowCount !== 0) throw new Error("customer_history_claims row count must be zero after first apply");
+  if (options.expectEmpty && rowCount !== 0) {
+    throw migrationError(STATUS.SCHEMA_DRIFT, "customer_history_claims row count must be zero after first apply");
+  }
   return { rowCount };
 }
 
@@ -211,9 +241,9 @@ async function preflight(client) {
   const info = await inspectPreflight(client);
   if (info.claimsExists) {
     await verifyAppliedSchema(client);
-    return { status: "ALREADY_APPLIED" };
+    return { status: STATUS.ALREADY_APPLIED };
   }
-  return { status: "READY_TO_APPLY" };
+  return { status: STATUS.READY_TO_APPLY };
 }
 
 function applyIntent(argv = [], env = process.env) {
@@ -241,13 +271,15 @@ async function runMigration(options = {}) {
   try {
     await client.connect();
     const preflightResult = await preflight(client);
-    if (preflightResult.status === "ALREADY_APPLIED") {
+    if (preflightResult.status === STATUS.ALREADY_APPLIED) {
+      logger.log(`CUSTOMER_HISTORY_CLAIMS_MIGRATION_STATUS=${STATUS.ALREADY_APPLIED}`);
       logger.log("CUSTOMER_HISTORY_CLAIMS_MIGRATION_ALREADY_APPLIED");
-      return { status: "ALREADY_APPLIED" };
+      return { status: STATUS.ALREADY_APPLIED };
     }
     if (!shouldApply) {
+      logger.log(`CUSTOMER_HISTORY_CLAIMS_MIGRATION_STATUS=${STATUS.READY_TO_APPLY}`);
       logger.log("CUSTOMER_HISTORY_CLAIMS_MIGRATION_PREFLIGHT_OK");
-      return { status: "READY_TO_APPLY" };
+      return { status: STATUS.READY_TO_APPLY };
     }
 
     const lock = await client.query("SELECT pg_try_advisory_lock($1::bigint) AS locked", [ADVISORY_LOCK_KEY]);
@@ -294,8 +326,16 @@ async function runCli(options = {}) {
     await runMigration(options);
     return 0;
   } catch (error) {
+    const status = error?.migrationStatus;
+    if (status === STATUS.PREREQUISITE_MISSING || status === STATUS.SCHEMA_DRIFT) {
+      logger.error(`CUSTOMER_HISTORY_CLAIMS_MIGRATION_STATUS=${status}`);
+    }
     logger.error(`CUSTOMER_HISTORY_CLAIMS_MIGRATION_FAILED: ${safeErrorMessage(error)}`);
-    return 1;
+    return status === STATUS.PREREQUISITE_MISSING
+      ? EXIT_CODE.PREREQUISITE_MISSING
+      : status === STATUS.SCHEMA_DRIFT
+        ? EXIT_CODE.SCHEMA_DRIFT
+        : EXIT_CODE.FAILED;
   }
 }
 
@@ -310,7 +350,9 @@ module.exports = {
   CONFIRM_ENV,
   CONFIRM_VALUE,
   EXPECTED_SHA256,
+  EXIT_CODE,
   MIGRATION_RELATIVE_PATH,
+  STATUS,
   applyIntent,
   createClientConfig,
   inspectPreflight,
