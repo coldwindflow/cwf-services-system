@@ -1,6 +1,6 @@
 "use strict";
 
-const BUILD_ID = "20260717_customer_icon_cms_v1";
+const BUILD_ID = "20260717_customer_history_line_hotfix_v1";
 const CACHE_NAME = `cwf-customer-app-v2-${BUILD_ID}`;
 const APP_SHELL = [
   `./index.html?v=${BUILD_ID}`,

@@ -644,15 +644,19 @@ test("Customer App profile opens history detail with opaque job_ref and clears c
 
 test("Customer App schema-not-ready state offers retry and admin contact without weakening generic proof failure", () => {
   const src = fs.readFileSync(path.join(REPO_ROOT, "customer-app/modules/profile.js"), "utf8");
+  const css = fs.readFileSync(path.join(REPO_ROOT, "customer-app/assets/customer-app.css"), "utf8");
   assert.match(src, /schemaUnavailable \? "ลองใหม่" : "โหลดประวัติ"/);
-  assert.match(src, /ติดต่อแอดมิน/);
+  assert.match(src, /<a class="secondary-btn" href="https:\/\/lin\.ee\/x0touXY" target="_blank" rel="noopener noreferrer">ติดต่อแอดมิน<\/a>/);
+  assert.doesNotMatch(src, /https:\/\/lin\.ee\/fG1Oq7y/);
+  assert.match(css, /\.button-row \{ display: flex; flex-direction: column; gap: 10px;/);
+  assert.match(css, /\.secondary-btn \{[\s\S]*?min-height: 50px;/);
   assert.match(src, /error\?\.status === 503/);
   assert.match(src, /ไม่สามารถยืนยันประวัติงานได้ กรุณาตรวจสอบข้อมูลอีกครั้ง/);
   assert.doesNotMatch(src, /เบอร์โทรไม่ถูก|Booking Code ไม่ถูก/);
 });
 
 test("Customer App cache version is bumped consistently", () => {
-  const expected = "20260717_customer_icon_cms_v1";
+  const expected = "20260717_customer_history_line_hotfix_v1";
   for (const file of [
     "customer-app/index.html",
     "customer-app/sw.js",
