@@ -1163,6 +1163,7 @@
     if (!mount) return;
     mount.innerHTML = renderReviewsSectionBody(item);
     bindReviewsSection(container, item);
+    root.utils.decorateActionIcons?.(mount);
   }
 
   async function loadReviewsList(container, item, { append } = {}) {
@@ -1625,6 +1626,7 @@
     if (!mount) return;
     mount.innerHTML = renderDetailBody();
     bindDetailBody(container);
+    root.ui?.applyRouteIcons?.(container, "storeItem");
   }
 
   // Lets the detail page show related-products/variant-selector data sourced

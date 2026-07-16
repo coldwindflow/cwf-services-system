@@ -198,7 +198,7 @@ test("featured_services normalizes auto-mode defaults and validates manual selec
   assert.match(adminSource, /จำนวนการ์ดต่อชุด \(สูงสุด 6\)/);
   assert.match(adminSource, /ดึงจาก Catalog อัตโนมัติ \(Featured ก่อน\)/);
   assert.match(adminSource, /max="6"[^>]*data-featured-limit/);
-  assert.match(adminHtml, /admin-homepage-cms\.js\?v=20260714_featured_six_card_rotation_v1/);
+  assert.match(adminHtml, /admin-homepage-cms\.js\?v=20260717_customer_icon_cms_v1/);
 });
 
 test("legacy published config without featured_services fields gets safe defaults without losing existing content", () => {
@@ -247,7 +247,12 @@ test("admin homepage endpoints require admin session and draft does not publish 
 
   const allow = await withServer(pool, (req, _res, next) => { req.actor = { username: "admin", role: "admin" }; next(); });
   try {
-    const draftConfig = { version: 1, sections: [{ id: "hero", type: "hero", enabled: true, sort_order: 1, title: "Draft only", items: [] }] };
+    const draftConfig = {
+      version: 1,
+      navigation: { store: { label: "บริการของเรา", icon: { type: "library", value: "sparkle" } } },
+      icon_overrides: { "page.store.header": { type: "library", value: "star" } },
+      sections: [{ id: "hero", type: "hero", enabled: true, sort_order: 1, title: "Draft only", items: [] }],
+    };
     const saved = await fetch(`${allow.base}/admin/homepage-cms/draft`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -257,12 +262,16 @@ test("admin homepage endpoints require admin session and draft does not publish 
     let publicRes = await fetch(`${allow.base}/public/homepage`);
     let publicData = await publicRes.json();
     assert.doesNotMatch(JSON.stringify(publicData), /Draft only/);
+    assert.notEqual(publicData.config.navigation.store.label, "บริการของเรา");
 
     const published = await fetch(`${allow.base}/admin/homepage-cms/publish`, { method: "POST" });
     assert.equal(published.status, 200);
     publicRes = await fetch(`${allow.base}/public/homepage`);
     publicData = await publicRes.json();
     assert.match(JSON.stringify(publicData), /Draft only/);
+    assert.equal(publicData.config.navigation.store.label, "บริการของเรา");
+    assert.equal(publicData.config.navigation.store.icon.value, "sparkle");
+    assert.equal(publicData.config.icon_overrides["page.store.header"].value, "star");
   } finally {
     await allow.close();
   }
@@ -296,7 +305,7 @@ test("customer homepage has no admin control, bottom nav is fixed five-tab, and 
   const sw = read("customer-app/sw.js");
   const app = read("customer-app/assets/customer-app.js");
   const manifest = read("customer-app/manifest.webmanifest");
-  const build = "20260716_customer_history_production_ready_v1";
+  const build = "20260717_customer_icon_cms_v1";
 
   assert.doesNotMatch(index + ui, /โหมดแอดมิน|openCms|localStorage\.getItem\('cwfHomeCmsDemo'/);
   assert.match(index, /data-route="store"[\s\S]*ร้านค้า/);

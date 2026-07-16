@@ -652,7 +652,7 @@ test("Customer App schema-not-ready state offers retry and admin contact without
 });
 
 test("Customer App cache version is bumped consistently", () => {
-  const expected = "20260716_customer_history_production_ready_v1";
+  const expected = "20260717_customer_icon_cms_v1";
   for (const file of [
     "customer-app/index.html",
     "customer-app/sw.js",

@@ -106,6 +106,7 @@
       root.state.setRoute(route);
       this.updateNav(route);
       handler(app);
+      root.ui?.applyRouteIcons?.(app, route);
       // Re-hide any control that points at a disabled route (CTAs rendered by
       // the handler just now).
       if (paReady && typeof pa.applyToDom === "function") pa.applyToDom(app);

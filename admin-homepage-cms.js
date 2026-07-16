@@ -1,8 +1,13 @@
 (function () {
   "use strict";
 
+  const iconRegistry = window.CWFIconRegistry;
+  if (!iconRegistry) throw new Error("CWFIconRegistry is required");
+
   const DEFAULT_CONFIG = {
     version: 1,
+    navigation: iconRegistry.defaultNavigation(),
+    icon_overrides: iconRegistry.defaultOverrides(),
     sections: [
       { id: "hero", type: "hero", enabled: true, sort_order: 10, kicker: "Coldwindflow", title: "ดูแลแอร์ง่าย จองงานได้ในไม่กี่ขั้นตอน", body: "จองล้างแอร์ ติดตามงาน และรับประกาศสำคัญจาก CWF ได้ในหน้าเดียว", cta_primary: { label: "จองล้างแอร์", route: "scheduled" }, cta_secondary: { label: "ติดตามงาน", route: "tracking" }, focal_position: "center", items: [] },
       { id: "quick", type: "quick", enabled: true, sort_order: 20, title: "เมนูด่วน", body: "", items: [{ title: "จองล้างแอร์", route: "scheduled", icon: "sparkle" }, { title: "แจ้งซ่อม", action: "contact", icon: "wrench" }, { title: "ติดตามงาน", route: "tracking", icon: "pin" }, { title: "LINE", url: "https://lin.ee/fG1Oq7y", icon: "chat" }] },
@@ -87,6 +92,8 @@
   let catalogLoadFailed = false;
   let articleSyncStatus = null;
   let articleSyncStatusLoading = false;
+  let selectedIconSlot = "nav.home";
+  let iconSearch = "";
   const ROUTE_OPTIONS = ["home", "store", "scheduled", "urgent", "tracking", "profile"];
   // Per-page header banners: [key, nav label, icon]. Managed separately from
   // homepage sections but reuse the hero slide editor for their slides.
@@ -128,6 +135,7 @@
     });
     next.theme = next.theme && typeof next.theme === "object" && !Array.isArray(next.theme) ? next.theme : {};
     next.page_availability = normalizePageAvailability(next.page_availability);
+    Object.assign(next, iconRegistry.normalizeConfig(next, "stored"));
     return next;
   }
   function setStatus(text, kind) { $("status").textContent = text; $("status").className = `status-chip ${kind || ""}`; }
@@ -320,13 +328,13 @@
     const list = sections();
     $("sectionList").innerHTML = list.map((section, index) => `
       <div class="sec-row ${section.id === selected ? "is-active" : ""} ${section.enabled !== false ? "" : "is-disabled"}">
-        <div class="sec-row-body" data-edit="${section.id}">
+        <button type="button" class="sec-row-body" data-edit="${section.id}">
           <div class="sec-icon">${TYPE_ICONS[section.type] || "📄"}</div>
           <div class="sec-info">
             <div class="sec-name">${esc(section.title || section.type)}</div>
             <div class="sec-type">${section.type}</div>
           </div>
-        </div>
+        </button>
         <div class="sec-controls">
           <button class="mini" data-move="${section.id}" data-dir="-1" ${index === 0 ? "disabled" : ""}>↑</button>
           <button class="mini" data-move="${section.id}" data-dir="1" ${index === list.length - 1 ? "disabled" : ""}>↓</button>
@@ -340,13 +348,13 @@
       const rowId = `head:${key}`;
       return `
       <div class="sec-row ${rowId === selected ? "is-active" : ""} ${header.enabled !== false ? "" : "is-disabled"}">
-        <div class="sec-row-body" data-edit="${rowId}">
+        <button type="button" class="sec-row-body" data-edit="${rowId}">
           <div class="sec-icon">${icon}</div>
           <div class="sec-info">
             <div class="sec-name">${esc(label)}</div>
             <div class="sec-type">page header · ${(header.items || []).length} slide</div>
           </div>
-        </div>
+        </button>
         <div class="sec-controls">
           <label class="tog"><input type="checkbox" data-head-toggle="${key}" ${header.enabled !== false ? "checked" : ""}><span></span></label>
         </div>
@@ -354,36 +362,59 @@
     }).join("");
     const themeRow = `
       <div class="sec-row ${selected === "theme" ? "is-active" : ""}">
-        <div class="sec-row-body" data-edit="theme">
+        <button type="button" class="sec-row-body" data-edit="theme">
           <div class="sec-icon">🎨</div>
           <div class="sec-info">
             <div class="sec-name">ธีม / สีแบรนด์</div>
             <div class="sec-type">สีทั้งแอป</div>
           </div>
-        </div>
+        </button>
       </div>`;
     const availabilityRow = `
       <div class="sec-row ${selected === "page-availability" ? "is-active" : ""}">
-        <div class="sec-row-body" data-edit="page-availability">
+        <button type="button" class="sec-row-body" data-edit="page-availability">
           <div class="sec-icon">🚦</div>
           <div class="sec-info">
             <div class="sec-name">สถานะหน้าแอปลูกค้า</div>
             <div class="sec-type">เปิด/ปิดหน้าแต่ละหน้า</div>
           </div>
-        </div>
+        </button>
       </div>`;
     $("sectionList").innerHTML += `<div class="nav-hd" style="margin-top:8px">แบนเนอร์หัวหน้า (แยกแต่ละหน้า)</div>${headerRows}`
       + `<div class="nav-hd" style="margin-top:8px">การเผยแพร่หน้า</div>${availabilityRow}`
       + `<div class="nav-hd" style="margin-top:8px">รูปลักษณ์</div>${themeRow}`;
+    const iconCmsRow = `
+      <div class="sec-row ${selected === "icon-cms" ? "is-active" : ""}">
+        <button type="button" class="sec-row-body" data-edit="icon-cms">
+          <div class="sec-icon">${iconRegistry.iconSvg("sparkle", 22)}</div>
+          <div class="sec-info">
+            <div class="sec-name">Icon CMS</div>
+            <div class="sec-type">เมนู ไอคอน และชื่อเมนูล่าง</div>
+          </div>
+        </button>
+      </div>`;
+    $("sectionList").innerHTML += iconCmsRow;
     $("sectionPicker").innerHTML = list.map((section) => `<option value="${esc(section.id)}">${esc(section.title || section.type)}</option>`).join("")
       + PAGE_HEADER_META.map(([key, label]) => `<option value="head:${key}">${esc(label)}</option>`).join("")
       + `<option value="page-availability">สถานะหน้าแอปลูกค้า</option>`
       + `<option value="theme">ธีม / สีแบรนด์</option>`;
+    $("sectionPicker").innerHTML += '<option value="icon-cms">Icon CMS</option>';
     $("sectionPicker").value = selected;
   }
 
   /* ── editor header ── */
   function renderEditorHeader() {
+    if (selected === "icon-cms") {
+      $("editorHeader").innerHTML = `
+        <div class="editor-hd">
+          <div class="editor-hd-icon">${iconRegistry.iconSvg("sparkle", 24)}</div>
+          <div>
+            <div class="editor-hd-title">Admin Icon CMS</div>
+            <div class="editor-hd-sub">แก้ไอคอนและชื่อเมนูใน Draft · แอปเปลี่ยนเมื่อกด Publish</div>
+          </div>
+        </div>`;
+      return;
+    }
     if (selected === "page-availability") {
       $("editorHeader").innerHTML = `
         <div class="editor-hd">
@@ -527,7 +558,7 @@
             <label class="field">การแสดงภาพ<select class="fi" data-item="${index}" data-prop="aspect_mode"><option value="contain" ${(item.aspect_mode || "contain") === "contain" ? "selected" : ""}>Contain (เห็นเต็ม)</option><option value="cover" ${item.aspect_mode === "cover" ? "selected" : ""}>Cover (เต็มกรอบ)</option></select></label>
           ` : ""}
           ${targetEditable ? `<label class="field">Target type<select class="fi" data-item-target="${index}"><option value="route" ${targetMode === "route" ? "selected" : ""}>Internal route</option><option value="contact" ${targetMode === "contact" ? "selected" : ""}>Contact admin</option><option value="url" ${targetMode === "url" ? "selected" : ""}>External URL</option></select></label>` : ""}
-          ${quick ? `<label class="field">Icon<input class="fi" data-item="${index}" data-prop="icon" value="${esc(item.icon || "")}" placeholder="sparkle, wrench, pin, chat, bolt, shield, tag, clock, phone"></label>` : ""}
+          ${quick ? `<label class="field">ไอคอนเดิม (allowlist)<select class="fi" data-item="${index}" data-prop="icon">${iconRegistry.LIBRARY_NAMES.map((name) => `<option value="${name}" ${String(item.icon || "") === name ? "selected" : ""}>${name}</option>`).join("")}</select><small>ตั้งค่า override กลางได้ที่ Icon CMS</small></label>` : ""}
           ${targetField}
           ${trust || targetEditable ? "" : `<label class="field">${social ? ((item.platform || "youtube") === "facebook" ? "ลิงก์ Facebook (Page URL = Timeline, Post URL = เปิดใหม่)" : "ลิงก์วิดีโอ YouTube") : sectionType === "updates" ? "ลิงก์ (ไม่บังคับ — เว้นว่างได้ถ้าโพสต์แค่รูป)" : sectionType === "articles" ? "ลิงก์บทความ *" : external ? "External URL" : "Route / URL"}<input class="fi" data-item="${index}" data-prop="${external ? "url" : "route"}" value="${esc(external ? item.url || "" : item.route || item.url || "")}" placeholder="${social ? ((item.platform || "youtube") === "facebook" ? "https://www.facebook.com/your-page หรือ https://www.facebook.com/.../posts/..." : "https://www.youtube.com/watch?v=...") : sectionType === "updates" || sectionType === "articles" ? "https://..." : ""}"></label>`}
           ${trust ? "" : `<label class="field">${social ? "Thumbnail (ไม่บังคับ)" : "Image URL"}<input class="fi" data-item="${index}" data-prop="image_url" value="${esc(item.image_url || "")}"></label>`}
@@ -789,7 +820,145 @@
       </div>`;
   }
 
+  function editableIconSlots() {
+    const navigation = Object.keys(iconRegistry.NAVIGATION).map((key) => ({
+      key: "nav." + key,
+      category: "navigation",
+      label: "เมนูล่าง: " + iconRegistry.NAVIGATION[key].label,
+      defaultIcon: iconRegistry.NAVIGATION[key].icon,
+    }));
+    return navigation.concat(iconRegistry.SLOT_DEFINITIONS);
+  }
+
+  function iconValueForSlot(slotKey) {
+    if (slotKey.startsWith("nav.")) {
+      const key = slotKey.slice(4);
+      return config.navigation?.[key]?.icon || { type: "library", value: iconRegistry.NAVIGATION[key]?.icon || "sparkle" };
+    }
+    return config.icon_overrides?.[slotKey] || { type: "library", value: iconRegistry.defaultIconForSlot(slotKey) };
+  }
+
+  function setIconValue(slotKey, value) {
+    if (slotKey.startsWith("nav.")) {
+      const key = slotKey.slice(4);
+      config.navigation = config.navigation || iconRegistry.defaultNavigation();
+      config.navigation[key] = config.navigation[key] || {
+        label: iconRegistry.NAVIGATION[key]?.label || key,
+        icon: { type: "library", value: iconRegistry.NAVIGATION[key]?.icon || "sparkle" },
+      };
+      config.navigation[key].icon = value;
+      return;
+    }
+    config.icon_overrides = config.icon_overrides || iconRegistry.defaultOverrides();
+    config.icon_overrides[slotKey] = value;
+  }
+
+  function adminIconPreview(icon, fallback, size) {
+    if (icon?.type === "image" && iconRegistry.isSafePublicImageUrl(icon.url)) {
+      return `<span class="admin-icon-preview-image" data-admin-icon-fallback="${esc(fallback)}"><img src="${esc(icon.url)}" alt="" width="${size || 24}" height="${size || 24}"></span>`;
+    }
+    return iconRegistry.iconSvg(icon?.value || fallback, size || 24);
+  }
+
+  function renderIconNavPreview() {
+    const mount = $("iconNavPreview");
+    if (!mount) return;
+    mount.innerHTML = Object.keys(iconRegistry.NAVIGATION).map((key) => {
+      const item = config.navigation?.[key] || {};
+      const defaults = iconRegistry.NAVIGATION[key];
+      return `<div class="icon-nav-preview-item ${key === "booking" ? "is-primary" : ""}">
+        ${adminIconPreview(item.icon, defaults.icon, 22)}
+        <span>${esc(iconRegistry.normalizeLabel(item.label, defaults.short_label || defaults.label))}</span>
+      </div>`;
+    }).join("");
+  }
+
+  function renderIconEditor() {
+    Object.assign(config, iconRegistry.normalizeConfig(config, "stored"));
+    const slots = editableIconSlots();
+    if (!slots.some((slot) => slot.key === selectedIconSlot)) selectedIconSlot = slots[0].key;
+    const selectedSlot = slots.find((slot) => slot.key === selectedIconSlot);
+    const icon = iconValueForSlot(selectedIconSlot);
+    const categories = {
+      navigation: "เมนูล่าง 5 เมนู",
+      quick: "เมนูด่วน",
+      page: "หัวหน้าทุกหน้า",
+      profile: "หน้าโปรไฟล์",
+      action: "ปุ่มสำคัญ",
+    };
+    const slotGroups = Object.keys(categories).map((category) => `
+      <section class="icon-slot-group">
+        <div class="icon-slot-group-head">
+          <strong>${categories[category]}</strong>
+          <button class="btn btn-ghost btn-sm" type="button" data-reset-icon-category="${category}">Reset หมวด</button>
+        </div>
+        <div class="icon-slot-list">
+          ${slots.filter((slot) => slot.category === category).map((slot) => {
+            const currentIcon = iconValueForSlot(slot.key);
+            return `<button type="button" class="icon-slot-row ${slot.key === selectedIconSlot ? "is-active" : ""}" data-icon-slot="${esc(slot.key)}">
+              ${adminIconPreview(currentIcon, slot.defaultIcon, 22)}
+              <span><b>${esc(slot.label)}</b><small>${esc(slot.key)}</small></span>
+            </button>`;
+          }).join("")}
+        </div>
+      </section>`).join("");
+    const libraryChoices = iconRegistry.LIBRARY_NAMES
+      .filter((name) => !iconSearch || name.includes(iconSearch.toLowerCase()))
+      .map((name) => `<button type="button" class="icon-library-choice ${icon.type === "library" && icon.value === name ? "is-active" : ""}" data-icon-choice="${name}" data-library-name="${name}">
+        ${iconRegistry.iconSvg(name, 22)}<span>${name}</span>
+      </button>`).join("");
+    const navLabels = Object.keys(iconRegistry.NAVIGATION).map((key) => {
+      const defaults = iconRegistry.NAVIGATION[key];
+      return `<label class="field">ชื่อเมนู ${esc(defaults.label)}
+        <input class="fi" maxlength="${iconRegistry.MAX_NAV_LABEL_LENGTH}" data-nav-label="${key}" value="${esc(config.navigation[key].label)}" required>
+      </label>`;
+    }).join("");
+    $("editor").innerHTML = `
+      <div class="ep">
+        <div class="ep-head">ชื่อเมนูล่าง + Mobile preview</div>
+        <div class="ep-body">
+          <div class="icon-nav-label-grid">${navLabels}</div>
+          <div class="icon-nav-preview" id="iconNavPreview" aria-label="ตัวอย่างเมนูล่าง"></div>
+        </div>
+      </div>
+      <div class="icon-cms-layout">
+        <div class="ep"><div class="ep-head">Icon slots</div><div class="ep-body">${slotGroups}</div></div>
+        <div class="ep">
+          <div class="ep-head">เลือกไอคอน: ${esc(selectedSlot.label)}</div>
+          <div class="ep-body">
+            <div class="icon-selected-preview">${adminIconPreview(icon, selectedSlot.defaultIcon, 38)}<div><b>${esc(selectedIconSlot)}</b><small>Default: ${esc(selectedSlot.defaultIcon)}</small></div></div>
+            <label class="field">ค้นหา icon library<input class="fi" type="search" data-icon-search value="${esc(iconSearch)}" placeholder="เช่น home, calendar, star"></label>
+            <div class="icon-library-grid">${libraryChoices || '<p class="muted">ไม่พบไอคอน</p>'}</div>
+            <div class="toolbar">
+              <button class="btn btn-ghost btn-sm" type="button" data-reset-icon-slot>Reset slot</button>
+              <label class="btn btn-ghost btn-sm icon-upload-button">ใช้รูป PNG/WebP<input class="visually-hidden-file" type="file" accept="image/png,image/webp,image/jpeg" data-icon-upload></label>
+            </div>
+            <p class="icon-security-note">รับเฉพาะ allowlisted library หรือรูปจาก media pipeline เดิม ไม่รับ SVG, HTML, JavaScript, data URI หรือ URL ภายนอก</p>
+          </div>
+        </div>
+      </div>`;
+    renderIconNavPreview();
+  }
+
+  async function uploadIconImage(input) {
+    const file = input.files?.[0];
+    if (!file) return;
+    setStatus("กำลังอัปโหลดไอคอน...", "");
+    const form = new FormData();
+    form.append("image", file);
+    const response = await fetch("/admin/homepage-cms/images", { method: "POST", credentials: "include", body: form });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.image_public_id || !iconRegistry.isSafeMediaPublicId(data.image_public_id)
+      || !iconRegistry.isSafePublicImageUrl(data.image_url)) {
+      throw new Error(data.error || "อัปโหลดไอคอนไม่สำเร็จ");
+    }
+    setIconValue(selectedIconSlot, { type: "image", value: data.image_public_id, url: data.image_url });
+    render();
+    setStatus("อัปโหลดไอคอนเข้า Draft แล้ว", "ok");
+  }
+
   function renderEditor() {
+    if (selected === "icon-cms") { renderIconEditor(); return; }
     if (selected === "page-availability") { renderPageAvailabilityEditor(); return; }
     if (selected === "theme") { renderThemeEditor(); return; }
     if (headKey()) { renderHeadEditor(); return; }
@@ -947,13 +1116,13 @@
 
   /* ── preview ── */
   function renderPreview() {
-    $("preview").innerHTML = sections().filter((s) => s.enabled !== false).map((section) => {
+    const body = sections().filter((s) => s.enabled !== false).map((section) => {
       if (section.type === "hero") {
         const enabledSlides = (section.items || []).filter((slide) => slide.enabled !== false);
         const slides = enabledSlides.length ? enabledSlides : [section];
         return `<section class="p-hero">${slides.map((slide) => `<div ${slide.image_url ? `style="background-image:linear-gradient(rgba(7,27,56,.62),rgba(7,27,56,.62)),url('${esc(slide.image_url)}');background-size:cover;background-position:${slide.focal_position||"center"}"` : ""}><small>${esc(slide.kicker || section.kicker || "Coldwindflow")}</small><h3>${esc(slide.title || section.title || "")}</h3><p>${esc(slide.body || section.body || "")}</p></div>`).join("")}</section>`;
       }
-      if (section.type === "quick") return `<section class="p-quick">${(section.items || []).filter((i) => i.enabled !== false).slice(0, 4).map((i) => `<div>${esc(i.title || "")}</div>`).join("")}</section>`;
+      if (section.type === "quick") return `<section class="p-quick">${(section.items || []).filter((i) => i.enabled !== false).slice(0, 4).map((i, index) => `<div>${adminIconPreview(iconValueForSlot(`quick.${index + 1}`), iconRegistry.defaultIconForSlot(`quick.${index + 1}`), 20)}<span>${esc(i.title || "")}</span></div>`).join("")}</section>`;
       if (section.type === "promo_banner") {
         const banners = (section.items || []).filter((i) => i.enabled !== false && i.image_url);
         if (!banners.length) return "";
@@ -976,6 +1145,12 @@
       const viewAll = section.view_all_label || (section.view_all_route ? "ดูทั้งหมด" : "");
       return `<section class="p-sec"><div class="p-sec-head"><b>${esc(section.title || "")}</b>${viewAll ? `<span>${esc(viewAll)}</span>` : ""}</div><div class="p-cards">${(section.items || []).filter((i) => i.enabled !== false).slice(0, 3).map((i) => `<article class="p-card">${section.type === "social" ? `<span style="display:inline-block;padding:2px 7px;border-radius:999px;background:#eef2ff;color:#3346a6;font-size:10px;margin-bottom:3px">${esc((i.platform || "youtube") === "facebook" ? "Facebook" : "YouTube")}</span><br>` : ""}<b>${esc(i.title || "")}</b><p>${esc(i.body || "")}</p></article>`).join("") || `<article class="p-card"><b>ไม่มีรายการ</b><p>เพิ่มรายการใน editor</p></article>`}</div></section>`;
     }).join("");
+    const nav = `<nav class="p-icon-nav">${Object.keys(iconRegistry.NAVIGATION).map((key) => {
+      const item = config.navigation?.[key] || {};
+      const defaults = iconRegistry.NAVIGATION[key];
+      return `<div class="${key === "booking" ? "is-primary" : ""}">${adminIconPreview(item.icon, defaults.icon, 20)}<span>${esc(iconRegistry.normalizeLabel(item.label, defaults.short_label || defaults.label))}</span></div>`;
+    }).join("")}</nav>`;
+    $("preview").innerHTML = body + nav;
   }
 
   function render() {
@@ -994,6 +1169,27 @@
 
   /* ── event handlers ── */
   document.addEventListener("click", (event) => {
+    const iconSlotButton = event.target.closest("[data-icon-slot]");
+    if (iconSlotButton) { selectedIconSlot = iconSlotButton.dataset.iconSlot; renderIconEditor(); return; }
+    const iconChoice = event.target.closest("[data-icon-choice]");
+    if (iconChoice) {
+      setIconValue(selectedIconSlot, { type: "library", value: iconChoice.dataset.iconChoice });
+      renderIconEditor();
+      return;
+    }
+    const resetIconSlot = event.target.closest("[data-reset-icon-slot]");
+    if (resetIconSlot) {
+      setIconValue(selectedIconSlot, { type: "library", value: iconRegistry.defaultIconForSlot(selectedIconSlot) });
+      renderIconEditor();
+      return;
+    }
+    const resetIconCategory = event.target.closest("[data-reset-icon-category]");
+    if (resetIconCategory) {
+      editableIconSlots().filter((slot) => slot.category === resetIconCategory.dataset.resetIconCategory)
+        .forEach((slot) => setIconValue(slot.key, { type: "library", value: slot.defaultIcon }));
+      renderIconEditor();
+      return;
+    }
     if (event.target.id === "addSectionBtn") { const el = $("newSectionType"); if (el) addSection(el.value); return; }
     const preset = event.target.closest("[data-theme-preset]");
     if (preset) {
@@ -1066,6 +1262,19 @@
 
   document.addEventListener("input", (event) => {
     const target = event.target;
+    if (target.matches("[data-nav-label]")) {
+      const key = target.dataset.navLabel;
+      config.navigation[key].label = String(target.value || "").slice(0, iconRegistry.MAX_NAV_LABEL_LENGTH);
+      renderIconNavPreview();
+      return;
+    }
+    if (target.matches("[data-icon-search]")) {
+      iconSearch = String(target.value || "").trim().toLowerCase();
+      document.querySelectorAll("[data-library-name]").forEach((button) => {
+        button.hidden = Boolean(iconSearch) && !button.dataset.libraryName.includes(iconSearch);
+      });
+      return;
+    }
     // Theme color fields live outside any section — handle first and bail.
     if (target.matches("[data-theme-color]") || target.matches("[data-theme-hex]")) {
       const key = target.dataset.themeColor || target.dataset.themeHex;
@@ -1105,6 +1314,10 @@
 
   document.addEventListener("change", (event) => {
     const target = event.target;
+    if (target.matches("[data-icon-upload]")) {
+      uploadIconImage(target).catch((error) => setStatus(error.message, "bad"));
+      return;
+    }
     if (target.matches("[data-page-availability]")) {
       config.page_availability = normalizePageAvailability(config.page_availability);
       const key = target.dataset.pageAvailability;
@@ -1162,6 +1375,14 @@
     }
   });
 
+  document.addEventListener("error", (event) => {
+    const image = event.target;
+    if (!(image instanceof HTMLImageElement)) return;
+    const holder = image.closest("[data-admin-icon-fallback]");
+    if (!holder) return;
+    holder.innerHTML = iconRegistry.iconSvg(holder.dataset.adminIconFallback || "sparkle", 24);
+  }, true);
+
   $("saveDraft").addEventListener("click", () => saveDraft().catch((error) => setStatus(error.message, "bad")));
   $("publish").addEventListener("click", () => publish().catch((error) => setStatus(error.message, "bad")));
   $("reload").addEventListener("click", () => load().catch((error) => setStatus(error.message, "bad")));
@@ -1172,4 +1393,5 @@
   $("backToSections").addEventListener("click", () => switchTab("sections"));
   switchTab("sections");
   load().catch((error) => { config = clone(DEFAULT_CONFIG); render(); setStatus(error.message, "bad"); });
+  console.info("[admin-homepage-cms] icon CMS v1 loaded");
 })();
