@@ -3,7 +3,7 @@
 
   const App = window.CWFCustomerAppV2;
   const BOOT_TIMEOUT_MS = 3500;
-  const BUILD_ID = "20260717_customer_icon_cms_v1";
+  const BUILD_ID = "20260717_customer_history_line_hotfix_v1";
 
   function withTimeout(promise, timeoutMs) {
     return Promise.race([

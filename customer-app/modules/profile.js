@@ -113,7 +113,7 @@
               ${h.claimStatus === "saving" ? "กำลังตรวจสอบ..." : "เชื่อมประวัติ"}
             </button>
             <button class="secondary-btn" type="button" data-history-refresh ${loading ? "disabled" : ""}>${h.schemaUnavailable ? "ลองใหม่" : "โหลดประวัติ"}</button>
-            ${h.schemaUnavailable ? `<a class="secondary-btn" href="https://lin.ee/fG1Oq7y" target="_blank" rel="noopener noreferrer">ติดต่อแอดมิน</a>` : ""}
+            ${h.schemaUnavailable ? `<a class="secondary-btn" href="https://lin.ee/x0touXY" target="_blank" rel="noopener noreferrer">ติดต่อแอดมิน</a>` : ""}
           </div>
         </form>
         ${renderHistorySummary({ claimed, items, locations, loading, error: h.error || h.locationsError, detail: h.detail, detailStatus: h.detailStatus, detailError: h.detailError })}
@@ -460,5 +460,5 @@
       else renderLoggedOut(container);
     },
   };
-  console.info("[customer-profile] customer history production ready v1 loaded");
+  console.info("[customer-profile] customer history LINE hotfix v1 loaded");
 })();
