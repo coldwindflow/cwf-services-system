@@ -1598,6 +1598,7 @@
     const timeline = container.querySelector("[data-tracking-timeline]");
     if (timeline) timeline.innerHTML = renderTimeline();
     bindResultActions(container);
+    root.utils.decorateActionIcons?.(container);
   }
 
   // Refresh / post-review reloads reuse the private active credential so a

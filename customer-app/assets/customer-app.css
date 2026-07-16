@@ -7053,3 +7053,76 @@ body.has-advisor-sheet { overflow: hidden; }
 .booking-empty-card h2 { font-size: 18px; font-weight: 800; color: var(--navy); margin: 0 0 6px; }
 .booking-empty-card .muted { margin: 0 0 16px; }
 .booking-empty-card .support-strip { justify-content: center; }
+
+/* Customer Icon CMS runtime. These rules intentionally override the legacy
+   pseudo-element nav artwork while preserving the routes, active state and
+   minimum touch targets of the existing bottom navigation. */
+.bottom-nav .nav-item::before { display: none !important; }
+.bottom-nav .nav-item { min-height: 52px; }
+.bottom-nav .nav-item .nav-item-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  overflow: visible;
+  font-size: initial !important;
+  flex: 0 0 auto;
+}
+.bottom-nav .nav-item .nav-item-icon span { font-size: initial !important; }
+.bottom-nav .nav-item .nav-item-icon::after,
+.bottom-nav .nav-item .nav-item-icon span::after { content: none !important; display: none !important; }
+.bottom-nav .nav-item [data-nav-label] {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  color: inherit;
+  font-size: 10px !important;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bottom-nav .nav-item [data-nav-label]::after { content: none !important; display: none !important; }
+.bottom-nav .nav-item-primary .nav-item-icon {
+  width: 52px;
+  height: 52px;
+  margin-top: -22px;
+  color: #0f4fb2;
+  border-radius: 50%;
+  background: linear-gradient(145deg, #ffd43b, #ffbd17);
+  box-shadow: 0 0 0 4px #fff, 0 0 0 6px rgba(20, 99, 255, .92), 0 10px 18px -5px rgba(255, 160, 8, .52);
+}
+.bottom-nav .nav-item-primary [data-nav-label] { color: #657187; font-weight: 800; }
+.bottom-nav .nav-item-primary.is-active [data-nav-label] { color: var(--navy); font-weight: 900; }
+
+.cwf-icon-slot,
+.cwf-ico {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  line-height: 0;
+}
+.cwf-icon-slot img { display: block; width: 100%; height: 100%; object-fit: contain; border-radius: 7px; }
+.cwf-icon-slot.is-image { width: 1.5em; height: 1.5em; }
+.page-icon-heading {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  margin: 0 0 10px;
+  padding: 8px 12px;
+  color: var(--navy);
+  font-size: 14px;
+  font-weight: 800;
+}
+.page-icon-heading > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.profile-slot-icon { display: inline-flex; margin: 0 0 8px; color: var(--blue); }
+[data-cwf-action-icon] { display: inline-flex; margin-right: 6px; vertical-align: middle; }
+
+@media (max-width: 390px) {
+  .bottom-nav { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .bottom-nav .nav-item { min-width: 0; padding-inline: 1px; }
+  .bottom-nav .nav-item [data-nav-label] { font-size: 9px !important; }
+  .page-icon-heading { padding-inline: 8px; }
+}

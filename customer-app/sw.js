@@ -1,6 +1,6 @@
 "use strict";
 
-const BUILD_ID = "20260716_customer_history_production_ready_v1";
+const BUILD_ID = "20260717_customer_icon_cms_v1";
 const CACHE_NAME = `cwf-customer-app-v2-${BUILD_ID}`;
 const APP_SHELL = [
   `./index.html?v=${BUILD_ID}`,
@@ -8,6 +8,7 @@ const APP_SHELL = [
   `./assets/customer-app.css?v=${BUILD_ID}`,
   `./assets/customer-app.js?v=${BUILD_ID}`,
   "./assets/icons/cwf-customer-192.png",
+  `./modules/iconRegistry.js?v=${BUILD_ID}`,
   `./modules/state.js?v=${BUILD_ID}`,
   `./modules/utils.js?v=${BUILD_ID}`,
   `./modules/analytics.js?v=${BUILD_ID}`,

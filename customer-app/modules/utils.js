@@ -2,6 +2,9 @@
   "use strict";
 
   const root = window.CWFCustomerAppV2 = window.CWFCustomerAppV2 || {};
+  const iconRegistry = window.CWFIconRegistry;
+  const ICON_CONFIG_CACHE_KEY = "cwf_customer_icon_config_v1";
+  let publishedIconConfig = iconRegistry?.normalizeConfig?.({}, "public") || { navigation: {}, icon_overrides: {} };
 
   function escapeHtml(value) {
     return String(value == null ? "" : value)
@@ -103,12 +106,91 @@
   };
 
   function icon(name, size) {
-    const body = ICON_PATHS[name] || ICON_PATHS.sparkle;
-    const s = size || 24;
-    return `<span class="cwf-ico" aria-hidden="true"><svg viewBox="0 0 24 24" width="${s}" height="${s}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${body}</svg></span>`;
+    if (iconRegistry?.iconSvg) return iconRegistry.iconSvg(name, size);
+    const safeName = Object.prototype.hasOwnProperty.call(ICON_PATHS, name) ? name : "sparkle";
+    const safeSize = Math.max(12, Math.min(64, Number(size) || 24));
+    return `<span class="cwf-ico" aria-hidden="true"><svg viewBox="0 0 24 24" width="${safeSize}" height="${safeSize}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICON_PATHS[safeName]}</svg></span>`;
   }
 
   // Circular progress ring (visual only) for the urgent waiting room.
+  function iconSlot(slotKey, size) {
+    if (!iconRegistry?.resolveSlot) return `<span class="cwf-icon-slot" aria-hidden="true">${icon("sparkle", size)}</span>`;
+    const resolved = iconRegistry.resolveSlot(publishedIconConfig, slotKey);
+    const fallback = iconRegistry.defaultIconForSlot(slotKey);
+    const safeSize = Math.max(12, Math.min(64, Number(size) || 24));
+    if (resolved.type === "image" && iconRegistry.isSafePublicImageUrl(resolved.value)) {
+      return `<span class="cwf-icon-slot is-image" data-cwf-icon-slot="${escapeHtml(slotKey)}" data-icon-fallback="${escapeHtml(fallback)}" aria-hidden="true"><img src="${escapeHtml(resolved.value)}" alt="" width="${safeSize}" height="${safeSize}" loading="lazy" referrerpolicy="no-referrer"></span>`;
+    }
+    return `<span class="cwf-icon-slot" data-cwf-icon-slot="${escapeHtml(slotKey)}" aria-hidden="true">${icon(resolved.value, safeSize)}</span>`;
+  }
+
+  function applyNavigation(scope) {
+    if (!iconRegistry?.NAVIGATION) return;
+    const container = scope && typeof scope.querySelectorAll === "function" ? scope : document;
+    container.querySelectorAll(".nav-item[data-route]").forEach((button) => {
+      const key = button.getAttribute("data-route");
+      if (!iconRegistry.NAVIGATION[key]) return;
+      const item = iconRegistry.navigationItem(publishedIconConfig, key);
+      const label = button.querySelector("[data-nav-label]");
+      const iconMount = button.querySelector("[data-nav-icon]");
+      if (label) label.textContent = item.label;
+      if (iconMount) iconMount.innerHTML = iconSlot("nav." + key, key === "booking" ? 28 : 24);
+      button.setAttribute("aria-label", item.label);
+    });
+  }
+
+  function decorateActionIcons(scope) {
+    const container = scope && typeof scope.querySelectorAll === "function" ? scope : document;
+    const mappings = [
+      ['a[href^="tel:"]', "action.call"],
+      ['a[href*="lin.ee"]', "action.line"],
+      ['a[href*="google.com/maps"],a[href*="maps.google"]', "action.map"],
+      ['[data-review-form] button[type="submit"],[data-catalog-review-form] button[type="submit"],[data-store-review-open],[data-store-review-next],[data-store-review-confirm]', "action.review"],
+    ];
+    mappings.forEach(([selector, slot]) => {
+      container.querySelectorAll(selector).forEach((element) => {
+        if (element.querySelector("[data-cwf-icon-slot]")) return;
+        if (element.querySelector('[data-cwf-action-icon="' + slot + '"]')) return;
+        const holder = document.createElement("span");
+        holder.dataset.cwfActionIcon = slot;
+        holder.innerHTML = iconSlot(slot, 18);
+        element.prepend(holder);
+      });
+    });
+  }
+
+  function applyPublishedIconConfig(value, persist) {
+    if (!iconRegistry?.normalizeConfig) return publishedIconConfig;
+    publishedIconConfig = iconRegistry.normalizeConfig(value, "public");
+    if (persist !== false) {
+      try { window.localStorage.setItem(ICON_CONFIG_CACHE_KEY, JSON.stringify(publishedIconConfig)); } catch (_) {}
+    }
+    applyNavigation(document);
+    return publishedIconConfig;
+  }
+
+  function restorePublishedIconConfig() {
+    if (!iconRegistry?.normalizeConfig) return;
+    try {
+      const cached = JSON.parse(window.localStorage.getItem(ICON_CONFIG_CACHE_KEY) || "null");
+      if (cached) publishedIconConfig = iconRegistry.normalizeConfig(cached, "public");
+    } catch (_) {}
+    applyNavigation(document);
+  }
+
+  if (typeof document !== "undefined") {
+    document.addEventListener("error", (event) => {
+      const image = event.target;
+      if (typeof HTMLImageElement === "undefined" || !(image instanceof HTMLImageElement)) return;
+      const holder = image.closest("[data-icon-fallback]");
+      if (!holder) return;
+      holder.classList.remove("is-image");
+      holder.innerHTML = icon(holder.dataset.iconFallback || "sparkle", image.width || 24);
+    }, true);
+  }
+
+  restorePublishedIconConfig();
+
   function progressRing(captionHtml) {
     const r = 65;
     const c = Math.round(2 * Math.PI * r);
@@ -138,6 +220,11 @@
     stateBox,
     normalizeList,
     icon,
+    iconSlot,
+    applyNavigation,
+    decorateActionIcons,
+    applyPublishedIconConfig,
     progressRing,
   };
+  console.info("[customer-utils] icon registry v1 loaded");
 })();

@@ -220,6 +220,7 @@
     if (!mount) return;
     mount.innerHTML = renderHistoryClaimPanel();
     bindHistory(container);
+    root.ui?.applyRouteIcons?.(container, "profile");
   }
 
   function paintAddress(container) {
@@ -227,6 +228,7 @@
     if (!mount) return;
     mount.innerHTML = renderServiceAddress();
     bindAddress(container);
+    root.ui?.applyRouteIcons?.(container, "profile");
   }
 
   function bindHistory(container) {

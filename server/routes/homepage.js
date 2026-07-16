@@ -4,6 +4,7 @@ const crypto = require("crypto");
 const express = require("express");
 const { ALLOWED_MIME_TYPES, detectImageSignature } = require("../lib/cloudinaryImageUpload");
 const articleSync = require("../services/articleSync");
+const iconRegistry = require("../../customer-app/modules/iconRegistry");
 
 const CONFIG_KEY = "customer_homepage_v1";
 const MAX_JSON_BYTES = 120 * 1024;
@@ -111,6 +112,8 @@ const SOCIAL_HOST_PATTERNS = {
 const DEFAULT_CONFIG = {
   version: 1,
   page_availability: { home: true, store: true, booking: true, scheduled: true, urgent: true, tracking: true, profile: true },
+  navigation: iconRegistry.defaultNavigation(),
+  icon_overrides: iconRegistry.defaultOverrides(),
   sections: [
     {
       id: "hero",
@@ -305,7 +308,13 @@ function normalizeItem(raw, sectionType, index, errors) {
     sort_order: Number.isFinite(Number(item.sort_order)) ? Number(item.sort_order) : index + 1,
     enabled: item.enabled !== false,
   };
-  if (cleanText(item.icon, 30)) out.icon = cleanText(item.icon, 30);
+  if (sectionType === "quick") {
+    const quickDefault = iconRegistry.defaultIconForSlot("quick." + (index + 1));
+    const quickIcon = cleanText(item.icon, 30);
+    out.icon = iconRegistry.isLibraryIcon(quickIcon) ? quickIcon : quickDefault;
+  } else if (cleanText(item.icon, 30)) {
+    out.icon = cleanText(item.icon, 30);
+  }
   if (cleanText(item.route, 40)) out.route = cleanText(item.route, 40);
   if (cleanText(item.url, 500)) out.url = cleanText(item.url, 500);
   if (cleanText(item.action, 40)) out.action = cleanText(item.action, 40);
@@ -481,6 +490,7 @@ function validateConfig(input) {
   // set while still bounding payload growth.
   if (sections.length > MAX_SECTIONS) errors.push("sections too many");
   const normalizedSections = sections.map((section, index) => normalizeSection(section, index, errors));
+  validateIconInput(input?.navigation, input?.icon_overrides, errors);
   // Defensive id uniqueness: duplicated sections must not share an id, or the
   // customer/admin lookups (sectionByType, move/toggle/edit by id) would target
   // the wrong instance. Suffix any collision in input order before sorting.
@@ -498,8 +508,75 @@ function validateConfig(input) {
     page_headers: normalizePageHeaders(input?.page_headers, errors),
     theme: normalizeTheme(input?.theme, errors),
     page_availability: normalizePageAvailability(input?.page_availability, errors),
+    ...iconRegistry.normalizeConfig(input, "stored"),
   };
   return { ok: errors.length === 0, errors, config: normalized };
+}
+
+function validateIconInput(navigation, overrides, errors) {
+  const candidates = [];
+  const nav = navigation && typeof navigation === "object" ? navigation : {};
+  for (const key of Object.keys(iconRegistry.NAVIGATION)) {
+    candidates.push(["navigation." + key + ".icon", nav[key]?.icon]);
+  }
+  const slots = overrides && typeof overrides === "object" ? overrides : {};
+  for (const slot of iconRegistry.SLOT_DEFINITIONS) {
+    candidates.push(["icon_overrides." + slot.key, slots[slot.key]]);
+  }
+  for (const [pathName, raw] of candidates) {
+    if (raw == null) continue;
+    if (typeof raw === "string") {
+      if (!iconRegistry.isLibraryIcon(raw)) errors.push(pathName + " library invalid");
+      continue;
+    }
+    if (typeof raw !== "object" || Array.isArray(raw)) {
+      errors.push(pathName + " invalid");
+      continue;
+    }
+    if (raw.type === "library" || raw.type == null) {
+      if (!iconRegistry.isLibraryIcon(raw.value)) errors.push(pathName + " library invalid");
+      continue;
+    }
+    if (raw.type !== "image" || !iconRegistry.isSafeMediaPublicId(raw.value)) {
+      errors.push(pathName + " image invalid");
+    }
+  }
+}
+
+function iconObjects(config) {
+  const icons = [];
+  for (const key of Object.keys(iconRegistry.NAVIGATION)) {
+    icons.push(config?.navigation?.[key]?.icon);
+  }
+  for (const slot of iconRegistry.SLOT_DEFINITIONS) {
+    icons.push(config?.icon_overrides?.[slot.key]);
+  }
+  return icons.filter((icon) => icon && icon.type === "image");
+}
+
+async function resolveIconMedia(pool, validation) {
+  if (!validation?.ok) return validation;
+  const icons = iconObjects(validation.config);
+  const publicIds = [...new Set(icons.map((icon) => icon.value))];
+  if (!publicIds.length) return validation;
+  const result = await pool.query(
+    `SELECT image_public_id, image_url
+       FROM public.homepage_cms_media
+      WHERE image_public_id = ANY($1::text[])
+        AND deleted_at IS NULL`,
+    [publicIds]
+  );
+  const media = new Map((result.rows || []).map((row) => [String(row.image_public_id), String(row.image_url || "")]));
+  for (const icon of icons) {
+    const url = media.get(icon.value);
+    if (!url || !iconRegistry.isSafePublicImageUrl(url)) {
+      validation.errors.push("icon image media not found");
+      continue;
+    }
+    icon.url = url;
+  }
+  validation.ok = validation.errors.length === 0;
+  return validation;
 }
 
 const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -581,7 +658,14 @@ function stripPublicConfig(config) {
   const theme = config?.theme && typeof config.theme === "object" && !Array.isArray(config.theme) ? config.theme : {};
   // Page availability travels to the public config as a normalized 7-key boolean
   // map (legacy configs → all-enabled). No admin metadata is included.
-  return { version: 1, sections, page_headers, theme, page_availability: readPageAvailability(config) };
+  return {
+    version: 1,
+    sections,
+    page_headers,
+    theme,
+    page_availability: readPageAvailability(config),
+    ...iconRegistry.normalizeConfig(config, "public"),
+  };
 }
 
 async function hydrateAutoSyncArticles(pool, publicConfig) {
@@ -659,6 +743,7 @@ function hydrateDraftConfig(rawConfig) {
   if (!hydrated.page_availability || typeof hydrated.page_availability !== "object" || Array.isArray(hydrated.page_availability)) {
     hydrated.page_availability = { ...DEFAULT_PAGE_AVAILABILITY };
   }
+  Object.assign(hydrated, iconRegistry.normalizeConfig(hydrated, "stored"));
   return hydrated;
 }
 
@@ -746,6 +831,7 @@ function createHomepageRoutes(deps = {}) {
         return res.json({
           ok: true,
           page_availability: { ...DEFAULT_PAGE_AVAILABILITY },
+          ...iconRegistry.normalizeConfig(DEFAULT_CONFIG, "public"),
           config_version: null,
           published_at: null,
           fallback: true,
@@ -756,6 +842,7 @@ function createHomepageRoutes(deps = {}) {
       return res.json({
         ok: true,
         page_availability: readPageAvailability(row.published_config),
+        ...iconRegistry.normalizeConfig(row.published_config, "public"),
         config_version: row.version ?? null,
         published_at: row.published_at ?? null,
         fallback: false,
@@ -767,6 +854,7 @@ function createHomepageRoutes(deps = {}) {
       return res.json({
         ok: true,
         page_availability: { ...DEGRADED_PAGE_AVAILABILITY },
+        ...iconRegistry.normalizeConfig(DEFAULT_CONFIG, "public"),
         config_version: null,
         published_at: null,
         fallback: true,
@@ -809,6 +897,7 @@ function createHomepageRoutes(deps = {}) {
   router.put("/admin/homepage-cms/draft", requireAdminSession, async (req, res) => {
     try {
       const validation = validateConfig(req.body?.config || req.body);
+      await resolveIconMedia(pool, validation);
       if (!validation.ok) return res.status(400).json({ error: "VALIDATION_FAILED", details: validation.errors });
       const actor = actorName(req);
       const result = await pool.query(
@@ -834,6 +923,7 @@ function createHomepageRoutes(deps = {}) {
     try {
       const row = await ensureDraftRow(pool);
       const validation = validateConfig(req.body?.config || row.draft_config);
+      await resolveIconMedia(pool, validation);
       if (!validation.ok) return res.status(400).json({ error: "VALIDATION_FAILED", details: validation.errors });
       const actor = actorName(req);
       const result = await pool.query(
@@ -991,6 +1081,7 @@ module.exports = {
   hydrateDraftConfig,
   normalizePageAvailability,
   readPageAvailability,
+  resolveIconMedia,
   stripPublicConfig,
   validateConfig,
 };

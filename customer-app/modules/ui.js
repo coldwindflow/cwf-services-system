@@ -372,8 +372,8 @@
               : `href="#${root.utils.escapeHtml(item.route || "home")}" data-route="${root.utils.escapeHtml(item.route || "home")}"`;
           const iconName = item.icon || ["sparkle", "wrench", "pin", "line"][index] || "sparkle";
           return `
-            <a class="homepage-quick${iconName === "line" ? " is-line" : ""}" ${attrs}>
-              <span>${root.utils.icon(iconName, 20)}</span>
+            <a class="homepage-quick" ${attrs}>
+              <span>${root.utils.iconSlot(`quick.${index + 1}`, 20)}</span>
               <strong>${root.utils.escapeHtml(item.title || "-")}</strong>
             </a>
           `;
@@ -901,6 +901,7 @@
       const data = await root.api.loadHomepage();
       const config = data?.config || DEFAULT_HOME_CONFIG;
       applyHomepageTheme(config);
+      root.utils.applyPublishedIconConfig?.(config, true);
       root.state.setHomepage({
         status: "success",
         config,
@@ -1548,6 +1549,39 @@
     }
   }
 
+  function routeIconPage(route) {
+    if (route === "storeItem") return "store";
+    if (route === "scheduled" || route === "urgent") return "booking";
+    return ["home", "store", "booking", "tracking", "profile"].includes(route) ? route : "home";
+  }
+
+  function applyRouteIcons(container, route) {
+    if (!container) return;
+    const page = routeIconPage(route);
+    const screen = container.querySelector?.(".screen");
+    if (screen && !screen.querySelector("[data-page-icon-heading]")) {
+      const registry = window.CWFIconRegistry;
+      const item = registry?.navigationItem?.(homepageConfig(), page) || { label: page };
+      screen.insertAdjacentHTML("afterbegin", `
+        <div class="page-icon-heading" data-page-icon-heading="${root.utils.escapeHtml(page)}">
+          ${root.utils.iconSlot(`page.${page}.header`, 26)}
+          <span>${root.utils.escapeHtml(item.label)}</span>
+        </div>
+      `);
+    }
+    [
+      ["[data-profile-address]", "profile.address"],
+      ["[data-profile-history]", "profile.history"],
+    ].forEach(([selector, slot]) => {
+      const mount = container.querySelector?.(selector);
+      if (mount && !mount.querySelector("[data-profile-slot-icon]")) {
+        mount.insertAdjacentHTML("afterbegin", `<span class="profile-slot-icon" data-profile-slot-icon>${root.utils.iconSlot(slot, 22)}</span>`);
+      }
+    });
+    root.utils.decorateActionIcons?.(container);
+    bindPageHeader(container);
+  }
+
   const ui = {
     prefetchHome: loadHomeData,
     patchHomeData,
@@ -1555,6 +1589,7 @@
     openContactSheet,
     pageHeaderHtml,
     bindPageHeader,
+    applyRouteIcons,
 
     renderHome(container) {
       cleanupHomepageFeaturedRotators(container);

@@ -21,10 +21,10 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700;800;900&display=swap" media="print" onload="this.media='all'">
   <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700;800;900&display=swap"></noscript>
-  <link rel="manifest" href="./manifest.webmanifest?v=20260716_customer_history_production_ready_v1">
+  <link rel="manifest" href="./manifest.webmanifest?v=20260717_customer_icon_cms_v1">
   <link rel="icon" type="image/png" sizes="192x192" href="./assets/icons/cwf-customer-192.png">
   <link rel="apple-touch-icon" sizes="180x180" href="./assets/icons/cwf-customer-180.png">
-  <link rel="stylesheet" href="./assets/customer-app.css?v=20260716_customer_history_production_ready_v1">
+  <link rel="stylesheet" href="./assets/customer-app.css?v=20260717_customer_icon_cms_v1">
 </head>
 <body class="is-app-booting">
   <div class="app-shell" data-app-shell>
@@ -54,31 +54,32 @@
     </main>
 
     <nav class="bottom-nav" aria-label="เมนูแอปลูกค้า">
-      <button type="button" data-route="home" class="nav-item is-active"><span>หน้าแรก</span></button>
-      <button type="button" data-route="store" class="nav-item"><span>ร้านค้า</span></button>
-      <button type="button" data-route="booking" class="nav-item nav-item-primary"><span>จองบริการ</span></button>
-      <button type="button" data-route="tracking" class="nav-item"><span>ติดตามงาน</span></button>
-      <button type="button" data-route="profile" class="nav-item"><span>บัญชี</span></button>
+      <button type="button" data-route="home" class="nav-item is-active"><span class="nav-item-icon" data-nav-icon aria-hidden="true"></span><span data-nav-label>หน้าแรก</span></button>
+      <button type="button" data-route="store" class="nav-item"><span class="nav-item-icon" data-nav-icon aria-hidden="true"></span><span data-nav-label>ร้านค้า</span></button>
+      <button type="button" data-route="booking" class="nav-item nav-item-primary"><span class="nav-item-icon" data-nav-icon aria-hidden="true"></span><span data-nav-label>จองบริการ</span></button>
+      <button type="button" data-route="tracking" class="nav-item"><span class="nav-item-icon" data-nav-icon aria-hidden="true"></span><span data-nav-label>ติดตามงาน</span></button>
+      <button type="button" data-route="profile" class="nav-item"><span class="nav-item-icon" data-nav-icon aria-hidden="true"></span><span data-nav-label>บัญชี</span></button>
     </nav>
   </div>
 
-  <script src="./modules/state.js?v=20260716_customer_history_production_ready_v1"></script>
-  <script src="./modules/utils.js?v=20260716_customer_history_production_ready_v1"></script>
-  <script src="./modules/analytics.js?v=20260716_customer_history_production_ready_v1"></script>
-  <script src="./modules/api.js?v=20260716_customer_history_production_ready_v1"></script>
-  <script src="./modules/pageAvailability.js?v=20260716_customer_history_production_ready_v1"></script>
-  <script src="./modules/services.js?v=20260716_customer_history_production_ready_v1"></script>
-  <script src="./modules/advisor.js?v=20260716_customer_history_production_ready_v1"></script>
-  <script src="./modules/ui.js?v=20260716_customer_history_production_ready_v1"></script>
-  <script src="./modules/store.js?v=20260716_customer_history_production_ready_v1"></script>
-  <script src="./modules/auth.js?v=20260716_customer_history_production_ready_v1"></script>
-  <script src="./modules/pricing.js?v=20260716_customer_history_production_ready_v1"></script>
-  <script src="./modules/availability.js?v=20260716_customer_history_production_ready_v1"></script>
-  <script src="./modules/bookingScheduled.js?v=20260716_customer_history_production_ready_v1"></script>
-  <script src="./modules/bookingUrgent.js?v=20260716_customer_history_production_ready_v1"></script>
-  <script src="./modules/tracking.js?v=20260716_customer_history_production_ready_v1"></script>
-  <script src="./modules/profile.js?v=20260716_customer_history_production_ready_v1"></script>
-  <script src="./modules/router.js?v=20260716_customer_history_production_ready_v1"></script>
-  <script src="./assets/customer-app.js?v=20260716_customer_history_production_ready_v1"></script>
+  <script src="./modules/iconRegistry.js?v=20260717_customer_icon_cms_v1"></script>
+  <script src="./modules/state.js?v=20260717_customer_icon_cms_v1"></script>
+  <script src="./modules/utils.js?v=20260717_customer_icon_cms_v1"></script>
+  <script src="./modules/analytics.js?v=20260717_customer_icon_cms_v1"></script>
+  <script src="./modules/api.js?v=20260717_customer_icon_cms_v1"></script>
+  <script src="./modules/pageAvailability.js?v=20260717_customer_icon_cms_v1"></script>
+  <script src="./modules/services.js?v=20260717_customer_icon_cms_v1"></script>
+  <script src="./modules/advisor.js?v=20260717_customer_icon_cms_v1"></script>
+  <script src="./modules/ui.js?v=20260717_customer_icon_cms_v1"></script>
+  <script src="./modules/store.js?v=20260717_customer_icon_cms_v1"></script>
+  <script src="./modules/auth.js?v=20260717_customer_icon_cms_v1"></script>
+  <script src="./modules/pricing.js?v=20260717_customer_icon_cms_v1"></script>
+  <script src="./modules/availability.js?v=20260717_customer_icon_cms_v1"></script>
+  <script src="./modules/bookingScheduled.js?v=20260717_customer_icon_cms_v1"></script>
+  <script src="./modules/bookingUrgent.js?v=20260717_customer_icon_cms_v1"></script>
+  <script src="./modules/tracking.js?v=20260717_customer_icon_cms_v1"></script>
+  <script src="./modules/profile.js?v=20260717_customer_icon_cms_v1"></script>
+  <script src="./modules/router.js?v=20260717_customer_icon_cms_v1"></script>
+  <script src="./assets/customer-app.js?v=20260717_customer_icon_cms_v1"></script>
 </body>
 </html>

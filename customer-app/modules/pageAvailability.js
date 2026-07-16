@@ -129,6 +129,7 @@
       const degraded = resp && resp.degraded === true;
       if (resp && resp.ok === true && !degraded && isValidFlags(resp.page_availability)) {
         serverFlags = cloneFlags(resp.page_availability);
+        root.utils?.applyPublishedIconConfig?.(resp, true);
       }
     } catch (_) {
       /* fail / hang / invalid JSON / invalid flags → fall through */
