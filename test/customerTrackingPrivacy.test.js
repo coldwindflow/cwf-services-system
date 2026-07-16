@@ -127,10 +127,12 @@ test("a brand-new sensitive field added upstream does NOT leak through code reda
   assert.equal(redacted.some_future_pii_field, undefined);
 });
 
-test("booking-code read model never advertises legacy or catalog write eligibility", () => {
+test("booking-code read model exposes only legacy full-phone-proof eligibility and never catalog/token write eligibility", () => {
   assert.equal(trackingPrivacy.redactPublicTrackPayload(richPayload()).legacy_review_eligible, false);
   const eligible = trackingPrivacy.redactPublicTrackPayload({ ...richPayload(), legacy_review_eligible: true });
-  assert.equal(eligible.legacy_review_eligible, false);
+  assert.equal(eligible.legacy_review_eligible, true);
+  assert.equal(eligible.capabilities.can_submit_review, false);
+  assert.equal(eligible.catalog_review.eligible, false);
   assert.equal(eligible.booking_token, undefined);
 });
 
