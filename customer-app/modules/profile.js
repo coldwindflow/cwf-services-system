@@ -112,7 +112,8 @@
             <button class="primary-btn" type="submit" ${h.claimStatus === "saving" ? "disabled" : ""}>
               ${h.claimStatus === "saving" ? "กำลังตรวจสอบ..." : "เชื่อมประวัติ"}
             </button>
-            <button class="secondary-btn" type="button" data-history-refresh ${loading ? "disabled" : ""}>โหลดประวัติ</button>
+            <button class="secondary-btn" type="button" data-history-refresh ${loading ? "disabled" : ""}>${h.schemaUnavailable ? "ลองใหม่" : "โหลดประวัติ"}</button>
+            ${h.schemaUnavailable ? `<a class="secondary-btn" href="https://lin.ee/fG1Oq7y" target="_blank" rel="noopener noreferrer">ติดต่อแอดมิน</a>` : ""}
           </div>
         </form>
         ${renderHistorySummary({ claimed, items, locations, loading, error: h.error || h.locationsError, detail: h.detail, detailStatus: h.detailStatus, detailError: h.detailError })}
@@ -197,12 +198,19 @@
         locations: Array.isArray(locationsData?.locations) ? locationsData.locations : [],
         error: "",
         locationsError: "",
+        schemaUnavailable: false,
       });
     } catch (error) {
       const message = error?.status === 503
-        ? "ระบบประวัติลูกค้ายังไม่พร้อมใช้งาน"
+        ? "ระบบเชื่อมประวัติอยู่ระหว่างเตรียมความพร้อม กรุณาลองใหม่หรือติดต่อแอดมิน"
         : (error?.message || "โหลดประวัติไม่สำเร็จ");
-      root.state.setCustomerHistory({ status: "error", locationsStatus: "error", error: message, locationsError: message });
+      root.state.setCustomerHistory({
+        status: "error",
+        locationsStatus: "error",
+        error: message,
+        locationsError: message,
+        schemaUnavailable: error?.status === 503,
+      });
     }
     paintHistory(container);
   }
@@ -245,13 +253,18 @@
             claimSuccess: "เชื่อมประวัติสำเร็จ",
             claimBookingCode: "",
             claimed: true,
+            schemaUnavailable: false,
           });
           await loadHistoryData(container);
-        } catch (_) {
+        } catch (error) {
+          const schemaUnavailable = error?.status === 503;
           root.state.setCustomerHistory({
             claimStatus: "error",
-            claimError: "ไม่สามารถยืนยันประวัติงานได้ กรุณาตรวจสอบข้อมูลอีกครั้ง",
+            claimError: schemaUnavailable
+              ? "ระบบเชื่อมประวัติอยู่ระหว่างเตรียมความพร้อม กรุณาลองใหม่หรือติดต่อแอดมิน"
+              : "ไม่สามารถยืนยันประวัติงานได้ กรุณาตรวจสอบข้อมูลอีกครั้ง",
             claimSuccess: "",
+            schemaUnavailable,
           });
           paintHistory(container);
         }
@@ -445,4 +458,5 @@
       else renderLoggedOut(container);
     },
   };
+  console.info("[customer-profile] customer history production ready v1 loaded");
 })();

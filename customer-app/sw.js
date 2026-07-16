@@ -1,6 +1,6 @@
 "use strict";
 
-const BUILD_ID = "20260715_smart_advisor_portal_autoflow_v3";
+const BUILD_ID = "20260716_customer_history_production_ready_v1";
 const CACHE_NAME = `cwf-customer-app-v2-${BUILD_ID}`;
 const APP_SHELL = [
   `./index.html?v=${BUILD_ID}`,

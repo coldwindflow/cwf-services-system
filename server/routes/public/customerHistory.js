@@ -45,6 +45,16 @@ function createCustomerHistoryRoutes(deps = {}) {
     });
   }
 
+  function logUnavailable(route, ready, error) {
+    const dbCode = /^[A-Z0-9_]{2,16}$/.test(String(error?.code || "")) ? String(error.code) : undefined;
+    logger.warn?.("[customer_history] unavailable", {
+      diagnostic_code: "CUSTOMER_HISTORY_SCHEMA_NOT_READY",
+      schema_state: ready?.diagnostic_code || "CHECK_FAILED",
+      route,
+      ...(dbCode ? { db_code: dbCode } : {}),
+    });
+  }
+
   async function resolveClaimUniqueRace(customerSub, phone, proofJobId) {
     const r = await pool.query(
       `SELECT claim_id, customer_sub, phone_norm, phone_last4, proof_job_id
@@ -61,9 +71,18 @@ function createCustomerHistoryRoutes(deps = {}) {
     return { replayed: true, failed: false, phone_last4: row.phone_last4 || phone.phone_last4 };
   }
 
-  async function authorizedContext(db, customerSub) {
-    const ready = await history.schemaReady(db);
+  async function authorizedContext(db, customerSub, route) {
+    let ready;
+    try {
+      ready = await history.schemaReady(db);
+    } catch (error) {
+      logUnavailable(route, null, error);
+      const unavailable = new Error("CUSTOMER_HISTORY_SCHEMA_NOT_READY");
+      unavailable.status = 503;
+      throw unavailable;
+    }
     if (!ready.has_claims) {
+      logUnavailable(route, ready);
       const err = new Error("CUSTOMER_HISTORY_SCHEMA_NOT_READY");
       err.status = 503;
       throw err;
@@ -90,6 +109,7 @@ function createCustomerHistoryRoutes(deps = {}) {
       await client.query("BEGIN");
       const ready = await history.schemaReady(client);
       if (!ready.has_claims) {
+        logUnavailable("claim", ready);
         await client.query("ROLLBACK");
         return res.status(503).json({ error: "CUSTOMER_HISTORY_SCHEMA_NOT_READY" });
       }
@@ -169,7 +189,11 @@ function createCustomerHistoryRoutes(deps = {}) {
         } catch (_) {}
         return genericClaimFailure(res);
       }
-      logger.warn?.("[customer_history_claim] failed", { code: error.code || error.message || "error" });
+      if (error?.status === 503) logUnavailable("claim", null, error);
+      else logger.warn?.("[customer_history_claim] failed", {
+        diagnostic_code: "CUSTOMER_HISTORY_CLAIM_FAILED",
+        db_code: /^[A-Z0-9_]{2,16}$/.test(String(error?.code || "")) ? String(error.code) : undefined,
+      });
       return res.status(error.status || 500).json({ error: error.status === 503 ? "CUSTOMER_HISTORY_SCHEMA_NOT_READY" : "CLAIM_FAILED" });
     } finally {
       client.release();
@@ -183,7 +207,7 @@ function createCustomerHistoryRoutes(deps = {}) {
       return res.status(400).json({ error: "PHONE_QUERY_NOT_ALLOWED" });
     }
     try {
-      const ctx = await authorizedContext(pool, customerSub);
+      const ctx = await authorizedContext(pool, customerSub, "history");
       const auth = history.buildAuthorizedWhere({
         customerSub,
         hasCustomerSub: ctx.ready.has_customer_sub,
@@ -216,7 +240,7 @@ function createCustomerHistoryRoutes(deps = {}) {
       return res.status(400).json({ error: "PHONE_QUERY_NOT_ALLOWED" });
     }
     try {
-      const ctx = await authorizedContext(pool, customerSub);
+      const ctx = await authorizedContext(pool, customerSub, "locations");
       const auth = history.buildAuthorizedWhere({
         customerSub,
         hasCustomerSub: ctx.ready.has_customer_sub,
@@ -251,7 +275,7 @@ function createCustomerHistoryRoutes(deps = {}) {
     const parsed = history.parseJobRef({ secret: secret(), customerSub, jobRef: req.params.job_ref });
     if (!parsed) return res.status(404).json({ error: "NOT_FOUND" });
     try {
-      const ctx = await authorizedContext(pool, customerSub);
+      const ctx = await authorizedContext(pool, customerSub, "detail");
       const auth = history.buildAuthorizedWhere({
         customerSub,
         hasCustomerSub: ctx.ready.has_customer_sub,
