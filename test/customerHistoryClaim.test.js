@@ -13,7 +13,7 @@ const history = require("../server/services/public/customerHistory");
 
 const REPO_ROOT = path.resolve(__dirname, "..");
 
-function makePool({ jobs = [], claims = [], hasClaims = true, hasCustomerSub = true, schemaDrift = false, failInsert = false, uniqueConflictClaim = null } = {}) {
+function makePool({ jobs = [], claims = [], hasClaims = true, hasCustomerSub = true, schemaDrift = false, schemaReadyError = null, failInsert = false, uniqueConflictClaim = null } = {}) {
   const state = {
     jobs: jobs.map((x) => ({ ...x })),
     claims: claims.map((x) => ({ ...x })),
@@ -21,6 +21,7 @@ function makePool({ jobs = [], claims = [], hasClaims = true, hasCustomerSub = t
     hasClaims,
     hasCustomerSub,
     schemaDrift,
+    schemaReadyError,
     failInsert,
     uniqueConflictClaim,
   };
@@ -29,6 +30,7 @@ function makePool({ jobs = [], claims = [], hasClaims = true, hasCustomerSub = t
     state.queries.push({ sql: s, params });
     if (/BEGIN|COMMIT|ROLLBACK/.test(s)) return { rows: [] };
     if (/to_regclass\('public\.customer_history_claims'\)/.test(s)) {
+      if (state.schemaReadyError) throw state.schemaReadyError;
       return { rows: [{ has_claims: state.hasClaims, has_customer_sub: state.hasCustomerSub }] };
     }
     if (/information_schema\.columns/.test(s) && /table_name='customer_history_claims'/.test(s)) {
@@ -210,6 +212,30 @@ test("missing or drifted claim schema returns 503 with safe diagnostics and no p
     assert.match(output, /CUSTOMER_HISTORY_SCHEMA_NOT_READY/);
     assert.doesNotMatch(output, /0812345678|CWFABC123/);
   }
+});
+
+test("claim schema readiness query exceptions roll back and return safe 503 without proof PII", async () => {
+  const phone = "0812345678";
+  const bookingCode = "CWFABC123";
+  const logs = [];
+  const schemaReadyError = Object.assign(new Error(`catalog failed for ${phone} ${bookingCode}`), { code: "42501" });
+  const pool = makePool({ jobs: [LEGACY_JOB], schemaReadyError });
+
+  await withServer({ pool, logger: { warn: (...args) => logs.push(args) } }, async (base) => {
+    const res = await fetch(`${base}/public/customer-history/claim`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ phone, booking_code: bookingCode }),
+    });
+    assert.equal(res.status, 503);
+    assert.deepEqual(await json(res), { error: "CUSTOMER_HISTORY_SCHEMA_NOT_READY" });
+  });
+
+  assert.ok(pool.state.queries.some(({ sql }) => /ROLLBACK/.test(sql)));
+  const output = JSON.stringify(logs);
+  assert.match(output, /CUSTOMER_HISTORY_SCHEMA_NOT_READY/);
+  assert.match(output, /42501/);
+  assert.doesNotMatch(output, new RegExp(`${phone}|${bookingCode}`));
 });
 
 test("wrong phone/code cases use generic CLAIM_FAILED and never fallback to partial phone sources", async () => {

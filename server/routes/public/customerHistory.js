@@ -107,7 +107,14 @@ function createCustomerHistoryRoutes(deps = {}) {
     let proofJobId = null;
     try {
       await client.query("BEGIN");
-      const ready = await history.schemaReady(client);
+      let ready;
+      try {
+        ready = await history.schemaReady(client);
+      } catch (error) {
+        logUnavailable("claim", null, error);
+        try { await client.query("ROLLBACK"); } catch (_) {}
+        return res.status(503).json({ error: "CUSTOMER_HISTORY_SCHEMA_NOT_READY" });
+      }
       if (!ready.has_claims) {
         logUnavailable("claim", ready);
         await client.query("ROLLBACK");
