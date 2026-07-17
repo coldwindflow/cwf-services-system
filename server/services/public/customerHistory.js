@@ -4,6 +4,7 @@ const crypto = require("crypto");
 
 const REF_VERSION = "v1";
 const CLAIM_METHOD = "booking_code_phone";
+const CLAIM_METHOD_CAPABILITY = Object.freeze({ LEGACY: "legacy", WIDENED: "widened" });
 const GENERIC_CLAIM_ERROR = "CLAIM_FAILED";
 
 function clean(value) {
@@ -95,6 +96,19 @@ function normalizeJobPhoneDigits(value) {
   const digits = clean(value).replace(/\D/g, "");
   const parsed = normalizeClaimPhone(digits);
   return parsed ? parsed.phone_norm : "";
+}
+
+function classifyClaimMethodConstraint(value) {
+  const definition = clean(value).toLowerCase().replace(/\s+/g, "");
+  const textCast = "(?:::text)?";
+  const legacy = new RegExp(`^check\\(\\(+claim_method='booking_code_phone'${textCast}\\)+\\)$`, "i");
+  const widened = new RegExp(
+    `^check\\(\\(+claim_method=any\\(array\\['phone'${textCast},'booking_code'${textCast},'booking_code_phone'${textCast}\\](?:::text\\[\\])?\\)\\)+\\)$`,
+    "i"
+  );
+  if (legacy.test(definition)) return CLAIM_METHOD_CAPABILITY.LEGACY;
+  if (widened.test(definition)) return CLAIM_METHOD_CAPABILITY.WIDENED;
+  return null;
 }
 
 function publicStatus(value) {
@@ -232,14 +246,22 @@ async function schemaReady(db) {
            AND con.contype='f'
            AND pg_get_constraintdef(con.oid) ILIKE '%FOREIGN KEY (proof_job_id) REFERENCES jobs(job_id)%'
       ) AS has_job_fk,
-      EXISTS (
-        SELECT 1
+      (
+        SELECT pg_get_constraintdef(con.oid)
           FROM pg_constraint con
           JOIN pg_class rel ON rel.oid=con.conrelid
           JOIN pg_namespace nsp ON nsp.oid=rel.relnamespace
          WHERE nsp.nspname='public' AND rel.relname='customer_history_claims'
-           AND con.contype='c' AND pg_get_constraintdef(con.oid) ILIKE '%booking_code_phone%'
-      ) AS has_method_check,
+           AND con.contype='c' AND con.conname='customer_history_claims_method_check'
+      ) AS method_check_definition,
+      (
+        SELECT COUNT(*)::integer
+          FROM pg_constraint con
+          JOIN pg_class rel ON rel.oid=con.conrelid
+          JOIN pg_namespace nsp ON nsp.oid=rel.relnamespace
+         WHERE nsp.nspname='public' AND rel.relname='customer_history_claims'
+           AND con.contype='c' AND pg_get_constraintdef(con.oid) ILIKE '%claim_method%'
+      ) AS method_check_count,
       EXISTS (
         SELECT 1
           FROM pg_constraint con
@@ -278,13 +300,18 @@ async function schemaReady(db) {
       ) AS has_active_sub_index
   `);
   const s = shape.rows?.[0] || {};
+  const methodCapability = Number(s.method_check_count) === 1
+    ? classifyClaimMethodConstraint(s.method_check_definition)
+    : null;
   const shapeValid = !!s.has_customer_fk && !!s.has_job_fk
-    && !!s.has_method_check && !!s.has_phone_norm_check && !!s.has_phone_last4_check
+    && !!methodCapability && !!s.has_phone_norm_check && !!s.has_phone_last4_check
     && !!s.has_active_phone_index && !!s.has_active_proof_index && !!s.has_active_sub_index;
   return {
     has_claims: columnsValid && shapeValid,
     has_customer_sub: hasCustomerSub,
     claims_table_exists: true,
+    claim_method_capability: methodCapability,
+    supports_simple_claim: methodCapability === CLAIM_METHOD_CAPABILITY.WIDENED,
     diagnostic_code: columnsValid && shapeValid ? "READY" : "SCHEMA_DRIFT",
   };
 }
@@ -326,9 +353,11 @@ function buildAuthorizedWhere({ customerSub, hasCustomerSub, phoneDigits, startP
 
 module.exports = {
   CLAIM_METHOD,
+  CLAIM_METHOD_CAPABILITY,
   GENERIC_CLAIM_ERROR,
   buildAuthorizedWhere,
   clean,
+  classifyClaimMethodConstraint,
   detailRow,
   groupLocations,
   hmacHex,
