@@ -7,8 +7,10 @@ phone-only or Booking-Code-only product flow.
 ## Preconditions
 
 - Run from the reviewed and deployed schema-capability release commit.
-- Use only the `DATABASE_URL` injected by the Production service.
-- Do not print, copy, or store the database URL or any secret.
+- Use only database credentials injected by the Production service. The runner
+  prefers `DATABASE_URL` when present; otherwise it uses `DB_HOST`, `DB_PORT`
+  (default `5432`), `DB_USER`, `DB_PASSWORD`, and `DB_NAME`.
+- Do not print, copy, or store connection settings or any secret.
 - Do not apply until the owner gives a separate explicit Production approval.
 
 ## 1. Read-only preflight

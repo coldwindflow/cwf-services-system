@@ -25,8 +25,16 @@ function clean(value) {
   return String(value == null ? "" : value).trim();
 }
 
-function safeErrorMessage(error) {
-  const msg = clean(error && error.message ? error.message : error) || "unknown error";
+function safeErrorMessage(error, env = process.env) {
+  let msg = clean(error && error.message ? error.message : error) || "unknown error";
+  for (const [value, replacement] of [
+    [env.DATABASE_URL, "[REDACTED_DATABASE_URL]"],
+    [env.DB_PASSWORD, "[REDACTED_PASSWORD]"],
+    [env.DB_HOST, "[REDACTED_HOST]"],
+  ]) {
+    const sensitiveValue = String(value == null ? "" : value);
+    if (sensitiveValue) msg = msg.split(sensitiveValue).join(replacement);
+  }
   return msg
     .replace(/postgres(?:ql)?:\/\/[^\s"'<>]+/gi, "[REDACTED_DATABASE_URL]")
     .replace(/(password|passwd|pwd|secret|token)=([^&\s]+)/gi, "$1=[REDACTED]")
@@ -69,8 +77,23 @@ function verifyChecksum(repoRoot) {
 
 function createClientConfig(env = process.env) {
   const databaseUrl = clean(env.DATABASE_URL);
-  if (!databaseUrl) throw new Error("DATABASE_URL is required");
-  return { connectionString: databaseUrl, options: "-c timezone=Asia/Bangkok", ssl: { rejectUnauthorized: false } };
+  const shared = { options: "-c timezone=Asia/Bangkok", ssl: { rejectUnauthorized: false } };
+  if (databaseUrl) return { connectionString: databaseUrl, ...shared };
+
+  const required = ["DB_HOST", "DB_USER", "DB_PASSWORD", "DB_NAME"];
+  const missing = required.filter((name) => !clean(env[name]));
+  if (missing.length) {
+    throw new Error(`database configuration missing required env: ${missing.join(", ")}`);
+  }
+
+  return {
+    host: clean(env.DB_HOST),
+    port: Number(clean(env.DB_PORT) || 5432),
+    user: clean(env.DB_USER),
+    password: String(env.DB_PASSWORD),
+    database: clean(env.DB_NAME),
+    ...shared,
+  };
 }
 
 function mapRows(rows, key) {
@@ -354,7 +377,7 @@ async function runCli(options = {}) {
   } catch (error) {
     const status = error?.migrationStatus || STATUS.FAILED;
     logger.error(`${PREFIX}_STATUS=${status}`);
-    logger.error(`${PREFIX}_FAILED: ${safeErrorMessage(error)}`);
+    logger.error(`${PREFIX}_FAILED: ${safeErrorMessage(error, options.env || process.env)}`);
     return status === STATUS.PREREQUISITE_MISSING ? EXIT_CODE.PREREQUISITE_MISSING
       : status === STATUS.SCHEMA_DRIFT ? EXIT_CODE.SCHEMA_DRIFT : EXIT_CODE.FAILED;
   }
