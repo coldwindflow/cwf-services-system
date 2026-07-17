@@ -6,8 +6,9 @@
   const LINE_URL = "https://lin.ee/fG1Oq7y";
   const WARRANTY_COPY = "รับประกันงานล้าง 30 วัน เฉพาะอาการที่เกี่ยวข้องกับการบริการ ไม่รวมอะไหล่เสีย ระบบรั่ว บอร์ด คอมเพรสเซอร์ ไฟตก หรือปัญหาจากตัวเครื่องเดิม";
 
-  // Private, in-memory lookup credential. It may be the long secret
-  // booking_token (from the ?q=/?token= deep link) or a customer-typed code.
+  // Private, in-memory lookup credential for a long booking_token from a
+  // ?q=/?token= deep link. Customer-typed phone/code lookups receive a separate
+  // short-lived selection reference in tracking state.
   // It is NEVER written into the draft, the visible input, or rendered HTML.
   // Refresh and post-review reloads reuse THIS value so a token session is not
   // silently downgraded to code-only access. A manual "ตรวจสอบสถานะ" replaces it
@@ -1028,43 +1029,21 @@
 
   function renderTechnicianReviewForm(data) {
     if (!isDone(data) || data.review?.already_reviewed) return "";
-    // Reviewing is a WRITE. Two authorised shapes, mirroring the server policy:
-    //  - token lookup (access_level "token"): the exact booking_token authorises
-    //    and is injected from in-memory state only at submit time. No PII entry needed.
-    //  - LEGACY job with no booking_token: a booking_code lookup exposes a
-    //    minimal `legacy_review_eligible` flag; the customer proves ownership by
-    //    typing their FULL phone, posted as booking_code + customer_phone.
-    // A tokened job accessed by code is NOT legacy-eligible, so it never shows
-    // the legacy form (the server would reject a downgrade anyway).
+    // Reviewing is authorised by the exact booking token or the short-lived,
+    // job-bound selection reference returned by the server. Both credentials
+    // stay in memory and are injected only when the request is submitted.
     const reviewToken = canUseTokenActions(data) ? (data.booking_token || "") : "";
-    const legacyEligible = !reviewToken
-      && data.legacy_review_eligible === true
-      && !!clean(data.booking_code);
-    if (!reviewToken && !legacyEligible) return "";
-    // For token access the booking_token is NOT written into the form (it would
-    // leak into rendered HTML). The form is marked data-review-token and the
-    // handler injects the token from state at submit time. The legacy path only
-    // ever uses the public booking_code + the customer's phone.
-    const credentialFields = reviewToken
-      ? ""
-      : `<input type="hidden" name="booking_code" value="${esc(data.booking_code || "")}">
-          <label class="field">
-            <span>เบอร์โทรที่ใช้จอง (ยืนยันตัวตน)</span>
-            <input class="input" type="tel" name="customer_phone" inputmode="numeric"
-                   autocomplete="tel" placeholder="เช่น 0812345678" required>
-          </label>`;
-    const legacyHint = legacyEligible
-      ? `<p class="muted">กรอกเบอร์โทรที่ใช้จองงานนี้เพื่อยืนยันตัวตนก่อนรีวิว</p>`
+    const selectionReference = data.capabilities?.can_submit_review === true
+      ? clean(data.selection_ref)
       : "";
+    if (!reviewToken && !selectionReference) return "";
     return `
       <section class="tracking-extra-card review-form-card">
         <div class="section-head compact">
           <span class="section-kicker">Review</span>
           <h2>ให้คะแนนงานนี้</h2>
         </div>
-        ${legacyHint}
-        <form data-review-form${reviewToken ? " data-review-token" : ""}>
-          ${credentialFields}
+        <form data-review-form>
           ${renderStarRatingField("technician", "คะแนนทีมช่าง")}
           <label class="field">
             <span>รีวิว</span>
@@ -1170,8 +1149,9 @@
 
     const hasExactToken = canUseTokenActions(data) && !!clean(data.booking_token);
     if (hasExactToken && data.catalog_review?.eligible === true) return "catalog";
-    const hasLegacyPhoneProofPath = data.legacy_review_eligible === true && !!clean(data.booking_code);
-    if (hasExactToken || hasLegacyPhoneProofPath) return "technician";
+    const hasSelectionReference = data.capabilities?.can_submit_review === true
+      && !!clean(data.selection_ref);
+    if (hasExactToken || hasSelectionReference) return "technician";
     return "";
   }
 
@@ -1186,7 +1166,7 @@
           <span class="section-kicker">Review</span>
           <h2>การให้คะแนนเป็นแบบอ่านอย่างเดียว</h2>
         </div>
-        <p class="muted">การค้นด้วย Booking Code ใช้ดูสถานะได้ แต่บันทึกคะแนนไม่ได้ กรุณาเปิดลิงก์ติดตามงานแบบปลอดภัยที่ได้รับจาก CWF หรือติดต่อแอดมิน</p>
+        <p class="muted">งานนี้ยังไม่อยู่ในสถานะที่ส่งรีวิวได้</p>
       </section>`;
   }
 
@@ -1360,9 +1340,30 @@
     }
   }
 
+  function renderTrackingChoices(jobs) {
+    const list = Array.isArray(jobs) ? jobs : [];
+    if (!list.length) return "";
+    return `
+      <div class="tracking-choice-shell">
+        <div class="section-head compact">
+          <span class="section-kicker">Tracking</span>
+          <h2>เลือกงานที่ต้องการติดตาม</h2>
+        </div>
+        <div class="tracking-choice-list">
+          ${list.map((job, index) => `
+            <button class="tracking-choice" type="button" data-tracking-choice="${index}">
+              <strong>${esc(job.booking_code || "งาน CWF")}</strong>
+              <span>${esc(job.appointment_datetime ? root.utils.formatDateTime(job.appointment_datetime) : "ไม่ระบุวันนัดหมาย")}</span>
+              <span>${esc(job.service_summary || "บริการ CWF")} · ${esc(job.job_status || "รอตรวจสอบสถานะ")}</span>
+              ${job.location_summary ? `<small>${esc(job.location_summary)}</small>` : ""}
+            </button>`).join("")}
+        </div>
+      </div>`;
+  }
+
   function renderTrackingResult() {
     const state = root.state.tracking;
-    if (state.status === "idle") return `<div class="tracking-empty-state"><strong>ค้นหางานของคุณ</strong><span>กรอกเลขติดตามที่อยู่ในข้อความยืนยันนัดหมาย</span></div>`;
+    if (state.status === "idle") return `<div class="tracking-empty-state"><strong>ค้นหางานของคุณ</strong><span>กรอกเบอร์โทรที่ใช้จอง หรือ Booking Code</span></div>`;
     if (state.status === "loading") return `
       <div class="tracking-skeleton" role="status" aria-live="polite" aria-label="กำลังค้นหางาน">
         <span class="skeleton-line is-title"></span>
@@ -1370,6 +1371,7 @@
         <span class="skeleton-line is-short"></span>
         <div class="skeleton-grid"><span></span><span></span></div>
       </div>`;
+    if (state.status === "choices") return renderTrackingChoices(state.data?.jobs);
     if (state.status === "error") {
       const rateLimited = state.errorKind === "rate";
       const offline = state.errorKind === "network";
@@ -1565,46 +1567,23 @@
     })));
   }
 
-  // lookup(container, opts)
-  //   opts.credential : an explicit PRIVATE credential (deep-link token, or the
-  //                     preserved active credential for refresh / review reload).
-  //                     When provided it is used for the request and is NEVER
-  //                     written to the draft or the visible input.
-  //   (no opts)       : manual "ตรวจสอบสถานะ" — use whatever the customer typed
-  //                     in the visible input and make it the new active credential.
-  async function lookup(container, opts) {
-    opts = opts || {};
-    const input = container.querySelector("#tracking-code");
-    const usingPrivate = opts.credential != null;
-    const qRaw = usingPrivate
-      ? String(opts.credential || "").trim()
-      : String((input && input.value) || "").trim();
-    const q = !usingPrivate && /^CWF[A-Z0-9]{7}$/i.test(qRaw) ? qRaw.toUpperCase() : qRaw;
-    // The active credential future refreshes/reviews reuse is always the one
-    // actually used for THIS request. A private credential (token) is preserved;
-    // a manual read replaces it with the typed value.
-    setActiveCredential(q);
-    // Only the visible typed value is persisted to the draft — a private
-    // credential must never enter the draft (it would re-render into the input).
-    if (!usingPrivate) {
-      root.state.updateDraft("tracking", { trackingCode: q });
-    }
-    if (!q) {
-      root.state.setTracking({ status: "error", data: null, error: "กรุณากรอกเลขงานหรือรหัสติดตาม" });
-      container.querySelector("[data-tracking-result]").innerHTML = renderTrackingResult();
-      return;
-    }
-    // Store order codes look like "CWF-XXXX" — route them to the order lookup
-    // instead of the job/booking tracker.
-    if (/^CWF-/i.test(q)) { await lookupOrder(container, q); return; }
-    root.state.setTracking({ status: "loading", data: null, error: "", errorKind: "", retryAfter: 0 });
+  function finishTrackingRender(container) {
     container.querySelector("[data-tracking-result]").innerHTML = renderTrackingResult();
+    const timeline = container.querySelector("[data-tracking-timeline]");
+    if (timeline) timeline.innerHTML = renderTimeline();
+    bindResultActions(container);
+    root.utils.decorateActionIcons?.(container);
+  }
+
+  async function openSelection(container, selectionReference) {
+    const reference = clean(selectionReference);
+    if (!reference) return;
+    root.state.setTracking({ status: "loading", data: null, error: "", errorKind: "", retryAfter: 0 });
+    finishTrackingRender(container);
     try {
-      const data = await root.api.trackBooking(q);
+      const data = await root.api.selectTracking(reference);
       root.state.setTracking({ status: "success", data, error: "", errorKind: "", retryAfter: 0 });
-      // Privacy: the request may have used the private booking_token. Only ever
-      // put the human-facing booking_code into the visible input/draft — the
-      // token stays solely in activeCredential + state as the request credential.
+      const input = container.querySelector("#tracking-code");
       if (data && data.booking_code) {
         root.state.updateDraft("tracking", { trackingCode: String(data.booking_code) });
         if (input) input.value = String(data.booking_code);
@@ -1618,20 +1597,71 @@
         errorKind: status === 429 ? "rate" : status === 404 ? "not-found" : "network",
         retryAfter: Number(error?.data?.retry_after_s || 0),
       });
+    }
+    finishTrackingRender(container);
+  }
+
+  // Deep-link tokens retain the existing GET contract. Customer-typed phone
+  // numbers and Booking Codes use a body-only lookup and then a signed selection
+  // reference, so the typed identifier is never copied into a request URL.
+  async function lookup(container, opts) {
+    opts = opts || {};
+    const input = container.querySelector("#tracking-code");
+    const usingPrivate = opts.credential != null;
+    const qRaw = usingPrivate
+      ? String(opts.credential || "").trim()
+      : String((input && input.value) || "").trim();
+    const q = !usingPrivate && /^CWF[A-Z0-9]{7}$/i.test(qRaw) ? qRaw.toUpperCase() : qRaw;
+    if (usingPrivate) setActiveCredential(q);
+    else setActiveCredential("");
+    if (!usingPrivate) {
+      root.state.updateDraft("tracking", { trackingCode: q });
+    }
+    if (!q) {
+      root.state.setTracking({ status: "error", data: null, error: "กรุณากรอกเบอร์โทรหรือ Booking Code" });
+      finishTrackingRender(container);
+      return;
+    }
+    // Store order codes look like "CWF-XXXX" — route them to the order lookup
+    // instead of the job/booking tracker.
+    if (/^CWF-/i.test(q)) { await lookupOrder(container, q); return; }
+    root.state.setTracking({ status: "loading", data: null, error: "", errorKind: "", retryAfter: 0 });
+    finishTrackingRender(container);
+    try {
+      if (usingPrivate) {
+        const data = await root.api.trackBooking(q);
+        root.state.setTracking({ status: "success", data, error: "", errorKind: "", retryAfter: 0 });
+        if (data && data.booking_code) {
+          root.state.updateDraft("tracking", { trackingCode: String(data.booking_code) });
+          if (input) input.value = String(data.booking_code);
+        }
+      } else {
+        const result = await root.api.lookupTracking(q);
+        const jobs = Array.isArray(result?.jobs) ? result.jobs : [];
+        if (jobs.length === 1) return openSelection(container, jobs[0].selection_ref);
+        root.state.setTracking({ status: "choices", data: { jobs }, error: "", errorKind: "", retryAfter: 0 });
+      }
+    } catch (error) {
+      const status = Number(error && error.status);
+      root.state.setTracking({
+        status: "error",
+        data: null,
+        error: error && error.message,
+        errorKind: status === 429 ? "rate" : status === 404 ? "not-found" : "network",
+        retryAfter: Number(error?.data?.retry_after_s || 0),
+      });
       // A failed private lookup must not leave the token anywhere visible — it
       // was never written to the input/draft, so nothing to clear here.
     }
-    container.querySelector("[data-tracking-result]").innerHTML = renderTrackingResult();
-    const timeline = container.querySelector("[data-tracking-timeline]");
-    if (timeline) timeline.innerHTML = renderTimeline();
-    bindResultActions(container);
-    root.utils.decorateActionIcons?.(container);
+    finishTrackingRender(container);
   }
 
   // Refresh / post-review reloads reuse the private active credential so a
   // token session keeps full access instead of silently downgrading to the
   // visible booking_code.
   function reloadCurrent(container) {
+    const selectionReference = clean(root.state.tracking.data?.selection_ref);
+    if (selectionReference) return openSelection(container, selectionReference);
     if (activeCredential) return lookup(container, { credential: activeCredential });
     return lookup(container);
   }
@@ -1675,6 +1705,18 @@
       });
     }
 
+    if (result && !result.dataset.trackingChoicesBound) {
+      result.dataset.trackingChoicesBound = "1";
+      result.addEventListener("click", (event) => {
+        const choice = event.target.closest("[data-tracking-choice]");
+        if (!choice) return;
+        const index = Number(choice.getAttribute("data-tracking-choice"));
+        const jobs = root.state.tracking.data?.jobs;
+        const reference = Array.isArray(jobs) ? jobs[index]?.selection_ref : "";
+        if (reference) openSelection(container, reference);
+      });
+    }
+
     const refresh = container.querySelector("[data-action='track-refresh']");
     if (refresh) refresh.addEventListener("click", () => reloadCurrent(container), { once: true });
 
@@ -1711,11 +1753,13 @@
         const status = form.querySelector("[data-review-status]");
         const submit = form.querySelector("button[type='submit']");
         const payload = Object.fromEntries(new FormData(form).entries());
-        // Token credential is injected from state, never read from the DOM.
-        if (form.hasAttribute("data-review-token")) {
-          const token = (root.state.tracking.data || {}).booking_token || "";
-          if (token) payload.booking_token = token;
-        }
+        // The credential is injected from in-memory state, never read from or
+        // rendered into the DOM.
+        const trackingData = root.state.tracking.data || {};
+        const token = canUseTokenActions(trackingData) ? clean(trackingData.booking_token) : "";
+        const selectionReference = clean(trackingData.selection_ref);
+        if (token) payload.booking_token = token;
+        else if (selectionReference) payload.selection_ref = selectionReference;
         payload.rating = Number(payload.rating || 5);
         if (status) status.textContent = "กำลังส่งรีวิว...";
         if (submit) submit.disabled = true;
@@ -1787,10 +1831,10 @@
           <section class="card lookup-card" aria-labelledby="tracking-search-title">
             <h2 id="tracking-search-title" class="tracking-search-title">ค้นหางาน</h2>
             <div class="field">
-              <label for="tracking-code">เลขติดตามงาน</label>
-              <input id="tracking-code" class="input tracking-code-input" placeholder="CWFXXXXXXX" value="${esc(code)}"
+              <label for="tracking-code">เบอร์โทร หรือ Booking Code</label>
+              <input id="tracking-code" class="input tracking-code-input" placeholder="กรอกเบอร์โทรหรือรหัสงาน" value="${esc(code)}"
                 inputmode="text" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="32">
-              <span class="field-help">เลขติดตามอยู่ในข้อความยืนยันนัดหมายจาก CWF</span>
+              <span class="field-help">ค้นหาด้วยเบอร์ที่ใช้จอง หรือรหัสงานจาก CWF</span>
             </div>
             <div class="button-row">
               <button class="primary-btn tracking-search-btn" type="button" data-action="track-read">ค้นหางาน</button>
@@ -1858,5 +1902,5 @@
       unitInspection,
     },
   };
-  console.info("[customer-tracking] review restore v1 loaded");
+  console.info("[customer-tracking] phone lookup review direct v1 loaded");
 })();

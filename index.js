@@ -26225,7 +26225,10 @@ app.get("/public/urgent-status", async (req, res) => {
   }
 });
 
-app.get("/public/track", async (req, res) => {
+app.get("/public/track", publicTrackHandler);
+app.post("/public/track/select", publicTrackHandler);
+
+async function publicTrackHandler(req, res) {
   res.set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
   res.set("Pragma", "no-cache");
   res.set("Expires", "0");
@@ -26239,11 +26242,17 @@ app.get("/public/track", async (req, res) => {
       retry_after_s: trackRate.retry_after_s,
     });
   }
+  const selectionReference = String(req.body?.selection_ref || "").trim();
+  const selection = selectionReference
+    ? trackingPrivacy.verifyTrackingSelectionReference(selectionReference, getJwtSecret())
+    : null;
+  if (selectionReference && !selection) return res.status(404).json({ error: "ไม่พบงาน" });
   const rawQuery = (req.query.q || req.query.token || req.query.booking_code || "").toString().trim();
   // Booking codes are case-insensitive for customer input. Token casing is
   // private and significant, so only normalize a value with the exact code shape.
-  const q = /^CWF[A-Z0-9]{7}$/i.test(rawQuery) ? rawQuery.toUpperCase() : rawQuery;
-  if (!q) return res.status(400).json({ error: "ต้องส่ง q (token หรือ booking_code)" });
+  const isBookingCodeQuery = /^CWF[A-Z0-9]{7}$/i.test(rawQuery);
+  const q = isBookingCodeQuery ? rawQuery.toUpperCase() : rawQuery;
+  if (!q && !selection) return res.status(400).json({ error: "ต้องระบุข้อมูลค้นหา" });
 
   try {
     const r = await pool.query(
@@ -26261,13 +26270,15 @@ app.get("/public/track", async (req, res) => {
         tp.full_name AS tech_name, tp.photo_path AS tech_photo, tp.rank_level AS tech_rank_level, tp.rank_key AS tech_rank_key, tp.rating, tp.grade, tp.phone AS tech_phone
       FROM public.jobs j
       LEFT JOIN public.technician_profiles tp ON tp.username = j.technician_username
-      WHERE (j.booking_token=$1 OR j.booking_code=$1)
-      LIMIT 1
+      WHERE ${selection ? "j.job_id=$1" : isBookingCodeQuery ? "j.booking_code=$1" : "j.booking_token=$1"}
+      LIMIT 2
       `,
-      [q]
+      [selection ? selection.job_id : q]
     );
 
-    if (r.rows.length === 0) return res.status(404).json({ error: "ไม่พบงาน" });
+    if (r.rows.length === 0 || (isBookingCodeQuery && r.rows.length !== 1)) {
+      return res.status(404).json({ error: "ไม่พบงาน" });
+    }
 
     const row = r.rows[0];
     const origin = `${req.protocol}://${req.get("host")}`;
@@ -26542,7 +26553,15 @@ if (FLAG_SHOW_TECH_TEAM_ON_TRACKING && canShowPublicTechnician) {
     // Access level: the long random booking_token = full detail. The short
     // human-readable booking_code = masked PII only (it leaks too easily to
     // act as a full credential) — see server/services/public/trackingPrivacy.js.
-    const fullAccess = trackingPrivacy.isFullAccessQuery(q, row);
+    const fullAccess = !selection && trackingPrivacy.isFullAccessQuery(q, row);
+    // A selection capability has one absolute 15-minute lifetime. Returning the
+    // verified reference prevents select/refresh/post-review reload from rolling
+    // that deadline forward. A fresh capability is issued only by a fresh lookup.
+    const issuedSelectionReference = fullAccess
+      ? ""
+      : selection
+        ? selectionReference
+        : trackingPrivacy.createTrackingSelectionReference(row.job_id, getJwtSecret());
     // Minimal, non-sensitive eligibility signal so a LEGACY customer (a job with
     // no booking_token) can still see the review form on a booking_code lookup
     // and submit code + full phone. It reveals only that a review is possible —
@@ -26640,10 +26659,60 @@ if (FLAG_SHOW_TECH_TEAM_ON_TRACKING && canShowPublicTechnician) {
       // ✅ รายชื่อทีมช่างทั้งหมด (ถ้าเปิด flag) — ใช้ในหน้า Tracking
       technician_team,
     };
-    res.json(fullAccess ? trackPayload : trackingPrivacy.redactPublicTrackPayload(trackPayload));
+    res.json(fullAccess
+      ? trackPayload
+      : trackingPrivacy.selectionPublicTrackPayload(
+          trackPayload,
+          issuedSelectionReference,
+          isDone && !row.canceled_at && !row.customer_rating && !!row.technician_username,
+        ));
   } catch (e) {
-    console.error(e);
+    console.error("[public/track] failed", { code: String(e?.code || "TRACK_FAILED") });
     res.status(500).json({ error: "ติดตามงานไม่สำเร็จ" });
+  }
+}
+
+app.post("/public/track/lookup", async (req, res) => {
+  res.set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+  res.set("Referrer-Policy", "no-referrer");
+  const trackRate = publicTrackRateLimiter.check(trackingPrivacy.clientIpKey(req));
+  if (!trackRate.allowed) {
+    return res.status(429).json({ error: "ค้นหาบ่อยเกินไป กรุณารอสักครู่", code: "RATE_LIMITED", retry_after_s: trackRate.retry_after_s });
+  }
+  const identifier = String(req.body?.identifier || "").trim();
+  const phone = trackingPrivacy.normalizeTrackingPhone(identifier);
+  const bookingCode = /^CWF[A-Z0-9]{7}$/i.test(identifier) ? identifier.toUpperCase() : "";
+  if (!phone && !bookingCode) return res.status(400).json({ error: "ไม่พบงาน" });
+  const secret = getJwtSecret();
+  if (!secret) return res.status(503).json({ error: "ระบบติดตามงานยังไม่พร้อมใช้งาน" });
+  try {
+    const result = phone
+      ? await pool.query(
+          `SELECT job_id, booking_code, appointment_datetime, job_type, job_status, job_zone, address_text
+             FROM public.jobs
+            WHERE regexp_replace(COALESCE(customer_phone, ''), '[^0-9]', '', 'g') = ANY($1::text[])
+            ORDER BY COALESCE(appointment_datetime, created_at) DESC NULLS LAST, job_id DESC
+            LIMIT 50`,
+          [phone.match_digits],
+        )
+      : await pool.query(
+          `SELECT job_id, booking_code, appointment_datetime, job_type, job_status, job_zone, address_text
+             FROM public.jobs
+            WHERE booking_code=$1
+            ORDER BY job_id DESC
+            LIMIT 2`,
+          [bookingCode],
+        );
+    const rows = result.rows || [];
+    if (!rows.length || (bookingCode && rows.length !== 1)) return res.status(404).json({ error: "ไม่พบงาน" });
+    return res.json(trackingPrivacy.buildSafeTrackingLookupResponse(
+      rows,
+      phone ? "phone" : "booking_code",
+      secret,
+    ));
+  } catch (error) {
+    console.error("[public/track/lookup] failed", { code: String(error?.code || "LOOKUP_FAILED") });
+    return res.status(500).json({ error: "ค้นหางานไม่สำเร็จ" });
   }
 });
 
@@ -26669,6 +26738,10 @@ app.post("/public/review", async (req, res) => {
   const GENERIC_REVIEW_ERROR = "ไม่สามารถส่งรีวิวได้ กรุณาตรวจสอบเลข/สถานะงานและข้อมูลยืนยันอีกครั้ง";
   const body = req.body || {};
   const token = String(body.token || body.booking_token || "").trim();
+  const selectionReference = String(body.selection_ref || "").trim();
+  const selection = selectionReference
+    ? trackingPrivacy.verifyTrackingSelectionReference(selectionReference, getJwtSecret())
+    : null;
   const code = String(body.booking_code || body.q || "").trim();
   const phoneDigits = String(body.customer_phone || "").replace(/\D/g, "");
   const star = Number(body.rating);
@@ -26681,11 +26754,15 @@ app.post("/public/review", async (req, res) => {
   if (!Number.isFinite(star) || star < 1 || star > 5) {
     return res.status(400).json({ error: "rating ต้องอยู่ระหว่าง 1-5" });
   }
-  if (!token && !code) {
+  if ((selectionReference && !selection) || (!token && !selection && !code)) {
     return res.status(400).json({ error: GENERIC_REVIEW_ERROR });
   }
-  // Per-identifier budget (defends one job's code against many-IP hammering).
-  const identifierKey = token ? `t:${token}` : `c:${code}`;
+  // Per-identifier budget (defends one job's credential against many-IP
+  // hammering). Selection ciphertext is randomized, so bind its bucket to the
+  // already-verified job identity instead. Token/code behavior stays unchanged.
+  const identifierKey = selection
+    ? trackingPrivacy.selectionReviewLimiterKey(selection.job_id)
+    : trackingPrivacy.publicReviewLimiterKey(token ? "token" : "code", token || code);
   if (!publicReviewKeyRateLimiter.check(identifierKey).allowed) {
     return res.status(429).json({ error: "ส่งรีวิวถี่เกินไป กรุณารอสักครู่", code: "RATE_LIMITED" });
   }
@@ -26699,13 +26776,19 @@ app.post("/public/review", async (req, res) => {
     let jr;
     if (token) {
       jr = await client.query(
-        `SELECT job_id, job_status, technician_username, customer_rating, booking_token, customer_phone
+        `SELECT job_id, job_status, technician_username, customer_rating, booking_token, customer_phone, canceled_at
            FROM public.jobs WHERE booking_token=$1 LIMIT 1 FOR UPDATE`,
         [token]
       );
+    } else if (selection) {
+      jr = await client.query(
+        `SELECT job_id, job_status, technician_username, customer_rating, booking_token, customer_phone, canceled_at
+           FROM public.jobs WHERE job_id=$1 LIMIT 1 FOR UPDATE`,
+        [selection.job_id]
+      );
     } else {
       jr = await client.query(
-        `SELECT job_id, job_status, technician_username, customer_rating, booking_token, customer_phone
+        `SELECT job_id, job_status, technician_username, customer_rating, booking_token, customer_phone, canceled_at
            FROM public.jobs WHERE booking_code=$1 LIMIT 1 FOR UPDATE`,
         [code]
       );
@@ -26717,8 +26800,8 @@ app.post("/public/review", async (req, res) => {
     if (!job) deny();
 
     const jobHasToken = Boolean(String(job.booking_token || "").trim());
-    if (token) {
-      // Token path already authorised by the exact-token WHERE clause.
+    if (token || selection) {
+      // Exact-token and verified job-bound selection paths are already authorised.
     } else {
       // Legacy code path: only for jobs that genuinely have no token, and only
       // with the full phone matching exactly.
@@ -26728,6 +26811,7 @@ app.post("/public/review", async (req, res) => {
     }
 
     if (String(job.job_status || "").trim() !== "เสร็จแล้ว") deny();
+    if (job.canceled_at) deny();
     if (job.customer_rating) deny();
     if (!job.technician_username) deny();
 
@@ -26772,7 +26856,7 @@ app.post("/public/review", async (req, res) => {
     // Generic authorisation/eligibility failures never reveal the mismatch;
     // only a genuine unexpected server error is a 500.
     if (e && e.generic) return res.status(400).json({ error: e.message });
-    console.error("[public/review] failed", e && e.message);
+    console.error("[public/review] failed", { code: String(e?.code || "REVIEW_FAILED") });
     return res.status(400).json({ error: "ไม่สามารถส่งรีวิวได้ กรุณาตรวจสอบเลข/สถานะงานและข้อมูลยืนยันอีกครั้ง" });
   } finally {
     client.release();

@@ -534,7 +534,7 @@ test("exact-token capability retains document and review behavior", () => {
     catalog_review: null,
   };
   assert.match(app.tracking._test.receiptUrl(data), /\/docs\/receipt\/88\?key=private-token/);
-  assert.match(app.tracking._test.renderReview(data), /data-review-token/);
+  assert.match(app.tracking._test.renderReview(data), /data-review-form/);
 });
 
 test("canceled jobs render a terminal canceled hero and timeline", () => {
@@ -606,7 +606,6 @@ test("completed copy follows read versus privileged-action capability", () => {
 function assertNoPrivilegedAftercare(html) {
   assert.doesNotMatch(html, /booking_token|\/docs\/receipt|\/docs\/quote|\/docs\/eslip/);
   assert.doesNotMatch(html, /data-review-form|data-catalog-review-form|open-eslip/);
-  assert.doesNotMatch(html, /ให้คะแนนงานนี้|ส่งรีวิว/);
 }
 
 test("code-only completed shows existing technician review and warranty read-only", () => {
@@ -684,7 +683,7 @@ test("code-only completed preserves both existing review summaries", () => {
   assertNoPrivilegedAftercare(html);
 });
 
-test("code-only completed with no review still shows warranty without review invitation", () => {
+test("completed job without a server-issued write capability stays read-only", () => {
   const app = loadTrackingRuntime();
   const data = {
     ...codeReadPayload(),
@@ -696,6 +695,7 @@ test("code-only completed with no review still shows warranty without review inv
   assert.match(html, />หลังบริการ</);
   assert.match(html, /เงื่อนไขรับประกัน/);
   assertNoPrivilegedAftercare(html);
+  assert.match(html, /งานนี้ยังไม่อยู่ในสถานะที่ส่งรีวิวได้/);
 });
 
 test("token completed retains documents and one eligible write-review flow", () => {
@@ -731,7 +731,7 @@ test("token completed falls back to technician review when catalog review is ine
     catalog_review: { eligible: false, already_reviewed: false, review: null },
   };
   const html = app.tracking._test.renderAftercare(data);
-  assert.match(html, /data-review-form data-review-token/);
+  assert.match(html, /data-review-form/);
   assert.doesNotMatch(html, /data-catalog-review-form/);
   assert.doesNotMatch(html, /private-token/);
 });
@@ -747,30 +747,62 @@ test("token completed falls back to technician review when catalog review is nul
     catalog_review: null,
   };
   const html = app.tracking._test.renderAftercare(data);
-  assert.match(html, /data-review-form data-review-token/);
+  assert.match(html, /data-review-form/);
   assert.doesNotMatch(html, /data-catalog-review-form|private-token/);
 });
 
-test("legacy completed job shows phone-proof technician form without granting token actions", () => {
+test("selected completed job shows technician review without phone re-verification", () => {
   const app = loadTrackingRuntime();
   const data = {
     ...completedHealthPayload(),
-    legacy_review_eligible: true,
+    access_level: "selection",
+    selection_ref: "opaque-selection-reference",
+    capabilities: { can_view_full_tracking: true, can_use_token_actions: false, can_submit_review: true },
     catalog_review: { eligible: false, already_reviewed: false, review: null },
   };
   const html = app.tracking._test.renderAftercare(data);
   assert.match(html, /data-review-form/);
-  assert.match(html, /name="booking_code" value="CWFABC1234"/);
-  assert.match(html, /name="customer_phone"/);
-  assert.doesNotMatch(html, /data-review-token|data-catalog-review-form|booking_token/);
+  assert.doesNotMatch(html, /name="booking_code"|name="customer_phone"|ยืนยันตัวตน|opaque-selection-reference/);
+  assert.doesNotMatch(html, /data-catalog-review-form|booking_token/);
 });
 
-test("ordinary code-only completed job is read-only with an explicit explanation", () => {
+test("phone multi-result list renders safe fields and never renders the signed selection reference", () => {
+  const app = loadTrackingRuntime();
+  app.state.tracking = {
+    status: "choices",
+    data: {
+      jobs: [
+        { booking_code: "CWFABC1234", appointment_datetime: "2026-07-18T09:00:00+07:00", service_summary: "ล้างแอร์", job_status: "เสร็จแล้ว", location_summary: "บางนา", selection_ref: "opaque-one" },
+        { booking_code: "CWFABC5678", appointment_datetime: "2026-07-19T10:00:00+07:00", service_summary: "ซ่อมแอร์", job_status: "รอดำเนินการ", location_summary: "พระโขนง", selection_ref: "opaque-two" },
+      ],
+    },
+    error: "",
+  };
+  const html = app.tracking._test.renderTrackingResult();
+  assert.match(html, /เลือกงานที่ต้องการติดตาม/);
+  assert.match(html, /CWFABC1234/);
+  assert.match(html, /CWFABC5678/);
+  assert.equal((html.match(/data-tracking-choice=/g) || []).length, 2);
+  assert.doesNotMatch(html, /opaque-one|opaque-two|selection_ref|job_id|customer_phone|address_text/);
+});
+
+test("tracking UI uses one phone-or-code field and removes the old phone-proof flow", () => {
+  const source = fs.readFileSync(path.join(ROOT, "customer-app", "modules", "tracking.js"), "utf8");
+  assert.match(source, /เบอร์โทร หรือ Booking Code/);
+  assert.match(source, /placeholder="กรอกเบอร์โทรหรือรหัสงาน"/);
+  assert.match(source, /lookupTracking\(q\)/);
+  assert.match(source, /selectTracking\(reference\)/);
+  assert.match(source, /if \(jobs\.length === 1\) return openSelection/);
+  assert.match(source, /status: "choices"/);
+  assert.doesNotMatch(source, /name="customer_phone"|เบอร์โทรที่ใช้จอง \(ยืนยันตัวตน\)|กรอกเบอร์โทรที่ใช้จองงานนี้เพื่อยืนยันตัวตนก่อนรีวิว/);
+});
+
+test("completed job without a write capability has a generic unavailable explanation", () => {
   const app = loadTrackingRuntime();
   const data = completedHealthPayload({ legacy_review_eligible: false });
   const html = app.tracking._test.renderAftercare(data);
-  assert.match(html, /การให้คะแนนเป็นแบบอ่านอย่างเดียว/);
-  assert.match(html, /Booking Code/);
+  assert.match(html, /งานนี้ยังไม่อยู่ในสถานะที่ส่งรีวิวได้/);
+  assert.doesNotMatch(html, /Booking Code.*บันทึกคะแนนไม่ได้/);
   assert.doesNotMatch(html, /data-review-form|data-catalog-review-form/);
 });
 
@@ -798,6 +830,7 @@ test("tracking review forms use five accessible 44px star choices and never rend
 
 test("failed technician review request re-enables submit and exposes the error", async () => {
   let submitHandler;
+  let requestBody;
   const status = { textContent: "" };
   const submit = { disabled: false };
   const busy = new Set();
@@ -817,9 +850,15 @@ test("failed technician review request re-enables submit and exposes the error",
   }
   const app = loadTrackingRuntime({
     FormData: ReviewFormData,
-    fetch: async () => ({ ok: false, json: async () => ({ error: "ส่งไม่สำเร็จ" }) }),
+    fetch: async (_url, options) => {
+      requestBody = JSON.parse(options.body);
+      return { ok: false, json: async () => ({ error: "ส่งไม่สำเร็จ" }) };
+    },
   });
-  app.state.tracking.data = { booking_token: "private-token" };
+  app.state.tracking.data = {
+    selection_ref: "opaque-selection-reference",
+    capabilities: { can_submit_review: true },
+  };
   const container = {
     querySelector(selector) { return selector === "[data-review-form]" ? form : null; },
   };
@@ -828,6 +867,16 @@ test("failed technician review request re-enables submit and exposes the error",
   assert.equal(submit.disabled, false);
   assert.equal(status.textContent, "ส่งไม่สำเร็จ");
   assert.equal(busy.has("aria-busy"), false);
+  assert.equal(requestBody.selection_ref, "opaque-selection-reference");
+  assert.equal(requestBody.customer_phone, undefined);
+  assert.equal(requestBody.booking_code, undefined);
+});
+
+test("tracking choice and review controls remain width-safe at 360px and 390px", () => {
+  assert.match(CSS_SOURCE, /\.tracking-choice-shell,[\s\S]*?\.tracking-choice\s*\{\s*min-width:\s*0;/);
+  assert.match(CSS_SOURCE, /\.tracking-choice\s*\{[\s\S]*?width:\s*100%;[\s\S]*?min-height:\s*64px;/);
+  assert.match(CSS_SOURCE, /\.tracking-choice\s*\{[\s\S]*?overflow-wrap:\s*anywhere;/);
+  assert.match(CSS_SOURCE, /grid-template-columns:\s*repeat\(5,\s*minmax\(44px,\s*1fr\)\)/);
 });
 
 test("failed catalog review request re-enables submit and exposes the error", async () => {
@@ -920,7 +969,7 @@ test("tracking UI exposes loading, not-found, rate-limit and offline states", ()
 });
 
 test("tracking assets share the full-read cache build id", () => {
-  const build = "20260717_customer_history_simple_link_v1";
+  const build = "20260718_tracking_phone_review_direct_v1";
   for (const file of [
     "customer-app/index.html",
     "customer-app/sw.js",

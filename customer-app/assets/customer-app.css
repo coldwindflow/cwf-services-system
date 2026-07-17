@@ -2138,6 +2138,30 @@ p { margin: 0; }
 .field-help { display: block; margin-top: 7px; color: var(--muted); font-size: 12.5px; line-height: 1.5; }
 .tracking-search-btn { min-height: 48px; width: 100%; }
 .tracking-result-shell { min-height: 148px; overflow: hidden; }
+.tracking-choice-shell,
+.tracking-choice-list,
+.tracking-choice { min-width: 0; }
+.tracking-choice-list { display: grid; grid-template-columns: 1fr; gap: 10px; }
+.tracking-choice {
+  width: 100%;
+  min-height: 64px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 13px 14px;
+  border: 1px solid rgba(11, 75, 179, 0.18);
+  border-radius: 16px;
+  background: #fff;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.tracking-choice:hover,
+.tracking-choice:focus-visible { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(11, 75, 179, 0.12); }
+.tracking-choice span,
+.tracking-choice small { color: var(--muted); line-height: 1.45; }
 .tracking-empty-state,
 .tracking-error-state {
   min-height: 132px;
