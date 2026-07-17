@@ -229,7 +229,11 @@ function redactPublicTrackPayload(payload) {
     },
     can_view_full_tracking: true,
     can_use_token_actions: false,
-    legacy_review_eligible: false,
+    // A true value is emitted only for a completed legacy job that has no
+    // booking token. It is not a write credential: /public/review still
+    // requires the booking code plus an exact full-phone proof. Tokened jobs
+    // always arrive here with false, so code-only access cannot downgrade.
+    legacy_review_eligible: source.legacy_review_eligible === true,
     booking_code: source.booking_code || null,
     customer_name: source.customer_name || null,
     customer_phone: source.customer_phone || null,

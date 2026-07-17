@@ -1029,15 +1029,17 @@
   function renderTechnicianReviewForm(data) {
     if (!isDone(data) || data.review?.already_reviewed) return "";
     // Reviewing is a WRITE. Two authorised shapes, mirroring the server policy:
-    //  - token lookup (access_level "token"): the exact booking_token authorises,
-    //    posted as a hidden field. No PII entry needed.
+    //  - token lookup (access_level "token"): the exact booking_token authorises
+    //    and is injected from in-memory state only at submit time. No PII entry needed.
     //  - LEGACY job with no booking_token: a booking_code lookup exposes a
     //    minimal `legacy_review_eligible` flag; the customer proves ownership by
     //    typing their FULL phone, posted as booking_code + customer_phone.
     // A tokened job accessed by code is NOT legacy-eligible, so it never shows
     // the legacy form (the server would reject a downgrade anyway).
     const reviewToken = canUseTokenActions(data) ? (data.booking_token || "") : "";
-    const legacyEligible = !reviewToken && canUseTokenActions(data) && data.legacy_review_eligible === true;
+    const legacyEligible = !reviewToken
+      && data.legacy_review_eligible === true
+      && !!clean(data.booking_code);
     if (!reviewToken && !legacyEligible) return "";
     // For token access the booking_token is NOT written into the form (it would
     // leak into rendered HTML). The form is marked data-review-token and the
@@ -1063,16 +1065,7 @@
         ${legacyHint}
         <form data-review-form${reviewToken ? " data-review-token" : ""}>
           ${credentialFields}
-          <label class="field">
-            <span>คะแนน</span>
-            <select class="input" name="rating">
-              <option value="5">5 - ดีมาก</option>
-              <option value="4">4 - ดี</option>
-              <option value="3">3 - พอใช้</option>
-              <option value="2">2 - ควรปรับปรุง</option>
-              <option value="1">1 - ไม่พอใจ</option>
-            </select>
-          </label>
+          ${renderStarRatingField("technician", "คะแนนทีมช่าง")}
           <label class="field">
             <span>รีวิว</span>
             <textarea class="input" name="review_text" rows="3" placeholder="เขียนรีวิว (ถ้ามี)"></textarea>
@@ -1082,7 +1075,7 @@
             <textarea class="input" name="complaint_text" rows="2" placeholder="ส่งถึงทีม CWF (ถ้ามี)"></textarea>
           </label>
           <button class="primary-btn" type="submit">ส่งรีวิว</button>
-          <p class="muted" data-review-status></p>
+          <p class="muted review-submit-status" data-review-status role="status" aria-live="polite"></p>
         </form>
       </section>
     `;
@@ -1090,6 +1083,22 @@
 
   function renderReview(data) {
     return renderExistingTechnicianReviewSummary(data) || renderTechnicianReviewForm(data);
+  }
+
+  function renderStarRatingField(prefix, label) {
+    const choices = [1, 2, 3, 4, 5].map((rating) => {
+      const id = `${prefix}-review-rating-${rating}`;
+      return `
+        <input class="review-star-radio" type="radio" name="rating" id="${id}" value="${rating}"${rating === 5 ? " checked" : ""} required>
+        <label class="review-star-choice" for="${id}" aria-label="${rating} ดาว">
+          <span aria-hidden="true">★</span><small>${rating}</small>
+        </label>`;
+    }).join("");
+    return `
+      <fieldset class="review-star-field">
+        <legend>${esc(label)}</legend>
+        <div class="review-star-options">${choices}</div>
+      </fieldset>`;
   }
 
   // Separate, additional section from renderReview() above (which rates the
@@ -1139,22 +1148,13 @@
           <h2>รีวิวบริการนี้</h2>
         </div>
         <form data-catalog-review-form>
-          <label class="field">
-            <span>คะแนนบริการ</span>
-            <select class="input" name="rating">
-              <option value="5">5 - ดีมาก</option>
-              <option value="4">4 - ดี</option>
-              <option value="3">3 - พอใช้</option>
-              <option value="2">2 - ควรปรับปรุง</option>
-              <option value="1">1 - ไม่พอใจ</option>
-            </select>
-          </label>
+          ${renderStarRatingField("catalog", "คะแนนบริการ")}
           <label class="field">
             <span>ความเห็น</span>
             <textarea class="input" name="comment" rows="3" placeholder="เขียนรีวิวบริการ (ถ้ามี)"></textarea>
           </label>
           <button class="primary-btn" type="submit">ส่งรีวิว</button>
-          <p class="muted" data-catalog-review-status></p>
+          <p class="muted review-submit-status" data-catalog-review-status role="status" aria-live="polite"></p>
         </form>
       </section>
     `;
@@ -1162,6 +1162,32 @@
 
   function renderCatalogReview(data) {
     return renderExistingCatalogReviewSummary(data) || renderCatalogReviewForm(data);
+  }
+
+  function reviewFormKind(data) {
+    if (!isDone(data)) return "";
+    if (data.review?.already_reviewed || data.catalog_review?.already_reviewed) return "";
+
+    const hasExactToken = canUseTokenActions(data) && !!clean(data.booking_token);
+    if (hasExactToken && data.catalog_review?.eligible === true) return "catalog";
+    const hasLegacyPhoneProofPath = data.legacy_review_eligible === true && !!clean(data.booking_code);
+    if (hasExactToken || hasLegacyPhoneProofPath) return "technician";
+    return "";
+  }
+
+  function renderReviewUnavailableNotice(data) {
+    if (!isDone(data)
+      || data.review?.already_reviewed
+      || data.catalog_review?.already_reviewed
+      || reviewFormKind(data)) return "";
+    return `
+      <section class="tracking-extra-card review-readonly-card" role="note">
+        <div class="section-head compact">
+          <span class="section-kicker">Review</span>
+          <h2>การให้คะแนนเป็นแบบอ่านอย่างเดียว</h2>
+        </div>
+        <p class="muted">การค้นด้วย Booking Code ใช้ดูสถานะได้ แต่บันทึกคะแนนไม่ได้ กรุณาเปิดลิงก์ติดตามงานแบบปลอดภัยที่ได้รับจาก CWF หรือติดต่อแอดมิน</p>
+      </section>`;
   }
 
   function renderWarranty(data) {
@@ -1210,17 +1236,18 @@
       renderWarranty(data),
     ];
 
-    // Documents and new-review forms remain exact-token actions. Keep the
-    // existing single-form rule: catalog review is primary when its API shape
-    // exists; technician review is the legacy fallback only when absent.
-    const catalogReviewAvailable = data.catalog_review != null;
-    const privilegedContent = canUseTokenActions(data)
-      ? [
-          renderReceipt(data),
-          catalogReviewAvailable ? renderCatalogReviewForm(data) : renderTechnicianReviewForm(data),
-        ]
-      : [];
-    const content = [...readOnlyContent, ...privilegedContent].filter(Boolean).join("");
+    // Choose exactly one write surface. Catalog is primary only when it is
+    // genuinely eligible with an exact token. Ineligible/null Catalog data
+    // falls back to Technician review. A legacy no-token job may use the
+    // existing booking-code + full-phone proof contract.
+    const formKind = reviewFormKind(data);
+    const actionContent = [
+      canUseTokenActions(data) ? renderReceipt(data) : "",
+      formKind === "catalog" ? renderCatalogReviewForm(data) : "",
+      formKind === "technician" ? renderTechnicianReviewForm(data) : "",
+      renderReviewUnavailableNotice(data),
+    ];
+    const content = [...readOnlyContent, ...actionContent].filter(Boolean).join("");
     return content || root.utils.stateBox("", "รายละเอียดหลังบริการจะแสดงหลังงานเสร็จ");
   }
 
@@ -1692,10 +1719,13 @@
         payload.rating = Number(payload.rating || 5);
         if (status) status.textContent = "กำลังส่งรีวิว...";
         if (submit) submit.disabled = true;
+        form.setAttribute("aria-busy", "true");
         try {
           const response = await fetch(`${root.api.getApiBase()}/public/review`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
+            cache: "no-store",
+            referrerPolicy: "no-referrer",
             body: JSON.stringify(payload),
           });
           const data = await response.json().catch(() => ({}));
@@ -1705,6 +1735,7 @@
         } catch (error) {
           if (status) status.textContent = error.message || "ส่งรีวิวไม่สำเร็จ";
           if (submit) submit.disabled = false;
+          form.removeAttribute("aria-busy");
         }
       });
     }
@@ -1718,10 +1749,14 @@
         const formData = Object.fromEntries(new FormData(catalogForm).entries());
         // Credential from state, not the DOM.
         const d = root.state.tracking.data || {};
-        if (!canUseTokenActions(d) || !d.booking_token) return;
+        if (!canUseTokenActions(d) || !d.booking_token) {
+          if (status) status.textContent = "สิทธิ์รีวิวหมดอายุ กรุณาเปิดลิงก์ติดตามงานอีกครั้ง";
+          return;
+        }
         const token = d.booking_token;
         if (status) status.textContent = "กำลังส่งรีวิว...";
         if (submit) submit.disabled = true;
+        catalogForm.setAttribute("aria-busy", "true");
         try {
           await root.api.submitTrackingReview(token, {
             rating: Number(formData.rating || 5),
@@ -1732,6 +1767,7 @@
         } catch (error) {
           if (status) status.textContent = (error && error.message) || "ส่งรีวิวไม่สำเร็จ";
           if (submit) submit.disabled = false;
+          catalogForm.removeAttribute("aria-busy");
         }
       });
     }
@@ -1806,11 +1842,13 @@
       receiptUrl,
       renderReview,
       renderCatalogReview,
+      reviewFormKind,
       renderAftercare,
       renderPassport,
       renderUnitPassportCards,
       renderTrackingResult,
       renderTimeline,
+      bindResultActions,
       cleanlinessRecommendation,
       renderCleanlinessHighlight,
       nextServiceGuidance,
@@ -1820,4 +1858,5 @@
       unitInspection,
     },
   };
+  console.info("[customer-tracking] review restore v1 loaded");
 })();

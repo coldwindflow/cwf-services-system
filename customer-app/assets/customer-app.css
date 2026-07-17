@@ -2011,6 +2011,77 @@ p { margin: 0; }
   flex-direction: column;
   gap: 12px;
 }
+.review-form-card,
+.catalog-review-form-card,
+.review-readonly-card,
+.review-form-card form,
+.catalog-review-form-card form { min-width: 0; }
+.review-star-field {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.review-star-field legend {
+  margin-bottom: 8px;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 800;
+}
+.review-star-options {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(44px, 1fr));
+  gap: 6px;
+  width: 100%;
+  max-width: 360px;
+  min-width: 0;
+}
+.review-star-radio {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.review-star-choice {
+  display: inline-flex;
+  min-width: 44px;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 6px 4px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  color: #9aa5b1;
+  cursor: pointer;
+  font-size: 25px;
+  line-height: 1;
+  touch-action: manipulation;
+}
+.review-star-choice small {
+  color: currentColor;
+  font-size: 11px;
+  font-weight: 900;
+}
+.review-star-radio:checked + .review-star-choice {
+  border-color: #e2a600;
+  background: var(--soft-yellow);
+  color: #d99a00;
+  box-shadow: 0 0 0 2px rgba(255, 196, 0, 0.14);
+}
+.review-star-radio:focus-visible + .review-star-choice {
+  outline: 3px solid var(--blue);
+  outline-offset: 2px;
+}
+.review-star-choice:hover { border-color: #e2a600; color: #d99a00; }
+.review-submit-status { min-height: 22px; overflow-wrap: anywhere; }
+.review-form-card button[type="submit"],
+.catalog-review-form-card button[type="submit"] { min-height: 44px; }
 .review-summary-card p,
 .warranty-card p { line-height: 1.65; }
 .preserve-lines { white-space: pre-wrap; }
@@ -2101,6 +2172,8 @@ p { margin: 0; }
   .tracking-service-lines span { text-align: left; }
   .support-strip { display: grid; grid-template-columns: 1fr 1fr; }
   .support-strip .secondary-btn { width: 100%; }
+  .review-star-options { gap: 4px; }
+  .review-star-choice { padding-inline: 2px; font-size: 23px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

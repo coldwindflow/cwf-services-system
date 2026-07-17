@@ -19,7 +19,7 @@ function escapeHtml(value) {
     .replace(/'/g, "&#039;");
 }
 
-function loadTrackingRuntime() {
+function loadTrackingRuntime(options = {}) {
   const app = {
     state: {
       tracking: { status: "idle", data: null, error: "" },
@@ -34,7 +34,10 @@ function loadTrackingRuntime() {
       stateBox: (status, message) => `<div class="${escapeHtml(status)}">${escapeHtml(message)}</div>`,
       timeline: (items) => items.map((item) => `<div>${escapeHtml(item.title)}:${escapeHtml(item.copy)}</div>`).join(""),
     },
-    api: { getApiBase: () => "https://example.test" },
+    api: {
+      getApiBase: () => "https://example.test",
+      ...(options.api || {}),
+    },
   };
   const sandbox = {
     window: {
@@ -45,8 +48,8 @@ function loadTrackingRuntime() {
     navigator: { clipboard: { writeText: async () => {} } },
     URL,
     console: { info() {}, warn() {}, error() {} },
-    FormData,
-    fetch: async () => { throw new Error("unexpected fetch"); },
+    FormData: options.FormData || FormData,
+    fetch: options.fetch || (async () => { throw new Error("unexpected fetch"); }),
     setTimeout,
     clearTimeout,
     Date,
@@ -717,6 +720,153 @@ test("token completed retains documents and one eligible write-review flow", () 
   assert.match(html, /เงื่อนไขรับประกัน/);
 });
 
+test("token completed falls back to technician review when catalog review is ineligible", () => {
+  const app = loadTrackingRuntime();
+  const data = {
+    ...completedHealthPayload(),
+    access_level: "token",
+    can_use_token_actions: true,
+    capabilities: { can_view_full_tracking: true, can_use_token_actions: true },
+    booking_token: "private-token",
+    catalog_review: { eligible: false, already_reviewed: false, review: null },
+  };
+  const html = app.tracking._test.renderAftercare(data);
+  assert.match(html, /data-review-form data-review-token/);
+  assert.doesNotMatch(html, /data-catalog-review-form/);
+  assert.doesNotMatch(html, /private-token/);
+});
+
+test("token completed falls back to technician review when catalog review is null", () => {
+  const app = loadTrackingRuntime();
+  const data = {
+    ...completedHealthPayload(),
+    access_level: "token",
+    can_use_token_actions: true,
+    capabilities: { can_view_full_tracking: true, can_use_token_actions: true },
+    booking_token: "private-token",
+    catalog_review: null,
+  };
+  const html = app.tracking._test.renderAftercare(data);
+  assert.match(html, /data-review-form data-review-token/);
+  assert.doesNotMatch(html, /data-catalog-review-form|private-token/);
+});
+
+test("legacy completed job shows phone-proof technician form without granting token actions", () => {
+  const app = loadTrackingRuntime();
+  const data = {
+    ...completedHealthPayload(),
+    legacy_review_eligible: true,
+    catalog_review: { eligible: false, already_reviewed: false, review: null },
+  };
+  const html = app.tracking._test.renderAftercare(data);
+  assert.match(html, /data-review-form/);
+  assert.match(html, /name="booking_code" value="CWFABC1234"/);
+  assert.match(html, /name="customer_phone"/);
+  assert.doesNotMatch(html, /data-review-token|data-catalog-review-form|booking_token/);
+});
+
+test("ordinary code-only completed job is read-only with an explicit explanation", () => {
+  const app = loadTrackingRuntime();
+  const data = completedHealthPayload({ legacy_review_eligible: false });
+  const html = app.tracking._test.renderAftercare(data);
+  assert.match(html, /การให้คะแนนเป็นแบบอ่านอย่างเดียว/);
+  assert.match(html, /Booking Code/);
+  assert.doesNotMatch(html, /data-review-form|data-catalog-review-form/);
+});
+
+test("tracking review forms use five accessible 44px star choices and never render the token", () => {
+  const app = loadTrackingRuntime();
+  const data = {
+    ...completedHealthPayload(),
+    access_level: "token",
+    can_use_token_actions: true,
+    capabilities: { can_view_full_tracking: true, can_use_token_actions: true },
+    booking_token: "private-token",
+    catalog_review: { eligible: true, already_reviewed: false, review: null },
+  };
+  const catalogHtml = app.tracking._test.renderAftercare(data);
+  assert.equal((catalogHtml.match(/class="review-star-radio"/g) || []).length, 5);
+  assert.equal((catalogHtml.match(/class="review-star-choice"/g) || []).length, 5);
+  assert.match(catalogHtml, /aria-label="1 ดาว"/);
+  assert.match(catalogHtml, /aria-label="5 ดาว"/);
+  assert.match(catalogHtml, /role="status" aria-live="polite"/);
+  assert.doesNotMatch(catalogHtml, /<select|private-token|booking_token/);
+  assert.match(CSS_SOURCE, /\.review-star-choice\s*\{[\s\S]*?min-width:\s*44px;[\s\S]*?min-height:\s*44px;/);
+  assert.match(CSS_SOURCE, /grid-template-columns:\s*repeat\(5,\s*minmax\(44px,\s*1fr\)\)/);
+  assert.match(CSS_SOURCE, /\.review-star-radio:focus-visible \+ \.review-star-choice/);
+});
+
+test("failed technician review request re-enables submit and exposes the error", async () => {
+  let submitHandler;
+  const status = { textContent: "" };
+  const submit = { disabled: false };
+  const busy = new Set();
+  const form = {
+    addEventListener(type, handler) { if (type === "submit") submitHandler = handler; },
+    querySelector(selector) {
+      if (selector === "[data-review-status]") return status;
+      if (selector === "button[type='submit']") return submit;
+      return null;
+    },
+    hasAttribute(name) { return name === "data-review-token"; },
+    setAttribute(name) { busy.add(name); },
+    removeAttribute(name) { busy.delete(name); },
+  };
+  class ReviewFormData {
+    entries() { return [["rating", "4"], ["review_text", "ทดสอบ"]][Symbol.iterator](); }
+  }
+  const app = loadTrackingRuntime({
+    FormData: ReviewFormData,
+    fetch: async () => ({ ok: false, json: async () => ({ error: "ส่งไม่สำเร็จ" }) }),
+  });
+  app.state.tracking.data = { booking_token: "private-token" };
+  const container = {
+    querySelector(selector) { return selector === "[data-review-form]" ? form : null; },
+  };
+  app.tracking._test.bindResultActions(container);
+  await submitHandler({ preventDefault() {} });
+  assert.equal(submit.disabled, false);
+  assert.equal(status.textContent, "ส่งไม่สำเร็จ");
+  assert.equal(busy.has("aria-busy"), false);
+});
+
+test("failed catalog review request re-enables submit and exposes the error", async () => {
+  let submitHandler;
+  const status = { textContent: "" };
+  const submit = { disabled: false };
+  const busy = new Set();
+  const form = {
+    addEventListener(type, handler) { if (type === "submit") submitHandler = handler; },
+    querySelector(selector) {
+      if (selector === "[data-catalog-review-status]") return status;
+      if (selector === "button[type='submit']") return submit;
+      return null;
+    },
+    setAttribute(name) { busy.add(name); },
+    removeAttribute(name) { busy.delete(name); },
+  };
+  class ReviewFormData {
+    entries() { return [["rating", "3"], ["comment", "ทดสอบ"]][Symbol.iterator](); }
+  }
+  const app = loadTrackingRuntime({
+    FormData: ReviewFormData,
+    api: { submitTrackingReview: async () => { throw new Error("ส่งไม่สำเร็จ"); } },
+  });
+  app.state.tracking.data = {
+    access_level: "token",
+    can_use_token_actions: true,
+    booking_token: "private-token",
+  };
+  const container = {
+    querySelector(selector) { return selector === "[data-catalog-review-form]" ? form : null; },
+  };
+  app.tracking._test.bindResultActions(container);
+  await submitHandler({ preventDefault() {} });
+  assert.equal(submit.disabled, false);
+  assert.equal(status.textContent, "ส่งไม่สำเร็จ");
+  assert.equal(busy.has("aria-busy"), false);
+});
+
 test("token completed with existing reviews shows both summaries and no duplicate form", () => {
   const app = loadTrackingRuntime();
   const data = {
@@ -770,7 +920,7 @@ test("tracking UI exposes loading, not-found, rate-limit and offline states", ()
 });
 
 test("tracking assets share the full-read cache build id", () => {
-  const build = "20260717_customer_history_line_hotfix_v1";
+  const build = "20260717_customer_review_restore_v1";
   for (const file of [
     "customer-app/index.html",
     "customer-app/sw.js",
