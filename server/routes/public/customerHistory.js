@@ -27,12 +27,12 @@ function createCustomerHistoryRoutes(deps = {}) {
     return String(getSecret() || "").trim();
   }
 
-  function rateLimitClaim(req, phoneNorm, bookingCode) {
+  function rateLimitClaim(req, identifierKey) {
     const jwtSecret = secret();
     const sub = history.clean(req.customer?.sub);
     const ipOk = ipLimiter.check(trackingPrivacy.clientIpKey(req));
     const subOk = subLimiter.check(sub ? history.hmacHex(jwtSecret, "customer-history-sub-limit", sub) : "missing-sub");
-    const proofKey = history.hmacHex(jwtSecret, "customer-history-proof-limit", `${phoneNorm}\0${bookingCode}`);
+    const proofKey = history.hmacHex(jwtSecret, "customer-history-proof-limit", identifierKey);
     const proofOk = proofLimiter.check(proofKey);
     return ipOk.allowed && subOk.allowed && proofOk.allowed;
   }
@@ -53,6 +53,64 @@ function createCustomerHistoryRoutes(deps = {}) {
       route,
       ...(dbCode ? { db_code: dbCode } : {}),
     });
+  }
+
+  async function requireSimpleClaimSchema(db, route) {
+    let ready;
+    try {
+      ready = await history.schemaReady(db);
+    } catch (error) {
+      logUnavailable(route, null, error);
+      const unavailable = new Error("CUSTOMER_HISTORY_SCHEMA_NOT_READY");
+      unavailable.status = 503;
+      throw unavailable;
+    }
+    if (!ready.has_claims || !ready.supports_simple_claim) {
+      logUnavailable(route, ready);
+      const unavailable = new Error("CUSTOMER_HISTORY_SCHEMA_NOT_READY");
+      unavailable.status = 503;
+      throw unavailable;
+    }
+    return ready;
+  }
+
+  async function findJobsByPhone(db, phone, { lock = false } = {}) {
+    const result = await db.query(
+      `SELECT j.job_id, j.booking_code, j.customer_phone, j.appointment_datetime,
+              j.job_type, j.address_text, j.job_zone, j.job_status
+         FROM public.jobs j
+        WHERE regexp_replace(COALESCE(j.customer_phone,''), '[^0-9]', '', 'g') = ANY($1::text[])
+        ORDER BY COALESCE(j.finished_at, j.appointment_datetime, j.created_at) DESC NULLS LAST, j.job_id DESC
+        LIMIT ${lock ? 1 : 100}${lock ? "\n        FOR UPDATE" : ""}`,
+      [phone.match_digits]
+    );
+    return result.rows || [];
+  }
+
+  async function resolveIdentifier(db, parsed, { lock = false } = {}) {
+    if (parsed.method === history.CLAIM_METHODS.PHONE) {
+      const jobs = await findJobsByPhone(db, parsed.phone, { lock });
+      if (!jobs.length) return null;
+      return { phone: parsed.phone, proof_job_id: jobs[0].job_id, jobs };
+    }
+
+    const result = await db.query(
+      `SELECT j.job_id, j.booking_code, j.customer_phone, j.appointment_datetime,
+              j.job_type, j.address_text, j.job_zone, j.job_status
+         FROM public.jobs j
+        WHERE upper(btrim(COALESCE(j.booking_code,''))) = $1
+          AND COALESCE(NULLIF(btrim(j.booking_code), ''), '') <> ''
+        ORDER BY j.job_id DESC
+        LIMIT 2${lock ? "\n        FOR UPDATE" : ""}`,
+      [parsed.booking_code]
+    );
+    const jobs = result.rows || [];
+    if (jobs.length !== 1) return null;
+    const phone = history.normalizeClaimPhone(history.normalizeJobPhoneDigits(jobs[0].customer_phone));
+    if (!phone) return null;
+    const previewJobs = lock ? jobs : await findJobsByPhone(db, phone);
+    if (!previewJobs.length) return null;
+    return { phone, proof_job_id: jobs[0].job_id, jobs: previewJobs };
   }
 
   async function resolveClaimUniqueRace(customerSub, phone, proofJobId) {
@@ -92,52 +150,66 @@ function createCustomerHistoryRoutes(deps = {}) {
     return { ready, claims, phoneDigits };
   }
 
+  router.post("/public/customer-history/search", requireCustomerJwt, async (req, res) => {
+    const customerSub = history.clean(req.customer?.sub);
+    if (!customerSub) return res.status(401).json({ error: "NOT_LOGGED_IN" });
+    const rawIdentifier = history.clean(req.body?.identifier);
+    const parsed = history.parseClaimIdentifier(rawIdentifier);
+    if (!rateLimitClaim(req, parsed?.rate_key || `invalid\0${rawIdentifier}`)) {
+      return res.status(429).json({ error: "RATE_LIMITED", message: "ลองใหม่อีกครั้งภายหลัง" });
+    }
+    if (!parsed) return genericClaimFailure(res);
+    try {
+      await requireSimpleClaimSchema(pool, "search");
+      const resolved = await resolveIdentifier(pool, parsed);
+      if (!resolved) return genericClaimFailure(res);
+      return res.json({
+        ok: true,
+        found: true,
+        method: parsed.method,
+        items: resolved.jobs.map((row) => history.previewRow(row)),
+      });
+    } catch (error) {
+      if (error?.status === 503) {
+        return res.status(503).json({ error: "CUSTOMER_HISTORY_SCHEMA_NOT_READY" });
+      }
+      logger.warn?.("[customer_history_search] failed", {
+        diagnostic_code: "CUSTOMER_HISTORY_SEARCH_FAILED",
+        db_code: /^[A-Z0-9_]{2,16}$/.test(String(error?.code || "")) ? String(error.code) : undefined,
+      });
+      return res.status(500).json({ error: "SEARCH_FAILED" });
+    }
+  });
+
   router.post("/public/customer-history/claim", requireCustomerJwt, async (req, res) => {
     const customerSub = history.clean(req.customer?.sub);
     if (!customerSub) return res.status(401).json({ error: "NOT_LOGGED_IN" });
 
-    const phone = history.normalizeClaimPhone(req.body?.phone);
-    const bookingCode = history.normalizeBookingCode(req.body?.booking_code);
-    if (!phone || !bookingCode) return genericClaimFailure(res);
-    if (!rateLimitClaim(req, phone.phone_norm, bookingCode)) {
+    const rawIdentifier = history.clean(req.body?.identifier);
+    const parsed = history.parseClaimIdentifier(rawIdentifier);
+    if (!rateLimitClaim(req, parsed?.rate_key || `invalid\0${rawIdentifier}`)) {
       return res.status(429).json({ error: "RATE_LIMITED", message: "ลองใหม่อีกครั้งภายหลัง" });
     }
+    if (!parsed) return genericClaimFailure(res);
 
     const client = await pool.connect();
+    let phone = parsed.phone;
     let proofJobId = null;
     try {
       await client.query("BEGIN");
-      let ready;
       try {
-        ready = await history.schemaReady(client);
-      } catch (error) {
-        logUnavailable("claim", null, error);
+        await requireSimpleClaimSchema(client, "claim");
+      } catch (_) {
         try { await client.query("ROLLBACK"); } catch (_) {}
         return res.status(503).json({ error: "CUSTOMER_HISTORY_SCHEMA_NOT_READY" });
       }
-      if (!ready.has_claims) {
-        logUnavailable("claim", ready);
-        await client.query("ROLLBACK");
-        return res.status(503).json({ error: "CUSTOMER_HISTORY_SCHEMA_NOT_READY" });
-      }
-
-      const jobR = await client.query(
-        `SELECT job_id, booking_code, customer_phone
-           FROM public.jobs
-          WHERE upper(btrim(COALESCE(booking_code,''))) = $1
-            AND COALESCE(NULLIF(btrim(booking_code), ''), '') <> ''
-            AND COALESCE(NULLIF(btrim(customer_phone), ''), '') <> ''
-          LIMIT 2
-          FOR UPDATE`,
-        [bookingCode]
-      );
-      const job = jobR.rows && jobR.rows.length === 1 ? jobR.rows[0] : null;
-      const jobPhoneNorm = history.normalizeJobPhoneDigits(job?.customer_phone);
-      if (!job || jobPhoneNorm !== phone.phone_norm) {
+      const resolved = await resolveIdentifier(client, parsed, { lock: true });
+      if (!resolved) {
         await client.query("ROLLBACK");
         return genericClaimFailure(res);
       }
-      proofJobId = job.job_id;
+      phone = resolved.phone;
+      proofJobId = resolved.proof_job_id;
 
       const existingPhone = await client.query(
         `SELECT claim_id, customer_sub
@@ -160,19 +232,20 @@ function createCustomerHistoryRoutes(deps = {}) {
           [activePhone.claim_id]
         );
         await client.query("COMMIT");
-        return res.json({ ok: true, claimed: true, replayed: true, phone_last4: phone.phone_last4 });
+        return res.json({ ok: true, claimed: true, replayed: true });
       }
 
       const existingJob = await client.query(
-        `SELECT claim_id, customer_sub
+        `SELECT claim_id, customer_sub, phone_norm
            FROM public.customer_history_claims
           WHERE proof_job_id=$1 AND revoked_at IS NULL
           LIMIT 1
           FOR UPDATE`,
-        [job.job_id]
+        [proofJobId]
       );
       const activeJob = existingJob.rows?.[0] || null;
-      if (activeJob && String(activeJob.customer_sub) !== customerSub) {
+      if (activeJob && (String(activeJob.customer_sub) !== customerSub
+        || String(activeJob.phone_norm || "") !== phone.phone_norm)) {
         await client.query("ROLLBACK");
         return genericClaimFailure(res);
       }
@@ -181,17 +254,17 @@ function createCustomerHistoryRoutes(deps = {}) {
         `INSERT INTO public.customer_history_claims
            (customer_sub, phone_norm, phone_last4, proof_job_id, claim_method, claimed_at, last_verified_at)
          VALUES ($1,$2,$3,$4,$5,NOW(),NOW())`,
-        [customerSub, phone.phone_norm, phone.phone_last4, job.job_id, history.CLAIM_METHOD]
+        [customerSub, phone.phone_norm, phone.phone_last4, proofJobId, parsed.method]
       );
       await client.query("COMMIT");
-      return res.json({ ok: true, claimed: true, phone_last4: phone.phone_last4 });
+      return res.json({ ok: true, claimed: true });
     } catch (error) {
       try { await client.query("ROLLBACK"); } catch (_) {}
       if (error && error.code === "23505") {
         try {
           const resolved = await resolveClaimUniqueRace(customerSub, phone, proofJobId);
           if (resolved.replayed) {
-            return res.json({ ok: true, claimed: true, replayed: true, phone_last4: resolved.phone_last4 });
+            return res.json({ ok: true, claimed: true, replayed: true });
           }
         } catch (_) {}
         return genericClaimFailure(res);

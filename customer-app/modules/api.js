@@ -75,13 +75,17 @@
       });
     },
 
-    async claimCustomerHistory(payload) {
+    async searchCustomerHistory(identifier) {
+      return requestJson("/public/customer-history/search", {
+        method: "POST",
+        body: { identifier: String(identifier || "").trim() },
+      });
+    },
+
+    async claimCustomerHistory(identifier) {
       return requestJson("/public/customer-history/claim", {
         method: "POST",
-        body: {
-          phone: String((payload && payload.phone) || "").trim(),
-          booking_code: String((payload && payload.booking_code) || "").trim(),
-        },
+        body: { identifier: String(identifier || "").trim() },
       });
     },
 

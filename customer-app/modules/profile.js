@@ -81,6 +81,36 @@
     return root.state.customerHistory || {};
   }
 
+  function renderHistoryPreview(h) {
+    const items = Array.isArray(h.previewItems) ? h.previewItems : [];
+    if (h.searchStatus === "loading") return `<div class="state-box">กำลังค้นหางาน...</div>`;
+    if (!items.length) return "";
+    return `
+      <div class="profile-history-preview" aria-live="polite">
+        <div class="section-head section-head-compact">
+          <h2>พบประวัติงาน</h2>
+          <p class="muted">ตรวจสอบรายการแล้วกดผูกกับบัญชีนี้</p>
+        </div>
+        <div class="profile-history-preview-list">
+          ${items.map((item) => `
+            <article class="profile-history-preview-card">
+              <div class="profile-history-preview-head">
+                <strong>${root.utils.escapeHtml(item.booking_code || "งานเดิม")}</strong>
+                <span>${root.utils.escapeHtml(item.job_status || "-")}</span>
+              </div>
+              <p>${root.utils.escapeHtml(item.service_summary || "บริการ CWF")}</p>
+              <p class="muted">${root.utils.escapeHtml(item.appointment_datetime || "-")}</p>
+              <p class="muted">${root.utils.escapeHtml(item.location_summary || "ไม่ระบุสถานที่")}</p>
+            </article>
+          `).join("")}
+        </div>
+        <button class="primary-btn" type="button" data-history-link ${h.claimStatus === "saving" ? "disabled" : ""}>
+          ${h.claimStatus === "saving" ? "กำลังผูกประวัติ..." : "ผูกประวัติกับบัญชีนี้"}
+        </button>
+      </div>
+    `;
+  }
+
   function renderHistoryClaimPanel() {
     const h = historyState();
     const items = Array.isArray(h.items) ? h.items : [];
@@ -91,31 +121,31 @@
       <section class="card profile-history-card">
         <div class="section-head">
           <h2>เชื่อมประวัติลูกค้าเก่า</h2>
-          <p class="muted">ไม่มี OTP ระบบใช้เบอร์โทรเต็มและ Booking Code จากงานเดิมเพื่อยืนยันประวัติ</p>
+          <p class="muted">${claimed ? "บัญชีนี้เชื่อมประวัติแล้ว" : "กรอกข้อมูลเพื่อค้นหางานเดิมของคุณ"}</p>
         </div>
-        <form class="profile-history-claim-form" data-history-claim-form>
-          <div class="form-grid">
-            <div class="field">
-              <label for="history-phone">เบอร์โทรเดิม</label>
-              <input id="history-phone" class="input" name="phone" inputmode="tel" autocomplete="tel"
-                value="${root.utils.escapeHtml(h.claimPhone || "")}" placeholder="081-234-5678">
+        ${claimed ? "" : `
+          <form class="profile-history-search-form" data-history-search-form>
+            <div class="field field-wide">
+              <label for="history-identifier">เบอร์โทร หรือ Booking Code</label>
+              <input id="history-identifier" class="input" name="identifier" autocomplete="off"
+                autocapitalize="characters" value="${root.utils.escapeHtml(h.searchIdentifier || "")}"
+                placeholder="กรอกเบอร์โทรหรือรหัสงาน" required>
             </div>
-            <div class="field">
-              <label for="history-booking-code">Booking Code</label>
-              <input id="history-booking-code" class="input" name="booking_code" autocapitalize="characters"
-                value="${root.utils.escapeHtml(h.claimBookingCode || "")}" placeholder="CWF...">
-            </div>
-          </div>
-          ${h.claimError ? `<div class="state-box is-error">${root.utils.escapeHtml(h.claimError)}</div>` : ""}
-          ${h.claimSuccess ? `<div class="state-box is-success">${root.utils.escapeHtml(h.claimSuccess)}</div>` : ""}
-          <div class="button-row">
-            <button class="primary-btn" type="submit" ${h.claimStatus === "saving" ? "disabled" : ""}>
-              ${h.claimStatus === "saving" ? "กำลังตรวจสอบ..." : "เชื่อมประวัติ"}
+            ${h.searchError ? `<div class="state-box is-error">${root.utils.escapeHtml(h.searchError)}</div>` : ""}
+            ${h.claimError ? `<div class="state-box is-error">${root.utils.escapeHtml(h.claimError)}</div>` : ""}
+            <button class="primary-btn" type="submit" ${h.searchStatus === "loading" || h.claimStatus === "saving" ? "disabled" : ""}>
+              ${h.searchStatus === "loading" ? "กำลังค้นหา..." : "ค้นหางาน"}
             </button>
-            <button class="secondary-btn" type="button" data-history-refresh ${loading ? "disabled" : ""}>${h.schemaUnavailable ? "ลองใหม่" : "โหลดประวัติ"}</button>
-            ${h.schemaUnavailable ? `<a class="secondary-btn" href="https://lin.ee/x0touXY" target="_blank" rel="noopener noreferrer">ติดต่อแอดมิน</a>` : ""}
+          </form>
+          ${renderHistoryPreview(h)}
+        `}
+        ${h.claimSuccess ? `<div class="state-box is-success">${root.utils.escapeHtml(h.claimSuccess)}</div>` : ""}
+        ${h.schemaUnavailable ? `
+          <div class="button-row">
+            <button class="secondary-btn" type="button" data-history-refresh ${loading ? "disabled" : ""}>ลองใหม่</button>
+            <a class="secondary-btn" href="https://lin.ee/x0touXY" target="_blank" rel="noopener noreferrer">ติดต่อแอดมิน</a>
           </div>
-        </form>
+        ` : ""}
         ${renderHistorySummary({ claimed, items, locations, loading, error: h.error || h.locationsError, detail: h.detail, detailStatus: h.detailStatus, detailError: h.detailError })}
       </section>
     `;
@@ -232,28 +262,61 @@
   }
 
   function bindHistory(container) {
-    const form = container?.querySelector("[data-history-claim-form]");
+    const form = container?.querySelector("[data-history-search-form]");
     if (form && form.dataset.bound !== "1") {
       form.dataset.bound = "1";
       form.addEventListener("submit", async (event) => {
         event.preventDefault();
-        const phone = String(form.elements.phone.value || "").trim();
-        const bookingCode = String(form.elements.booking_code.value || "").trim();
+        const identifier = String(form.elements.identifier.value || "").trim();
         root.state.setCustomerHistory({
-          claimStatus: "saving",
+          searchStatus: "loading",
+          searchError: "",
+          searchIdentifier: identifier,
+          previewItems: [],
+          claimStatus: "idle",
           claimError: "",
           claimSuccess: "",
-          claimPhone: phone,
-          claimBookingCode: bookingCode,
         });
         paintHistory(container);
         try {
-          await root.api.claimCustomerHistory({ phone, booking_code: bookingCode });
+          const result = await root.api.searchCustomerHistory(identifier);
+          root.state.setCustomerHistory({
+            searchStatus: "success",
+            searchError: "",
+            previewItems: Array.isArray(result?.items) ? result.items : [],
+            schemaUnavailable: false,
+          });
+        } catch (error) {
+          const schemaUnavailable = error?.status === 503;
+          root.state.setCustomerHistory({
+            searchStatus: "error",
+            searchError: schemaUnavailable
+              ? "ระบบเชื่อมประวัติอยู่ระหว่างเตรียมความพร้อม กรุณาลองใหม่หรือติดต่อแอดมิน"
+              : "ไม่พบประวัติงาน กรุณาตรวจสอบข้อมูลอีกครั้ง",
+            previewItems: [],
+            schemaUnavailable,
+          });
+        }
+        paintHistory(container);
+      });
+    }
+
+    const linkButton = container?.querySelector("[data-history-link]");
+    if (linkButton && linkButton.dataset.bound !== "1") {
+      linkButton.dataset.bound = "1";
+      linkButton.addEventListener("click", async () => {
+        const identifier = String(root.state.customerHistory?.searchIdentifier || "").trim();
+        if (!identifier) return;
+        root.state.setCustomerHistory({ claimStatus: "saving", claimError: "", claimSuccess: "" });
+        paintHistory(container);
+        try {
+          await root.api.claimCustomerHistory(identifier);
           root.state.setCustomerHistory({
             claimStatus: "success",
             claimError: "",
-            claimSuccess: "เชื่อมประวัติสำเร็จ",
-            claimBookingCode: "",
+            claimSuccess: "ผูกประวัติกับบัญชีสำเร็จ",
+            searchIdentifier: "",
+            previewItems: [],
             claimed: true,
             schemaUnavailable: false,
           });
@@ -264,7 +327,7 @@
             claimStatus: "error",
             claimError: schemaUnavailable
               ? "ระบบเชื่อมประวัติอยู่ระหว่างเตรียมความพร้อม กรุณาลองใหม่หรือติดต่อแอดมิน"
-              : "ไม่สามารถยืนยันประวัติงานได้ กรุณาตรวจสอบข้อมูลอีกครั้ง",
+              : "ไม่สามารถผูกประวัติได้ กรุณาลองใหม่อีกครั้ง",
             claimSuccess: "",
             schemaUnavailable,
           });
@@ -460,5 +523,5 @@
       else renderLoggedOut(container);
     },
   };
-  console.info("[customer-profile] customer history LINE hotfix v1 loaded");
+  console.info("[customer-profile] customer history simple search link v1 loaded");
 })();

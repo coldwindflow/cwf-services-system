@@ -455,6 +455,33 @@ p { margin: 0; }
 
 .muted { color: var(--muted); }
 
+.profile-history-card,
+.profile-history-search-form,
+.profile-history-search-form .field,
+.profile-history-preview,
+.profile-history-preview-list,
+.profile-history-preview-card { min-width: 0; }
+.profile-history-search-form { display: grid; gap: 14px; }
+.profile-history-preview { display: grid; gap: 14px; margin-top: 18px; }
+.profile-history-preview-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+.profile-history-preview-card {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--card);
+  overflow-wrap: anywhere;
+}
+.profile-history-preview-card p { margin: 7px 0 0; }
+.profile-history-preview-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.profile-history-preview-head strong,
+.profile-history-preview-head span { min-width: 0; overflow-wrap: anywhere; }
+.profile-history-preview-head span { color: var(--blue); font-size: 13px; font-weight: 700; text-align: right; }
+
 /* ===================== Buttons ===================== */
 .button-row { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
 
