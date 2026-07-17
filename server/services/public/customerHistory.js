@@ -255,8 +255,8 @@ async function schemaReady(db) {
           JOIN pg_class rel ON rel.oid=con.conrelid
           JOIN pg_namespace nsp ON nsp.oid=rel.relnamespace
          WHERE nsp.nspname='public' AND rel.relname='customer_history_claims'
-           AND con.contype='c' AND pg_get_constraintdef(con.oid) LIKE '%phone_last4%'
-           AND pg_get_constraintdef(con.oid) ILIKE '%right(phone_norm, 4)%'
+           AND con.contype='c'
+           AND pg_get_constraintdef(con.oid) ~* 'phone_last4[[:space:]]*=[[:space:]]*(right|"right")[[:space:]]*\\([[:space:]]*phone_norm[[:space:]]*,[[:space:]]*4[[:space:]]*\\)'
       ) AS has_phone_last4_check,
       EXISTS (
         SELECT 1 FROM pg_indexes
