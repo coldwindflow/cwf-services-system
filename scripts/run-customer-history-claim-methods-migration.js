@@ -118,9 +118,10 @@ function compactCheck(value) {
   return compactSql(value).replace(/"right"/g, "right").replace(/[()]/g, "");
 }
 
-function sameColumns(row, expected) {
-  return Array.isArray(row?.column_names) && row.column_names.length === expected.length
-    && row.column_names.every((name, index) => name === expected[index]);
+function sameColumns(row, expected, key = "column_names") {
+  const actual = row?.[key];
+  return Array.isArray(actual) && actual.length === expected.length
+    && actual.every((name, index) => typeof name === "string" && name === expected[index]);
 }
 
 function normalizedPredicate(value) {
@@ -171,7 +172,7 @@ async function inspectSchema(client) {
 
   const primaryKeys = await client.query(`
     SELECT con.conname, idx.relname AS index_name, ind.indisprimary, ind.indisunique,
-           array_agg(att.attname ORDER BY keys.ordinality) AS column_names
+           array_agg(att.attname::text ORDER BY keys.ordinality) AS column_names
       FROM pg_constraint con
       JOIN pg_class rel ON rel.oid=con.conrelid
       JOIN pg_namespace nsp ON nsp.oid=rel.relnamespace
@@ -194,8 +195,8 @@ async function inspectSchema(client) {
   const fks = await client.query(`
     SELECT con.conname, confnsp.nspname AS foreign_schema, confrel.relname AS foreign_table,
            con.confdeltype AS delete_action,
-           array_agg(att.attname ORDER BY cols.ordinality) AS column_names,
-           array_agg(fatt.attname ORDER BY cols.ordinality) AS foreign_column_names
+           array_agg(att.attname::text ORDER BY cols.ordinality) AS column_names,
+           array_agg(fatt.attname::text ORDER BY cols.ordinality) AS foreign_column_names
       FROM pg_constraint con
       JOIN pg_class rel ON rel.oid=con.conrelid
       JOIN pg_namespace nsp ON nsp.oid=rel.relnamespace
@@ -221,8 +222,7 @@ async function inspectSchema(client) {
     const row = fkByName.get(name);
     if (!row || row.foreign_schema !== "public" || row.foreign_table !== expected.table
       || row.delete_action !== expected.deleteAction || !sameColumns(row, expected.columns)
-      || !Array.isArray(row.foreign_column_names)
-      || row.foreign_column_names.join(",") !== expected.foreignColumns.join(",")) {
+      || !sameColumns(row, expected.foreignColumns, "foreign_column_names")) {
       throw migrationError(STATUS.SCHEMA_DRIFT, `customer_history_claims FK drift: ${name}`);
     }
   }
@@ -261,7 +261,7 @@ async function inspectSchema(client) {
 
   const indexes = await client.query(`
     SELECT idx.relname AS indexname, ind.indisunique AS is_unique, ind.indisprimary AS is_primary,
-           array_agg(att.attname ORDER BY keys.ordinality)
+           array_agg(att.attname::text ORDER BY keys.ordinality)
              FILTER (WHERE keys.ordinality <= ind.indnkeyatts) AS column_names,
            pg_get_expr(ind.indpred, ind.indrelid) AS predicate
       FROM pg_index ind
