@@ -4,6 +4,11 @@ const crypto = require("crypto");
 
 const REF_VERSION = "v1";
 const CLAIM_METHOD = "booking_code_phone";
+const CLAIM_METHODS = Object.freeze({
+  PHONE: "phone",
+  BOOKING_CODE: "booking_code",
+  BOOKING_CODE_PHONE: CLAIM_METHOD,
+});
 const CLAIM_METHOD_CAPABILITY = Object.freeze({ LEGACY: "legacy", WIDENED: "widened" });
 const GENERIC_CLAIM_ERROR = "CLAIM_FAILED";
 
@@ -98,6 +103,28 @@ function normalizeJobPhoneDigits(value) {
   return parsed ? parsed.phone_norm : "";
 }
 
+function parseClaimIdentifier(value) {
+  const raw = clean(value);
+  if (!raw) return null;
+  const phone = normalizeClaimPhone(raw);
+  if (phone) {
+    return {
+      method: CLAIM_METHODS.PHONE,
+      phone,
+      booking_code: "",
+      rate_key: `${CLAIM_METHODS.PHONE}\0${phone.phone_norm}`,
+    };
+  }
+  const bookingCode = normalizeBookingCode(raw);
+  if (!bookingCode) return null;
+  return {
+    method: CLAIM_METHODS.BOOKING_CODE,
+    phone: null,
+    booking_code: bookingCode,
+    rate_key: `${CLAIM_METHODS.BOOKING_CODE}\0${bookingCode}`,
+  };
+}
+
 function classifyClaimMethodConstraint(value) {
   const definition = clean(value).toLowerCase().replace(/\s+/g, "");
   const textCast = "(?:::text)?";
@@ -129,6 +156,17 @@ function historyRow(row, { secret, customerSub }) {
     address_text: row.address_text || null,
     maps_url: row.maps_url || null,
     job_zone: row.job_zone || null,
+  };
+}
+
+function previewRow(row) {
+  const location = compactText(row.job_zone) || (compactText(row.address_text) ? "สถานที่จากงานเดิม" : "");
+  return {
+    booking_code: clean(row.booking_code) || null,
+    appointment_datetime: row.appointment_datetime || null,
+    service_summary: compactText(row.job_type) || null,
+    location_summary: location || null,
+    job_status: publicStatus(row.job_status),
   };
 }
 
@@ -353,6 +391,7 @@ function buildAuthorizedWhere({ customerSub, hasCustomerSub, phoneDigits, startP
 
 module.exports = {
   CLAIM_METHOD,
+  CLAIM_METHODS,
   CLAIM_METHOD_CAPABILITY,
   GENERIC_CLAIM_ERROR,
   buildAuthorizedWhere,
@@ -366,8 +405,10 @@ module.exports = {
   normalizeBookingCode,
   normalizeClaimPhone,
   normalizeJobPhoneDigits,
+  parseClaimIdentifier,
   parseJobRef,
   phoneMatchDigitsForClaims,
+  previewRow,
   schemaReady,
   activeClaims,
 };

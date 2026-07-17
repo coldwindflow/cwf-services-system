@@ -13,7 +13,7 @@ const history = require("../server/services/public/customerHistory");
 
 const REPO_ROOT = path.resolve(__dirname, "..");
 
-function makePool({ jobs = [], claims = [], hasClaims = true, hasCustomerSub = true, schemaDrift = false, phoneLast4Check = true, methodDefinition = "CHECK ((claim_method = 'booking_code_phone'::text))", methodCheckCount = 1, schemaReadyError = null, failInsert = false, uniqueConflictClaim = null } = {}) {
+function makePool({ jobs = [], claims = [], hasClaims = true, hasCustomerSub = true, schemaDrift = false, phoneLast4Check = true, methodDefinition = "CHECK ((claim_method = ANY (ARRAY['phone'::text, 'booking_code'::text, 'booking_code_phone'::text])))", methodCheckCount = 1, schemaReadyError = null, failInsert = false, uniqueConflictClaim = null } = {}) {
   const state = {
     jobs: jobs.map((x) => ({ ...x })),
     claims: claims.map((x) => ({ ...x })),
@@ -60,9 +60,9 @@ function makePool({ jobs = [], claims = [], hasClaims = true, hasCustomerSub = t
         has_active_sub_index: true,
       }] };
     }
-    if (/FROM public\.jobs\s+WHERE upper\(btrim/.test(s)) {
+    if (/FROM public\.jobs j\s+WHERE upper\(btrim/.test(s)) {
       const code = String(params[0] || "").toUpperCase();
-      const rows = state.jobs.filter((j) => String(j.booking_code || "").trim().toUpperCase() === code && String(j.customer_phone || "").trim()).slice(0, 2);
+      const rows = state.jobs.filter((j) => String(j.booking_code || "").trim().toUpperCase() === code).slice(0, 2);
       return { rows };
     }
     if (/FROM public\.customer_history_claims/.test(s) && /WHERE phone_norm=\$1/.test(s)) {
@@ -193,7 +193,8 @@ test("claim phone normalizer supports exact local, dashed, +66, and 0066 only", 
 });
 
 test("schema readiness accepts quoted and unquoted right() deparse while phone_last4 drift fails closed", async () => {
-  const pool = makePool();
+  const legacyDefinition = "CHECK ((claim_method = 'booking_code_phone'::text))";
+  const pool = makePool({ methodDefinition: legacyDefinition });
   const status = await history.schemaReady(pool);
   assert.equal(status.has_claims, true);
   assert.equal(status.claim_method_capability, "legacy");
@@ -222,7 +223,7 @@ test("schema readiness accepts quoted and unquoted right() deparse while phone_l
     assert.doesNotMatch(drifted, matcher);
   }
 
-  const driftedStatus = await history.schemaReady(makePool({ phoneLast4Check: false }));
+  const driftedStatus = await history.schemaReady(makePool({ phoneLast4Check: false, methodDefinition: legacyDefinition }));
   assert.equal(driftedStatus.has_claims, false);
   assert.equal(driftedStatus.diagnostic_code, "SCHEMA_DRIFT");
 });
@@ -254,15 +255,67 @@ test("unauthenticated claim returns 401", async () => {
   });
 });
 
-test("missing or drifted claim schema returns 503 with safe diagnostics and no proof PII", async () => {
-  for (const options of [{ hasClaims: false }, { hasClaims: true, schemaDrift: true }]) {
+test("phone and Booking Code search return safe history previews", async () => {
+  const secondJob = { ...LEGACY_JOB, job_id: 102, booking_code: "CWFSECOND", job_type: "ล้างแอร์", job_status: "กำลังดำเนินการ", job_zone: "", address_text: "Private room details" };
+  const pool = makePool({ jobs: [LEGACY_JOB, secondJob] });
+  await withServer({ pool }, async (base) => {
+    for (const [identifier, method] of [["081-234-5678", "phone"], ["cwfabc123", "booking_code"]]) {
+      const res = await fetch(`${base}/public/customer-history/search`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ identifier }),
+      });
+      assert.equal(res.status, 200);
+      assert.equal(res.headers.get("cache-control"), "private, no-store");
+      const body = await json(res);
+      assert.equal(body.method, method);
+      assert.equal(body.items.length, 2);
+      assert.equal(body.items[0].location_summary, LEGACY_JOB.job_zone);
+      assert.equal(body.items[1].location_summary, "สถานที่จากงานเดิม");
+      assert.doesNotMatch(JSON.stringify(body.items), /Private room details/);
+      for (const item of body.items) {
+        for (const forbidden of ["job_id", "customer_phone", "booking_token", "maps_url", "address_text"]) {
+          assert.equal(item[forbidden], undefined);
+        }
+      }
+    }
+  });
+});
+
+test("invalid, unknown, ambiguous, and phone-less searches fail generically", async () => {
+  const cases = [
+    { jobs: [LEGACY_JOB], identifier: "!!" },
+    { jobs: [LEGACY_JOB], identifier: "0899999999" },
+    { jobs: [LEGACY_JOB], identifier: "UNKNOWN" },
+    { jobs: [LEGACY_JOB, { ...LEGACY_JOB, job_id: 102 }], identifier: "CWFABC123" },
+    { jobs: [{ ...LEGACY_JOB, customer_phone: "" }], identifier: "CWFABC123" },
+  ];
+  for (const testCase of cases) {
+    await withServer({ pool: makePool({ jobs: testCase.jobs }) }, async (base) => {
+      const res = await fetch(`${base}/public/customer-history/search`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ identifier: testCase.identifier }),
+      });
+      assert.equal(res.status, 400);
+      assert.equal((await json(res)).error, "CLAIM_FAILED");
+    });
+  }
+});
+
+test("missing, drifted, or legacy claim schema returns 503 with safe diagnostics and no proof PII", async () => {
+  for (const options of [
+    { hasClaims: false },
+    { hasClaims: true, schemaDrift: true },
+    { methodDefinition: "CHECK ((claim_method = 'booking_code_phone'::text))" },
+  ]) {
     const logs = [];
     const pool = makePool({ jobs: [LEGACY_JOB], ...options });
     await withServer({ pool, logger: { warn: (...args) => logs.push(args) } }, async (base) => {
       const res = await fetch(`${base}/public/customer-history/claim`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ phone: "0812345678", booking_code: "CWFABC123" }),
+        body: JSON.stringify({ identifier: "0812345678" }),
       });
       assert.equal(res.status, 503);
       assert.equal((await json(res)).error, "CUSTOMER_HISTORY_SCHEMA_NOT_READY");
@@ -284,7 +337,7 @@ test("claim schema readiness query exceptions roll back and return safe 503 with
     const res = await fetch(`${base}/public/customer-history/claim`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ phone, booking_code: bookingCode }),
+      body: JSON.stringify({ identifier: phone }),
     });
     assert.equal(res.status, 503);
     assert.deepEqual(await json(res), { error: "CUSTOMER_HISTORY_SCHEMA_NOT_READY" });
@@ -301,9 +354,9 @@ test("wrong phone/code cases use generic CLAIM_FAILED and never fallback to part
   const pool = makePool({ jobs: [{ ...LEGACY_JOB, customer_note: "0812345678", address_text: "phone 0812345678 but not customer_phone", customer_phone: "0899999999" }] });
   await withServer({ pool }, async (base) => {
     for (const body of [
-      { phone: "0812345678", booking_code: "CWFABC123" },
-      { phone: "812345678", booking_code: "CWFABC123" },
-      { phone: "0812345678", booking_code: "NOPE" },
+      { identifier: "0812345678" },
+      { identifier: "812345678" },
+      { identifier: "NOPE" },
     ]) {
       const res = await fetch(`${base}/public/customer-history/claim`, {
         method: "POST",
@@ -322,16 +375,17 @@ test("claim succeeds, retries by same account are idempotent, and other accounts
     const first = await fetch(`${base}/public/customer-history/claim`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ phone: "+66812345678", booking_code: " cwfabc123 " }),
+      body: JSON.stringify({ identifier: "+66812345678" }),
     });
     assert.equal(first.status, 200);
     assert.equal(first.headers.get("cache-control"), "private, no-store");
     assert.equal(pool.state.claims.length, 1);
     assert.equal(pool.state.claims[0].phone_norm, "0812345678");
+    assert.equal(pool.state.claims[0].claim_method, "phone");
     const second = await fetch(`${base}/public/customer-history/claim`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ phone: "081-234-5678", booking_code: "CWFABC123" }),
+      body: JSON.stringify({ identifier: "081-234-5678" }),
     });
     assert.equal(second.status, 200);
     assert.equal((await json(second)).replayed, true);
@@ -341,27 +395,48 @@ test("claim succeeds, retries by same account are idempotent, and other accounts
     const res = await fetch(`${base}/public/customer-history/claim`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ phone: "0812345678", booking_code: "CWFABC123" }),
+      body: JSON.stringify({ identifier: "0812345678" }),
     });
     assert.equal(res.status, 400);
     assert.equal((await json(res)).error, "CLAIM_FAILED");
   });
 });
 
-test("current phone plus Booking Code claim remains compatible with widened schema", async () => {
+test("Booking Code claim stores its truthful method on widened schema", async () => {
   const methodDefinition = "CHECK ((claim_method = ANY (ARRAY['phone'::text, 'booking_code'::text, 'booking_code_phone'::text])))";
   const pool = makePool({ jobs: [LEGACY_JOB], methodDefinition });
   await withServer({ pool }, async (base) => {
     const response = await fetch(`${base}/public/customer-history/claim`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ phone: "0812345678", booking_code: "CWFABC123" }),
+      body: JSON.stringify({ identifier: "CWFABC123" }),
     });
     assert.equal(response.status, 200);
     assert.equal((await json(response)).claimed, true);
   });
   assert.equal(pool.state.claims.length, 1);
-  assert.equal(pool.state.claims[0].claim_method, "booking_code_phone");
+  assert.equal(pool.state.claims[0].claim_method, "booking_code");
+});
+
+test("ambiguous Booking Code and a job without a usable phone fail closed before insert", async () => {
+  for (const jobs of [
+    [LEGACY_JOB, { ...LEGACY_JOB, job_id: 102 }],
+    [{ ...LEGACY_JOB, customer_phone: "" }],
+  ]) {
+    const pool = makePool({ jobs });
+    await withServer({ pool }, async (base) => {
+      const response = await fetch(`${base}/public/customer-history/claim`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ identifier: "CWFABC123" }),
+      });
+      assert.equal(response.status, 400);
+      assert.equal((await json(response)).error, "CLAIM_FAILED");
+    });
+    assert.equal(pool.state.claims.length, 0);
+    assert.ok(pool.state.queries.some(({ sql }) => /ROLLBACK/.test(sql)));
+    assert.equal(pool.state.queries.some(({ sql }) => /INSERT INTO public\.customer_history_claims/.test(sql)), false);
+  }
 });
 
 test("successful claim immediately authorizes history and location prefill data", async () => {
@@ -370,7 +445,7 @@ test("successful claim immediately authorizes history and location prefill data"
     const claim = await fetch(`${base}/public/customer-history/claim`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ phone: "0812345678", booking_code: "CWFABC123" }),
+      body: JSON.stringify({ identifier: "0812345678" }),
     });
     assert.equal(claim.status, 200);
 
@@ -397,7 +472,7 @@ test("successful claim immediately authorizes history and location prefill data"
 test("concurrent claim requests return replay for same account and generic failure for a different account", async () => {
   const samePool = makePool({ jobs: [LEGACY_JOB] });
   await withServer({ pool: samePool, sub: "line:u1" }, async (base) => {
-    const body = JSON.stringify({ phone: "0812345678", booking_code: "CWFABC123" });
+    const body = JSON.stringify({ identifier: "0812345678" });
     const responses = await Promise.all([
       fetch(`${base}/public/customer-history/claim`, { method: "POST", headers: { "content-type": "application/json" }, body }),
       fetch(`${base}/public/customer-history/claim`, { method: "POST", headers: { "content-type": "application/json" }, body }),
@@ -427,7 +502,7 @@ test("concurrent claim requests return replay for same account and generic failu
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   try {
     const base = `http://127.0.0.1:${server.address().port}`;
-    const body = JSON.stringify({ phone: "0812345678", booking_code: "CWFABC123" });
+    const body = JSON.stringify({ identifier: "0812345678" });
     const responses = await Promise.all([
       fetch(`${base}/u1/public/customer-history/claim`, { method: "POST", headers: { "content-type": "application/json" }, body }),
       fetch(`${base}/u2/public/customer-history/claim`, { method: "POST", headers: { "content-type": "application/json" }, body }),
@@ -457,7 +532,7 @@ test("unique races resolve to replay for same account or generic failure for ano
     const res = await fetch(`${base}/public/customer-history/claim`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ phone: "0812345678", booking_code: "CWFABC123" }),
+      body: JSON.stringify({ identifier: "0812345678" }),
     });
     assert.equal(res.status, 200);
     assert.equal((await json(res)).replayed, true);
@@ -478,7 +553,7 @@ test("unique races resolve to replay for same account or generic failure for ano
     const res = await fetch(`${base}/public/customer-history/claim`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ phone: "0812345678", booking_code: "CWFABC123" }),
+      body: JSON.stringify({ identifier: "0812345678" }),
     });
     assert.equal(res.status, 400);
     assert.equal((await json(res)).error, "CLAIM_FAILED");
@@ -547,7 +622,7 @@ test("claim rate limit is split by proof hash and does not log raw phone or code
     const res = await fetch(`${base}/public/customer-history/claim`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ phone: "0812345678", booking_code: "CWFABC123" }),
+      body: JSON.stringify({ identifier: "0812345678" }),
     });
     assert.equal(res.status, 500);
     assert.doesNotMatch(JSON.stringify(logs), /0812345678|CWFABC123/);
@@ -609,7 +684,7 @@ function loadModule(context, relativePath) {
   return context.window.CWFCustomerAppV2;
 }
 
-test("Customer App API and state support claim/history without phone query or auto-submit", async () => {
+test("Customer App API and state support one-identifier search/link without URL leakage", async () => {
   const calls = [];
   const context = makeBrowserContext({
     fetchImpl: async (url, options = {}) => {
@@ -618,15 +693,18 @@ test("Customer App API and state support claim/history without phone query or au
     },
   });
   const root = loadModule(context, "customer-app/modules/api.js");
-  await root.api.claimCustomerHistory({ phone: "081", booking_code: "CWF1" });
+  await root.api.searchCustomerHistory("081");
+  await root.api.claimCustomerHistory("081");
   await root.api.loadCustomerHistory();
   await root.api.loadCustomerHistoryDetail("opaque.ref");
   await root.api.loadCustomerHistoryLocations();
-  assert.equal(calls[0].url, "https://app.example.test/public/customer-history/claim");
-  assert.deepEqual(JSON.parse(calls[0].options.body), { phone: "081", booking_code: "CWF1" });
-  assert.equal(calls[1].url, "https://app.example.test/public/customer-history");
-  assert.equal(calls[2].url, "https://app.example.test/public/customer-history/opaque.ref");
-  assert.equal(calls[3].url, "https://app.example.test/public/customer-history/locations");
+  assert.equal(calls[0].url, "https://app.example.test/public/customer-history/search");
+  assert.deepEqual(JSON.parse(calls[0].options.body), { identifier: "081" });
+  assert.equal(calls[1].url, "https://app.example.test/public/customer-history/claim");
+  assert.deepEqual(JSON.parse(calls[1].options.body), { identifier: "081" });
+  assert.equal(calls[2].url, "https://app.example.test/public/customer-history");
+  assert.equal(calls[3].url, "https://app.example.test/public/customer-history/opaque.ref");
+  assert.equal(calls[4].url, "https://app.example.test/public/customer-history/locations");
   assert.doesNotMatch(calls.map((x) => x.url).join("\n"), /phone=/);
 
   const stateContext = makeBrowserContext();
@@ -637,7 +715,7 @@ test("Customer App API and state support claim/history without phone query or au
   assert.equal(stateRoot.state.draft.scheduled.job_zone, "Zone A");
 });
 
-test("Customer App profile opens history detail with opaque job_ref and clears claim booking code after success", async () => {
+test("Customer App profile opens history detail with opaque job_ref and clears search state after link", async () => {
   const context = makeBrowserContext();
   const root = context.window.CWFCustomerAppV2;
   root.utils = {
@@ -673,7 +751,8 @@ test("Customer App profile opens history detail with opaque job_ref and clears c
       claimed: true,
       items: [{ job_ref: "opaque.ref", booking_code: "CWFABC123", appointment_datetime: "2026-07-01", job_status: "done" }],
       locations: [],
-      claimBookingCode: "CWFABC123",
+      searchIdentifier: "CWFABC123",
+      previewItems: [{ booking_code: "CWFABC123" }],
     },
     setCustomerHistory(patch) { this.customerHistory = { ...this.customerHistory, ...patch }; },
   };
@@ -711,27 +790,62 @@ test("Customer App profile opens history detail with opaque job_ref and clears c
   assert.equal(root.state.customerHistory.detail.booking_code, "CWFABC123");
   assert.equal(root.state.customerHistory.detail.job_id, undefined);
 
-  const submitState = { claimStatus: "saving", claimBookingCode: "CWFABC123" };
+  const submitState = { claimStatus: "saving", searchIdentifier: "CWFABC123", previewItems: [{}] };
   root.state.setCustomerHistory = (patch) => Object.assign(submitState, patch);
-  root.state.setCustomerHistory({ claimStatus: "success", claimBookingCode: "", claimed: true });
-  assert.equal(submitState.claimBookingCode, "");
+  root.state.setCustomerHistory({ claimStatus: "success", searchIdentifier: "", previewItems: [], claimed: true });
+  assert.equal(submitState.searchIdentifier, "");
+  assert.deepEqual(submitState.previewItems, []);
 });
 
 test("Customer App schema-not-ready state offers retry and admin contact without weakening generic proof failure", () => {
   const src = fs.readFileSync(path.join(REPO_ROOT, "customer-app/modules/profile.js"), "utf8");
   const css = fs.readFileSync(path.join(REPO_ROOT, "customer-app/assets/customer-app.css"), "utf8");
-  assert.match(src, /schemaUnavailable \? "ลองใหม่" : "โหลดประวัติ"/);
+  assert.match(src, /data-history-refresh[\s\S]*?>ลองใหม่<\/button>/);
   assert.match(src, /<a class="secondary-btn" href="https:\/\/lin\.ee\/x0touXY" target="_blank" rel="noopener noreferrer">ติดต่อแอดมิน<\/a>/);
   assert.doesNotMatch(src, /https:\/\/lin\.ee\/fG1Oq7y/);
   assert.match(css, /\.button-row \{ display: flex; flex-direction: column; gap: 10px;/);
   assert.match(css, /\.secondary-btn \{[\s\S]*?min-height: 50px;/);
   assert.match(src, /error\?\.status === 503/);
-  assert.match(src, /ไม่สามารถยืนยันประวัติงานได้ กรุณาตรวจสอบข้อมูลอีกครั้ง/);
+  assert.match(src, /ไม่พบประวัติงาน กรุณาตรวจสอบข้อมูลอีกครั้ง/);
   assert.doesNotMatch(src, /เบอร์โทรไม่ถูก|Booking Code ไม่ถูก/);
 });
 
+test("Customer App renders one responsive search input, preview, and explicit link action", () => {
+  const src = fs.readFileSync(path.join(REPO_ROOT, "customer-app/modules/profile.js"), "utf8");
+  const css = fs.readFileSync(path.join(REPO_ROOT, "customer-app/assets/customer-app.css"), "utf8");
+  assert.match(src, /<label for="history-identifier">เบอร์โทร หรือ Booking Code<\/label>/);
+  assert.match(src, /name="identifier"[\s\S]*?placeholder="กรอกเบอร์โทรหรือรหัสงาน"/);
+  assert.match(src, /"ค้นหางาน"/);
+  assert.match(src, /"ผูกประวัติกับบัญชีนี้"/);
+  assert.match(src, /profile-history-preview-card/);
+  assert.match(src, /await root\.api\.claimCustomerHistory\(identifier\);[\s\S]*?await loadHistoryData\(container\);/);
+  assert.match(src, /function renderLoggedIn\(container\)[\s\S]*?loadHistoryData\(container\);/);
+  assert.doesNotMatch(src, /name="phone"|name="booking_code"|id="history-phone"|id="history-booking-code"/);
+  assert.doesNotMatch(src, /ระบบใช้เบอร์โทรเต็มและ Booking Code|ต้องใช้เบอร์.*Booking Code|โหลดประวัติ<\/button>/);
+  assert.doesNotMatch(src, /type="hidden"|localStorage/);
+  assert.match(css, /\.profile-history-card,[\s\S]*?\.profile-history-preview-card \{ min-width: 0; \}/);
+  assert.match(css, /grid-template-columns: minmax\(0, 1fr\)/);
+  assert.match(css, /overflow-wrap: anywhere/);
+  assert.match(css, /\.primary-btn \{[\s\S]*?min-height: 54px/);
+});
+
+test("Customer History search and preview keep 360px and 390px width contracts", () => {
+  const css = fs.readFileSync(path.join(REPO_ROOT, "customer-app/assets/customer-app.css"), "utf8");
+  const start = css.indexOf(".profile-history-card,");
+  const end = css.indexOf("/* ===================== Buttons", start);
+  const historyCss = css.slice(start, end);
+  assert.ok(start >= 0 && end > start);
+  assert.match(css, /\* \{ box-sizing: border-box; \}/);
+  assert.match(css, /\.card \{[\s\S]*?width: 100%;/);
+  assert.match(css, /\.input, \.select, \.textarea \{[\s\S]*?width: 100%;/);
+  assert.match(historyCss, /min-width: 0/);
+  assert.match(historyCss, /grid-template-columns: minmax\(0, 1fr\)/);
+  assert.doesNotMatch(historyCss, /(?:min-)?width:\s*(?:[4-9]\d{2}|[1-9]\d{3,})px/);
+  for (const viewport of [360, 390]) assert.ok(viewport > (18 * 2) + 44);
+});
+
 test("Customer App cache version is bumped consistently", () => {
-  const expected = "20260717_customer_review_restore_v1";
+  const expected = "20260717_customer_history_simple_link_v1";
   for (const file of [
     "customer-app/index.html",
     "customer-app/sw.js",
