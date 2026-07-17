@@ -189,7 +189,14 @@ function verifyTrackingSelectionReference(reference, secret, options = {}) {
 function selectionReviewLimiterKey(jobId) {
   const id = Number(jobId);
   if (!Number.isSafeInteger(id) || id <= 0) return "";
-  return crypto.createHash("sha256").update(`cwf:public-review:selection-job:${id}`).digest("hex");
+  return publicReviewLimiterKey("selection-job", String(id));
+}
+
+function publicReviewLimiterKey(kind, value) {
+  const domain = String(kind || "").trim();
+  const identifier = String(value || "");
+  if (!new Set(["token", "code", "selection-job"]).has(domain) || !identifier) return "";
+  return crypto.createHash("sha256").update(`cwf:public-review:${domain}:${identifier}`).digest("hex");
 }
 
 function safeTrackingResult(row, selectionReference) {
@@ -394,16 +401,49 @@ function redactPublicTrackPayload(payload) {
 }
 
 function selectionPublicTrackPayload(payload, selectionReference, canSubmitReview = false) {
-  const projected = redactPublicTrackPayload(payload);
+  const source = payload && typeof payload === "object" ? payload : {};
   return {
-    ...projected,
     access_level: "selection",
     capabilities: {
-      ...projected.capabilities,
+      can_view_full_tracking: true,
+      can_use_token_actions: false,
+      can_view_documents: false,
       can_submit_review: canSubmitReview === true,
     },
+    can_view_full_tracking: true,
+    can_use_token_actions: false,
     selection_ref: String(selectionReference || ""),
     legacy_review_eligible: false,
+    booking_code: source.booking_code || null,
+    job_type: source.job_type || null,
+    job_status: source.job_status || null,
+    booking_mode: source.booking_mode || null,
+    dispatch_mode: source.dispatch_mode || null,
+    appointment_datetime: source.appointment_datetime || null,
+    duration_min: source.duration_min == null ? null : source.duration_min,
+    job_zone: source.job_zone || null,
+    created_at: source.created_at || null,
+    travel_started_at: source.travel_started_at || null,
+    checkin_at: source.checkin_at || null,
+    started_at: source.started_at || null,
+    finished_at: source.finished_at || null,
+    canceled_at: source.canceled_at || null,
+    cancel_reason: source.cancel_reason || null,
+    technician_note: source.technician_note || null,
+    service_items: Array.isArray(source.service_items)
+      ? source.service_items.map((item) => ({
+          item_name: item && item.item_name ? item.item_name : null,
+          qty: item && item.qty != null ? item.qty : null,
+        }))
+      : [],
+    photos: Array.isArray(source.photos) ? source.photos.map(publicPhoto).filter(Boolean) : [],
+    units: Array.isArray(source.units) ? source.units.map(publicUnit).filter(Boolean) : [],
+    technician: publicTechnician(source.technician),
+    technician_team: Array.isArray(source.technician_team)
+      ? source.technician_team.map(publicTechnician).filter(Boolean)
+      : [],
+    review: publicReview(source.review),
+    catalog_review: publicCatalogReview(source.catalog_review),
   };
 }
 
@@ -469,6 +509,7 @@ module.exports = {
   isFullAccessQuery,
   maskPhone,
   normalizeTrackingPhone,
+  publicReviewLimiterKey,
   redactPublicTrackPayload,
   safeTrackingResult,
   selectionReviewLimiterKey,

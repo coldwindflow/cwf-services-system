@@ -26762,7 +26762,7 @@ app.post("/public/review", async (req, res) => {
   // already-verified job identity instead. Token/code behavior stays unchanged.
   const identifierKey = selection
     ? trackingPrivacy.selectionReviewLimiterKey(selection.job_id)
-    : crypto.createHash("sha256").update(token || code).digest("hex");
+    : trackingPrivacy.publicReviewLimiterKey(token ? "token" : "code", token || code);
   if (!publicReviewKeyRateLimiter.check(identifierKey).allowed) {
     return res.status(429).json({ error: "ส่งรีวิวถี่เกินไป กรุณารอสักครู่", code: "RATE_LIMITED" });
   }

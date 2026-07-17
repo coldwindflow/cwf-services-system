@@ -41,6 +41,7 @@ function richPayload() {
     gps_latitude: 13.75,
     gps_longitude: 100.5,
     receipt_url: "https://host/docs/receipt/42?key=a1b2c3d4e5f6",
+    job_type: "ล้างแอร์",
     job_status: "รอดำเนินการ",
     booking_mode: "scheduled",
     dispatch_mode: "normal",
@@ -48,6 +49,7 @@ function richPayload() {
     duration_min: 90,
     finished_at: null,
     technician_note: "ลูกค้าไม่อยู่บ้าน",
+    service_items: [{ item_name: "ล้างแอร์", qty: 2, unit_price: 500, line_total: 1000 }],
     technician: { username: "tech1", full_name: "ช่าง หนึ่ง", phone: "0899999999" },
     technician_team: [{ username: "tech1", phone: "0899999999" }],
     photos: [{ photo_id: 900, public_url: "https://x/y.jpg", phase: "after" }],
@@ -134,6 +136,30 @@ test("booking-code read model exposes only legacy full-phone-proof eligibility a
   assert.equal(eligible.capabilities.can_submit_review, false);
   assert.equal(eligible.catalog_review.eligible, false);
   assert.equal(eligible.booking_token, undefined);
+});
+
+test("selected job detail uses a minimal allowlist and omits precise customer PII", () => {
+  const selected = trackingPrivacy.selectionPublicTrackPayload(richPayload(), "opaque-selection", true);
+  for (const gone of [
+    "customer_name", "customer_phone", "address_text", "maps_url", "gps_latitude",
+    "gps_longitude", "booking_token", "job_id", "receipt_url", "job_price",
+    "payment_status", "paid_at",
+  ]) {
+    assert.equal(selected[gone], undefined, `${gone} must not be present for selection access`);
+  }
+  assert.equal(selected.access_level, "selection");
+  assert.equal(selected.booking_code, richPayload().booking_code);
+  assert.equal(selected.appointment_datetime, richPayload().appointment_datetime);
+  assert.equal(selected.job_type, richPayload().job_type);
+  assert.equal(selected.job_status, richPayload().job_status);
+  assert.equal(selected.finished_at, richPayload().finished_at);
+  assert.equal(selected.selection_ref, "opaque-selection");
+  assert.equal(selected.capabilities.can_submit_review, true);
+  assert.equal(selected.capabilities.can_view_documents, false);
+  assert.deepEqual(selected.service_items, [{ item_name: richPayload().service_items[0].item_name, qty: 2 }]);
+  assert.equal(selected.photos[0].photo_id, undefined);
+  assert.equal(selected.units[0].unit_id, undefined);
+  assert.equal(selected.catalog_review.eligible, false);
 });
 
 function checklist(type, completed, rows) {
@@ -255,7 +281,7 @@ test("tracking selection references keep one absolute expiry across select and r
   assert.equal(afterRefresh.expires_at, initial.expires_at);
   assert.equal(trackingPrivacy.verifyTrackingSelectionReference(reference, secret, { now: issuedAt + 15 * 60_000 }), null);
 
-  const modified = `${reference.slice(0, -1)}${reference.endsWith("A") ? "B" : "A"}`;
+  const modified = `${reference[0] === "A" ? "B" : "A"}${reference.slice(1)}`;
   assert.equal(trackingPrivacy.verifyTrackingSelectionReference(modified, secret, { now: issuedAt }), null);
 });
 
@@ -284,6 +310,20 @@ test("selection review limiter is stable per verified job and distinct across jo
   assert.equal(limiter.check(firstKey).allowed, true);
   assert.equal(limiter.check(secondKey).allowed, false);
   assert.equal(limiter.check(otherKey).allowed, true);
+});
+
+test("review limiter keys are stable and domain-separated for token and Booking Code", () => {
+  const sharedText = "same-visible-value";
+  const tokenKey = trackingPrivacy.publicReviewLimiterKey("token", sharedText);
+  const repeatedTokenKey = trackingPrivacy.publicReviewLimiterKey("token", sharedText);
+  const codeKey = trackingPrivacy.publicReviewLimiterKey("code", sharedText);
+  const repeatedCodeKey = trackingPrivacy.publicReviewLimiterKey("code", sharedText);
+  assert.match(tokenKey, /^[a-f0-9]{64}$/);
+  assert.equal(repeatedTokenKey, tokenKey);
+  assert.equal(repeatedCodeKey, codeKey);
+  assert.notEqual(tokenKey, codeKey);
+  assert.equal(trackingPrivacy.publicReviewLimiterKey("unknown", sharedText), "");
+  assert.equal(trackingPrivacy.publicReviewLimiterKey("token", ""), "");
 });
 
 test("phone lookup list projection exposes only safe fields plus the opaque selection reference", () => {
@@ -421,6 +461,7 @@ test("job documents open for an authenticated admin without any key", async () =
 test("/public/track is rate-limited and issues a signed selection projection for non-token lookups", () => {
   assert.match(indexSrc, /publicTrackRateLimiter\.check\(trackingPrivacy\.clientIpKey\(req\)\)/);
   assert.match(indexSrc, /const fullAccess = !selection && trackingPrivacy\.isFullAccessQuery\(q, row\);/);
+  assert.match(indexSrc, /res\.json\(fullAccess\s*\? trackPayload\s*:\s*trackingPrivacy\.selectionPublicTrackPayload/);
   assert.match(indexSrc, /trackingPrivacy\.selectionPublicTrackPayload\(/);
   assert.match(indexSrc, /app\.post\("\/public\/track\/lookup"/);
   assert.match(indexSrc, /app\.post\("\/public\/track\/select", publicTrackHandler\)/);
@@ -445,7 +486,7 @@ test("technician review accepts only verified token/selection credentials and re
   assert.ok(route, "public review route not found");
   assert.match(route[0], /verifyTrackingSelectionReference\(selectionReference, getJwtSecret\(\)\)/);
   assert.match(route[0], /trackingPrivacy\.selectionReviewLimiterKey\(selection\.job_id\)/);
-  assert.match(route[0], /createHash\("sha256"\)\.update\(token \|\| code\)/);
+  assert.match(route[0], /publicReviewLimiterKey\(token \? "token" : "code", token \|\| code\)/);
   assert.doesNotMatch(route[0], /update\(token \|\| selectionReference \|\| code\)/);
   assert.match(route[0], /FROM public\.jobs WHERE job_id=\$1 LIMIT 1 FOR UPDATE/);
   assert.match(route[0], /if \(job\.canceled_at\) deny\(\)/);
