@@ -13,7 +13,7 @@ const history = require("../server/services/public/customerHistory");
 
 const REPO_ROOT = path.resolve(__dirname, "..");
 
-function makePool({ jobs = [], claims = [], hasClaims = true, hasCustomerSub = true, schemaDrift = false, schemaReadyError = null, failInsert = false, uniqueConflictClaim = null } = {}) {
+function makePool({ jobs = [], claims = [], hasClaims = true, hasCustomerSub = true, schemaDrift = false, phoneLast4Check = true, schemaReadyError = null, failInsert = false, uniqueConflictClaim = null } = {}) {
   const state = {
     jobs: jobs.map((x) => ({ ...x })),
     claims: claims.map((x) => ({ ...x })),
@@ -21,6 +21,7 @@ function makePool({ jobs = [], claims = [], hasClaims = true, hasCustomerSub = t
     hasClaims,
     hasCustomerSub,
     schemaDrift,
+    phoneLast4Check,
     schemaReadyError,
     failInsert,
     uniqueConflictClaim,
@@ -50,7 +51,7 @@ function makePool({ jobs = [], claims = [], hasClaims = true, hasCustomerSub = t
         has_job_fk: true,
         has_method_check: true,
         has_phone_norm_check: true,
-        has_phone_last4_check: true,
+        has_phone_last4_check: state.phoneLast4Check,
         has_active_phone_index: true,
         has_active_proof_index: true,
         has_active_sub_index: true,
@@ -186,6 +187,39 @@ test("claim phone normalizer supports exact local, dashed, +66, and 0066 only", 
   }
   assert.equal(history.normalizeClaimPhone("812345678"), null);
   assert.equal(history.normalizeClaimPhone("12345678"), null);
+});
+
+test("schema readiness accepts quoted and unquoted right() deparse while phone_last4 drift fails closed", async () => {
+  const pool = makePool();
+  const status = await history.schemaReady(pool);
+  assert.equal(status.has_claims, true);
+
+  const shapeQuery = pool.state.queries.find(({ sql }) => /AS has_phone_last4_check/.test(sql));
+  assert.ok(shapeQuery, "schema readiness must query the phone_last4 constraint shape");
+  const patternMatch = shapeQuery.sql.match(/pg_get_constraintdef\(con\.oid\) ~\* '([^']+)'/);
+  assert.ok(patternMatch, "phone_last4 readiness must use a constraint-definition matcher");
+  const matcher = new RegExp(patternMatch[1].replaceAll("[[:space:]]", "\\s"), "i");
+
+  assert.match(
+    `CHECK (((phone_last4 ~ '^[0-9]{4}$'::text) AND (phone_last4 = "right"(phone_norm, 4))))`,
+    matcher
+  );
+  assert.match(
+    `CHECK (((phone_last4 ~ '^[0-9]{4}$'::text) AND (phone_last4 = right(phone_norm, 4))))`,
+    matcher
+  );
+  for (const drifted of [
+    "CHECK (phone_last4 = left(phone_norm, 4))",
+    `CHECK ("right"(phone_norm, 4) = '1234')`,
+    `CHECK (phone_last4 <> "right"(phone_norm, 4))`,
+    `CHECK (phone_last4 = "right"(other_phone, 4))`,
+  ]) {
+    assert.doesNotMatch(drifted, matcher);
+  }
+
+  const driftedStatus = await history.schemaReady(makePool({ phoneLast4Check: false }));
+  assert.equal(driftedStatus.has_claims, false);
+  assert.equal(driftedStatus.diagnostic_code, "SCHEMA_DRIFT");
 });
 
 test("unauthenticated claim returns 401", async () => {
