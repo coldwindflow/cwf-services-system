@@ -171,6 +171,98 @@ async function expectPreflightBlocked(client, expectedCode = runner.EXIT_CODE.SC
   return result;
 }
 
+test("database config prefers DATABASE_URL and preserves connection settings", () => {
+  const config = runner.createClientConfig({
+    DATABASE_URL: "postgres://url-user:url-password@url-db.example.test/cwf",
+    DB_HOST: "ignored-host",
+  });
+  assert.deepEqual(config, {
+    connectionString: "postgres://url-user:url-password@url-db.example.test/cwf",
+    options: "-c timezone=Asia/Bangkok",
+    ssl: { rejectUnauthorized: false },
+  });
+});
+
+test("database config supports split DB env and defaults DB_PORT to 5432", () => {
+  const env = {
+    DB_HOST: "production-db.internal",
+    DB_USER: "cwf_backend",
+    DB_PASSWORD: "split-password",
+    DB_NAME: "cwf_production",
+  };
+  assert.deepEqual(runner.createClientConfig(env), {
+    host: "production-db.internal",
+    port: 5432,
+    user: "cwf_backend",
+    password: "split-password",
+    database: "cwf_production",
+    options: "-c timezone=Asia/Bangkok",
+    ssl: { rejectUnauthorized: false },
+  });
+  assert.equal(runner.createClientConfig({ ...env, DB_PORT: "6432" }).port, 6432);
+});
+
+test("missing required split DB env fails before client creation", async () => {
+  const completeEnv = {
+    DB_HOST: "production-db.internal",
+    DB_USER: "cwf_backend",
+    DB_PASSWORD: "split-password",
+    DB_NAME: "cwf_production",
+  };
+  for (const missingName of ["DB_HOST", "DB_USER", "DB_PASSWORD", "DB_NAME"]) {
+    const env = { ...completeEnv };
+    delete env[missingName];
+    const logger = captureLogger();
+    let clientCreated = false;
+    const code = await runner.runCli({
+      env,
+      argv: [],
+      logger,
+      clientFactory() {
+        clientCreated = true;
+        return new FakeClient();
+      },
+    });
+    assert.equal(code, runner.EXIT_CODE.FAILED);
+    assert.equal(clientCreated, false);
+    assert.match(logger.lines.join("\n"), new RegExp(`missing required env: ${missingName}`));
+  }
+});
+
+test("connection failures do not log URL, host, or password secrets", async () => {
+  const cases = [
+    {
+      env: { DATABASE_URL: "postgres://private-user:private-pass@private-db.example.test/cwf" },
+      message: "connection failed: postgres://private-user:private-pass@private-db.example.test/cwf",
+      secrets: ["private-user", "private-pass", "private-db.example.test"],
+    },
+    {
+      env: {
+        DB_HOST: "private-db.internal",
+        DB_USER: "private-user",
+        DB_PASSWORD: "private-pass",
+        DB_NAME: "cwf_production",
+      },
+      message: "connection to private-db.internal failed password=private-pass",
+      secrets: ["private-db.internal", "private-pass"],
+    },
+  ];
+  for (const testCase of cases) {
+    const logger = captureLogger();
+    const client = new FakeClient();
+    client.connect = async () => { throw new Error(testCase.message); };
+    const code = await runner.runCli({
+      env: testCase.env,
+      argv: [],
+      logger,
+      clientFactory: () => client,
+    });
+    assert.equal(code, runner.EXIT_CODE.FAILED);
+    const output = logger.lines.join("\n");
+    for (const secret of testCase.secrets) assert.doesNotMatch(output, new RegExp(secret.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  }
+});
+
 test("legacy constraint is READY_TO_APPLY and preflight is read-only", async () => {
   const client = new FakeClient();
   const result = await runWith(client);
