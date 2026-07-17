@@ -212,6 +212,77 @@ test("maskPhone handles empty/short values safely", () => {
   assert.equal(trackingPrivacy.maskPhone("08-1234-5678"), "•••• 5678");
 });
 
+test("tracking phone normalization accepts local, dashed, +66, and 0066 formats", () => {
+  for (const value of ["0812345678", "081-234-5678", "+66812345678", "0066812345678"]) {
+    assert.deepEqual(trackingPrivacy.normalizeTrackingPhone(value), {
+      phone_norm: "0812345678",
+      match_digits: ["0812345678", "66812345678", "0066812345678"],
+    });
+  }
+  assert.equal(trackingPrivacy.normalizeTrackingPhone("not-a-phone"), null);
+  assert.equal(trackingPrivacy.normalizeTrackingPhone("12345"), null);
+});
+
+test("tracking selection references are job-bound, short-lived, and fail closed", () => {
+  const secret = "test-secret-not-production";
+  const issuedAt = 1_720_000_000_000;
+  const reference = trackingPrivacy.createTrackingSelectionReference(42, secret, { now: issuedAt, ttlSec: 300 });
+  assert.match(reference, /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
+  const visibleReferenceBytes = Buffer.concat(reference.split(".").map((part) => Buffer.from(part, "base64url")));
+  assert.equal(visibleReferenceBytes.includes(Buffer.from('"job_id":42')), false);
+  assert.deepEqual(trackingPrivacy.verifyTrackingSelectionReference(reference, secret, { now: issuedAt + 60_000 }), {
+    job_id: 42,
+    expires_at: Math.floor(issuedAt / 1000) + 300,
+  });
+  const modified = `${reference[0] === "A" ? "B" : "A"}${reference.slice(1)}`;
+  assert.equal(trackingPrivacy.verifyTrackingSelectionReference(modified, secret, { now: issuedAt }), null);
+  assert.equal(trackingPrivacy.verifyTrackingSelectionReference(reference, "wrong-secret", { now: issuedAt }), null);
+  assert.equal(trackingPrivacy.verifyTrackingSelectionReference(reference, secret, { now: issuedAt + 301_000 }), null);
+  assert.equal(trackingPrivacy.verifyTrackingSelectionReference("malformed", secret, { now: issuedAt }), null);
+});
+
+test("phone lookup list projection exposes only safe fields plus the opaque selection reference", () => {
+  const projected = trackingPrivacy.safeTrackingResult({
+    job_id: 99,
+    booking_code: "CWFABC1234",
+    booking_token: "private-token",
+    customer_phone: "0812345678",
+    appointment_datetime: "2026-07-18T09:00:00+07:00",
+    job_type: "ล้างแอร์",
+    job_status: "เสร็จแล้ว",
+    job_zone: "บางนา",
+    address_text: "99/1 precise private address",
+    maps_url: "https://maps.example/private",
+  }, "opaque-reference");
+  assert.deepEqual(Object.keys(projected).sort(), [
+    "appointment_datetime", "booking_code", "job_status", "location_summary",
+    "selection_ref", "service_summary",
+  ]);
+  assert.equal(projected.location_summary, "บางนา");
+  assert.equal(projected.selection_ref, "opaque-reference");
+  for (const forbidden of ["job_id", "booking_token", "customer_phone", "address_text", "maps_url"]) {
+    assert.equal(projected[forbidden], undefined);
+  }
+});
+
+test("safe lookup response supports one or many jobs with independently job-bound references", () => {
+  const rows = [
+    { job_id: 11, booking_code: "CWFJOB0001", appointment_datetime: "2026-07-18", job_type: "ล้างแอร์", job_status: "เสร็จแล้ว", job_zone: "บางนา" },
+    { job_id: 12, booking_code: "CWFJOB0002", appointment_datetime: "2026-07-19", job_type: "ซ่อมแอร์", job_status: "รอดำเนินการ", job_zone: "พระโขนง" },
+  ];
+  const secret = "lookup-test-secret";
+  const now = 1_720_000_000_000;
+  const single = trackingPrivacy.buildSafeTrackingLookupResponse(rows.slice(0, 1), "booking_code", secret, { now });
+  const multiple = trackingPrivacy.buildSafeTrackingLookupResponse(rows, "phone", secret, { now });
+  assert.equal(single.lookup_type, "booking_code");
+  assert.equal(single.jobs.length, 1);
+  assert.equal(multiple.lookup_type, "phone");
+  assert.equal(multiple.jobs.length, 2);
+  assert.notEqual(multiple.jobs[0].selection_ref, multiple.jobs[1].selection_ref);
+  assert.equal(trackingPrivacy.verifyTrackingSelectionReference(multiple.jobs[0].selection_ref, secret, { now }).job_id, 11);
+  assert.equal(trackingPrivacy.verifyTrackingSelectionReference(multiple.jobs[1].selection_ref, secret, { now }).job_id, 12);
+});
+
 // ---------- rate limiter ----------
 
 test("rate limiter allows up to max per window, then 429 with retry_after, then resets", () => {
@@ -302,11 +373,38 @@ test("job documents open for an authenticated admin without any key", async () =
 
 // ---------- wiring contracts ----------
 
-test("/public/track is rate-limited and redacts code lookups via the allowlist", () => {
+test("/public/track is rate-limited and issues a signed selection projection for non-token lookups", () => {
   assert.match(indexSrc, /publicTrackRateLimiter\.check\(trackingPrivacy\.clientIpKey\(req\)\)/);
-  assert.match(indexSrc, /const fullAccess = trackingPrivacy\.isFullAccessQuery\(q, row\);/);
-  assert.match(indexSrc, /res\.json\(fullAccess \? trackPayload : trackingPrivacy\.redactPublicTrackPayload\(trackPayload\)\);/);
+  assert.match(indexSrc, /const fullAccess = !selection && trackingPrivacy\.isFullAccessQuery\(q, row\);/);
+  assert.match(indexSrc, /trackingPrivacy\.selectionPublicTrackPayload\(/);
+  assert.match(indexSrc, /app\.post\("\/public\/track\/lookup"/);
+  assert.match(indexSrc, /app\.post\("\/public\/track\/select", publicTrackHandler\)/);
   assert.match(indexSrc, /trackingPrivacy\.summarizeUnitChecklists\(checksByUnit\.get\(String\(unit\.unit_id\)\) \|\| \[\]\)/);
+});
+
+test("phone and Booking Code lookup wiring uses safe rows and never accepts a client job_id", () => {
+  const route = indexSrc.match(/app\.post\("\/public\/track\/lookup"[\s\S]*?\n}\);/);
+  assert.ok(route, "tracking lookup route not found");
+  assert.match(route[0], /normalizeTrackingPhone\(identifier\)/);
+  assert.match(route[0], /regexp_replace\(COALESCE\(customer_phone/);
+  assert.match(route[0], /= ANY\(\$1::text\[\]\)/);
+  assert.match(route[0], /WHERE booking_code=\$1/);
+  assert.match(route[0], /LIMIT 2/);
+  assert.match(route[0], /buildSafeTrackingLookupResponse/);
+  assert.doesNotMatch(route[0], /req\.body\?\.job_id|req\.body\.job_id/);
+});
+
+test("technician review accepts only verified token/selection credentials and rechecks eligibility under lock", () => {
+  const route = indexSrc.match(/app\.post\("\/public\/review"[\s\S]*?\n}\);/);
+  assert.ok(route, "public review route not found");
+  assert.match(route[0], /verifyTrackingSelectionReference\(selectionReference, getJwtSecret\(\)\)/);
+  assert.match(route[0], /FROM public\.jobs WHERE job_id=\$1 LIMIT 1 FOR UPDATE/);
+  assert.match(route[0], /if \(job\.canceled_at\) deny\(\)/);
+  assert.match(route[0], /if \(job\.customer_rating\) deny\(\)/);
+  assert.match(route[0], /if \(!job\.technician_username\) deny\(\)/);
+  assert.match(route[0], /ON CONFLICT \(job_id\) DO NOTHING/);
+  assert.match(route[0], /console\.error\("\[public\/review\] failed", \{ code: String\(e\?\.code \|\| "REVIEW_FAILED"\) \}\)/);
+  assert.doesNotMatch(route[0], /console\.(?:log|warn|error)\([^\n]*identifierValue/);
 });
 
 test("/public/urgent-status is rate-limited", () => {
@@ -336,21 +434,19 @@ test("all three job-doc routes share one gate helper + sensitive headers", () =>
   }
 });
 
-test("the customer app only builds receipt links + review form on full (token) access", () => {
+test("the customer app keeps document access token-only and injects review credentials from memory", () => {
   // The receipt URL still carries the booking_token as ?key=, but it is now
   // constructed at click time from state (receiptUrl(data)) instead of being
   // interpolated into rendered HTML — see Blocker 1.
   assert.match(trackingClientSrc, /`\/docs\/receipt\/\$\{encodeURIComponent\(data\.job_id\)\}\?key=\$\{encodeURIComponent\(data\.booking_token\)\}`/);
-  // Read and write capabilities are separate; code-only reads cannot create
-  // document links or review forms.
+  // Documents remain token-only; selected jobs may use an opaque review reference.
   assert.match(trackingClientSrc, /if \(!canUseTokenActions\(data\)\) return "";/);
   assert.match(trackingClientSrc, /const reviewToken = canUseTokenActions\(data\)/);
   assert.match(trackingClientSrc, /if \(!catalogReview\.eligible \|\| !canUseTokenActions\(data\)\) return "";/);
-  // Blocker 1: the booking_token must NOT be embedded in rendered HTML as a
-  // hidden input. It is injected from state at submit time and the form is only
-  // flagged with data-review-token.
+  // Neither credential may be embedded in rendered HTML or hidden inputs.
   assert.doesNotMatch(trackingClientSrc, /name="booking_token"/);
-  assert.match(trackingClientSrc, /data-review-token/);
   assert.match(trackingClientSrc, /payload\.booking_token = token/);
+  assert.match(trackingClientSrc, /payload\.selection_ref = selectionReference/);
   assert.doesNotMatch(trackingClientSrc, /<input type="hidden" name="q"/);
+  assert.doesNotMatch(trackingClientSrc, /name="customer_phone"|เบอร์โทรที่ใช้จอง \(ยืนยันตัวตน\)/);
 });

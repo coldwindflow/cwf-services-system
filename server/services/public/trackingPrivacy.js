@@ -16,6 +16,9 @@
 
 const crypto = require("crypto");
 
+const TRACKING_SELECTION_PURPOSE = "customer_tracking_selection";
+const TRACKING_SELECTION_MAX_AGE_SEC = 15 * 60;
+
 const TRACKING_METRIC_KEYS = Object.freeze(["refrigerant", "cooling", "airflow", "drain"]);
 const TRACKING_METRIC_PATTERNS = Object.freeze({
   refrigerant: [/น้ำยา/u, /แรงดัน/u, /\bpressure\b/i, /\bpsi\b/i, /\brefrigerant\b/i, /\bgas\b/i],
@@ -108,6 +111,112 @@ function timingSafeEqualStr(a, b) {
   const bufB = Buffer.from(String(b == null ? "" : b));
   if (bufA.length !== bufB.length) return false;
   return crypto.timingSafeEqual(bufA, bufB);
+}
+
+function base64urlEncode(value) {
+  return Buffer.from(value).toString("base64url");
+}
+
+function base64urlDecode(value) {
+  return Buffer.from(String(value || ""), "base64url");
+}
+
+function trackingSelectionKey(secret) {
+  const value = String(secret || "").trim();
+  if (!value) return null;
+  return crypto.createHmac("sha256", value).update("cwf:tracking-selection:v1").digest();
+}
+
+function createTrackingSelectionReference(jobId, secret, options = {}) {
+  const id = Number(jobId);
+  const key = trackingSelectionKey(secret);
+  if (!Number.isSafeInteger(id) || id <= 0 || !key) return "";
+  const now = Math.floor(Number(options.now == null ? Date.now() : options.now) / 1000);
+  const ttl = Math.min(
+    TRACKING_SELECTION_MAX_AGE_SEC,
+    Math.max(1, Math.floor(Number(options.ttlSec || TRACKING_SELECTION_MAX_AGE_SEC))),
+  );
+  const payload = Buffer.from(JSON.stringify({
+    v: 1,
+    purpose: TRACKING_SELECTION_PURPOSE,
+    job_id: id,
+    iat: now,
+    exp: now + ttl,
+  }));
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", key, iv);
+  cipher.setAAD(Buffer.from(TRACKING_SELECTION_PURPOSE));
+  const ciphertext = Buffer.concat([cipher.update(payload), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return `${base64urlEncode(iv)}.${base64urlEncode(ciphertext)}.${base64urlEncode(tag)}`;
+}
+
+function verifyTrackingSelectionReference(reference, secret, options = {}) {
+  const key = trackingSelectionKey(secret);
+  const parts = String(reference || "").trim().split(".");
+  if (!key || parts.length !== 3 || parts.some((part) => !part)) return null;
+  let payload;
+  try {
+    const iv = base64urlDecode(parts[0]);
+    const ciphertext = base64urlDecode(parts[1]);
+    const tag = base64urlDecode(parts[2]);
+    if (iv.length !== 12 || !ciphertext.length || tag.length !== 16) return null;
+    const decipher = crypto.createDecipheriv("aes-256-gcm", key, iv);
+    decipher.setAAD(Buffer.from(TRACKING_SELECTION_PURPOSE));
+    decipher.setAuthTag(tag);
+    payload = JSON.parse(Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf8"));
+  } catch (_) {
+    return null;
+  }
+  const now = Math.floor(Number(options.now == null ? Date.now() : options.now) / 1000);
+  const jobId = Number(payload && payload.job_id);
+  const issuedAt = Number(payload && payload.iat);
+  const expiresAt = Number(payload && payload.exp);
+  if (!payload
+    || payload.v !== 1
+    || payload.purpose !== TRACKING_SELECTION_PURPOSE
+    || !Number.isSafeInteger(jobId)
+    || jobId <= 0
+    || !Number.isSafeInteger(issuedAt)
+    || !Number.isSafeInteger(expiresAt)
+    || issuedAt > now + 30
+    || expiresAt <= now
+    || expiresAt <= issuedAt
+    || expiresAt - issuedAt > TRACKING_SELECTION_MAX_AGE_SEC) return null;
+  return { job_id: jobId, expires_at: expiresAt };
+}
+
+function safeTrackingResult(row, selectionReference) {
+  const source = row && typeof row === "object" ? row : {};
+  const hasLocation = Boolean(String(source.address_text || "").trim());
+  return {
+    booking_code: source.booking_code || null,
+    appointment_datetime: source.appointment_datetime || null,
+    service_summary: source.job_type || null,
+    job_status: source.job_status || null,
+    location_summary: source.job_zone || (hasLocation ? "สถานที่จากงานเดิม" : null),
+    selection_ref: String(selectionReference || ""),
+  };
+}
+
+function normalizeTrackingPhone(value) {
+  const digits = String(value || "").replace(/\D/g, "");
+  let local = "";
+  if (/^0[0-9]{8,9}$/.test(digits)) local = digits;
+  else if (/^66[1-9][0-9]{7,8}$/.test(digits)) local = `0${digits.slice(2)}`;
+  else if (/^0066[1-9][0-9]{7,8}$/.test(digits)) local = `0${digits.slice(4)}`;
+  if (!/^0[0-9]{8,9}$/.test(local)) return null;
+  const international = `66${local.slice(1)}`;
+  return { phone_norm: local, match_digits: [local, international, `00${international}`] };
+}
+
+function buildSafeTrackingLookupResponse(rows, lookupType, secret, options = {}) {
+  const type = lookupType === "phone" ? "phone" : "booking_code";
+  const jobs = (Array.isArray(rows) ? rows : []).map((row) => safeTrackingResult(
+    row,
+    createTrackingSelectionReference(row && row.job_id, secret, options),
+  )).filter((job) => job.selection_ref);
+  return { lookup_type: type, jobs };
 }
 
 // Privileged/token action access only when the query equals booking_token.
@@ -278,6 +387,20 @@ function redactPublicTrackPayload(payload) {
   };
 }
 
+function selectionPublicTrackPayload(payload, selectionReference, canSubmitReview = false) {
+  const projected = redactPublicTrackPayload(payload);
+  return {
+    ...projected,
+    access_level: "selection",
+    capabilities: {
+      ...projected.capabilities,
+      can_submit_review: canSubmitReview === true,
+    },
+    selection_ref: String(selectionReference || ""),
+    legacy_review_eligible: false,
+  };
+}
+
 // Fixed-window in-memory rate limiter with an LRU cap so the map can never
 // grow without bound. One instance per endpoint (budgets differ).
 function createPublicLookupRateLimiter(options = {}) {
@@ -333,12 +456,18 @@ function clientIpKey(req) {
 }
 
 module.exports = {
+  buildSafeTrackingLookupResponse,
   clientIpKey,
+  createTrackingSelectionReference,
   createPublicLookupRateLimiter,
   isFullAccessQuery,
   maskPhone,
+  normalizeTrackingPhone,
   redactPublicTrackPayload,
+  safeTrackingResult,
+  selectionPublicTrackPayload,
   shortenAddress,
   summarizeUnitChecklists,
   timingSafeEqualStr,
+  verifyTrackingSelectionReference,
 };

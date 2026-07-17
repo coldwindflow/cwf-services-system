@@ -3,7 +3,7 @@
 
   const App = window.CWFCustomerAppV2;
   const BOOT_TIMEOUT_MS = 3500;
-  const BUILD_ID = "20260717_customer_history_simple_link_v1";
+  const BUILD_ID = "20260718_tracking_phone_review_direct_v1";
 
   function withTimeout(promise, timeoutMs) {
     return Promise.race([

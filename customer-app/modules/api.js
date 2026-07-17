@@ -120,6 +120,22 @@
       return requestJson("/public/track", { query: { q }, cache: "no-store" });
     },
 
+    async lookupTracking(identifier) {
+      return requestJson("/public/track/lookup", {
+        method: "POST",
+        body: { identifier: String(identifier || "").trim() },
+        cache: "no-store",
+      });
+    },
+
+    async selectTracking(selectionRef) {
+      return requestJson("/public/track/select", {
+        method: "POST",
+        body: { selection_ref: String(selectionRef || "").trim() },
+        cache: "no-store",
+      });
+    },
+
     async loadUrgentStatus(q) {
       return requestJson("/public/urgent-status", { query: { q }, cache: "no-store" });
     },
