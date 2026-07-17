@@ -13,7 +13,7 @@ const history = require("../server/services/public/customerHistory");
 
 const REPO_ROOT = path.resolve(__dirname, "..");
 
-function makePool({ jobs = [], claims = [], hasClaims = true, hasCustomerSub = true, schemaDrift = false, phoneLast4Check = true, schemaReadyError = null, failInsert = false, uniqueConflictClaim = null } = {}) {
+function makePool({ jobs = [], claims = [], hasClaims = true, hasCustomerSub = true, schemaDrift = false, phoneLast4Check = true, methodDefinition = "CHECK ((claim_method = 'booking_code_phone'::text))", methodCheckCount = 1, schemaReadyError = null, failInsert = false, uniqueConflictClaim = null } = {}) {
   const state = {
     jobs: jobs.map((x) => ({ ...x })),
     claims: claims.map((x) => ({ ...x })),
@@ -22,6 +22,8 @@ function makePool({ jobs = [], claims = [], hasClaims = true, hasCustomerSub = t
     hasCustomerSub,
     schemaDrift,
     phoneLast4Check,
+    methodDefinition,
+    methodCheckCount,
     schemaReadyError,
     failInsert,
     uniqueConflictClaim,
@@ -49,7 +51,8 @@ function makePool({ jobs = [], claims = [], hasClaims = true, hasCustomerSub = t
       return { rows: [{
         has_customer_fk: true,
         has_job_fk: true,
-        has_method_check: true,
+        method_check_definition: state.methodDefinition,
+        method_check_count: state.methodCheckCount,
         has_phone_norm_check: true,
         has_phone_last4_check: state.phoneLast4Check,
         has_active_phone_index: true,
@@ -193,6 +196,8 @@ test("schema readiness accepts quoted and unquoted right() deparse while phone_l
   const pool = makePool();
   const status = await history.schemaReady(pool);
   assert.equal(status.has_claims, true);
+  assert.equal(status.claim_method_capability, "legacy");
+  assert.equal(status.supports_simple_claim, false);
 
   const shapeQuery = pool.state.queries.find(({ sql }) => /AS has_phone_last4_check/.test(sql));
   assert.ok(shapeQuery, "schema readiness must query the phone_last4 constraint shape");
@@ -220,6 +225,26 @@ test("schema readiness accepts quoted and unquoted right() deparse while phone_l
   const driftedStatus = await history.schemaReady(makePool({ phoneLast4Check: false }));
   assert.equal(driftedStatus.has_claims, false);
   assert.equal(driftedStatus.diagnostic_code, "SCHEMA_DRIFT");
+});
+
+test("schema readiness reports widened claim methods without changing legacy claim behavior", async () => {
+  const widened = "CHECK ((claim_method = ANY (ARRAY['phone'::text, 'booking_code'::text, 'booking_code_phone'::text])))";
+  const status = await history.schemaReady(makePool({ methodDefinition: widened }));
+  assert.equal(status.has_claims, true);
+  assert.equal(status.claim_method_capability, "widened");
+  assert.equal(status.supports_simple_claim, true);
+  assert.equal(history.CLAIM_METHOD, "booking_code_phone");
+
+  for (const methodDefinition of [
+    "CHECK ((claim_method = ANY (ARRAY['phone'::text, 'booking_code_phone'::text])))",
+    "CHECK ((claim_method = ANY (ARRAY['phone'::text, 'booking_code'::text, 'booking_code_phone'::text, 'email'::text])))",
+  ]) {
+    const drifted = await history.schemaReady(makePool({ methodDefinition }));
+    assert.equal(drifted.has_claims, false);
+    assert.equal(drifted.diagnostic_code, "SCHEMA_DRIFT");
+  }
+  const duplicate = await history.schemaReady(makePool({ methodDefinition: widened, methodCheckCount: 2 }));
+  assert.equal(duplicate.has_claims, false);
 });
 
 test("unauthenticated claim returns 401", async () => {
@@ -321,6 +346,22 @@ test("claim succeeds, retries by same account are idempotent, and other accounts
     assert.equal(res.status, 400);
     assert.equal((await json(res)).error, "CLAIM_FAILED");
   });
+});
+
+test("current phone plus Booking Code claim remains compatible with widened schema", async () => {
+  const methodDefinition = "CHECK ((claim_method = ANY (ARRAY['phone'::text, 'booking_code'::text, 'booking_code_phone'::text])))";
+  const pool = makePool({ jobs: [LEGACY_JOB], methodDefinition });
+  await withServer({ pool }, async (base) => {
+    const response = await fetch(`${base}/public/customer-history/claim`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ phone: "0812345678", booking_code: "CWFABC123" }),
+    });
+    assert.equal(response.status, 200);
+    assert.equal((await json(response)).claimed, true);
+  });
+  assert.equal(pool.state.claims.length, 1);
+  assert.equal(pool.state.claims[0].claim_method, "booking_code_phone");
 });
 
 test("successful claim immediately authorizes history and location prefill data", async () => {
