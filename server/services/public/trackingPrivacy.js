@@ -186,6 +186,12 @@ function verifyTrackingSelectionReference(reference, secret, options = {}) {
   return { job_id: jobId, expires_at: expiresAt };
 }
 
+function selectionReviewLimiterKey(jobId) {
+  const id = Number(jobId);
+  if (!Number.isSafeInteger(id) || id <= 0) return "";
+  return crypto.createHash("sha256").update(`cwf:public-review:selection-job:${id}`).digest("hex");
+}
+
 function safeTrackingResult(row, selectionReference) {
   const source = row && typeof row === "object" ? row : {};
   const hasLocation = Boolean(String(source.address_text || "").trim());
@@ -465,6 +471,7 @@ module.exports = {
   normalizeTrackingPhone,
   redactPublicTrackPayload,
   safeTrackingResult,
+  selectionReviewLimiterKey,
   selectionPublicTrackPayload,
   shortenAddress,
   summarizeUnitChecklists,

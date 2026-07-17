@@ -26554,9 +26554,14 @@ if (FLAG_SHOW_TECH_TEAM_ON_TRACKING && canShowPublicTechnician) {
     // human-readable booking_code = masked PII only (it leaks too easily to
     // act as a full credential) — see server/services/public/trackingPrivacy.js.
     const fullAccess = !selection && trackingPrivacy.isFullAccessQuery(q, row);
+    // A selection capability has one absolute 15-minute lifetime. Returning the
+    // verified reference prevents select/refresh/post-review reload from rolling
+    // that deadline forward. A fresh capability is issued only by a fresh lookup.
     const issuedSelectionReference = fullAccess
       ? ""
-      : trackingPrivacy.createTrackingSelectionReference(row.job_id, getJwtSecret());
+      : selection
+        ? selectionReference
+        : trackingPrivacy.createTrackingSelectionReference(row.job_id, getJwtSecret());
     // Minimal, non-sensitive eligibility signal so a LEGACY customer (a job with
     // no booking_token) can still see the review form on a booking_code lookup
     // and submit code + full phone. It reveals only that a review is possible —
@@ -26752,9 +26757,12 @@ app.post("/public/review", async (req, res) => {
   if ((selectionReference && !selection) || (!token && !selection && !code)) {
     return res.status(400).json({ error: GENERIC_REVIEW_ERROR });
   }
-  // Per-identifier budget (defends one job's code against many-IP hammering).
-  const identifierValue = token || selectionReference || code;
-  const identifierKey = crypto.createHash("sha256").update(identifierValue).digest("hex");
+  // Per-identifier budget (defends one job's credential against many-IP
+  // hammering). Selection ciphertext is randomized, so bind its bucket to the
+  // already-verified job identity instead. Token/code behavior stays unchanged.
+  const identifierKey = selection
+    ? trackingPrivacy.selectionReviewLimiterKey(selection.job_id)
+    : crypto.createHash("sha256").update(token || code).digest("hex");
   if (!publicReviewKeyRateLimiter.check(identifierKey).allowed) {
     return res.status(429).json({ error: "ส่งรีวิวถี่เกินไป กรุณารอสักครู่", code: "RATE_LIMITED" });
   }

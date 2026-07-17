@@ -241,6 +241,51 @@ test("tracking selection references are job-bound, short-lived, and fail closed"
   assert.equal(trackingPrivacy.verifyTrackingSelectionReference("malformed", secret, { now: issuedAt }), null);
 });
 
+test("tracking selection references keep one absolute expiry across select and refresh", () => {
+  const secret = "absolute-expiry-test-secret";
+  const issuedAt = 1_720_000_000_000;
+  const reference = trackingPrivacy.createTrackingSelectionReference(42, secret, { now: issuedAt });
+  const initial = trackingPrivacy.verifyTrackingSelectionReference(reference, secret, { now: issuedAt });
+  assert.ok(initial.expires_at <= Math.floor(issuedAt / 1000) + (15 * 60));
+
+  // /public/track/select and subsequent refreshes return this same reference.
+  const afterSelect = trackingPrivacy.verifyTrackingSelectionReference(reference, secret, { now: issuedAt + 5 * 60_000 });
+  const afterRefresh = trackingPrivacy.verifyTrackingSelectionReference(reference, secret, { now: issuedAt + 14 * 60_000 });
+  assert.equal(afterSelect.expires_at, initial.expires_at);
+  assert.equal(afterRefresh.expires_at, initial.expires_at);
+  assert.equal(trackingPrivacy.verifyTrackingSelectionReference(reference, secret, { now: issuedAt + 15 * 60_000 }), null);
+
+  const modified = `${reference.slice(0, -1)}${reference.endsWith("A") ? "B" : "A"}`;
+  assert.equal(trackingPrivacy.verifyTrackingSelectionReference(modified, secret, { now: issuedAt }), null);
+});
+
+test("selection review limiter is stable per verified job and distinct across jobs", () => {
+  const secret = "stable-review-limiter-test-secret";
+  const now = 1_720_000_000_000;
+  const first = trackingPrivacy.verifyTrackingSelectionReference(
+    trackingPrivacy.createTrackingSelectionReference(42, secret, { now }), secret, { now },
+  );
+  const second = trackingPrivacy.verifyTrackingSelectionReference(
+    trackingPrivacy.createTrackingSelectionReference(42, secret, { now: now + 1_000 }), secret, { now: now + 1_000 },
+  );
+  const other = trackingPrivacy.verifyTrackingSelectionReference(
+    trackingPrivacy.createTrackingSelectionReference(43, secret, { now }), secret, { now },
+  );
+  const firstKey = trackingPrivacy.selectionReviewLimiterKey(first.job_id);
+  const secondKey = trackingPrivacy.selectionReviewLimiterKey(second.job_id);
+  const otherKey = trackingPrivacy.selectionReviewLimiterKey(other.job_id);
+  assert.match(firstKey, /^[a-f0-9]{64}$/);
+  assert.equal(secondKey, firstKey);
+  assert.notEqual(otherKey, firstKey);
+  assert.equal(trackingPrivacy.selectionReviewLimiterKey(null), "");
+
+  // A fresh lookup/reference for the same job cannot reset the shared budget.
+  const limiter = trackingPrivacy.createPublicLookupRateLimiter({ windowMs: 60_000, max: 1 });
+  assert.equal(limiter.check(firstKey).allowed, true);
+  assert.equal(limiter.check(secondKey).allowed, false);
+  assert.equal(limiter.check(otherKey).allowed, true);
+});
+
 test("phone lookup list projection exposes only safe fields plus the opaque selection reference", () => {
   const projected = trackingPrivacy.safeTrackingResult({
     job_id: 99,
@@ -379,6 +424,7 @@ test("/public/track is rate-limited and issues a signed selection projection for
   assert.match(indexSrc, /trackingPrivacy\.selectionPublicTrackPayload\(/);
   assert.match(indexSrc, /app\.post\("\/public\/track\/lookup"/);
   assert.match(indexSrc, /app\.post\("\/public\/track\/select", publicTrackHandler\)/);
+  assert.match(indexSrc, /selection\s*\? selectionReference\s*:\s*trackingPrivacy\.createTrackingSelectionReference/);
   assert.match(indexSrc, /trackingPrivacy\.summarizeUnitChecklists\(checksByUnit\.get\(String\(unit\.unit_id\)\) \|\| \[\]\)/);
 });
 
@@ -398,6 +444,9 @@ test("technician review accepts only verified token/selection credentials and re
   const route = indexSrc.match(/app\.post\("\/public\/review"[\s\S]*?\n}\);/);
   assert.ok(route, "public review route not found");
   assert.match(route[0], /verifyTrackingSelectionReference\(selectionReference, getJwtSecret\(\)\)/);
+  assert.match(route[0], /trackingPrivacy\.selectionReviewLimiterKey\(selection\.job_id\)/);
+  assert.match(route[0], /createHash\("sha256"\)\.update\(token \|\| code\)/);
+  assert.doesNotMatch(route[0], /update\(token \|\| selectionReference \|\| code\)/);
   assert.match(route[0], /FROM public\.jobs WHERE job_id=\$1 LIMIT 1 FOR UPDATE/);
   assert.match(route[0], /if \(job\.canceled_at\) deny\(\)/);
   assert.match(route[0], /if \(job\.customer_rating\) deny\(\)/);
@@ -405,6 +454,7 @@ test("technician review accepts only verified token/selection credentials and re
   assert.match(route[0], /ON CONFLICT \(job_id\) DO NOTHING/);
   assert.match(route[0], /console\.error\("\[public\/review\] failed", \{ code: String\(e\?\.code \|\| "REVIEW_FAILED"\) \}\)/);
   assert.doesNotMatch(route[0], /console\.(?:log|warn|error)\([^\n]*identifierValue/);
+  assert.doesNotMatch(route[0], /console\.(?:log|warn|error)\([^\n]*(?:selectionReference|token|booking_code|selection\.job_id|job\.job_id)/);
 });
 
 test("/public/urgent-status is rate-limited", () => {
