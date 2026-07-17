@@ -38,6 +38,16 @@ function methodRow(shape) {
   };
 }
 
+function shapedColumnNames(expected, shape) {
+  if (shape === "array-text") return `{${expected.join(",")}}`;
+  if (shape === "wrong-array-text") return "{other_id}";
+  if (shape === "multi-array-text") return `{${expected.join(",")},other_id}`;
+  if (shape === "reordered") return ["other_id", ...expected];
+  if (shape === "malformed") return "{claim_id";
+  if (shape === "null") return null;
+  return [...expected];
+}
+
 function expectedPrimaryKeys(shape) {
   if (shape === "missing") return [];
   return [{
@@ -45,7 +55,7 @@ function expectedPrimaryKeys(shape) {
     index_name: shape === "wrong-index" ? "unexpected_pkey_index" : "customer_history_claims_pkey",
     indisprimary: true,
     indisunique: true,
-    column_names: [shape === "wrong-column" ? "proof_job_id" : "claim_id"],
+    column_names: shape === "wrong-column" ? ["proof_job_id"] : shapedColumnNames(["claim_id"], shape),
   }];
 }
 
@@ -54,6 +64,8 @@ function expectedForeignKeys(shape) {
     { conname: "customer_history_claims_customer_sub_fkey", foreign_schema: "public", foreign_table: "customer_profiles", delete_action: shape === "wrong-delete" ? "a" : "c", column_names: ["customer_sub"], foreign_column_names: ["sub"] },
     { conname: "customer_history_claims_proof_job_id_fkey", foreign_schema: "public", foreign_table: shape === "wrong-target" ? "customer_profiles" : "jobs", delete_action: "r", column_names: ["proof_job_id"], foreign_column_names: ["job_id"] },
   ];
+  if (shape?.startsWith("local-")) rows[0].column_names = shapedColumnNames(["customer_sub"], shape.slice(6));
+  if (shape?.startsWith("foreign-")) rows[0].foreign_column_names = shapedColumnNames(["sub"], shape.slice(8));
   if (shape === "duplicate") rows.push({ ...rows[0], conname: "duplicate_customer_sub_fkey" });
   return rows;
 }
@@ -70,6 +82,7 @@ function expectedIndexes(shape) {
   if (shape === "wrong-column") phone.column_names = ["customer_sub"];
   if (shape === "wrong-predicate") phone.predicate = null;
   if (shape === "wrong-pk-index") rows[0].column_names = ["proof_job_id"];
+  if (shape?.startsWith("columns-")) phone.column_names = shapedColumnNames(["phone_norm"], shape.slice(8));
   if (shape === "duplicate") rows.push({ ...phone, indexname: "duplicate_active_phone" });
   return rows;
 }
@@ -271,6 +284,19 @@ test("legacy constraint is READY_TO_APPLY and preflight is read-only", async () 
   assert.equal(client.queries.some((sql) => sql.includes("ALTER TABLE")), false);
 });
 
+test("PK, FK, and index inspection casts PostgreSQL name values to deterministic text arrays", async () => {
+  const client = new FakeClient();
+  const result = await runWith(client);
+  assert.equal(result.code, 0, "JavaScript text arrays from node-postgres must be accepted");
+  const primaryKeyQuery = client.queries.find((sql) => sql.includes("con.contype='p'"));
+  const foreignKeyQuery = client.queries.find((sql) => sql.includes("con.contype='f'"));
+  const indexQuery = client.queries.find((sql) => sql.includes("FROM pg_index ind"));
+  assert.match(primaryKeyQuery, /array_agg\(att\.attname::text ORDER BY keys\.ordinality\)/);
+  assert.match(foreignKeyQuery, /array_agg\(att\.attname::text ORDER BY cols\.ordinality\)/);
+  assert.match(foreignKeyQuery, /array_agg\(fatt\.attname::text ORDER BY cols\.ordinality\)/);
+  assert.match(indexQuery, /array_agg\(att\.attname::text ORDER BY keys\.ordinality\)/);
+});
+
 test("exact widened constraint is ALREADY_APPLIED without running migration SQL", async () => {
   const client = new FakeClient({ methodShape: "widened" });
   const result = await runWith(client);
@@ -315,6 +341,12 @@ test("missing, wrong-column, and inconsistent-index primary keys fail before ALT
   await expectPreflightBlocked(new FakeClient({ indexShape: "wrong-pk-index" }));
 });
 
+test("PK column inspection rejects array-text, wrong, extra/reordered, malformed, and null values", async () => {
+  for (const pkShape of ["array-text", "wrong-array-text", "multi-array-text", "reordered", "malformed", "null"]) {
+    await expectPreflightBlocked(new FakeClient({ pkShape }));
+  }
+});
+
 test("required CHECK constraints reject missing, duplicate, and conflicting shapes before ALTER", async () => {
   for (const checkShape of ["missing-not-blank", "duplicate-method", "conflicting-phone"]) {
     await expectPreflightBlocked(new FakeClient({ checkShape }));
@@ -327,9 +359,23 @@ test("critical FKs reject wrong delete action, target, and duplicates before ALT
   }
 });
 
+test("critical FK local and foreign column lists remain exact and fail closed", async () => {
+  for (const side of ["local", "foreign"]) {
+    for (const shape of ["array-text", "wrong-array-text", "multi-array-text", "reordered", "malformed", "null"]) {
+      await expectPreflightBlocked(new FakeClient({ fkShape: `${side}-${shape}` }));
+    }
+  }
+});
+
 test("critical indexes reject wrong uniqueness, column, predicate, and duplicates before ALTER", async () => {
   for (const indexShape of ["wrong-unique", "wrong-column", "wrong-predicate", "duplicate"]) {
     await expectPreflightBlocked(new FakeClient({ indexShape }));
+  }
+});
+
+test("critical index column lists reject array-text, wrong, extra/reordered, malformed, and null values", async () => {
+  for (const shape of ["array-text", "wrong-array-text", "multi-array-text", "reordered", "malformed", "null"]) {
+    await expectPreflightBlocked(new FakeClient({ indexShape: `columns-${shape}` }));
   }
 });
 
