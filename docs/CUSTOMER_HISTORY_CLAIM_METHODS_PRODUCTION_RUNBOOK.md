@@ -22,7 +22,7 @@ npm run migrate:customer-history-claim-methods:check
 | `READY_TO_APPLY` | 0 | Exact one-method legacy constraint and all other expected schema are present. Stop for owner apply approval. |
 | `ALREADY_APPLIED` | 0 | Exact approved three-method constraint is present. Do not apply again; continue to verification. |
 | `PREREQUISITE_MISSING` | 2 | `customer_history_claims` is missing. Stop. |
-| `SCHEMA_DRIFT` | 3 | Constraint name/shape, columns, default, FKs, checks, indexes, or migration checksum differ. Stop. |
+| `SCHEMA_DRIFT` | 3 | Exact columns/defaults, primary key, named CHECKs, FKs/delete actions, critical indexes, or migration checksum differ. Stop. |
 | `FAILED` | 1 | Connection, timeout, lock, or unexpected failure. Stop and investigate without exposing secrets. |
 
 Only these method capabilities are accepted:

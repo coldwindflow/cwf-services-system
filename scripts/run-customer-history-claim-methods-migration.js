@@ -77,6 +77,33 @@ function mapRows(rows, key) {
   return new Map((rows || []).map((row) => [String(row[key]), row]));
 }
 
+function compactSql(value) {
+  return clean(value).toLowerCase().replace(/\s+/g, "");
+}
+
+function columnDefaultMatches(name, value) {
+  const actual = compactSql(value);
+  if (name === "claim_id") {
+    return /^nextval\('(?:public\.)?customer_history_claims_claim_id_seq'::regclass\)$/.test(actual);
+  }
+  if (name === "claim_method") return actual === "'booking_code_phone'::text";
+  if (name === "claimed_at" || name === "last_verified_at") return actual === "now()";
+  return actual === "";
+}
+
+function compactCheck(value) {
+  return compactSql(value).replace(/"right"/g, "right").replace(/[()]/g, "");
+}
+
+function sameColumns(row, expected) {
+  return Array.isArray(row?.column_names) && row.column_names.length === expected.length
+    && row.column_names.every((name, index) => name === expected[index]);
+}
+
+function normalizedPredicate(value) {
+  return compactSql(value).replace(/[()]/g, "");
+}
+
 async function dataSnapshot(client) {
   const result = await client.query(`
     SELECT COUNT(*)::bigint AS row_count,
@@ -101,79 +128,148 @@ async function inspectSchema(client) {
      WHERE table_schema='public' AND table_name='customer_history_claims'
      ORDER BY column_name
   `);
-  const cols = mapRows(columns.rows, "column_name");
+  const columnRows = columns.rows || [];
+  const cols = mapRows(columnRows, "column_name");
   const expectedColumns = {
     claim_id: ["bigint", "NO"], customer_sub: ["text", "NO"], phone_norm: ["text", "NO"],
     phone_last4: ["text", "NO"], proof_job_id: ["bigint", "NO"], claim_method: ["text", "NO"],
     claimed_at: ["timestamp with time zone", "NO"], last_verified_at: ["timestamp with time zone", "NO"],
     revoked_at: ["timestamp with time zone", "YES"], revoke_reason: ["text", "YES"],
   };
+  if (columnRows.length !== 10 || cols.size !== 10) {
+    throw migrationError(STATUS.SCHEMA_DRIFT, "customer_history_claims column count drift");
+  }
   for (const [name, [type, nullable]] of Object.entries(expectedColumns)) {
     const row = cols.get(name);
-    if (!row || row.data_type !== type || row.is_nullable !== nullable) {
+    if (!row || row.data_type !== type || row.is_nullable !== nullable || !columnDefaultMatches(name, row.column_default)) {
       throw migrationError(STATUS.SCHEMA_DRIFT, `customer_history_claims column drift: ${name}`);
     }
   }
-  if (clean(cols.get("claim_method")?.column_default).replace(/\s+/g, "") !== "'booking_code_phone'::text") {
-    throw migrationError(STATUS.SCHEMA_DRIFT, "claim_method default drift");
+
+  const primaryKeys = await client.query(`
+    SELECT con.conname, idx.relname AS index_name, ind.indisprimary, ind.indisunique,
+           array_agg(att.attname ORDER BY keys.ordinality) AS column_names
+      FROM pg_constraint con
+      JOIN pg_class rel ON rel.oid=con.conrelid
+      JOIN pg_namespace nsp ON nsp.oid=rel.relnamespace
+      JOIN pg_class idx ON idx.oid=con.conindid
+      JOIN pg_index ind ON ind.indexrelid=con.conindid
+      JOIN unnest(con.conkey) WITH ORDINALITY AS keys(attnum, ordinality) ON TRUE
+      JOIN pg_attribute att ON att.attrelid=rel.oid AND att.attnum=keys.attnum
+     WHERE nsp.nspname='public' AND rel.relname='customer_history_claims' AND con.contype='p'
+     GROUP BY con.conname, idx.relname, ind.indisprimary, ind.indisunique
+  `);
+  const pkRows = primaryKeys.rows || [];
+  const primaryKey = pkRows[0];
+  if (pkRows.length !== 1 || primaryKey.conname !== "customer_history_claims_pkey"
+    || primaryKey.index_name !== "customer_history_claims_pkey"
+    || primaryKey.indisprimary !== true || primaryKey.indisunique !== true
+    || !sameColumns(primaryKey, ["claim_id"])) {
+    throw migrationError(STATUS.SCHEMA_DRIFT, "customer_history_claims primary key drift");
   }
 
   const fks = await client.query(`
-    SELECT con.conname, confrel.relname AS foreign_table,
+    SELECT con.conname, confnsp.nspname AS foreign_schema, confrel.relname AS foreign_table,
+           con.confdeltype AS delete_action,
            array_agg(att.attname ORDER BY cols.ordinality) AS column_names,
            array_agg(fatt.attname ORDER BY cols.ordinality) AS foreign_column_names
       FROM pg_constraint con
       JOIN pg_class rel ON rel.oid=con.conrelid
       JOIN pg_namespace nsp ON nsp.oid=rel.relnamespace
       JOIN pg_class confrel ON confrel.oid=con.confrelid
+      JOIN pg_namespace confnsp ON confnsp.oid=confrel.relnamespace
       JOIN unnest(con.conkey) WITH ORDINALITY AS cols(attnum, ordinality) ON TRUE
       JOIN unnest(con.confkey) WITH ORDINALITY AS fcols(attnum, ordinality) ON fcols.ordinality=cols.ordinality
       JOIN pg_attribute att ON att.attrelid=rel.oid AND att.attnum=cols.attnum
       JOIN pg_attribute fatt ON fatt.attrelid=confrel.oid AND fatt.attnum=fcols.attnum
      WHERE nsp.nspname='public' AND rel.relname='customer_history_claims' AND con.contype='f'
-     GROUP BY con.conname, confrel.relname
+     GROUP BY con.conname, confnsp.nspname, confrel.relname, con.confdeltype
   `);
-  const hasCustomerFk = (fks.rows || []).some((row) => row.foreign_table === "customer_profiles"
-    && (row.column_names || []).join(",") === "customer_sub" && (row.foreign_column_names || []).join(",") === "sub");
-  const hasJobFk = (fks.rows || []).some((row) => row.foreign_table === "jobs"
-    && (row.column_names || []).join(",") === "proof_job_id" && (row.foreign_column_names || []).join(",") === "job_id");
-  if (!hasCustomerFk || !hasJobFk) throw migrationError(STATUS.SCHEMA_DRIFT, "customer_history_claims FK drift");
+  const fkRows = fks.rows || [];
+  const fkByName = mapRows(fkRows, "conname");
+  const expectedFks = {
+    customer_history_claims_customer_sub_fkey: { columns: ["customer_sub"], table: "customer_profiles", foreignColumns: ["sub"], deleteAction: "c" },
+    customer_history_claims_proof_job_id_fkey: { columns: ["proof_job_id"], table: "jobs", foreignColumns: ["job_id"], deleteAction: "r" },
+  };
+  if (fkRows.length !== 2 || fkByName.size !== 2) {
+    throw migrationError(STATUS.SCHEMA_DRIFT, "customer_history_claims FK count drift");
+  }
+  for (const [name, expected] of Object.entries(expectedFks)) {
+    const row = fkByName.get(name);
+    if (!row || row.foreign_schema !== "public" || row.foreign_table !== expected.table
+      || row.delete_action !== expected.deleteAction || !sameColumns(row, expected.columns)
+      || !Array.isArray(row.foreign_column_names)
+      || row.foreign_column_names.join(",") !== expected.foreignColumns.join(",")) {
+      throw migrationError(STATUS.SCHEMA_DRIFT, `customer_history_claims FK drift: ${name}`);
+    }
+  }
 
   const checks = await client.query(`
     SELECT conname, pg_get_constraintdef(oid) AS definition
       FROM pg_constraint
      WHERE conrelid='public.customer_history_claims'::regclass AND contype='c'
   `);
-  const methodChecks = (checks.rows || []).filter((row) => /claim_method/i.test(String(row.definition || "")));
-  if (methodChecks.length !== 1 || methodChecks[0].conname !== "customer_history_claims_method_check") {
-    throw migrationError(STATUS.SCHEMA_DRIFT, "claim_method CHECK name or count drift");
+  const checkRows = checks.rows || [];
+  const checksByName = mapRows(checkRows, "conname");
+  const requiredCheckNames = [
+    "customer_history_claims_method_check",
+    "customer_history_claims_phone_norm_not_blank",
+    "customer_history_claims_phone_norm_canonical_check",
+    "customer_history_claims_phone_last4_check",
+  ];
+  if (checkRows.length !== requiredCheckNames.length || checksByName.size !== requiredCheckNames.length
+    || requiredCheckNames.some((name) => !checksByName.has(name))) {
+    throw migrationError(STATUS.SCHEMA_DRIFT, "customer_history_claims CHECK name or count drift");
   }
-  const methodCapability = history.classifyClaimMethodConstraint(methodChecks[0].definition);
+  const methodCapability = history.classifyClaimMethodConstraint(checksByName.get("customer_history_claims_method_check").definition);
   if (!methodCapability) throw migrationError(STATUS.SCHEMA_DRIFT, "claim_method CHECK shape drift");
-  const checkText = (checks.rows || []).map((row) => `${row.conname} ${row.definition}`).join("\n");
-  if (!/phone_norm/.test(checkText) || !/\^0\[0-9\]\{8,9\}\$/.test(checkText)) {
-    throw migrationError(STATUS.SCHEMA_DRIFT, "canonical phone_norm CHECK missing");
+  if (compactCheck(checksByName.get("customer_history_claims_phone_norm_not_blank").definition)
+      !== "checklengthbtrimphone_norm>0") {
+    throw migrationError(STATUS.SCHEMA_DRIFT, "phone_norm not-blank CHECK shape drift");
   }
-  if (!/phone_last4/.test(checkText) || !/(?:right|"right")\(phone_norm,\s*4\)/i.test(checkText)) {
-    throw migrationError(STATUS.SCHEMA_DRIFT, "phone_last4 CHECK missing");
+  if (compactCheck(checksByName.get("customer_history_claims_phone_norm_canonical_check").definition)
+      !== "checkphone_norm~'^0[0-9]{8,9}$'::text") {
+    throw migrationError(STATUS.SCHEMA_DRIFT, "phone_norm canonical CHECK shape drift");
+  }
+  if (compactCheck(checksByName.get("customer_history_claims_phone_last4_check").definition)
+      !== "checkphone_last4~'^[0-9]{4}$'::textandphone_last4=rightphone_norm,4") {
+    throw migrationError(STATUS.SCHEMA_DRIFT, "phone_last4 CHECK shape drift");
   }
 
   const indexes = await client.query(`
-    SELECT indexname, indexdef FROM pg_indexes
-     WHERE schemaname='public' AND tablename='customer_history_claims'
+    SELECT idx.relname AS indexname, ind.indisunique AS is_unique, ind.indisprimary AS is_primary,
+           array_agg(att.attname ORDER BY keys.ordinality)
+             FILTER (WHERE keys.ordinality <= ind.indnkeyatts) AS column_names,
+           pg_get_expr(ind.indpred, ind.indrelid) AS predicate
+      FROM pg_index ind
+      JOIN pg_class rel ON rel.oid=ind.indrelid
+      JOIN pg_namespace nsp ON nsp.oid=rel.relnamespace
+      JOIN pg_class idx ON idx.oid=ind.indexrelid
+      JOIN unnest(ind.indkey) WITH ORDINALITY AS keys(attnum, ordinality) ON TRUE
+      LEFT JOIN pg_attribute att ON att.attrelid=rel.oid AND att.attnum=keys.attnum
+     WHERE nsp.nspname='public' AND rel.relname='customer_history_claims'
+     GROUP BY idx.relname, ind.indisunique, ind.indisprimary, ind.indpred, ind.indrelid
   `);
-  const indexDefs = mapRows(indexes.rows, "indexname");
-  const activePhone = indexDefs.get("ux_customer_history_claims_active_phone")?.indexdef || "";
-  const activeProof = indexDefs.get("ux_customer_history_claims_active_proof_job")?.indexdef || "";
-  const activeSub = indexDefs.get("idx_customer_history_claims_customer_sub")?.indexdef || "";
-  if (!/UNIQUE/i.test(activePhone) || !/phone_norm/.test(activePhone) || !/revoked_at IS NULL/i.test(activePhone)) {
-    throw migrationError(STATUS.SCHEMA_DRIFT, "active phone index drift");
+  const indexRows = indexes.rows || [];
+  const indexesByName = mapRows(indexRows, "indexname");
+  const expectedIndexes = {
+    customer_history_claims_pkey: { unique: true, primary: true, columns: ["claim_id"], predicate: "" },
+    ux_customer_history_claims_active_phone: { unique: true, primary: false, columns: ["phone_norm"], predicate: "revoked_atisnull" },
+    ux_customer_history_claims_active_proof_job: { unique: true, primary: false, columns: ["proof_job_id"], predicate: "revoked_atisnull" },
+    idx_customer_history_claims_customer_sub: { unique: false, primary: false, columns: ["customer_sub"], predicate: "revoked_atisnull" },
+  };
+  for (const [name, expected] of Object.entries(expectedIndexes)) {
+    const row = indexesByName.get(name);
+    if (!row || row.is_unique !== expected.unique || row.is_primary !== expected.primary
+      || !sameColumns(row, expected.columns) || normalizedPredicate(row.predicate) !== expected.predicate) {
+      throw migrationError(STATUS.SCHEMA_DRIFT, `customer_history_claims index drift: ${name}`);
+    }
   }
-  if (!/UNIQUE/i.test(activeProof) || !/proof_job_id/.test(activeProof) || !/revoked_at IS NULL/i.test(activeProof)) {
-    throw migrationError(STATUS.SCHEMA_DRIFT, "active proof index drift");
-  }
-  if (!/customer_sub/.test(activeSub) || !/revoked_at IS NULL/i.test(activeSub)) {
-    throw migrationError(STATUS.SCHEMA_DRIFT, "active customer index drift");
+  const criticalColumnKeys = new Set(Object.values(expectedIndexes).map((expected) => expected.columns.join(",")));
+  const conflictingIndexes = indexRows.filter((row) => !Object.prototype.hasOwnProperty.call(expectedIndexes, row.indexname)
+    && criticalColumnKeys.has(Array.isArray(row.column_names) ? row.column_names.join(",") : ""));
+  if (indexesByName.size !== indexRows.length || conflictingIndexes.length) {
+    throw migrationError(STATUS.SCHEMA_DRIFT, "customer_history_claims duplicate or conflicting index");
   }
 
   return { methodCapability, snapshot: await dataSnapshot(client) };
@@ -203,13 +299,15 @@ async function runMigration(options = {}) {
   const logger = options.logger || console;
   const repoRoot = options.repoRoot || path.resolve(__dirname, "..");
   const clientFactory = options.clientFactory || ((config) => new Client(config));
-  verifyChecksum(repoRoot);
+  const verifyMigration = options.verifyMigration || (() => verifyChecksum(repoRoot));
+  const migrationReader = options.migrationReader || (() => readMigrationSql(repoRoot));
   const shouldApply = applyIntent(argv, env);
   const client = clientFactory(createClientConfig(env));
   let originalError = null;
   try {
     await client.connect();
     const before = await preflight(client);
+    verifyMigration();
     if (before.status === STATUS.ALREADY_APPLIED) {
       logger.log(`${PREFIX}_STATUS=${STATUS.ALREADY_APPLIED}`);
       return { status: STATUS.ALREADY_APPLIED };
@@ -221,7 +319,7 @@ async function runMigration(options = {}) {
 
     logger.log(`${PREFIX}_APPLY_START`);
     try {
-      await client.query(readMigrationSql(repoRoot));
+      await client.query(migrationReader());
     } catch (error) {
       try { await client.query("ROLLBACK"); } catch (_) {}
       throw error;

@@ -38,6 +38,42 @@ function methodRow(shape) {
   };
 }
 
+function expectedPrimaryKeys(shape) {
+  if (shape === "missing") return [];
+  return [{
+    conname: "customer_history_claims_pkey",
+    index_name: shape === "wrong-index" ? "unexpected_pkey_index" : "customer_history_claims_pkey",
+    indisprimary: true,
+    indisunique: true,
+    column_names: [shape === "wrong-column" ? "proof_job_id" : "claim_id"],
+  }];
+}
+
+function expectedForeignKeys(shape) {
+  const rows = [
+    { conname: "customer_history_claims_customer_sub_fkey", foreign_schema: "public", foreign_table: "customer_profiles", delete_action: shape === "wrong-delete" ? "a" : "c", column_names: ["customer_sub"], foreign_column_names: ["sub"] },
+    { conname: "customer_history_claims_proof_job_id_fkey", foreign_schema: "public", foreign_table: shape === "wrong-target" ? "customer_profiles" : "jobs", delete_action: "r", column_names: ["proof_job_id"], foreign_column_names: ["job_id"] },
+  ];
+  if (shape === "duplicate") rows.push({ ...rows[0], conname: "duplicate_customer_sub_fkey" });
+  return rows;
+}
+
+function expectedIndexes(shape) {
+  const rows = [
+    { indexname: "customer_history_claims_pkey", is_unique: true, is_primary: true, column_names: ["claim_id"], predicate: null },
+    { indexname: "ux_customer_history_claims_active_phone", is_unique: true, is_primary: false, column_names: ["phone_norm"], predicate: "(revoked_at IS NULL)" },
+    { indexname: "ux_customer_history_claims_active_proof_job", is_unique: true, is_primary: false, column_names: ["proof_job_id"], predicate: "(revoked_at IS NULL)" },
+    { indexname: "idx_customer_history_claims_customer_sub", is_unique: false, is_primary: false, column_names: ["customer_sub"], predicate: "(revoked_at IS NULL)" },
+  ];
+  const phone = rows[1];
+  if (shape === "wrong-unique") phone.is_unique = false;
+  if (shape === "wrong-column") phone.column_names = ["customer_sub"];
+  if (shape === "wrong-predicate") phone.predicate = null;
+  if (shape === "wrong-pk-index") rows[0].column_names = ["proof_job_id"];
+  if (shape === "duplicate") rows.push({ ...phone, indexname: "duplicate_active_phone" });
+  return rows;
+}
+
 class FakeClient {
   constructor(options = {}) {
     this.options = options;
@@ -67,31 +103,34 @@ class FakeClient {
     }
     if (text.includes("information_schema.columns")) {
       const rows = expectedColumns();
-      if (this.options.schemaDrift === "default") rows.find((row) => row.column_name === "claim_method").column_default = null;
+      if (this.options.columnShape === "extra") rows.push({ column_name: "unexpected", data_type: "text", is_nullable: "YES", column_default: null });
+      if (this.options.columnShape === "missing") rows.splice(rows.findIndex((row) => row.column_name === "phone_norm"), 1);
+      if (this.options.columnShape === "type") rows.find((row) => row.column_name === "phone_norm").data_type = "character varying";
+      if (this.options.columnShape === "nullability") rows.find((row) => row.column_name === "phone_norm").is_nullable = "YES";
+      if (this.options.columnShape === "default") rows.find((row) => row.column_name === "phone_norm").column_default = "'unexpected'::text";
       return { rows };
     }
+    if (text.includes("con.contype='p'")) return { rows: expectedPrimaryKeys(this.options.pkShape) };
     if (text.includes("con.contype='f'")) {
-      return { rows: [
-        { conname: "fk_customer", foreign_table: "customer_profiles", column_names: ["customer_sub"], foreign_column_names: ["sub"] },
-        { conname: "fk_job", foreign_table: "jobs", column_names: ["proof_job_id"], foreign_column_names: ["job_id"] },
-      ] };
+      return { rows: expectedForeignKeys(this.options.fkShape) };
     }
     if (text.includes("pg_get_constraintdef(oid)")) {
       const shape = this.applied ? "widened" : (this.options.methodShape || "legacy");
       const method = methodRow(shape);
-      return { rows: [
+      const rows = [
         ...(method ? [method] : []),
+        { conname: "customer_history_claims_phone_norm_not_blank", definition: "CHECK ((length(btrim(phone_norm)) > 0))" },
         { conname: "customer_history_claims_phone_norm_canonical_check", definition: "CHECK ((phone_norm ~ '^0[0-9]{8,9}$'::text))" },
         { conname: "customer_history_claims_phone_last4_check", definition: "CHECK (((phone_last4 ~ '^[0-9]{4}$'::text) AND (phone_last4 = \"right\"(phone_norm, 4))))" },
-      ] };
+      ];
+      if (this.options.checkShape === "missing-not-blank") rows.splice(rows.findIndex((row) => row.conname === "customer_history_claims_phone_norm_not_blank"), 1);
+      if (this.options.checkShape === "duplicate-method" && method) rows.push({ ...method, conname: "duplicate_method_check" });
+      if (this.options.checkShape === "conflicting-phone") {
+        rows.find((row) => row.conname === "customer_history_claims_phone_norm_canonical_check").definition = "CHECK ((phone_norm ~ '^0[0-9]{7,9}$'::text))";
+      }
+      return { rows };
     }
-    if (text.includes("FROM pg_indexes")) {
-      return { rows: [
-        { indexname: "ux_customer_history_claims_active_phone", indexdef: "CREATE UNIQUE INDEX ux_customer_history_claims_active_phone ON public.customer_history_claims (phone_norm) WHERE revoked_at IS NULL" },
-        { indexname: "ux_customer_history_claims_active_proof_job", indexdef: "CREATE UNIQUE INDEX ux_customer_history_claims_active_proof_job ON public.customer_history_claims (proof_job_id) WHERE revoked_at IS NULL" },
-        { indexname: "idx_customer_history_claims_customer_sub", indexdef: "CREATE INDEX idx_customer_history_claims_customer_sub ON public.customer_history_claims (customer_sub) WHERE revoked_at IS NULL" },
-      ] };
-    }
+    if (text.includes("FROM pg_index ind")) return { rows: expectedIndexes(this.options.indexShape) };
     if (text.includes("row_fingerprint")) {
       return { rows: [{ row_count: String(this.options.rowCount || 2), row_fingerprint: this.options.fingerprint || "stable-fingerprint" }] };
     }
@@ -112,8 +151,24 @@ async function runWith(client, options = {}) {
     env: { DATABASE_URL: "postgres://user:password@db.example.test/cwf", ...options.env },
     logger,
     clientFactory: () => client,
+    verifyMigration: options.verifyMigration,
+    migrationReader: options.migrationReader,
   });
   return { code, logger };
+}
+
+async function expectPreflightBlocked(client, expectedCode = runner.EXIT_CODE.SCHEMA_DRIFT) {
+  let migrationRead = false;
+  const result = await runWith(client, {
+    argv: ["--apply"],
+    env: { [runner.CONFIRM_ENV]: runner.CONFIRM_VALUE },
+    verifyMigration() { migrationRead = true; },
+    migrationReader() { migrationRead = true; return runner.readMigrationSql(REPO_ROOT); },
+  });
+  assert.equal(result.code, expectedCode);
+  assert.equal(migrationRead, false, "schema drift must stop before reading migration SQL");
+  assert.equal(client.queries.some((sql) => /ALTER TABLE/i.test(sql)), false, "schema drift must not execute ALTER");
+  return result;
 }
 
 test("legacy constraint is READY_TO_APPLY and preflight is read-only", async () => {
@@ -144,16 +199,45 @@ test("a successful apply followed by a second apply does not alter schema twice"
 });
 
 test("missing claims table is PREREQUISITE_MISSING", async () => {
-  const result = await runWith(new FakeClient({ hasTable: false }));
-  assert.equal(result.code, runner.EXIT_CODE.PREREQUISITE_MISSING);
+  const result = await expectPreflightBlocked(new FakeClient({ hasTable: false }), runner.EXIT_CODE.PREREQUISITE_MISSING);
   assert.match(result.logger.lines.join("\n"), /STATUS=PREREQUISITE_MISSING/);
 });
 
 test("missing, renamed, unknown-extra, and incomplete method constraints fail closed", async () => {
   for (const methodShape of ["missing", "renamed", "unknown", "missing-approved"]) {
-    const result = await runWith(new FakeClient({ methodShape }));
-    assert.equal(result.code, runner.EXIT_CODE.SCHEMA_DRIFT, methodShape);
+    const result = await expectPreflightBlocked(new FakeClient({ methodShape }));
     assert.match(result.logger.lines.join("\n"), /STATUS=SCHEMA_DRIFT/);
+  }
+});
+
+test("extra, missing, type, nullability, and default column drift fail before ALTER", async () => {
+  for (const columnShape of ["extra", "missing", "type", "nullability", "default"]) {
+    await expectPreflightBlocked(new FakeClient({ columnShape }));
+  }
+});
+
+test("missing, wrong-column, and inconsistent-index primary keys fail before ALTER", async () => {
+  for (const pkShape of ["missing", "wrong-column", "wrong-index"]) {
+    await expectPreflightBlocked(new FakeClient({ pkShape }));
+  }
+  await expectPreflightBlocked(new FakeClient({ indexShape: "wrong-pk-index" }));
+});
+
+test("required CHECK constraints reject missing, duplicate, and conflicting shapes before ALTER", async () => {
+  for (const checkShape of ["missing-not-blank", "duplicate-method", "conflicting-phone"]) {
+    await expectPreflightBlocked(new FakeClient({ checkShape }));
+  }
+});
+
+test("critical FKs reject wrong delete action, target, and duplicates before ALTER", async () => {
+  for (const fkShape of ["wrong-delete", "wrong-target", "duplicate"]) {
+    await expectPreflightBlocked(new FakeClient({ fkShape }));
+  }
+});
+
+test("critical indexes reject wrong uniqueness, column, predicate, and duplicates before ALTER", async () => {
+  for (const indexShape of ["wrong-unique", "wrong-column", "wrong-predicate", "duplicate"]) {
+    await expectPreflightBlocked(new FakeClient({ indexShape }));
   }
 });
 
@@ -204,7 +288,7 @@ test("migration checksum rejects tampering and is stable across CRLF", async () 
   const client = new FakeClient();
   const result = await runWith(client, { repoRoot: tmp });
   assert.equal(result.code, runner.EXIT_CODE.SCHEMA_DRIFT);
-  assert.equal(client.connected, false);
+  assert.equal(client.connected, true);
 });
 
 test("package exposes explicit claim-method check and apply commands", () => {
