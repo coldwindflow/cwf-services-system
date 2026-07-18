@@ -7,11 +7,12 @@ const path = require("node:path");
 
 const REPO_ROOT = path.resolve(__dirname, "..");
 const indexSrc = fs.readFileSync(path.join(REPO_ROOT, "index.js"), "utf8");
+const bookingServiceSrc = fs.readFileSync(path.join(REPO_ROOT, "server", "services", "booking", "createBookingJob.js"), "utf8");
 const scheduledSrc = fs.readFileSync(path.join(REPO_ROOT, "customer-app", "modules", "bookingScheduled.js"), "utf8");
 const urgentSrc = fs.readFileSync(path.join(REPO_ROOT, "customer-app", "modules", "bookingUrgent.js"), "utf8");
 
 // The /public/book source (handler body only) for gate-ordering assertions.
-const bookHandler = indexSrc.slice(indexSrc.indexOf('app.post("/public/book"'));
+const bookHandler = bookingServiceSrc.slice(bookingServiceSrc.indexOf("async function handlePublicBook"));
 
 test("both kill switches exist and default to OFF (fail closed)", () => {
   assert.match(indexSrc, /const ENABLE_CUSTOMER_SCHEDULED_BOOKING = envBool\("ENABLE_CUSTOMER_SCHEDULED_BOOKING", false\);/);
@@ -19,14 +20,16 @@ test("both kill switches exist and default to OFF (fail closed)", () => {
 });
 
 test("the kill-switch gate keys off the canonical booking_mode, NOT the attacker-controlled client_app", () => {
-  const gate = bookHandler.match(/const canonicalBookingMode = String\(booking_mode[\s\S]*?SCHEDULED_BOOKING_DISABLED[\s\S]*?\n  \}/);
-  assert.ok(gate, "canonical kill-switch gate not found");
+  const gateStart = bookHandler.indexOf("const canonicalBookingMode");
+  const gateEnd = bookHandler.indexOf("// Every unauthenticated urgent request", gateStart);
+  const gate = bookHandler.slice(gateStart, gateEnd);
+  assert.ok(gateStart >= 0 && gateEnd > gateStart, "canonical kill-switch gate not found");
   // The whole gate block must not mention client_app — it is not a boundary.
-  assert.doesNotMatch(gate[0], /client_app|clientApp/);
-  assert.match(gate[0], /canonicalBookingMode === "urgent" && !ENABLE_CUSTOMER_URGENT_BOOKING/);
-  assert.match(gate[0], /canonicalBookingMode === "scheduled" && !ENABLE_CUSTOMER_SCHEDULED_BOOKING/);
-  assert.match(gate[0], /status\(503\)/);
-  assert.match(gate[0], /line_url: CWF_LINE_CONTACT_URL/);
+  assert.doesNotMatch(gate, /client_app|clientApp/);
+  assert.match(gate, /canonicalBookingMode === "urgent" && !ENABLE_CUSTOMER_URGENT_BOOKING/);
+  assert.match(gate, /canonicalBookingMode === "scheduled" && !ENABLE_CUSTOMER_SCHEDULED_BOOKING/);
+  assert.match(gate, /status\(503\)/);
+  assert.match(gate, /line_url: CWF_LINE_CONTACT_URL/);
 });
 
 test("an unknown booking mode is rejected outright (no fall-through)", () => {
@@ -86,19 +89,19 @@ test("scheduled idempotency is payload-bound and checked before the availability
 
 test("idempotency payload comparison covers every canonical material field", () => {
   // Scalars persisted on the jobs row.
-  assert.match(indexSrc, /function scheduledScalarsMatch\(jobRow, incoming\)/);
+  assert.match(bookingServiceSrc, /function scheduledScalarsMatch\(jobRow, incoming\)/);
   for (const field of ["customer_phone", "customer_name", "address_text", "maps_url", "job_zone", "job_type", "customer_note", "allow_time_proposal", "duration_min"]) {
-    assert.match(indexSrc, new RegExp(field), `scalar comparison must include ${field}`);
+    assert.match(bookingServiceSrc, new RegExp(field), `scalar comparison must include ${field}`);
   }
   // The service composition (AC type/variant/BTU/qty/price) is compared via the
   // canonical job_items signature, built with the SAME normalizer as a real booking.
-  assert.match(indexSrc, /function bookingLineSignature\(rows\)/);
-  assert.match(indexSrc, /loadStoredBookingLineSignature/);
-  assert.match(indexSrc, /buildIncomingBookingLineSignature/);
-  assert.match(indexSrc, /customerPricingHelpers\.buildCustomerServiceLineItemsFromPayload/);
+  assert.match(bookingServiceSrc, /function bookingLineSignature\(rows\)/);
+  assert.match(bookingServiceSrc, /loadStoredBookingLineSignature/);
+  assert.match(bookingServiceSrc, /buildIncomingBookingLineSignature/);
+  assert.match(bookingServiceSrc, /customerPricingHelpers\.buildCustomerServiceLineItemsFromPayload/);
   // The full match = scalars + line signature.
-  assert.match(indexSrc, /async function scheduledPayloadMatchesExisting\(db, jobRow, incoming\)/);
-  assert.match(indexSrc, /storedSig === incomingSig/);
+  assert.match(bookingServiceSrc, /async function scheduledPayloadMatchesExisting\(db, jobRow, incoming\)/);
+  assert.match(bookingServiceSrc, /storedSig === incomingSig/);
   // The pre-flight replay lookup still precedes the availability gate.
   const preflightIdx = bookHandler.indexOf("Payload-bound idempotency (checked BEFORE the availability gate)");
   const availabilityIdx = bookHandler.indexOf("customerAvailability.hasAvailableStart");

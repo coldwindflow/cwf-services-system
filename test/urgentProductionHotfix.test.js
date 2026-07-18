@@ -18,8 +18,9 @@ function section(source, start, end) {
 }
 
 test("customer urgent zero-target commits job/items into admin review without changing Admin Add contract", () => {
-  const index = read("index.js");
-  const handler = section(index, "async function handleAdminBookV2", "function getBangkokTodayYMD");
+  const service = read("server/services/booking/createBookingJob.js");
+  const statuses = read("server/services/booking/bookingStatuses.js");
+  const handler = section(service, "async function handleAdminBookV2", "async function handleInternalBookFromAi");
 
   assert.match(handler, /createdBySource === "customer"/);
   assert.match(handler, /req\.cwfBookSource === "customer"/);
@@ -28,7 +29,8 @@ test("customer urgent zero-target commits job/items into admin review without ch
 
   const noTargets = section(handler, "if (!available.length)", "for (const u of available)");
   assert.match(noTargets, /createdBySource === "customer" && bm === "urgent" && mode === "offer"/);
-  assert.match(noTargets, /SET job_status='ไม่พบช่างรับงาน'/);
+  assert.match(noTargets, /SET job_status='\$\{JOB_STATUS\.URGENT_NO_TECHNICIAN\}'/);
+  assert.match(statuses, /URGENT_NO_TECHNICIAN:\s*"ไม่พบช่างรับงาน"/);
   assert.match(noTargets, /dispatch_mode='offer'/);
   assert.match(noTargets, /throw err;/, "Admin Add zero-target path must still throw NO_URGENT_OFFER_TARGETS");
 
@@ -40,7 +42,8 @@ test("customer urgent zero-target commits job/items into admin review without ch
 
 test("public urgent route remains adapter-only and public urgent status is read-only", () => {
   const index = read("index.js");
-  const publicAdapter = section(index, "function handlePublicCustomerUrgentBook", "app.post(\"/public/book\"");
+  const service = read("server/services/booking/createBookingJob.js");
+  const publicAdapter = section(service, "function handlePublicCustomerUrgentBook", "async function handlePublicBook");
   assert.match(publicAdapter, /req\.cwfBookSource = "customer"/);
   assert.match(publicAdapter, /booking_mode: "urgent"/);
   assert.match(publicAdapter, /dispatch_mode: "offer"/);

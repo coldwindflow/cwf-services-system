@@ -675,7 +675,7 @@ test("urgent route is registered and renders distinct urgent screen", () => {
 test("customer urgent booking reuses existing offer flow without client fake appointment", () => {
   const urgent = read("customer-app/modules/bookingUrgent.js");
   const api = read("customer-app/modules/api.js");
-  const server = read("index.js");
+  const server = read("server/services/booking/createBookingJob.js");
 
   assert.doesNotMatch(urgent, /nextUrgentAppointmentIso/);
   assert.doesNotMatch(urgent, /appointment_datetime:\s*nextUrgentAppointmentIso/);

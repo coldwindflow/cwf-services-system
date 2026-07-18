@@ -8,6 +8,7 @@ const source = fs.readFileSync(path.join(root, "index.js"), "utf8").replace(/\r\
 const publicRoutes = fs.readFileSync(path.join(root, "server/routes/public/customerAvailability.js"), "utf8").replace(/\r\n/g, "\n");
 const adminRoutes = fs.readFileSync(path.join(root, "server/routes/admin/adminAvailability.js"), "utf8").replace(/\r\n/g, "\n");
 const availabilityEngine = fs.readFileSync(path.join(root, "server/services/booking/availabilityEngine.js"), "utf8").replace(/\r\n/g, "\n");
+const bookingService = fs.readFileSync(path.join(root, "server/services/booking/createBookingJob.js"), "utf8").replace(/\r\n/g, "\n");
 
 function section(start, end) {
   const from = source.indexOf(start);
@@ -28,7 +29,7 @@ function sectionIn(haystack, start, end) {
 const listTechnicians = section("async function listTechniciansByType", "function parseWeeklyOffDays");
 const availabilityRoute = sectionIn(publicRoutes, 'app.get("/public/availability_v2"', 'app.get("/public/availability_calendar_v2"');
 const publicSlotEngine = sectionIn(availabilityEngine, "async function computePublicCustomerSlots", "function addDaysYmd");
-const booking = section('app.post("/public/book"', 'app.get("/public/track"');
+const booking = sectionIn(bookingService, "async function handlePublicBook", "\n  return {\n    handleAdminBookV2");
 
 test("Admin-hidden or unset technicians cannot produce customer slots", () => {
   assert.match(listTechnicians, /p\.customer_slot_visible AS customer_slot_visible/);
@@ -96,7 +97,7 @@ test("Public availability response omits technician identity and counts", () => 
 });
 
 test("Client-supplied technician fields cannot influence public booking", () => {
-  const destructure = sectionIn(booking, "  const {\n    customer_name", "  } = req.body || {};");
+  const destructure = sectionIn(booking, "    const {\n      customer_name", "    } = req.body || {};");
   assert.doesNotMatch(destructure, /technician_username|technician_name|available_tech_ids|candidate|capacity|available_count/);
   assert.doesNotMatch(booking, /req\.body\.(technician_username|technician_name|available_tech_ids|candidate|capacity|available_count)/);
 });

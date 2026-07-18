@@ -184,14 +184,15 @@ test("Test 7: technician job API returns maps_url/gps/address", () => {
 
 test("Test 5/E: book_v2 + admin-edit strictly validate/resolve every coordinate source", () => {
   const src = read("index.js");
+  const bookingService = read("server/services/booking/createBookingJob.js");
   // strict helpers
   assert.match(src, /function strictLatLngPairOrNull\(latRaw, lngRaw\)/);
   assert.match(src, /if \(lat === 0 && lng === 0\) return null;/);
   // book_v2: explicit gps first, and EVERY derived pair (parsed + resolved) is
   // passed through the strict validator (Blocker 4).
-  assert.match(src, /const explicitAdminLL = strictLatLngPairOrNull\(body\.gps_latitude, body\.gps_longitude\)/);
-  assert.match(src, /derivedAdminLL = p \? strictLatLngPairOrNull\(p\.lat, p\.lng\) : null/);
-  assert.match(src, /derivedAdminLL = strictLatLngPairOrNull\(rr\.lat, rr\.lng\)/);
+  assert.match(bookingService, /const explicitAdminLL = strictLatLngPairOrNull\(body\.gps_latitude, body\.gps_longitude\)/);
+  assert.match(bookingService, /derivedAdminLL = p \? strictLatLngPairOrNull\(p\.lat, p\.lng\) : null/);
+  assert.match(bookingService, /derivedAdminLL = strictLatLngPairOrNull\(rr\.lat, rr\.lng\)/);
   // admin-edit: strict pair, 400 on partial/invalid, and force-CASE writes so it
   // can deliberately clear maps_url / gps / service_zone to NULL.
   assert.match(src, /editGpsPair = strictLatLngPairOrNull\(latRaw, lngRaw\)/);
