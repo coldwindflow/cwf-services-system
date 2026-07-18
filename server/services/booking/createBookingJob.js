@@ -944,6 +944,7 @@ function createBookingJobService(dependencies = {}) {
     }
 
     req.cwfBookSource = "customer";
+    req.cwfPublicUrgentPrepared = true;
     req.body = {
       ...incoming,
       appointment_datetime: urgentPublicAdapter.computeCustomerUrgentAppointmentIso(),
@@ -956,7 +957,7 @@ function createBookingJobService(dependencies = {}) {
       allow_time_proposal: true,
     };
 
-    return handleAdminBookV2(req, res);
+    return handlePublicBook(req, res);
   }
 
   // ✅ Fail-safe capability check: jobs.catalog_item_id / jobs.customer_sub are
@@ -1003,6 +1004,7 @@ function createBookingJobService(dependencies = {}) {
       repair_variant,
       services,
       scheduled_request_key,
+      urgent_request_key,
       catalog_item_id, // optional: links this booking to the Store catalog item it was booked for
     } = req.body || {};
 
@@ -1038,7 +1040,7 @@ function createBookingJobService(dependencies = {}) {
     // customer-safe adapter on the CANONICAL booking_mode ALONE — never client_app,
     // which the caller can drop/forge to skip the sanitiser and reach the raw
     // urgent engine with attacker-chosen technician/assign fields.
-    if (canonicalBookingMode === "urgent") {
+    if (canonicalBookingMode === "urgent" && req.cwfPublicUrgentPrepared !== true) {
       return handlePublicCustomerUrgentBook(req, res);
     }
 
@@ -1083,17 +1085,31 @@ function createBookingJobService(dependencies = {}) {
     const scheduledRequestKey = bm === "scheduled"
       ? String(scheduled_request_key || "").trim()
       : "";
+    const urgentRequestKey = bm === "urgent"
+      ? String(urgent_request_key || "").trim()
+      : "";
     const validScheduledRequestKey = /^[A-Za-z0-9_-]{16,128}$/.test(scheduledRequestKey);
+    const validUrgentRequestKey = /^[A-Za-z0-9_-]{16,128}$/.test(urgentRequestKey);
     if (bm === "scheduled" && !validScheduledRequestKey) {
+      return res.status(400).json({ error: "MISSING_REQUEST_KEY", code: "MISSING_REQUEST_KEY" });
+    }
+    if (bm === "urgent" && !validUrgentRequestKey) {
       return res.status(400).json({ error: "MISSING_REQUEST_KEY", code: "MISSING_REQUEST_KEY" });
     }
     const scheduledDeterministicToken = scheduledRequestKey
       ? deriveCustomerScheduledBookingToken(scheduledRequestKey)
       : null;
-    if (scheduledDeterministicToken) token = scheduledDeterministicToken;
+    const urgentDeterministicToken = urgentRequestKey
+      ? urgentPublicAdapter.deriveUrgentBookingToken(urgentRequestKey)
+      : null;
+    const bookingRequestKey = scheduledRequestKey || urgentRequestKey;
+    const deterministicToken = scheduledDeterministicToken || urgentDeterministicToken;
+    if (deterministicToken) token = deterministicToken;
     const allowAdminScheduleFallback = allow_admin_schedule_fallback === true || String(allow_admin_schedule_fallback || "").trim() === "true";
     const canUseAdminScheduleFallback = bm === "scheduled" && allowAdminScheduleFallback;
-    const urgentOfferEnabled = bm === "urgent" && ENABLE_URGENT_FLOW;
+    // Customer urgent jobs wait for admin approval. The existing offer flow is
+    // entered only by the authenticated approval route after commit.
+    const urgentOfferEnabled = false;
     const allowTimeProposal = allow_time_proposal === true
       ? true
       : allow_time_proposal === false || allow_time_proposal == null
@@ -1112,6 +1128,15 @@ function createBookingJobService(dependencies = {}) {
       admin_override_duration_min: 0, // ลูกค้าห้าม override
     };
     if (Array.isArray(services) && services.length) payloadV2.services = services;
+    if (bm === "urgent") {
+      const urgentServices = Array.isArray(payloadV2.services) && payloadV2.services.length
+        ? payloadV2.services
+        : [payloadV2];
+      const cleaningOnly = urgentServices.every((service) => /(?:ล้าง|wash|clean)/i.test(String(service?.job_type || "")));
+      if (!cleaningOnly) {
+        return res.status(400).json({ error: "URGENT_CLEANING_ONLY", code: "URGENT_CLEANING_ONLY" });
+      }
+    }
     // CWF Spec: conservative duration for schedule/collision
     const duration_min_v2 = computeDurationMinMulti(payloadV2, { source: "public_book", conservative: true });
     if (duration_min_v2 <= 0) return res.status(400).json({ error: "งานประเภทนี้ต้องให้แอดมินกำหนดเวลา (duration)" });
@@ -1163,12 +1188,12 @@ function createBookingJobService(dependencies = {}) {
     // now occupies the slot — so the replay lookup cannot sit behind the "slot
     // full" check. Reusing the key with a materially different payload is rejected
     // with 409 (no mutation, no old-job data leaked).
-    if (bm === "scheduled" && scheduledRequestKey && scheduledDeterministicToken) {
+    if (bookingRequestKey && deterministicToken) {
       const idem = await pool.connect();
       let prior = null;
       try {
         await idem.query("BEGIN");
-        await idem.query("SELECT pg_advisory_xact_lock(hashtext($1))", [scheduledRequestKey]);
+        await idem.query("SELECT pg_advisory_xact_lock(hashtext($1))", [bookingRequestKey]);
         const r = await idem.query(
           `SELECT job_id, booking_code, booking_token, dispatch_mode, duration_min, job_price,
                   appointment_datetime, customer_phone, customer_name, address_text, maps_url,
@@ -1176,10 +1201,10 @@ function createBookingJobService(dependencies = {}) {
              FROM public.jobs
             WHERE booking_token=$1
               AND job_source='customer'
-              AND COALESCE(booking_mode,'scheduled')='scheduled'
+              AND booking_mode=$2
               AND canceled_at IS NULL
             LIMIT 1`,
-          [scheduledDeterministicToken]
+          [deterministicToken, bm]
         );
         await idem.query("COMMIT");
         prior = r.rows[0] || null;
@@ -1208,7 +1233,7 @@ function createBookingJobService(dependencies = {}) {
           job_id: prior.job_id,
           booking_code: prior.booking_code,
           token: prior.booking_token,
-          booking_mode: "scheduled",
+          booking_mode: bm,
           dispatch_mode: prior.dispatch_mode || "normal",
           duration_min: Number(prior.duration_min || duration_min_v2 || 0),
           effective_block_min: effectiveBlockMin(Number(prior.duration_min || duration_min_v2 || 0)),
@@ -1255,8 +1280,8 @@ function createBookingJobService(dependencies = {}) {
     try {
       await client.query("BEGIN");
 
-      if (scheduledRequestKey && scheduledDeterministicToken) {
-        await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [scheduledRequestKey]);
+      if (bookingRequestKey && deterministicToken) {
+        await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [bookingRequestKey]);
         const existing = await client.query(
           `SELECT job_id, booking_code, booking_token, booking_mode, dispatch_mode,
                   duration_min, job_price, appointment_datetime, customer_phone, customer_name,
@@ -1264,10 +1289,10 @@ function createBookingJobService(dependencies = {}) {
              FROM public.jobs
             WHERE booking_token=$1
               AND job_source='customer'
-              AND COALESCE(booking_mode,'scheduled')='scheduled'
+              AND booking_mode=$2
               AND canceled_at IS NULL
             LIMIT 1`,
-          [scheduledDeterministicToken]
+          [deterministicToken, bm]
         );
         if (existing.rows[0]) {
           // Race safety net: a concurrent request with the same key committed first.
@@ -1292,7 +1317,7 @@ function createBookingJobService(dependencies = {}) {
             job_id: row.job_id,
             booking_code: row.booking_code,
             token: row.booking_token,
-            booking_mode: "scheduled",
+            booking_mode: bm,
             dispatch_mode: row.dispatch_mode || "normal",
             duration_min: Number(row.duration_min || duration_min_v2 || 0),
             effective_block_min: effectiveBlockMin(Number(row.duration_min || duration_min_v2 || 0)),
@@ -1411,9 +1436,7 @@ function createBookingJobService(dependencies = {}) {
         (customer_note || "").toString(),
         (maps_url || "").toString(),
         (job_zone || "").toString(),
-        bm === 'urgent'
-          ? (urgentOfferEnabled ? JOB_STATUS.ADMIN_URGENT_WAITING : JOB_STATUS.URGENT_NO_TECHNICIAN)
-          : JOB_STATUS.CUSTOMER_SCHEDULED_REVIEW,
+        JOB_STATUS.CUSTOMER_SCHEDULED_REVIEW,
         duration_min_v2,
         (bm === 'urgent' ? 'urgent' : 'scheduled'),
         dispatchMode,

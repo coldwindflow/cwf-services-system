@@ -1636,16 +1636,17 @@ async function loadAvailability() {
     } catch(e){}
 
     if (forced) qs.set('forced','1');
+    qs.set('aggregate','1');
 
     if (DEBUG_ENABLED) qs.set('debug','1');
     if (DEBUG_ENABLED) {
-      DBG.lastReq = maskPII({ endpoint: '/public/availability_v2', query: Object.fromEntries(qs.entries()) });
+      DBG.lastReq = maskPII({ endpoint: '/admin/availability_by_tech_v2', query: Object.fromEntries(qs.entries()) });
       DBG.conflict = null;
       DBG.intervals = null;
       DBG.lastRes = null;
       dbgRender();
     }
-    const r = await apiFetch(`/public/availability_v2?${qs.toString()}`);
+    const r = await apiFetch(`/admin/availability_by_tech_v2?${qs.toString()}`);
 
     if (DEBUG_ENABLED) {
       DBG.lastRes = r;

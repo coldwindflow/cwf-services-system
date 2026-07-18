@@ -291,7 +291,7 @@ function goToToday(){
 
 async function loadDayAvailability(date, tech_type){
   const duration_min = Math.max(15, Number(el('duration_min').value || state.durationMin || 30));
-  const data = await apiFetch(`/public/availability_v2?date=${encodeURIComponent(date)}&tech_type=${encodeURIComponent(tech_type)}&duration_min=${encodeURIComponent(duration_min)}&forced=1`);
+  const data = await apiFetch(`/admin/availability_by_tech_v2?date=${encodeURIComponent(date)}&tech_type=${encodeURIComponent(tech_type)}&duration_min=${encodeURIComponent(duration_min)}&forced=1&aggregate=1`);
   return {
     hasAny: (data.slots || []).some(s=>s.available),
     ranges: rangeFromSlots(data.slots || []),

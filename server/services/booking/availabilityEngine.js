@@ -544,16 +544,20 @@ async function reservePublicCustomerTechnician(deps, options) {
   if (typeof db.query === "function") {
     await db.query("SELECT pg_advisory_xact_lock(hashtext($1))", [lockKey]);
   }
-  const techs = await eligibleCustomerTechnicians(
+  let techs = await eligibleCustomerTechnicians(
     { ...deps, pool: db },
     { ...options, date, lock_calendar_rows: true }
   );
+  const preferredUsername = String(options.preferred_username || "").trim();
+  if (preferredUsername) {
+    techs = techs.filter((tech) => String(tech.username || "") === preferredUsername);
+  }
   const startMin = deps.toMin(start);
   const loadMap = await loadCustomerScheduledLoadMap(
     db,
     date,
     techs.map((tech) => tech.username),
-    { start_min: startMin }
+    { start_min: startMin, ignore_job_id: options.ignore_job_id || null }
   );
   const candidates = [];
   for (const tech of techs) {

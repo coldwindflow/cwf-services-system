@@ -236,7 +236,7 @@ test("scheduled customer booking has durable request-key idempotency before rese
   assert.match(bookingService, /function deriveCustomerScheduledBookingToken\(requestKey\)/);
   assert.match(bookingService, /scheduled_request_key/);
   assert.match(bookingService, /pg_advisory_xact_lock\(hashtext\(\$1\)\)/);
-  assert.match(bookingService, /WHERE booking_token=\$1[\s\S]*job_source='customer'[\s\S]*COALESCE\(booking_mode,'scheduled'\)='scheduled'/);
+  assert.match(bookingService, /WHERE booking_token=\$1[\s\S]*job_source='customer'[\s\S]*booking_mode=\$2/);
   assert.match(bookingService, /replayed:\s*true/);
   assert.match(bookingService, /validScheduledRequestKey/);
   assert.match(bookingService, /\^\[A-Za-z0-9_-\]\{16,128\}\$/);
@@ -308,7 +308,7 @@ test("admin review new-job notification uses first-load baseline and one sound p
 });
 
 test("admin/customer frontend cache versions are bumped for booking notification changes", () => {
-  assert.match(adminReviewHtml, /admin-review-v2\.js\?v=20260712_job_location_roundtrip_v1/);
+  assert.match(adminReviewHtml, /admin-review-v2\.js\?v=20260719_customer_booking_pr3_v1/);
   assert.doesNotMatch(adminReviewHtml, /admin-review-v2\.js\?v=20260707_customer_booking_notify_v2/);
   assert.match(adminReviewHtml, /admin-review-ai-intake\.js\?v=ai-booking-intake-customer-cards-v11-admin-alert-gate/);
   assert.doesNotMatch(adminReviewHtml, /admin-review-ai-intake\.js\?v=ai-booking-intake-customer-cards-v10/);

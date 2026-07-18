@@ -54,7 +54,7 @@ test("urgent routing keys off the canonical booking_mode, not client_app", () =>
   // Every public urgent request must reach the customer-safe adapter on mode
   // alone — an unauthenticated caller must not be able to drop/forge client_app
   // to skip the sanitiser and hit the raw urgent engine.
-  assert.match(bookHandler, /if \(canonicalBookingMode === "urgent"\) \{\s*\n\s*return handlePublicCustomerUrgentBook\(req, res\);/);
+  assert.match(bookHandler, /if \(canonicalBookingMode === "urgent" && req\.cwfPublicUrgentPrepared !== true\) \{\s*\n\s*return handlePublicCustomerUrgentBook\(req, res\);/);
   assert.doesNotMatch(bookHandler, /if \(isCustomerAppUrgentBook\(req\.body/);
 });
 
@@ -64,7 +64,7 @@ test("scheduled request-key/idempotency is required for ALL scheduled bookings, 
   assert.match(bookHandler, /if \(bm === "scheduled" && !validScheduledRequestKey\) \{/);
   assert.doesNotMatch(bookHandler, /clientApp === "customer_app_v2" && !validScheduledRequestKey/);
   // The idempotency replay itself keys only off the request key, not client_app.
-  assert.match(bookHandler, /if \(scheduledRequestKey && scheduledDeterministicToken\) \{/);
+  assert.match(bookHandler, /if \(bookingRequestKey && deterministicToken\) \{/);
 });
 
 test("scheduled availability + reservation no longer depend on client_app", () => {

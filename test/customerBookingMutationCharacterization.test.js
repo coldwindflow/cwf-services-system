@@ -7,7 +7,14 @@ const path = require("node:path");
 const { Pool } = require("pg");
 
 const { createBookingJobService } = require("../server/services/booking/createBookingJob");
-const { JOB_STATUS, ASSIGNMENT_STATUS, OFFER_STATUS } = require("../server/services/booking/bookingStatuses");
+const { createBookingApprovalService } = require("../server/services/booking/bookingApprovalService");
+const {
+  JOB_STATUS,
+  ASSIGNMENT_STATUS,
+  OFFER_STATUS,
+  pendingCustomerScheduledReservationSql,
+} = require("../server/services/booking/bookingStatuses");
+const { loadCustomerScheduledLoadMap } = require("../server/services/public/customerScheduledAssignment");
 const { registerPublicCustomerBookingRoutes } = require("../server/routes/public/customerBookings");
 const { registerAdminBookingRoutes } = require("../server/routes/admin/adminBookings");
 const urgentPublicAdapterBase = require("../server/services/urgentPublicAdapter");
@@ -172,7 +179,7 @@ test.before(async () => {
   }
 
   await pool.query(`
-    DROP TABLE IF EXISTS public.job_promotions, public.job_offers, public.job_assignments,
+    DROP TABLE IF EXISTS public.job_updates_v2, public.job_units, public.job_promotions, public.job_offers, public.job_assignments,
       public.job_team_members, public.job_items, public.catalog_items,
       public.technician_profiles, public.users, public.jobs CASCADE
   `);
@@ -206,6 +213,9 @@ test.before(async () => {
       canceled_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ DEFAULT NOW(),
       booking_code TEXT
+      ,approved_by_admin TEXT
+      ,approved_at TIMESTAMPTZ
+      ,cancel_reason TEXT
     )
   `);
   await pool.query(`
@@ -229,6 +239,8 @@ test.before(async () => {
   await pool.query(`CREATE TABLE public.job_assignments (job_id BIGINT, technician_username TEXT, status TEXT, UNIQUE(job_id, technician_username))`);
   await pool.query(`CREATE TABLE public.job_offers (offer_id BIGSERIAL PRIMARY KEY, job_id BIGINT, technician_username TEXT, status TEXT, expires_at TIMESTAMPTZ)`);
   await pool.query(`CREATE TABLE public.job_promotions (job_id BIGINT PRIMARY KEY, promo_id BIGINT, applied_discount NUMERIC)`);
+  await pool.query(`CREATE TABLE public.job_units (unit_id BIGSERIAL PRIMARY KEY, job_id BIGINT, unit_no INT, item_name TEXT, ac_type TEXT, wash_type TEXT, btu TEXT)`);
+  await pool.query(`CREATE TABLE public.job_updates_v2 (update_id BIGSERIAL PRIMARY KEY, job_id BIGINT, action TEXT, payload_json JSONB)`);
   await pool.query(`CREATE TABLE public.catalog_items (item_id BIGSERIAL PRIMARY KEY, item_name TEXT, base_price NUMERIC, is_active BOOLEAN, is_customer_visible BOOLEAN)`);
   await pool.query(`CREATE TABLE public.users (username TEXT PRIMARY KEY, role TEXT)`);
   await pool.query(`
@@ -248,7 +260,7 @@ test.before(async () => {
 test.after(async () => {
   if (!pool) return;
   await pool.query(`
-    DROP TABLE IF EXISTS public.job_promotions, public.job_offers, public.job_assignments,
+    DROP TABLE IF EXISTS public.job_updates_v2, public.job_units, public.job_promotions, public.job_offers, public.job_assignments,
       public.job_team_members, public.job_items, public.catalog_items,
       public.technician_profiles, public.users, public.jobs CASCADE
   `);
@@ -257,7 +269,7 @@ test.after(async () => {
 
 test.beforeEach(async () => {
   if (!pool) return;
-  await pool.query(`TRUNCATE public.job_promotions, public.job_offers, public.job_assignments,
+  await pool.query(`TRUNCATE public.job_updates_v2, public.job_units, public.job_promotions, public.job_offers, public.job_assignments,
     public.job_team_members, public.job_items, public.catalog_items,
     public.technician_profiles, public.users, public.jobs RESTART IDENTITY CASCADE`);
 });
@@ -357,7 +369,12 @@ async function seedTechnicians() {
 }
 
 dbTest("real PostgreSQL: public scheduled success preserves response, status, items, pricing, and assignment reservation", async () => {
-  const service = createBookingJobService(makeDependencies());
+  const sideEffects = [];
+  const service = createBookingJobService(makeDependencies({
+    refreshTechnicianIncomePreviewForJob: async (...args) => { sideEffects.push(["income", args]); return {}; },
+    notifyUrgentOffer: async (...args) => { sideEffects.push(["urgent", args]); },
+    notifyDirectJobAssigned: async (...args) => { sideEffects.push(["direct", args]); },
+  }));
   const result = await invoke(service.handlePublicBook, publicScheduledBody());
   assert.equal(result.statusCode, 200);
   assert.deepEqual(Object.keys(result.body), [
@@ -367,6 +384,8 @@ dbTest("real PostgreSQL: public scheduled success preserves response, status, it
   ]);
   assert.equal(result.body.booking_mode, "scheduled");
   assert.equal(result.body.base_total, 800);
+  assert.equal(Object.hasOwn(result.body, "technician_username"), false);
+  assert.equal(Object.hasOwn(result.body, "technician"), false);
 
   const job = (await pool.query(`SELECT * FROM public.jobs`)).rows[0];
   const items = (await pool.query(`SELECT item_name, qty::int, line_total::int FROM public.job_items ORDER BY item_name`)).rows;
@@ -374,6 +393,26 @@ dbTest("real PostgreSQL: public scheduled success preserves response, status, it
   assert.equal(job.technician_username, "tech-a");
   assert.equal(Number(job.job_price), 800);
   assert.deepEqual(items, [{ item_name: "ล้างแอร์", qty: 1, line_total: 800 }]);
+  assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_assignments`)).rows[0].count), 0);
+  assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_team_members`)).rows[0].count), 0);
+  assert.deepEqual(sideEffects, []);
+  const capacity = await loadCustomerScheduledLoadMap(pool, "2026-08-01", ["tech-a"]);
+  assert.equal(capacity.get("tech-a").jobs_count, 1);
+  const collisionOccupancy = await pool.query(
+    `SELECT COUNT(*)::int AS count FROM public.jobs j
+      WHERE j.technician_username=$1
+        AND j.appointment_datetime >= $2::timestamptz
+        AND j.appointment_datetime < $3::timestamptz
+        AND COALESCE(j.job_status,'') <> 'ยกเลิก'`,
+    ["tech-a", "2026-08-01T00:00:00+07:00", "2026-08-02T00:00:00+07:00"]
+  );
+  assert.equal(collisionOccupancy.rows[0].count, 1);
+  const reviewQueue = await pool.query(
+    `SELECT COUNT(*)::int AS count FROM public.jobs
+      WHERE job_source='customer' AND booking_mode='scheduled' AND job_status=$1 AND canceled_at IS NULL`,
+    [JOB_STATUS.CUSTOMER_SCHEDULED_REVIEW]
+  );
+  assert.equal(reviewQueue.rows[0].count, 1);
 });
 
 dbTest("real PostgreSQL: scheduled retry replays the same job without duplicate items", async () => {
@@ -399,11 +438,13 @@ dbTest("real PostgreSQL: scheduled rollback leaves no partial job or items", asy
   assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_items`)).rows[0].count), 0);
 });
 
-dbTest("real PostgreSQL: public urgent keeps immediate offers, response shape, and durable retry parity", async () => {
+dbTest("real PostgreSQL: public urgent waits for admin with zero offers, assignments, income, or notification", async () => {
   await seedTechnicians();
   const notifications = [];
+  const income = [];
   const service = createBookingJobService(makeDependencies({
     notifyUrgentOffer: async (payload) => { notifications.push(payload); },
+    refreshTechnicianIncomePreviewForJob: async (...args) => { income.push(args); return {}; },
   }));
   const body = publicUrgentBody();
   const first = await invoke(service.handlePublicBook, body);
@@ -411,13 +452,234 @@ dbTest("real PostgreSQL: public urgent keeps immediate offers, response shape, a
   assert.equal(first.statusCode, 200);
   assert.equal(first.body.booking_mode, "urgent");
   assert.equal(first.body.dispatch_mode, "offer");
-  assert.equal(first.body.offers_count, 1);
-  assert.equal(replay.body.duplicate, true);
+  assert.equal(first.body.offers_count, 0);
+  assert.equal(first.body.urgent_offer_enabled, false);
+  assert.equal(replay.body.replayed, true);
   assert.equal(replay.body.booking_code, first.body.booking_code);
   assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.jobs`)).rows[0].count), 1);
-  assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_offers`)).rows[0].count), 1);
-  assert.equal((await pool.query(`SELECT job_status FROM public.jobs`)).rows[0].job_status, JOB_STATUS.ADMIN_URGENT_WAITING);
-  assert.equal(notifications.length, 1);
+  assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_offers`)).rows[0].count), 0);
+  assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_assignments`)).rows[0].count), 0);
+  assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_team_members`)).rows[0].count), 0);
+  const urgentJob = (await pool.query(`SELECT job_status, technician_username FROM public.jobs`)).rows[0];
+  assert.equal(urgentJob.job_status, JOB_STATUS.CUSTOMER_SCHEDULED_REVIEW);
+  assert.equal(urgentJob.technician_username, null);
+  assert.equal(notifications.length, 0);
+  assert.equal(income.length, 0);
+});
+
+dbTest("real PostgreSQL: concurrent scheduled retry commits exactly one job and item set", async () => {
+  const service = createBookingJobService(makeDependencies());
+  const body = publicScheduledBody({ scheduled_request_key: "scheduled-pr3-concurrent-0001" });
+  const [one, two] = await Promise.all([
+    invoke(service.handlePublicBook, body),
+    invoke(service.handlePublicBook, body),
+  ]);
+  assert.equal(one.statusCode, 200);
+  assert.equal(two.statusCode, 200);
+  assert.equal(one.body.job_id, two.body.job_id);
+  assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.jobs`)).rows[0].count), 1);
+  assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_items`)).rows[0].count), 1);
+  assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_assignments`)).rows[0].count), 0);
+});
+
+dbTest("real PostgreSQL: public urgent non-cleaning rejects before any mutation", async () => {
+  const service = createBookingJobService(makeDependencies());
+  const result = await invoke(service.handlePublicBook, publicUrgentBody({ job_type: "ซ่อมแอร์" }));
+  assert.equal(result.statusCode, 400);
+  assert.equal(result.body.code, "URGENT_CLEANING_ONLY");
+  assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.jobs`)).rows[0].count), 0);
+  assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_items`)).rows[0].count), 0);
+});
+
+function makeApprovalService(events = {}, overrides = {}) {
+  return createBookingApprovalService({
+    pool,
+    availabilityEngine: {
+      reservePublicCustomerTechnician: async (_deps, options) => {
+        events.reserveOptions = (events.reserveOptions || []).concat([options]);
+        return { username: options.preferred_username || "tech-b" };
+      },
+    },
+    getAvailabilityDependencies: (db) => ({ db, pool: db }),
+    refreshTechnicianIncomePreviewForJob: async (...args) => {
+      events.income = (events.income || []).concat([args]);
+      return {};
+    },
+    notifyDirectJobAssigned: async (payload) => {
+      events.direct = (events.direct || []).concat([payload]);
+    },
+    notifyUrgentOffer: async (payload) => {
+      events.offers = (events.offers || []).concat([payload]);
+    },
+    isTechReady: async () => true,
+    checkTechCollision: async () => null,
+    logJobUpdate: async (jobId, payload, db) => {
+      events.audit = (events.audit || []).concat([payload]);
+      await db.query(
+        `INSERT INTO public.job_updates_v2 (job_id, action, payload_json) VALUES ($1,$2,$3::jsonb)`,
+        [jobId, payload.action, JSON.stringify(payload.payload || {})]
+      );
+    },
+    ...overrides,
+  });
+}
+
+async function invokeApproval(handler, jobId, body = {}) {
+  const req = { params: { job_id: String(jobId) }, body, auth: { username: "admin-test" } };
+  const res = responseHarness();
+  await handler(req, res);
+  return res;
+}
+
+dbTest("real PostgreSQL: scheduled approval creates one assignment after revalidation and replay has no duplicate side effect", async () => {
+  const booking = createBookingJobService(makeDependencies());
+  const created = await invoke(booking.handlePublicBook, publicScheduledBody());
+  const events = {};
+  const approval = makeApprovalService(events);
+  const first = await invokeApproval(approval.approve, created.body.job_id);
+  const replay = await invokeApproval(approval.approve, created.body.job_id);
+  assert.equal(first.statusCode, 200);
+  assert.equal(first.body.replayed, false);
+  assert.equal(replay.body.replayed, true);
+  assert.equal(events.reserveOptions.length, 1);
+  assert.equal(events.reserveOptions[0].preferred_username, "tech-a");
+  assert.equal(events.reserveOptions[0].ignore_job_id, created.body.job_id);
+  assert.equal(events.income.length, 1);
+  assert.equal(events.direct.length, 1);
+  assert.equal(events.audit.length, 1);
+  assert.equal(events.audit[0].action, "customer_booking_approved");
+  assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_assignments WHERE job_id=$1`, [created.body.job_id])).rows[0].count), 1);
+  const job = (await pool.query(`SELECT job_status FROM public.jobs WHERE job_id=$1`, [created.body.job_id])).rows[0];
+  assert.equal(job.job_status, JOB_STATUS.ADMIN_SCHEDULED_PENDING);
+});
+
+dbTest("real PostgreSQL: invalid reserved technician is safely reassigned in the same approval transaction", async () => {
+  const booking = createBookingJobService(makeDependencies());
+  const created = await invoke(booking.handlePublicBook, publicScheduledBody());
+  const calls = [];
+  const approval = makeApprovalService({}, {
+    availabilityEngine: {
+      reservePublicCustomerTechnician: async (_deps, options) => {
+        calls.push(options);
+        if (options.preferred_username) {
+          const error = new Error("CUSTOMER_SLOT_STALE");
+          error.status = 409;
+          throw error;
+        }
+        return { username: "tech-b" };
+      },
+    },
+  });
+  const result = await invokeApproval(approval.approve, created.body.job_id);
+  assert.equal(result.statusCode, 200);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].preferred_username, "tech-a");
+  assert.equal(calls[1].preferred_username, undefined);
+  const assignment = (await pool.query(`SELECT technician_username FROM public.job_assignments WHERE job_id=$1`, [created.body.job_id])).rows[0];
+  assert.equal(assignment.technician_username, "tech-b");
+});
+
+dbTest("real PostgreSQL: approval failure rolls back and leaves pending reservation intact", async () => {
+  const booking = createBookingJobService(makeDependencies());
+  const created = await invoke(booking.handlePublicBook, publicScheduledBody());
+  const approval = makeApprovalService({}, {
+    availabilityEngine: {
+      reservePublicCustomerTechnician: async () => {
+        const error = new Error("CUSTOMER_SLOT_STALE");
+        error.status = 409;
+        throw error;
+      },
+    },
+  });
+  const result = await invokeApproval(approval.approve, created.body.job_id);
+  assert.equal(result.statusCode, 409);
+  assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_assignments WHERE job_id=$1`, [created.body.job_id])).rows[0].count), 0);
+  const job = (await pool.query(`SELECT job_status, technician_username FROM public.jobs WHERE job_id=$1`, [created.body.job_id])).rows[0];
+  assert.equal(job.job_status, JOB_STATUS.CUSTOMER_SCHEDULED_REVIEW);
+  assert.equal(job.technician_username, "tech-a");
+});
+
+dbTest("real PostgreSQL: approval fails closed when pending reservation already has assignment state", async () => {
+  const booking = createBookingJobService(makeDependencies());
+  const created = await invoke(booking.handlePublicBook, publicScheduledBody());
+  await pool.query(
+    `INSERT INTO public.job_assignments (job_id, technician_username, status) VALUES ($1,'unexpected-tech','in_progress')`,
+    [created.body.job_id]
+  );
+  const events = {};
+  const approval = makeApprovalService(events);
+  const result = await invokeApproval(approval.approve, created.body.job_id);
+  assert.equal(result.statusCode, 409);
+  assert.equal(result.body.code, "PENDING_RESERVATION_STATE_DRIFT");
+  assert.equal((await pool.query(`SELECT job_status FROM public.jobs WHERE job_id=$1`, [created.body.job_id])).rows[0].job_status, JOB_STATUS.CUSTOMER_SCHEDULED_REVIEW);
+});
+
+dbTest("real PostgreSQL: urgent approval creates only an offer and notifies after commit", async () => {
+  await seedTechnicians();
+  const booking = createBookingJobService(makeDependencies());
+  const created = await invoke(booking.handlePublicBook, publicUrgentBody());
+  const events = {};
+  const approval = makeApprovalService(events, {
+    notifyUrgentOffer: async (payload) => {
+      const committed = await pool.query(`SELECT job_status FROM public.jobs WHERE job_id=$1`, [payload.job_id]);
+      assert.equal(committed.rows[0].job_status, JOB_STATUS.ADMIN_URGENT_WAITING);
+      events.offers = (events.offers || []).concat([payload]);
+    },
+  });
+  const first = await invokeApproval(approval.approve, created.body.job_id, { technician_username: "tech-a" });
+  const replay = await invokeApproval(approval.approve, created.body.job_id, { technician_username: "tech-a" });
+  assert.equal(first.statusCode, 200);
+  assert.equal(replay.body.replayed, true);
+  assert.equal(events.offers.length, 1);
+  assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_offers WHERE job_id=$1`, [created.body.job_id])).rows[0].count), 1);
+  assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_assignments WHERE job_id=$1`, [created.body.job_id])).rows[0].count), 0);
+  assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_team_members WHERE job_id=$1`, [created.body.job_id])).rows[0].count), 0);
+});
+
+dbTest("real PostgreSQL: reject clears hidden reservation and releases scheduled load", async () => {
+  const booking = createBookingJobService(makeDependencies());
+  const created = await invoke(booking.handlePublicBook, publicScheduledBody());
+  const before = await loadCustomerScheduledLoadMap(pool, "2026-08-01", ["tech-a"]);
+  assert.equal(before.get("tech-a").jobs_count, 1);
+  const events = {};
+  const approval = makeApprovalService(events);
+  const rejected = await invokeApproval(approval.reject, created.body.job_id, { reason: "not approved" });
+  assert.equal(rejected.statusCode, 200);
+  const after = await loadCustomerScheduledLoadMap(pool, "2026-08-01", ["tech-a"]);
+  assert.equal(after.get("tech-a").jobs_count, 0);
+  const row = (await pool.query(`SELECT technician_username, canceled_at, cancel_reason FROM public.jobs WHERE job_id=$1`, [created.body.job_id])).rows[0];
+  assert.equal(row.technician_username, null);
+  assert.ok(row.canceled_at);
+  assert.equal(row.cancel_reason, "not approved");
+  assert.equal(events.audit.length, 1);
+  assert.equal(events.audit[0].action, "customer_booking_rejected");
+  assert.equal(events.audit[0].payload.reserved_technician, "tech-a");
+  const audit = (await pool.query(`SELECT action, payload_json FROM public.job_updates_v2 WHERE job_id=$1`, [created.body.job_id])).rows[0];
+  assert.equal(audit.action, "customer_booking_rejected");
+  assert.equal(audit.payload_json.reserved_technician, "tech-a");
+});
+
+dbTest("real PostgreSQL: exact pending reservation is hidden until assignment approval", async () => {
+  const booking = createBookingJobService(makeDependencies());
+  const created = await invoke(booking.handlePublicBook, publicScheduledBody());
+  const hidden = await pool.query(
+    `SELECT job_id FROM public.jobs j
+      WHERE j.job_id=$1 AND j.technician_username=$2
+        AND NOT ${pendingCustomerScheduledReservationSql("j")}`,
+    [created.body.job_id, "tech-a"]
+  );
+  assert.equal(hidden.rows.length, 0);
+  const approval = makeApprovalService({});
+  await invokeApproval(approval.approve, created.body.job_id);
+  const visible = await pool.query(
+    `SELECT j.job_id FROM public.jobs j
+      WHERE j.job_id=$1 AND (
+        (j.technician_username=$2 AND NOT ${pendingCustomerScheduledReservationSql("j")})
+        OR EXISTS (SELECT 1 FROM public.job_assignments ja WHERE ja.job_id=j.job_id AND ja.technician_username=$2)
+      )`,
+    [created.body.job_id, "tech-a"]
+  );
+  assert.equal(visible.rows.length, 1);
 });
 
 dbTest("real PostgreSQL: Admin Auto, Single, Team, and Forced preserve assignments and status", async () => {

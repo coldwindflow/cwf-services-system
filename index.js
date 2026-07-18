@@ -42,6 +42,9 @@ const customerAvailability = require("./server/services/public/customerAvailabil
 const { registerPublicCustomerAvailabilityRoutes } = require("./server/routes/public/customerAvailability");
 const { registerAdminAvailabilityRoutes } = require("./server/routes/admin/adminAvailability");
 const { createBookingJobService } = require("./server/services/booking/createBookingJob");
+const { pendingCustomerScheduledReservationSql } = require("./server/services/booking/bookingStatuses");
+const { createBookingApprovalService } = require("./server/services/booking/bookingApprovalService");
+const { registerBookingApprovalRoutes } = require("./server/routes/admin/bookingApprovals");
 const { registerPublicCustomerBookingRoutes } = require("./server/routes/public/customerBookings");
 const { registerAdminBookingRoutes } = require("./server/routes/admin/adminBookings");
 const { createTechnicianJobMoneyHelpers } = require("./server/technicianJobMoneySummary");
@@ -1879,7 +1882,7 @@ async function assertTechBelongsToJob(clientOrPool, job_id, username) {
      AND ja.technician_username = $2
     WHERE j.job_id = $1
       AND (
-        j.technician_username = $2
+        (j.technician_username = $2 AND NOT ${pendingCustomerScheduledReservationSql("j")})
         OR j.technician_team = $2
         OR $2 = ANY(regexp_split_to_array(COALESCE(j.technician_team,''), '\\s*,\\s*'))
         OR tm.username IS NOT NULL
@@ -14231,6 +14234,22 @@ registerAdminBookingRoutes(app, {
   requireInternalApiKeyOnly,
 });
 
+const bookingApprovalService = createBookingApprovalService({
+  pool,
+  availabilityEngine: customerAvailability,
+  getAvailabilityDependencies: publicCustomerAvailabilityDeps,
+  refreshTechnicianIncomePreviewForJob: _refreshTechnicianIncomePreviewForJob,
+  notifyDirectJobAssigned: _notifyDirectJobAssigned,
+  notifyUrgentOffer: _notifyUrgentOffer,
+  isTechReady,
+  checkTechCollision,
+  logJobUpdate,
+});
+registerBookingApprovalRoutes(app, {
+  service: bookingApprovalService,
+  requireAdminSession,
+});
+
 app.get("/admin/jobs_v2", requireAdminSoft, async (req, res) => {
   try {
     const date_from = (req.query.date_from || "").toString().trim();
@@ -14528,7 +14547,7 @@ app.get("/admin/review_queue_v2", requireAdminSoft, async (req, res) => {
     const sqlWhere = where.length ? `WHERE ${where.join(' AND ')}` : '';
     const r = await pool.query(
       `
-      SELECT job_id, booking_code, customer_name, customer_phone, job_type,
+      SELECT job_id, booking_code, customer_name, customer_phone, job_type, job_source,
              appointment_datetime, job_status, duration_min, job_price,
              address_text, maps_url, job_zone,
              technician_username, dispatch_mode, booking_mode,
@@ -16342,7 +16361,7 @@ function _techVisibilityPredicateSql(aliasParam = '$1') {
       WHERE ja.job_id = j.job_id
         AND ja.technician_username = ANY(${aliasParam}::text[])
     )
-    OR j.technician_username = ANY(${aliasParam}::text[])
+    OR (j.technician_username = ANY(${aliasParam}::text[]) AND NOT ${pendingCustomerScheduledReservationSql("j")})
     OR EXISTS (
       SELECT 1 FROM public.job_team_members tm
       WHERE tm.job_id = j.job_id
@@ -17011,7 +17030,7 @@ app.put("/jobs/:job_id/status", async (req, res) => {
   try {
     const realId = await resolveJobIdAny(pool, job_id);
     if (!realId) return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
-    if (status === 'กำลังทำ') await assertJobActionableForTechnician(pool, realId);
+    await assertJobActionableForTechnician(pool, realId);
 
     // ✅ เมื่อเริ่มงานครั้งแรก ให้บันทึก started_at
     if (status === 'กำลังทำ') {
@@ -18996,7 +19015,7 @@ app.post("/jobs/:job_id/photos/meta", async (req, res) => {
     res.json({ success: true, photo_id: r.rows[0].photo_id });
   } catch (e) {
     console.error(e);
-    res.status(500).json({ error: "สร้าง metadata รูปไม่สำเร็จ" });
+    res.status(Number(e.status || 500)).json({ error: e.message || "สร้าง metadata รูปไม่สำเร็จ", code: e.code || undefined });
   }
 });
 
@@ -19113,7 +19132,7 @@ app.post("/jobs/:job_id/photos/:photo_id/upload", upload.single("photo"), async 
     });
   } catch (e) {
     console.error(e);
-    res.status(500).json({ error: "อัปโหลดรูปไม่สำเร็จ" });
+    res.status(Number(e.status || 500)).json({ error: e.message || "อัปโหลดรูปไม่สำเร็จ", code: e.code || undefined });
   }
 });
 
@@ -19143,6 +19162,7 @@ app.get("/jobs/:job_id/units", async (req, res) => {
   try {
     const realId = await resolveJobIdAny(pool, req.params.job_id);
     if (!realId) return res.status(400).json({ error: "ไม่พบงานนี้" });
+    await assertJobActionableForTechnician(pool, realId);
     // เปิดระบบแยกเครื่องแบบปลอดภัยเมื่อช่าง/แอดมินเข้าหน้านี้
     // เพื่อให้งานเก่าหรืองานที่สร้างก่อน migration เห็นการ์ดเครื่องทันที ไม่กลับไปลงรูปรวม
     const units = await getUnitsWithEvidence(realId, pool);
@@ -19152,7 +19172,7 @@ app.get("/jobs/:job_id/units", async (req, res) => {
     return res.json({ success: true, per_unit_evidence_enabled: units.length > 0, units });
   } catch (e) {
     console.error('GET /jobs/:job_id/units', e);
-    return res.status(500).json({ error: "โหลดข้อมูลเครื่องไม่สำเร็จ" });
+    return res.status(Number(e.status || 500)).json({ error: e.message || "โหลดข้อมูลเครื่องไม่สำเร็จ", code: e.code || undefined });
   }
 });
 
@@ -19162,6 +19182,7 @@ app.put("/jobs/:job_id/units/:unit_id/checklist", requireTechnicianSession, asyn
     if (!realId) return res.status(400).json({ error: "ไม่พบงานนี้" });
     const technician = await requireTechOwnsResolvedJob(req, res, realId, pool);
     if (!technician) return;
+    await assertJobActionableForTechnician(pool, realId);
     const unitId = Number(req.params.unit_id || 0);
     const type = String(req.body?.checklist_type || '').trim();
     if (!['pre','post'].includes(type)) return res.status(400).json({ error: "ประเภทเช็คลิสไม่ถูกต้อง" });
@@ -19178,7 +19199,7 @@ app.put("/jobs/:job_id/units/:unit_id/checklist", requireTechnicianSession, asyn
     return res.json({ success: true, message: "บันทึกเช็คลิสเครื่องนี้แล้ว" });
   } catch (e) {
     console.error('PUT /jobs/:job_id/units/:unit_id/checklist', e);
-    return res.status(500).json({ error: "บันทึกเช็คลิสเครื่องนี้ไม่สำเร็จ" });
+    return res.status(Number(e.status || 500)).json({ error: e.message || "บันทึกเช็คลิสเครื่องนี้ไม่สำเร็จ", code: e.code || undefined });
   }
 });
 
@@ -19706,22 +19727,12 @@ app.post("/jobs/:job_id/assignment-done", requireTechnicianSession, async (req, 
       return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
     }
 
-    // Ensure this tech is actually part of the job
-    const ok = await client.query(
-      `
-      SELECT 1
-      FROM public.jobs j
-      LEFT JOIN public.job_team_members tm ON tm.job_id=j.job_id AND tm.username=$2
-      LEFT JOIN public.job_assignments ja ON ja.job_id=j.job_id AND ja.technician_username=$2
-      WHERE j.job_id=$1 AND (j.technician_username=$2 OR j.technician_team=$2 OR tm.username IS NOT NULL OR ja.technician_username IS NOT NULL)
-      LIMIT 1
-      `,
-      [realId, technician_username]
-    );
-    if (!ok.rows.length) {
+    const ownsJob = await assertTechBelongsToJob(client, realId, technician_username);
+    if (!ownsJob) {
       await client.query("ROLLBACK");
       return res.status(400).json({ error: "ช่างคนนี้ไม่ได้อยู่ในทีมของงานนี้" });
     }
+    await assertJobActionableForTechnician(client, realId);
 
     // Upsert to done (idempotent)
     await client.query(
@@ -19750,7 +19761,7 @@ app.post("/jobs/:job_id/assignment-done", requireTechnicianSession, async (req, 
   } catch (e) {
     await client.query("ROLLBACK");
     console.error(e);
-    return res.status(500).json({ error: e.message || "บันทึกสถานะงานไม่สำเร็จ" });
+    return res.status(Number(e.status || 500)).json({ error: e.message || "บันทึกสถานะงานไม่สำเร็จ", code: e.code || undefined });
   } finally {
     client.release();
   }

@@ -43,7 +43,8 @@ async function loadCustomerScheduledLoadMap(db, date, usernames = [], options = 
   const names = (Array.isArray(usernames) ? usernames : []).map((u) => String(u || "").trim()).filter(Boolean);
   if (!names.length || !db || typeof db.query !== "function") return new Map();
   const startMin = Number(options.start_min);
-  const params = [names, date, CANCELLED_STATUSES];
+  const ignoreJobId = Number(options.ignore_job_id || 0);
+  const params = [names, date, CANCELLED_STATUSES, ignoreJobId > 0 ? ignoreJobId : null];
   const result = await db.query(
     `WITH assigned AS (
        SELECT DISTINCT COALESCE(ja.technician_username, j.technician_username) AS technician_username,
@@ -59,6 +60,7 @@ async function loadCustomerScheduledLoadMap(db, date, usernames = [], options = 
           AND j.appointment_datetime IS NOT NULL
           AND (j.appointment_datetime AT TIME ZONE 'Asia/Bangkok')::date=$2::date
           AND COALESCE(j.job_status,'') <> ALL($3::text[])
+          AND ($4::bigint IS NULL OR j.job_id <> $4::bigint)
      ),
      item_units AS (
        SELECT a.technician_username, a.job_id, COALESCE(SUM(NULLIF(ji.qty,0)),0)::int AS units
