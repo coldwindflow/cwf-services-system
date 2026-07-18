@@ -76,6 +76,10 @@ function routeContainer() {
   };
 }
 
+test("Customer App UI module has no startup debug logging", () => {
+  assert.doesNotMatch(UI_SOURCE, /\bconsole\.(?:debug|info|log)\s*\(/);
+});
+
 test("all Customer App routes render one semantic text-only page heading", () => {
   const { app } = loadUi({
     utils: {

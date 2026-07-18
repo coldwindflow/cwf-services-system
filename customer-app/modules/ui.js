@@ -6,7 +6,6 @@
   const FEATURED_ROTATION_INTERVAL_MS = 6000;
   const featuredRotatorControllers = new WeakMap();
   const routeHeadingObservers = new WeakMap();
-  console.info("[customer-ui] text-only route headings v1 loaded");
 
   function collectionState(name, emptyText, renderItems) {
     const bucket = root.state[name] || { status: "idle", items: [], error: "" };
