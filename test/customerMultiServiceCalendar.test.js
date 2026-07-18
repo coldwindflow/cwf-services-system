@@ -5,28 +5,29 @@ const path = require("node:path");
 
 const repoRoot = path.resolve(__dirname, "..");
 const source = fs.readFileSync(path.join(repoRoot, "index.js"), "utf8").replace(/\r\n/g, "\n");
+const publicRoutes = fs.readFileSync(path.join(repoRoot, "server/routes/public/customerAvailability.js"), "utf8").replace(/\r\n/g, "\n");
 const customerAvailability = require("../server/services/public/customerAvailability");
 
-function section(start, end) {
-  const from = source.indexOf(start);
+function sectionIn(haystack, start, end) {
+  const from = haystack.indexOf(start);
   assert.notEqual(from, -1, `missing section start: ${start}`);
-  const to = source.indexOf(end, from + start.length);
+  const to = haystack.indexOf(end, from + start.length);
   assert.notEqual(to, -1, `missing section end: ${end}`);
-  return source.slice(from, to);
+  return haystack.slice(from, to);
 }
 
 test("calendar route is public-safe and mounted through shared availability helper", () => {
-  const calendar = section('app.get("/public/availability_calendar_v2"', '// Admin: availability by technician');
-  assert.match(calendar, /customerAvailability\.computeCalendarSummary/);
+  const calendar = sectionIn(publicRoutes, 'app.get("/public/availability_calendar_v2"', 'app.get("/public/availability"');
+  assert.match(calendar, /engine\.computeCalendarSummary/);
   assert.doesNotMatch(calendar, /username|technician_name|technician_id|tech_count|available_count|capacity|matrix_json/);
   assert.match(calendar, /month/);
   assert.match(calendar, /duration_min/);
 });
 
 test("public availability and public booking share the customer availability helper", () => {
-  const availability = section('app.get("/public/availability_v2"', 'app.get("/public/availability_calendar_v2"');
-  const booking = section('app.post("/public/book"', 'app.get("/public/track"');
-  assert.match(availability, /customerAvailability\.computePublicCustomerSlots/);
+  const availability = sectionIn(publicRoutes, 'app.get("/public/availability_v2"', 'app.get("/public/availability_calendar_v2"');
+  const booking = sectionIn(source, 'app.post("/public/book"', 'app.get("/public/track"');
+  assert.match(availability, /engine\.computePublicCustomerSlots/);
   assert.match(booking, /customerAvailability\.hasAvailableStart/);
   assert.match(booking, /customerAvailability\.reservePublicCustomerTechnician/);
   assert.match(booking, /technician_username/);
@@ -34,7 +35,7 @@ test("public availability and public booking share the customer availability hel
 });
 
 test("public book validates and persists allow_time_proposal as a jobs column", () => {
-  const booking = section('app.post("/public/book"', 'app.get("/public/track"');
+  const booking = sectionIn(source, 'app.post("/public/book"', 'app.get("/public/track"');
   assert.match(booking, /allow_time_proposal/);
   assert.match(booking, /allowTimeProposal == null/);
   assert.match(booking, /"booking_mode", "allow_time_proposal"/);

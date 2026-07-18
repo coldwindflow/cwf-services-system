@@ -5,6 +5,9 @@ const test = require("node:test");
 
 const root = path.resolve(__dirname, "..");
 const source = fs.readFileSync(path.join(root, "index.js"), "utf8").replace(/\r\n/g, "\n");
+const publicRoutes = fs.readFileSync(path.join(root, "server/routes/public/customerAvailability.js"), "utf8").replace(/\r\n/g, "\n");
+const adminRoutes = fs.readFileSync(path.join(root, "server/routes/admin/adminAvailability.js"), "utf8").replace(/\r\n/g, "\n");
+const availabilityEngine = fs.readFileSync(path.join(root, "server/services/booking/availabilityEngine.js"), "utf8").replace(/\r\n/g, "\n");
 
 function section(start, end) {
   const from = source.indexOf(start);
@@ -23,13 +26,14 @@ function sectionIn(haystack, start, end) {
 }
 
 const listTechnicians = section("async function listTechniciansByType", "function parseWeeklyOffDays");
-const availability = section('app.get("/public/availability_v2"', "// Admin: availability by technician");
+const availabilityRoute = sectionIn(publicRoutes, 'app.get("/public/availability_v2"', 'app.get("/public/availability_calendar_v2"');
+const publicSlotEngine = sectionIn(availabilityEngine, "async function computePublicCustomerSlots", "function addDaysYmd");
 const booking = section('app.post("/public/book"', 'app.get("/public/track"');
 
 test("Admin-hidden or unset technicians cannot produce customer slots", () => {
   assert.match(listTechnicians, /p\.customer_slot_visible AS customer_slot_visible/);
   assert.doesNotMatch(listTechnicians, /COALESCE\(p\.customer_slot_visible,\s*TRUE\) AS customer_slot_visible/);
-  assert.match(availability, /t\.customer_slot_visible === true/);
+  assert.match(availabilityEngine, /tech\.customer_slot_visible === true/);
   // Booking enforces the SAME visibility by delegating to the shared
   // customerAvailability engine (reservePublicCustomerTechnician / hasAvailableStart
   // both filter on customer_slot_visible === true), not a duplicated inline filter.
@@ -39,7 +43,8 @@ test("Admin-hidden or unset technicians cannot produce customer slots", () => {
 test("Public availability never falls back to all technicians", () => {
   assert.match(listTechnicians, /allow_type_fallback/);
   assert.match(listTechnicians, /\(r\.rows \|\| \[\]\)\.length === 0 && allow_type_fallback/);
-  assert.match(availability, /listTechniciansByType\(tech_type,\s*\{ include_paused: true,\s*allow_type_fallback: forced \}\)/);
+  assert.match(availabilityRoute, /forced\s*\?[\s\S]*engine\.computeForcedAvailability/);
+  assert.match(availabilityEngine, /listTechniciansByType\(techType, \{ include_paused: true \}\)/);
   // Booking runs through the customer availability engine (no allow_type_fallback),
   // so it can never widen its candidate pool to all technicians.
   assert.doesNotMatch(booking, /allow_type_fallback/);
@@ -52,49 +57,42 @@ test("Public availability never falls back to all technicians", () => {
 // asserted against the availability handler here and against the engine directly
 // in customerEligibilityTechType.test.js.
 test("Visible technician with wrong job type produces no customer slot", () => {
-  assert.match(availability, /matrix\.job_types/);
+  assert.match(availabilityEngine, /matrix\.job_types/);
 });
 
 test("Visible technician with wrong AC type produces no customer slot", () => {
-  assert.match(availability, /matrix\.ac_types/);
+  assert.match(availabilityEngine, /matrix\.ac_types/);
 });
 
 test("Visible technician with wrong wall wash variant produces no customer slot", () => {
-  assert.match(availability, /matrix\.wash_wall_variants/);
+  assert.match(availabilityEngine, /matrix\.wash_wall_variants/);
 });
 
 test("Visible technician with wrong repair variant produces no customer slot", () => {
-  assert.match(availability, /normalizeRepairKey/);
-  assert.match(availability, /matrix\.repair_variants/);
+  assert.match(availabilityEngine, /normalizeRepairKey/);
+  assert.match(availabilityEngine, /matrix\.repair_variants/);
 });
 
 test("Missing Service Matrix fails closed", () => {
-  assert.match(availability, /if \(!matrixMap\.has\(u\)\) return false/);
+  assert.match(availabilityEngine, /if \(!matrixMap\.has\(username\)\) return false/);
 });
 
 test("Malformed Service Matrix fails closed", () => {
-  assert.match(availability, /if \(!matrix \|\| typeof matrix !== 'object'\) return false/);
+  assert.match(availabilityEngine, /if \(!matrix \|\| typeof matrix !== "object"\) return false/);
 });
 
 test("Eligible public availability slots are anonymous", () => {
-  assert.match(availability, /slots:\s*outSlots/);
-  assert.match(availability, /map\(s => \(\{ start: s\.start,\s*end: s\.end,\s*available: !!s\.available \}\)\)/);
-  assert.match(availability, /const isPublicCustomer = !forced/);
+  assert.match(availabilityRoute, /engine\.computePublicCustomerSlots/);
+  assert.match(publicSlotEngine, /slots\.push\(\{[\s\S]*start:[\s\S]*end:[\s\S]*available: true/);
+  assert.doesNotMatch(publicSlotEngine, /available_tech_ids|tech_count|available_count|capacity|crew_size|debug/);
 });
 
 test("Public availability response omits technician identity and counts", () => {
-  const publicReturn = sectionIn(availability, "if (isPublicCustomer) {\n        return res.json({", "      return res.json({");
-  const finalPublicReturn = sectionIn(availability, "if (isPublicCustomer) {\n      return res.json({", "    res.json({");
-  assert.doesNotMatch(publicReturn, /available_tech_ids|technician|tech_count|available_count|capacity|crew_size|debug/);
-  assert.doesNotMatch(finalPublicReturn, /available_tech_ids|technician|tech_count|available_count|capacity|crew_size|debug/);
-  assert.match(publicReturn, /date/);
-  assert.match(publicReturn, /duration_min/);
-  assert.match(publicReturn, /slot_step_min/);
-  assert.match(publicReturn, /slots/);
-  assert.match(finalPublicReturn, /date/);
-  assert.match(finalPublicReturn, /duration_min/);
-  assert.match(finalPublicReturn, /slot_step_min/);
-  assert.match(finalPublicReturn, /slots/);
+  assert.doesNotMatch(publicSlotEngine, /available_tech_ids|technician|tech_count|available_count|capacity|crew_size|debug/);
+  assert.match(publicSlotEngine, /return \{[\s\S]*date/);
+  assert.match(publicSlotEngine, /duration_min/);
+  assert.match(publicSlotEngine, /slot_step_min/);
+  assert.match(publicSlotEngine, /slots/);
 });
 
 test("Client-supplied technician fields cannot influence public booking", () => {
@@ -119,14 +117,14 @@ test("Availability and booking use the same eligibility boundary", () => {
   // Both surfaces resolve eligibility through the SAME customerAvailability engine
   // — availability via its slot query, booking via hasAvailableStart +
   // reservePublicCustomerTechnician — so they cannot diverge.
-  assert.match(availability, /normalizeRepairKey/);
-  assert.match(availability, /techMatchesAllCriteriaStrict/);
+  assert.match(availabilityEngine, /normalizeRepairKey/);
+  assert.match(availabilityEngine, /techMatchesAllCriteriaStrict/);
   assert.match(booking, /customerAvailability\.hasAvailableStart/);
   assert.match(booking, /customerAvailability\.reservePublicCustomerTechnician/);
 });
 
 test("Existing Admin availability fallback remains admin-only", () => {
-  const adminAvailability = section('app.get("/admin/availability_by_tech_v2"', 'app.get("/public/availability"');
-  assert.match(adminAvailability, /listTechniciansByType\(tech_type,\s*\{ include_paused,\s*allow_type_fallback: true \}\)/);
-  assert.match(availability, /allow_type_fallback: forced/);
+  assert.match(adminRoutes, /engine\.computeAdminAvailabilityByTech/);
+  assert.match(availabilityEngine, /allow_type_fallback: true/);
+  assert.match(availabilityRoute, /forced\s*\?[\s\S]*engine\.computeForcedAvailability/);
 });
