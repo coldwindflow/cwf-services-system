@@ -969,7 +969,7 @@ test("tracking UI exposes loading, not-found, rate-limit and offline states", ()
 });
 
 test("tracking assets share the full-read cache build id", () => {
-  const build = "20260718_tracking_phone_review_direct_v1";
+  const build = "20260718_remove_route_header_icons_v1";
   for (const file of [
     "customer-app/index.html",
     "customer-app/sw.js",

@@ -5,6 +5,8 @@
   let homeLoadPromise = null;
   const FEATURED_ROTATION_INTERVAL_MS = 6000;
   const featuredRotatorControllers = new WeakMap();
+  const routeHeadingObservers = new WeakMap();
+  console.info("[customer-ui] text-only route headings v1 loaded");
 
   function collectionState(name, emptyText, renderItems) {
     const bucket = root.state[name] || { status: "idle", items: [], error: "" };
@@ -1550,25 +1552,43 @@
   }
 
   function routeIconPage(route) {
-    if (route === "storeItem") return "store";
+    if (route === "storeItem" || /^storeItem-\d+$/.test(String(route || ""))) return "store";
     if (route === "scheduled" || route === "urgent") return "booking";
     return ["home", "store", "booking", "tracking", "profile"].includes(route) ? route : "home";
   }
 
-  function applyRouteIcons(container, route) {
-    if (!container) return;
+  function ensureRouteHeading(container, route) {
     const page = routeIconPage(route);
-    const screen = container.querySelector?.(".screen");
+    const screen = container.querySelector?.(".screen, .booking-wizard-page");
     if (screen && !screen.querySelector("[data-page-icon-heading]")) {
       const registry = window.CWFIconRegistry;
       const item = registry?.navigationItem?.(homepageConfig(), page) || { label: page };
       screen.insertAdjacentHTML("afterbegin", `
-        <div class="page-icon-heading" data-page-icon-heading="${root.utils.escapeHtml(page)}">
-          ${root.utils.iconSlot(`page.${page}.header`, 26)}
-          <span>${root.utils.escapeHtml(item.label)}</span>
-        </div>
+        <header class="route-page-heading" data-page-icon-heading="${root.utils.escapeHtml(page)}">
+          <h2 class="route-page-heading__title">${root.utils.escapeHtml(item.label)}</h2>
+        </header>
       `);
     }
+  }
+
+  function bindRouteHeading(container, route) {
+    ensureRouteHeading(container, route);
+    if (typeof MutationObserver !== "function") return;
+    let binding = routeHeadingObservers.get(container);
+    if (!binding) {
+      binding = { route: "", observer: null };
+      binding.observer = new MutationObserver(() => {
+        if (root.state.currentRoute === binding.route) ensureRouteHeading(container, binding.route);
+      });
+      binding.observer.observe(container, { childList: true, subtree: true });
+      routeHeadingObservers.set(container, binding);
+    }
+    binding.route = route;
+  }
+
+  function applyRouteIcons(container, route) {
+    if (!container) return;
+    bindRouteHeading(container, route);
     [
       ["[data-profile-address]", "profile.address"],
       ["[data-profile-history]", "profile.history"],
