@@ -6,6 +6,8 @@ const path = require("node:path");
 const repoRoot = path.resolve(__dirname, "..");
 const source = fs.readFileSync(path.join(repoRoot, "index.js"), "utf8").replace(/\r\n/g, "\n");
 const publicRoutes = fs.readFileSync(path.join(repoRoot, "server/routes/public/customerAvailability.js"), "utf8").replace(/\r\n/g, "\n");
+const bookingService = fs.readFileSync(path.join(repoRoot, "server/services/booking/createBookingJob.js"), "utf8").replace(/\r\n/g, "\n");
+const bookingStatuses = fs.readFileSync(path.join(repoRoot, "server/services/booking/bookingStatuses.js"), "utf8").replace(/\r\n/g, "\n");
 const customerAvailability = require("../server/services/public/customerAvailability");
 
 function sectionIn(haystack, start, end) {
@@ -26,16 +28,17 @@ test("calendar route is public-safe and mounted through shared availability help
 
 test("public availability and public booking share the customer availability helper", () => {
   const availability = sectionIn(publicRoutes, 'app.get("/public/availability_v2"', 'app.get("/public/availability_calendar_v2"');
-  const booking = sectionIn(source, 'app.post("/public/book"', 'app.get("/public/track"');
+  const booking = sectionIn(bookingService, "async function handlePublicBook", "\n  return {\n    handleAdminBookV2");
   assert.match(availability, /engine\.computePublicCustomerSlots/);
   assert.match(booking, /customerAvailability\.hasAvailableStart/);
   assert.match(booking, /customerAvailability\.reservePublicCustomerTechnician/);
   assert.match(booking, /technician_username/);
-  assert.match(booking, /'รอตรวจสอบ'/);
+  assert.match(booking, /JOB_STATUS\.CUSTOMER_SCHEDULED_REVIEW/);
+  assert.match(bookingStatuses, /CUSTOMER_SCHEDULED_REVIEW:\s*"รอตรวจสอบ"/);
 });
 
 test("public book validates and persists allow_time_proposal as a jobs column", () => {
-  const booking = sectionIn(source, 'app.post("/public/book"', 'app.get("/public/track"');
+  const booking = sectionIn(bookingService, "async function handlePublicBook", "\n  return {\n    handleAdminBookV2");
   assert.match(booking, /allow_time_proposal/);
   assert.match(booking, /allowTimeProposal == null/);
   assert.match(booking, /"booking_mode", "allow_time_proposal"/);

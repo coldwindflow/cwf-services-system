@@ -11,6 +11,7 @@ const root = path.join(__dirname, "..");
 const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
 
 const index = read("index.js");
+const bookingService = read("server/services/booking/createBookingJob.js");
 const adminReview = read("admin-review-v2.js");
 const adminReviewHtml = read("admin-review-v2.html");
 const scheduled = read("customer-app/modules/bookingScheduled.js");
@@ -232,14 +233,14 @@ function loadAiIntakeIntoSandbox(sandbox) {
 }
 
 test("scheduled customer booking has durable request-key idempotency before reservation", () => {
-  assert.match(index, /function deriveCustomerScheduledBookingToken\(requestKey\)/);
-  assert.match(index, /scheduled_request_key/);
-  assert.match(index, /pg_advisory_xact_lock\(hashtext\(\$1\)\)/);
-  assert.match(index, /WHERE booking_token=\$1[\s\S]*job_source='customer'[\s\S]*COALESCE\(booking_mode,'scheduled'\)='scheduled'/);
-  assert.match(index, /replayed:\s*true/);
-  assert.match(index, /validScheduledRequestKey/);
-  assert.match(index, /\^\[A-Za-z0-9_-\]\{16,128\}\$/);
-  assert.ok(index.indexOf("SELECT pg_advisory_xact_lock(hashtext($1))") < index.indexOf("reservePublicCustomerTechnician"));
+  assert.match(bookingService, /function deriveCustomerScheduledBookingToken\(requestKey\)/);
+  assert.match(bookingService, /scheduled_request_key/);
+  assert.match(bookingService, /pg_advisory_xact_lock\(hashtext\(\$1\)\)/);
+  assert.match(bookingService, /WHERE booking_token=\$1[\s\S]*job_source='customer'[\s\S]*COALESCE\(booking_mode,'scheduled'\)='scheduled'/);
+  assert.match(bookingService, /replayed:\s*true/);
+  assert.match(bookingService, /validScheduledRequestKey/);
+  assert.match(bookingService, /\^\[A-Za-z0-9_-\]\{16,128\}\$/);
+  assert.ok(bookingService.indexOf("SELECT pg_advisory_xact_lock(hashtext($1))") < bookingService.indexOf("reservePublicCustomerTechnician"));
 });
 
 test("scheduled customer app sends one request key and clears it on new booking reset", () => {

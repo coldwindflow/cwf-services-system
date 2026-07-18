@@ -85,8 +85,8 @@ test("Customer frontend queries use tech_type=all, never hardcoded company", () 
 });
 
 test("Every public scheduled booking requests tech_type=all server-side (canonical, not client_app-derived)", () => {
-  const index = read("index.js");
-  const booking = section(index, 'app.post("/public/book"', 'app.get("/public/track"');
+  const service = read("server/services/booking/createBookingJob.js");
+  const booking = section(service, "async function handlePublicBook", "\n  return {\n    handleAdminBookV2");
   // Canonical: tech_type is "all" for every scheduled booking, mirroring the
   // public slot list — no longer narrowed to "company" for non-customer_app_v2
   // callers, which made client_app a capacity boundary.

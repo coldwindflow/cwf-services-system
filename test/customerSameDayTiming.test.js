@@ -141,11 +141,12 @@ test("busy block with buffer blocks the next start until occupied end", async ()
 });
 
 test("availability endpoints are no-store and expired submit returns SLOT_IN_PAST", () => {
-  const index = fs.readFileSync(path.join(__dirname, "..", "index.js"), "utf8");
-  assert.match(index, /Cache-Control", "no-store, no-cache, must-revalidate, max-age=0"/);
-  assert.match(index, /code: "SLOT_IN_PAST"/);
-  assert.match(index, /server_now/);
-  assert.match(index, /minimum_start/);
+  const availabilityRoutes = fs.readFileSync(path.join(__dirname, "..", "server/routes/public/customerAvailability.js"), "utf8");
+  const bookingService = fs.readFileSync(path.join(__dirname, "..", "server/services/booking/createBookingJob.js"), "utf8");
+  assert.match(availabilityRoutes, /Cache-Control", "no-store, no-cache, must-revalidate, max-age=0"/);
+  assert.match(bookingService, /code: "SLOT_IN_PAST"/);
+  assert.match(bookingService, /server_now/);
+  assert.match(bookingService, /minimum_start/);
 });
 
 test("customer app disables availability HTTP cache and refreshes same-day slots", () => {
