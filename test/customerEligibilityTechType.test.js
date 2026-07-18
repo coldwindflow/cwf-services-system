@@ -184,10 +184,11 @@ test("Diagnostic pinpoints unknown technician", async () => {
 });
 
 test("Diagnostic route is admin-only and never public", () => {
-  const index = read("index.js");
-  assert.match(index, /app\.get\("\/admin\/customer-eligibility-diagnostic", requireAdminSession/);
+  const adminRoutes = read("server/routes/admin/adminAvailability.js");
+  const publicRoutes = read("server/routes/public/customerAvailability.js");
+  assert.match(adminRoutes, /app\.get\("\/admin\/customer-eligibility-diagnostic", requireAdminSession/);
   // The diagnostic must not be wired under any /public/ path.
-  assert.doesNotMatch(index, /\/public\/[a-z-]*eligibility-diagnostic/);
+  assert.doesNotMatch(publicRoutes, /\/public\/[a-z-]*eligibility-diagnostic/);
 });
 
 // ============ Defect 4/6: technician calendar identity ============

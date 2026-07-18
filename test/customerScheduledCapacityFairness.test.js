@@ -178,12 +178,14 @@ test("calendar read API exposes trusted cap metadata while public slots stay ano
   const fs = require("node:fs");
   const path = require("node:path");
   const readRoute = fs.readFileSync(path.join(__dirname, "..", "server/routes/technicianCalendarReadOnly.js"), "utf8");
-  const publicSvc = fs.readFileSync(path.join(__dirname, "..", "server/services/public/customerAvailability.js"), "utf8");
+  const publicAdapter = fs.readFileSync(path.join(__dirname, "..", "server/services/public/customerAvailability.js"), "utf8");
+  const publicSvc = fs.readFileSync(path.join(__dirname, "..", "server/services/booking/availabilityEngine.js"), "utf8");
   assert.match(readRoute, /resolveTechnicianCalendarCaps/);
   assert.match(readRoute, /cap_mode/);
   assert.match(readRoute, /effective_max_jobs_per_day/);
   assert.match(readRoute, /effective_max_units_per_day/);
   assert.match(publicSvc, /resolveTechnicianCalendarCaps/);
+  assert.match(publicAdapter, /require\("\.\.\/booking\/availabilityEngine"\)/);
   const slotPush = publicSvc.match(/slots\.push\(\{[\s\S]*?\n\s*\}\);/);
   assert.ok(slotPush, "public slot push block exists");
   assert.doesNotMatch(slotPush[0], /username|technician/i);
