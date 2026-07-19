@@ -1,7 +1,6 @@
 (function () {
   "use strict";
 
-  console.info("[customer-booking] launch-gate 20260708 loaded");
   const root = window.CWFCustomerAppV2 = window.CWFCustomerAppV2 || {};
   const MAX_ADVANCE_DAYS = 90;
   const STEP_MAX = 3;
@@ -513,7 +512,7 @@
         <div class="calendar-weekdays" aria-hidden="true"><span>อา</span><span>จ</span><span>อ</span><span>พ</span><span>พฤ</span><span>ศ</span><span>ส</span></div>
         <div class="calendar-grid">${cells.join("")}</div>
       </div>
-      ${calendarState.status === "error" ? `${root.utils.stateBox("error", calendarState.error || "โหลดปฏิทินไม่สำเร็จ")}<button type="button" class="secondary-btn" data-action="reload-calendar">ลองโหลดปฏิทินอีกครั้ง</button>` : ""}
+      ${calendarState.status === "error" ? `${root.utils.stateBox("error", calendarState.error || root.customerCopy.messages.unknown)}<button type="button" class="secondary-btn" data-action="reload-calendar">ลองโหลดปฏิทินอีกครั้ง</button>` : ""}
     `;
   }
 
@@ -522,7 +521,7 @@
     const selected = draft().selectedSlot || null;
     if (availability.status === "loading") return root.utils.stateBox("loading", "กำลังตรวจคิวว่างจริง...");
     if (availability.status === "error") {
-      return `${root.utils.stateBox("error", availability.error || "โหลดคิวว่างไม่สำเร็จ")}<button type="button" class="secondary-btn" data-action="reload-slots">ลองโหลดคิวอีกครั้ง</button>`;
+      return `${root.utils.stateBox("error", availability.error || root.customerCopy.messages.unknown)}<button type="button" class="secondary-btn" data-action="reload-slots">ลองโหลดคิวอีกครั้ง</button>`;
     }
     if (!availability.data) return root.utils.stateBox("", "เลือกวันที่มีคิว ระบบจะแสดงช่วงเวลาว่างด้านล่าง");
     const slots = normalizedSlots();
@@ -531,18 +530,10 @@
       // shown only when the backend explicitly returns no_open_slots; any other/unknown status is
       // treated as a recoverable condition rather than a manufactured "no open slots".
       const status = String(availability.data.availability_status || "").trim();
-      let message;
-      let tone = "warning";
-      if (status === "full") {
-        message = "วันที่เลือกเต็มแล้ว กรุณาเลือกวันอื่น";
-      } else if (status === "error") {
-        message = "ระบบตรวจคิววันนี้ไม่สำเร็จ กรุณาลองใหม่";
-        tone = "error";
-      } else if (status === "no_open_slots") {
-        message = "ยังไม่มีคิวเปิดในวันนี้ กรุณาเลือกวันอื่น";
-      } else {
-        message = "ไม่พบช่วงเวลาว่างในวันนี้ กรุณาลองใหม่อีกครั้งหรือเลือกวันอื่น";
-      }
+      const tone = status === "error" ? "error" : "warning";
+      const message = status === "error"
+        ? root.customerCopy.messages.unknown
+        : root.customerCopy.availabilityEmpty(status);
       return `${root.utils.stateBox(tone, message)}<button type="button" class="secondary-btn" data-action="reload-slots">ตรวจคิววันนี้อีกครั้ง</button>`;
     }
     return `
@@ -659,14 +650,16 @@
     return `
       <section class="card success-card booking-result-card">
         <div class="success-mark">✓</div>
-        <span class="section-kicker">ส่งคำขอแล้ว</span>
-        <h2>ส่งคำขอจองเรียบร้อย</h2>
-        <div class="state-box is-success">รอแอดมินตรวจสอบและยืนยันคิว โปรดเก็บรหัสนี้ไว้เพื่อติดตามสถานะงาน</div>
+        <span class="section-kicker">ส่งคำขอจองแล้ว</span>
+        <h2>ส่งคำขอจองแล้ว</h2>
+        <div class="state-box is-success">ระบบกันช่วงเวลานี้ไว้ให้ชั่วคราว</div>
+        <p class="muted">แอดมินจะตรวจสอบรายละเอียดและยืนยันคิวให้คุณ</p>
         <div class="data-list">
           <div class="data-row"><strong>Booking Code</strong><span class="booking-code-value">${root.utils.escapeHtml(result.booking_code || "-")}</span></div>
           <div class="data-row"><strong>วันและเวลา</strong><span class="muted">${root.utils.escapeHtml(selected.date || draft().date || "-")} · ${root.utils.escapeHtml(selected.start || "-")}-${root.utils.escapeHtml(selected.end || "-")} น.</span></div>
           <div class="data-row"><strong>ราคา</strong><span class="muted">${root.utils.formatBaht(result.base_total)}</span></div>
           <div class="data-row"><strong>เวลาทำงาน</strong><span class="muted">${root.utils.escapeHtml(result.duration_min || "-")} นาที</span></div>
+          <div class="data-row"><strong>สถานะ</strong><span class="muted">รอแอดมินยืนยัน</span></div>
         </div>
         <div class="button-row">
           <button type="button" class="primary-btn" data-action="track-created" data-tracking-key="${root.utils.escapeHtml(trackingKey)}">ติดตามสถานะงาน</button>
@@ -761,7 +754,7 @@
       root.state.setScheduledPreview("pricing", { status: "success", data, error: "" });
       return data;
     } catch (error) {
-      root.state.setScheduledPreview("pricing", { status: "error", data: null, error: error.message || "คำนวณราคาไม่สำเร็จ" });
+      root.state.setScheduledPreview("pricing", { status: "error", data: null, error: root.customerCopy.bookingError(error) });
       throw error;
     } finally {
       paint(container);
@@ -786,7 +779,7 @@
       return data;
     } catch (error) {
       if (requestId !== calendarRequestSeq) return null;
-      root.state.setScheduledPreview("calendar", { status: "error", data: null, error: error.message || "โหลดปฏิทินไม่สำเร็จ", query_key: expectedKey, loaded_at: "" });
+      root.state.setScheduledPreview("calendar", { status: "error", data: null, error: root.customerCopy.bookingError(error), query_key: expectedKey, loaded_at: "" });
       return null;
     } finally {
       if (requestId === calendarRequestSeq) paint(container);
@@ -821,7 +814,7 @@
       return data;
     } catch (error) {
       if (requestId !== availabilityRequestSeq) return null;
-      root.state.setScheduledPreview("availability", { status: "error", data: null, error: error.message || "โหลดคิวว่างไม่สำเร็จ", query_key: expectedKey, loaded_at: "" });
+      root.state.setScheduledPreview("availability", { status: "error", data: null, error: root.customerCopy.bookingError(error), query_key: expectedKey, loaded_at: "" });
       return null;
     } finally {
       if (requestId === availabilityRequestSeq) paint(container);
@@ -839,8 +832,9 @@
       .find((slot) => slot.key === selected.key && slot.date === selected.date && slot.start === selected.start);
     if (!latest) {
       root.state.updateDraft("scheduled", { selectedSlot: null });
-      const error = new Error("คิวนี้ไม่ว่างแล้ว กรุณาเลือกช่วงเวลาใหม่");
+      const error = new Error("SLOT_UNAVAILABLE");
       error.status = 409;
+      error.code = "SLOT_UNAVAILABLE";
       throw error;
     }
     root.state.updateDraft("scheduled", { selectedSlot: { ...latest, query_key: expectedKey } });
@@ -925,18 +919,19 @@
       if (error?.data?.code === "SCHEDULED_BOOKING_DISABLED") {
         root.state.setScheduledSubmit({
           status: "error",
-          error: error.data.error || "ระบบจองคิวออนไลน์ปิดให้บริการชั่วคราว กรุณาติดต่อแอดมินทาง LINE",
+          error: root.customerCopy.bookingError(error),
           result: null,
-          disabled_line_url: error.data.line_url || "https://lin.ee/fG1Oq7y",
+          disabled_line_url: "https://lin.ee/fG1Oq7y",
         });
         paint(container);
         scrollToWizardTop(container);
         return;
       }
-      root.state.setScheduledSubmit({ status: "error", error: error.message || "ส่งคำขอจองไม่สำเร็จ", result: null });
+      const customerError = root.customerCopy.bookingError(error, "slot");
+      root.state.setScheduledSubmit({ status: "error", error: customerError, result: null });
       if (Number(error.status) === 400 || Number(error.status) === 409) {
         root.state.updateDraft("scheduled", { selectedSlot: null });
-        root.state.setScheduledWizard({ step: 2, error: "คิวที่เลือกอาจเต็มแล้ว กรุณาเลือกช่วงเวลาใหม่" });
+        root.state.setScheduledWizard({ step: 2, error: customerError });
       }
       paint(container);
       scrollToWizardTop(container);
@@ -1170,6 +1165,8 @@
       validateSlotStep,
       currentAvailabilityQuery,
       currentCalendarQuery,
+      renderSuccess,
+      renderSlots,
     },
   };
 })();
