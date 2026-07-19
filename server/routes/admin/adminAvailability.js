@@ -8,19 +8,26 @@ function registerAdminAvailabilityRoutes(app, options = {}) {
   const isEnabled = options.isEnabled || (() => true);
   const requireAdminSession = options.requireAdminSession;
 
-  // Authorization intentionally remains byte-for-byte compatible in PR1. This
-  // route has no middleware today; the finding is tracked for a follow-up PR.
-  app.get("/admin/availability_by_tech_v2", async (req, res) => {
+  app.get("/admin/availability_by_tech_v2", requireAdminSession, async (req, res) => {
     if (!isEnabled()) return res.status(404).json({ error: "DISABLED" });
     const date = String(req.query.date || new Date().toISOString().slice(0, 10));
     const tech_type = String(req.query.tech_type || "company").trim().toLowerCase();
     const duration_min = Math.max(15, Number(req.query.duration_min || 60));
     const include_paused = String(req.query.forced || req.query.include_paused || "").trim() === "1";
+    const aggregate = String(req.query.aggregate || "").trim() === "1";
     try {
-      const data = await engine.computeAdminAvailabilityByTech(
-        getDependencies(),
-        { ...req.query, date, tech_type, duration_min, include_paused }
-      );
+      const data = aggregate
+        ? await engine.computeForcedAvailability(getDependencies(), {
+            ...req.query,
+            date,
+            tech_type,
+            duration_min,
+            include_paused,
+          })
+        : await engine.computeAdminAvailabilityByTech(
+            getDependencies(),
+            { ...req.query, date, tech_type, duration_min, include_paused }
+          );
       return res.json(data);
     } catch (error) {
       console.error(error);

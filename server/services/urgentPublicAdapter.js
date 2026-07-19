@@ -2,10 +2,30 @@
 
 const crypto = require("crypto");
 const jobTiming = require("./jobTiming");
+const { normalizeServiceType } = require("../normalizers");
 
 const URGENT_LEAD_TIME_MIN = 30;
 const UI_START_MIN = 9 * 60; // 09:00, matches the Admin Add locked business window
 const UI_END_MIN = 18 * 60; // 18:00
+const STRICT_CLEANING_JOB_TYPES = new Set([
+  "ล้าง",
+  "ล้างแอร์",
+  "งานล้าง",
+  "งานล้างแอร์",
+  "บริการล้างแอร์",
+  "wash",
+  "clean",
+  "cleaning",
+  "ac wash",
+  "ac clean",
+  "ac cleaning",
+  "aircon wash",
+  "aircon clean",
+  "aircon cleaning",
+  "air conditioner wash",
+  "air conditioner clean",
+  "air conditioner cleaning",
+]);
 
 function coerceNumber(value, fallback = 0) {
   const n = Number(value);
@@ -22,6 +42,19 @@ function sanitizeCustomerServiceLine(raw) {
     wash_variant: String(item.wash_variant || "").trim(),
     repair_variant: String(item.repair_variant || "").trim(),
   };
+}
+
+function canonicalUrgentCleaningJobType(value) {
+  const raw = String(value || "").trim();
+  const normalizedText = raw.toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+  if (!STRICT_CLEANING_JOB_TYPES.has(normalizedText)) return null;
+  return normalizeServiceType(raw) === "ล้าง" ? "ล้าง" : null;
+}
+
+function isStrictUrgentCleaningPayload(payload = {}) {
+  if (canonicalUrgentCleaningJobType(payload.job_type) !== "ล้าง") return false;
+  const services = Array.isArray(payload.services) ? payload.services : [];
+  return services.every((service) => canonicalUrgentCleaningJobType(service?.job_type) === "ล้าง");
 }
 
 // Strict allowlist: only customer-safe fields are allowed to cross into the
@@ -113,6 +146,8 @@ module.exports = {
   UI_END_MIN,
   sanitizeCustomerServiceLine,
   sanitizeCustomerUrgentBody,
+  canonicalUrgentCleaningJobType,
+  isStrictUrgentCleaningPayload,
   computeCustomerUrgentAppointmentIso,
   deriveUrgentBookingToken,
 };

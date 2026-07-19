@@ -965,7 +965,13 @@ async function dispatchJob(){
 
   try{
     const payload = { technician_username, tech_type, mode, team_members };
-    const out = await apiFetch(`/jobs/${CURRENT.job_id}/dispatch_v2`, { method:"POST", body: JSON.stringify(payload) });
+    const isPendingCustomerBooking = String(CURRENT.job_source || "") === "customer"
+      && String(CURRENT.job_status || "") === "รอตรวจสอบ"
+      && ["scheduled", "urgent"].includes(String(CURRENT.booking_mode || ""));
+    const endpoint = isPendingCustomerBooking
+      ? `/admin/customer-bookings/${CURRENT.job_id}/approve`
+      : `/jobs/${CURRENT.job_id}/dispatch_v2`;
+    const out = await apiFetch(endpoint, { method:"POST", body: JSON.stringify(payload) });
     showToast("ยิงงานสำเร็จ","success");
     closeModal();
     await loadQueue();
@@ -1019,7 +1025,13 @@ async function cancelJob(){
   if (blockReadOnlyMutation()) return;
   if (!confirm("ยืนยันยกเลิกงานนี้?")) return;
   try{
-    await apiFetch(`/jobs/${CURRENT.job_id}/cancel`, { method:"POST", body: JSON.stringify({ reason: "admin_cancel" }) });
+    const isPendingCustomerBooking = String(CURRENT.job_source || "") === "customer"
+      && String(CURRENT.job_status || "") === "รอตรวจสอบ"
+      && ["scheduled", "urgent"].includes(String(CURRENT.booking_mode || ""));
+    const endpoint = isPendingCustomerBooking
+      ? `/admin/customer-bookings/${CURRENT.job_id}/reject`
+      : `/jobs/${CURRENT.job_id}/admin-cancel`;
+    await apiFetch(endpoint, { method:"POST", body: JSON.stringify({ reason: "admin_cancel" }) });
     showToast("ยกเลิกงานแล้ว","success");
     closeModal();
     await loadQueue();

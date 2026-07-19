@@ -17,8 +17,21 @@ const OFFER_STATUS = Object.freeze({
   PENDING: "pending",
 });
 
+function isPendingCustomerScheduledReservation(job = {}) {
+  return String(job.job_source || "") === "customer"
+    && String(job.booking_mode || "") === "scheduled"
+    && String(job.job_status || "") === JOB_STATUS.CUSTOMER_SCHEDULED_REVIEW;
+}
+
+function pendingCustomerScheduledReservationSql(alias = "j") {
+  const safeAlias = /^[A-Za-z_][A-Za-z0-9_]*$/.test(String(alias || "")) ? String(alias) : "j";
+  return `(${safeAlias}.job_source='customer' AND ${safeAlias}.booking_mode='scheduled' AND ${safeAlias}.job_status='${JOB_STATUS.CUSTOMER_SCHEDULED_REVIEW}')`;
+}
+
 module.exports = {
   JOB_STATUS,
   ASSIGNMENT_STATUS,
   OFFER_STATUS,
+  isPendingCustomerScheduledReservation,
+  pendingCustomerScheduledReservationSql,
 };

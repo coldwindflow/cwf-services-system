@@ -297,8 +297,8 @@ test("public routes preserve scheduled, calendar, forced, legacy, cache, and err
 
   res = makeResponse();
   await app.routes.get("/public/availability_v2")[0]({ query: { date: "2026-06-02", forced: "1" } }, res);
-  assert.equal(calls.at(-1)[0], "forced");
-  assert.deepEqual(res.body, { date: "2026-06-02", forced: true, slots: [] });
+  assert.equal(res.statusCode, 403);
+  assert.deepEqual(res.body, { error: "FORCED_AVAILABILITY_ADMIN_ONLY", code: "FORCED_AVAILABILITY_ADMIN_ONLY" });
 
   res = makeResponse();
   await app.routes.get("/public/availability_calendar_v2")[0]({ query: { month: "bad" } }, res);
@@ -320,7 +320,8 @@ test("admin route preserves current middleware boundary and caller evidence", ()
     isEnabled: () => true,
     requireAdminSession,
   });
-  assert.equal(app.routes.get("/admin/availability_by_tech_v2").length, 1);
+  assert.equal(app.routes.get("/admin/availability_by_tech_v2").length, 2);
+  assert.equal(app.routes.get("/admin/availability_by_tech_v2")[0], requireAdminSession);
   assert.equal(app.routes.get("/admin/customer-eligibility-diagnostic").length, 2);
   assert.equal(app.routes.get("/admin/customer-eligibility-diagnostic")[0], requireAdminSession);
 
@@ -328,7 +329,8 @@ test("admin route preserves current middleware boundary and caller evidence", ()
   const adminAdd = read("admin-add-v2.js");
   const adminReview = read("admin-review-v2.js");
   assert.match(adminQueue, /\/admin\/availability_by_tech_v2[\s\S]*forced=1/);
-  assert.match(adminQueue, /\/public\/availability_v2[\s\S]*forced=1/);
-  assert.match(adminAdd, /\/public\/availability_v2/);
+  assert.doesNotMatch(adminQueue, /\/public\/availability_v2[^\n]*forced=1/);
+  assert.doesNotMatch(adminAdd, /apiFetch\(`\/public\/availability_v2/);
+  assert.match(adminAdd, /\/admin\/availability_by_tech_v2/);
   assert.match(adminReview, /\/public\/availability_v2/);
 });

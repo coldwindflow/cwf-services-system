@@ -20,6 +20,12 @@ function registerPublicCustomerAvailabilityRoutes(app, options = {}) {
     const date = String(req.query.date || new Date().toISOString().slice(0, 10));
     const tech_type = String(req.query.tech_type || "company").trim().toLowerCase();
     const forced = String(req.query.forced || "").trim() === "1";
+    if (forced) {
+      return res.status(403).json({
+        error: "FORCED_AVAILABILITY_ADMIN_ONLY",
+        code: "FORCED_AVAILABILITY_ADMIN_ONLY",
+      });
+    }
     const duration_min = Math.max(15, Number(req.query.duration_min || 60));
     const crewSizeRaw = Number(req.query.crew_size || req.query.crewSize || 1);
     const crew_size = Math.max(1, Math.min(10, Number.isFinite(crewSizeRaw) ? Math.floor(crewSizeRaw) : 1));

@@ -216,13 +216,14 @@ test("Test 14: check-in 500 m + accuracy policy is unchanged", () => {
 
 test("Test 15: PWA + admin cache build IDs are bumped consistently", () => {
   const BUILD = "20260712_job_location_roundtrip_v1";
+  const PR3_ADMIN_BUILD = "20260719_customer_booking_pr3_v1";
   assert.match(read("app.js"), new RegExp(`__CWF_TECH_APP_VERSION__ = "${BUILD}"`));
   assert.match(read("sw.js"), new RegExp(`CWF_TECH_BUILD_ID = "${BUILD}"`));
   assert.match(read("cwf-pwa.js"), new RegExp(`VERSION = '${BUILD}'`));
   assert.match(read("tech.html"), new RegExp(`app\\.js\\?v=${BUILD}`));
-  assert.match(read("admin-add-v2.html"), new RegExp(`admin-add-v2\\.js\\?v=${BUILD}`));
+  assert.match(read("admin-add-v2.html"), new RegExp(`admin-add-v2\\.js\\?v=${PR3_ADMIN_BUILD}`));
   assert.match(read("admin-job-view-v2.html"), new RegExp(`admin-job-view-v2\\.js\\?v=${BUILD}`));
-  assert.match(read("admin-review-v2.html"), new RegExp(`admin-review-v2\\.js\\?v=${BUILD}`));
+  assert.match(read("admin-review-v2.html"), new RegExp(`admin-review-v2\\.js\\?v=${PR3_ADMIN_BUILD}`));
 });
 
 // ---------------------------------------------------------------------------
