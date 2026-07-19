@@ -55,6 +55,7 @@ function load(context, modules) {
 
 const FRONTEND_MODULES = [
   "customer-app/modules/utils.js",
+  "customer-app/modules/customerCopy.js",
   "customer-app/modules/state.js",
   "customer-app/modules/api.js",
   "customer-app/modules/services.js",
@@ -203,7 +204,7 @@ test("Calendar shows explicit no_open_slots and full only from backend status", 
   assert.match(calendarHtmlFor("full"), /เต็ม/);
 });
 
-test("Slot list shows full / no_open_slots strictly from backend status", () => {
+test("Slot list uses the central no-slot customer copy for every empty availability result", () => {
   const { root } = restoreFrontendAtStep(2);
   const d = root.state.draft.scheduled;
   root.state.setScheduledPreview("pricing", { status: "success", data: { duration_min: 60, active_price: 900 }, error: "" });
@@ -216,10 +217,10 @@ test("Slot list shows full / no_open_slots strictly from backend status", () => 
     return container.innerHTML;
   }
 
-  assert.match(slotsHtmlFor("full"), /เต็มแล้ว/);
-  assert.match(slotsHtmlFor("no_open_slots"), /ยังไม่มีคิวเปิดในวันนี้/);
-  // Unknown/empty status must not be reported as a manufactured "no open slots".
-  assert.doesNotMatch(slotsHtmlFor(""), /ยังไม่มีคิวเปิด/);
+  const copy = /ยังไม่มีคิวว่างในวันที่เลือก กรุณาเลือกวันอื่น/;
+  assert.match(slotsHtmlFor("full"), copy);
+  assert.match(slotsHtmlFor("no_open_slots"), copy);
+  assert.match(slotsHtmlFor(""), copy);
 });
 
 // --- Defect E: monthly work calendar is the source of truth ---

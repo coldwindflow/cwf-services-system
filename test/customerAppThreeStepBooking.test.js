@@ -61,6 +61,7 @@ function loadBooking(opts) {
   return load([
     "customer-app/modules/state.js",
     "customer-app/modules/utils.js",
+    "customer-app/modules/customerCopy.js",
     "customer-app/modules/services.js",
     "customer-app/modules/availability.js",
     "customer-app/modules/bookingScheduled.js",

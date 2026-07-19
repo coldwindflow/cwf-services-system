@@ -142,9 +142,9 @@ test("urgent review shows the LINE hand-off (and hides confirm) when the lane is
   assert.match(urgentSrc, /flow\.disabled_line_url\s*\n?\s*\? `<a class="primary-btn line-fallback-btn"/);
 });
 
-test("cache-bust markers are present for the changed booking modules", () => {
-  assert.match(scheduledSrc, /\[customer-booking\] launch-gate 20260708 loaded/);
-  assert.match(urgentSrc, /\[customer-urgent\] launch-gate 20260708 loaded/);
+test("customer booking modules do not emit obsolete launch-gate startup logs", () => {
+  assert.doesNotMatch(scheduledSrc, /console\.info\([^\n]*launch-gate/);
+  assert.doesNotMatch(urgentSrc, /console\.info\([^\n]*launch-gate/);
 });
 
 // ---------- P0-5: /public/review write authorisation ----------

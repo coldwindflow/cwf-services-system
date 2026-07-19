@@ -1,6 +1,6 @@
 "use strict";
 
-const BUILD_ID = "20260718_remove_route_header_icons_v1";
+const BUILD_ID = "20260720_customer_booking_pr4_v2";
 const CACHE_NAME = `cwf-customer-app-v2-${BUILD_ID}`;
 const APP_SHELL = [
   `./index.html?v=${BUILD_ID}`,
@@ -11,6 +11,7 @@ const APP_SHELL = [
   `./modules/iconRegistry.js?v=${BUILD_ID}`,
   `./modules/state.js?v=${BUILD_ID}`,
   `./modules/utils.js?v=${BUILD_ID}`,
+  `./modules/customerCopy.js?v=${BUILD_ID}`,
   `./modules/analytics.js?v=${BUILD_ID}`,
   `./modules/api.js?v=${BUILD_ID}`,
   `./modules/pageAvailability.js?v=${BUILD_ID}`,

@@ -167,7 +167,7 @@
         items: [
           { title: "แจ้งราคาก่อนทำ", body: "ระบบคำนวณจากข้อมูลบริการจริง" },
           { title: "ช่างผ่านมาตรฐาน", body: "ทีมงานได้รับการตรวจสอบก่อนรับงาน" },
-          { title: "ติดตามงานได้", body: "ดูสถานะสำคัญด้วย Booking Code" },
+          { title: "ติดตามงานได้", body: "ดูสถานะสำคัญด้วยรหัสการจอง" },
           { title: "ติดต่อแอดมินง่าย", body: "รองรับ LINE และโทรศัพท์" },
         ],
       },
@@ -998,7 +998,7 @@
         <button class="contact-sheet-close" type="button" data-contact-close aria-label="ปิด">×</button>
         <span class="section-kicker">ติดต่อแอดมิน</span>
         <h2 id="contact-sheet-title">${root.utils.escapeHtml(title)}</h2>
-        <p>บริการนี้ยังไม่เปิดจองอัตโนมัติในแอป กรุณาติดต่อแอดมินเพื่อสอบถามอาการ ประเมินราคา และนัดหมายให้เหมาะกับหน้างาน</p>
+        <p>${root.utils.escapeHtml(root.customerCopy.messages.otherServices)}</p>
         <div class="contact-sheet-actions">
           <a class="primary-btn" href="https://lin.ee/fG1Oq7y" target="_blank" rel="noopener noreferrer">แชท LINE @cwfair</a>
           <a class="secondary-btn" href="tel:0988777321">โทร 098-877-7321</a>
@@ -1643,10 +1643,10 @@
             </button>` : "";
       const urgentCard = urgentOn ? `
             <button class="mode-card is-urgent" type="button" data-route="urgent">
-              <span class="mode-kicker">คำขอด่วน</span>
-              <strong>คิวด่วน</strong>
-              <span>ส่งรายละเอียดให้พาร์ทเนอร์ช่างกดรับ และติดตามผลด้วย Booking Code</span>
-              <span class="mode-foot">ยังไม่ถือว่ายืนยันงานจนกว่าจะมีช่างรับ</span>
+              <span class="mode-kicker">งานล้างเท่านั้น</span>
+              <strong>จองล้างแอร์ด่วน</strong>
+              <span>ส่งรายละเอียดเพื่อให้แอดมินตรวจสอบและจัดหาช่างที่ว่าง</span>
+              <span class="mode-foot">รอแอดมินตรวจสอบก่อนส่งต่อให้ช่าง</span>
             </button>` : "";
 
       const bookingBody = (scheduledOn || urgentOn) ? `
@@ -1673,7 +1673,7 @@
           ${bookingBody}
           <section class="card support-card">
             <h2>งานซ่อม ติดตั้ง ย้ายแอร์ หรือตรวจอาการ</h2>
-            <p class="muted">ยังไม่เปิดจองอัตโนมัติ กรุณาติดต่อแอดมินเพื่อประเมินอาการ ราคา และเวลาที่เหมาะสม</p>
+            <p class="muted">${root.utils.escapeHtml(root.customerCopy.messages.otherServices)}</p>
             <div class="support-strip">
               <a class="primary-btn" href="https://lin.ee/fG1Oq7y" target="_blank" rel="noopener noreferrer">แชท LINE @cwfair</a>
               <a class="secondary-btn" href="tel:0988777321">โทร 098-877-7321</a>

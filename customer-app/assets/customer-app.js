@@ -3,7 +3,7 @@
 
   const App = window.CWFCustomerAppV2;
   const BOOT_TIMEOUT_MS = 3500;
-  const BUILD_ID = "20260718_remove_route_header_icons_v1";
+  const BUILD_ID = "20260720_customer_booking_pr4_v2";
 
   function withTimeout(promise, timeoutMs) {
     return Promise.race([

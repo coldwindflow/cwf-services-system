@@ -8,6 +8,7 @@ const vm = require("node:vm");
 
 const ROOT = path.resolve(__dirname, "..");
 const UI_SOURCE = fs.readFileSync(path.join(ROOT, "customer-app/modules/ui.js"), "utf8");
+const CUSTOMER_COPY_SOURCE = fs.readFileSync(path.join(ROOT, "customer-app/modules/customerCopy.js"), "utf8");
 
 function item(id, options = {}) {
   return {
@@ -169,8 +170,9 @@ function loadUi(items, { reducedMotion = false } = {}) {
     },
     services: { WALL_AC: "ผนัง" },
   };
-  vm.runInNewContext(UI_SOURCE, {
-    window: { CWFCustomerAppV2: app, matchMedia: () => ({ matches: reducedMotion }) },
+  const window = { CWFCustomerAppV2: app, matchMedia: () => ({ matches: reducedMotion }) };
+  const context = {
+    window,
     document,
     console,
     URL,
@@ -179,7 +181,9 @@ function loadUi(items, { reducedMotion = false } = {}) {
     setTimeout: clock.setTimeout,
     clearTimeout: clock.clearTimeout,
     requestAnimationFrame: (callback) => callback(),
-  });
+  };
+  vm.runInNewContext(CUSTOMER_COPY_SOURCE, context);
+  vm.runInNewContext(UI_SOURCE, context);
   return { app, clock, document };
 }
 
@@ -414,6 +418,6 @@ test("compact CSS and cache build remain consistent with six-card rotation", () 
   assert.match(css, /\.homepage-featured-page\s*\{[^}]*grid-area:\s*1\s*\/\s*1/s);
   assert.match(css, /transition:\s*opacity 350ms/);
   assert.match(css, /prefers-reduced-motion:\s*reduce/);
-  const build = "20260718_remove_route_header_icons_v1";
+  const build = "20260720_customer_booking_pr4_v2";
   for (const source of [html, sw, boot, manifest]) assert.match(source, new RegExp(build));
 });

@@ -198,12 +198,20 @@
     },
 
     async submitUrgentRequest(payload) {
+      const input = payload || {};
       const body = {
-        ...(payload || {}),
+        ...input,
         booking_mode: "urgent",
-        dispatch_mode: "offer",
-        allow_time_proposal: true,
+        job_type: "ล้าง",
+        repair_variant: "",
+        services: (Array.isArray(input.services) ? input.services : []).map((service) => ({
+          ...(service || {}),
+          job_type: "ล้าง",
+          repair_variant: "",
+        })),
       };
+      delete body.dispatch_mode;
+      delete body.allow_time_proposal;
       return requestJson("/public/book", {
         method: "POST",
         body,
