@@ -217,6 +217,7 @@ class FakeInput {
 function loadCustomerFrontend(context = makeContext()) {
   return load(context, [
     "customer-app/modules/utils.js",
+    "customer-app/modules/customerCopy.js",
     "customer-app/modules/analytics.js",
     "customer-app/modules/state.js",
     "customer-app/modules/api.js",
@@ -236,7 +237,7 @@ test("Customer App build id is consistent across shell and service worker", () =
   const sw = read("customer-app/sw.js");
   const app = read("customer-app/assets/customer-app.js");
   const manifest = read("customer-app/manifest.webmanifest");
-  const build = "20260718_remove_route_header_icons_v1";
+  const build = "20260719_customer_booking_pr4_v1";
 
   assert.match(index, new RegExp(`customer-app\\.css\\?v=${build}`));
   assert.match(index, new RegExp(`modules\\/api\\.js\\?v=${build}`));
@@ -254,7 +255,7 @@ test("Customer App build id is consistent across shell and service worker", () =
 test("store module is loaded in index.html and precached in the service worker app shell", () => {
   const index = read("customer-app/index.html");
   const sw = read("customer-app/sw.js");
-  const build = "20260718_remove_route_header_icons_v1";
+  const build = "20260719_customer_booking_pr4_v1";
 
   assert.match(index, new RegExp(`modules/store\\.js\\?v=${build}`));
   assert.match(sw, /`\.\/modules\/store\.js\?v=\$\{BUILD_ID\}`/);
@@ -669,25 +670,26 @@ test("urgent route is registered and renders distinct urgent screen", () => {
   const container = new WizardContainer(root);
   root.bookingUrgent.render(container);
   assert.match(container.innerHTML, /data-urgent-step="form"/);
-  assert.match(container.innerHTML, /คิวด่วน/);
+  assert.match(container.innerHTML, /จองล้างแอร์ด่วน/);
 });
 
-test("customer urgent booking reuses existing offer flow without client fake appointment", () => {
+test("customer urgent booking uses the PR3 pending-approval contract without client fake appointment", () => {
   const urgent = read("customer-app/modules/bookingUrgent.js");
   const api = read("customer-app/modules/api.js");
   const server = read("server/services/booking/createBookingJob.js");
 
   assert.doesNotMatch(urgent, /nextUrgentAppointmentIso/);
   assert.doesNotMatch(urgent, /appointment_datetime:\s*nextUrgentAppointmentIso/);
-  assert.match(urgent, /allow_time_proposal:\s*true/);
-  assert.match(api, /dispatch_mode:\s*"offer"/);
-  assert.match(api, /allow_time_proposal:\s*true/);
+  assert.match(urgent, /job_type:\s*"ล้าง"/);
+  const urgentApi = api.slice(api.indexOf("async submitUrgentRequest"), api.indexOf("async loadCatalogItemReviews"));
+  assert.match(urgentApi, /delete body\.dispatch_mode/);
+  assert.match(urgentApi, /delete body\.allow_time_proposal/);
   assert.match(server, /function handlePublicCustomerUrgentBook/);
-  assert.match(server, /return handleAdminBookV2\(req,\s*res\)/);
   assert.match(server, /req\.cwfBookSource = "customer"/);
+  assert.match(server, /const urgentOfferEnabled = false/);
 });
 
-test("customer urgent waiting room polls anonymous existing offer status", () => {
+test("customer urgent submitted state polls status without rendering backend phase", () => {
   const urgent = read("customer-app/modules/bookingUrgent.js");
   const api = read("customer-app/modules/api.js");
   const server = read("index.js");
@@ -702,15 +704,15 @@ test("customer urgent waiting room polls anonymous existing offer status", () =>
   assert.doesNotMatch(statusRoute, /tech_name|full_name|matrix_json|technician_count/);
 });
 
-test("urgent waiting room navigates to tracking once the live status reports an accepted offer", async () => {
+test("urgent submitted state maps approved status to safe Thai copy without automatic navigation", async () => {
   const context = makeContext();
   const root = loadCustomerFrontend(context);
   const routeCalls = [];
   root.utils.routeTo = (route) => { routeCalls.push(route); root.state.setRoute(route); };
   root.state.setRoute("urgent");
   root.state.setUrgentFlow({
-    step: "waiting", status: "success", error: "",
-    result: { booking_code: "BK1", token: "TOK1", offers_count: 1 },
+    step: "submitted", status: "success", error: "",
+    result: { booking_code: "BK1", token: "TOK1" },
     liveStatus: null, liveStatusError: "",
   });
   root.api.loadUrgentStatus = async () => ({
@@ -722,20 +724,21 @@ test("urgent waiting room navigates to tracking once the live status reports an 
   root.bookingUrgent.render(container);
   await new Promise((resolve) => setTimeout(resolve, 0));
 
-  assert.deepEqual(routeCalls, ["tracking"]);
-  assert.equal(root.state.draft.tracking.trackingCode, "TOK1");
+  assert.deepEqual(routeCalls, []);
+  assert.match(container.innerHTML, /แอดมินยืนยันคำขอแล้ว กรุณาติดตามสถานะงาน/);
+  assert.doesNotMatch(container.innerHTML, /phase|accepted/);
   root.bookingUrgent.render.onLeave();
 });
 
-test("urgent waiting room shows the terminal message and stops polling without navigating", async () => {
+test("urgent submitted state shows a safe terminal message and stops polling without navigating", async () => {
   const context = makeContext();
   const root = loadCustomerFrontend(context);
   const routeCalls = [];
   root.utils.routeTo = (route) => { routeCalls.push(route); root.state.setRoute(route); };
   root.state.setRoute("urgent");
   root.state.setUrgentFlow({
-    step: "waiting", status: "success", error: "",
-    result: { booking_code: "BK2", token: "TOK2", offers_count: 1 },
+    step: "submitted", status: "success", error: "",
+    result: { booking_code: "BK2", token: "TOK2" },
     liveStatus: null, liveStatusError: "",
   });
   let calls = 0;
@@ -753,12 +756,12 @@ test("urgent waiting room shows the terminal message and stops polling without n
 
   assert.deepEqual(routeCalls, []);
   assert.equal(root.state.urgentFlow.liveStatus.terminal, true);
-  assert.match(container.innerHTML, /คำขอคิวด่วนนี้ปิดแล้ว/);
+  assert.match(container.innerHTML, /คำขอนี้สิ้นสุดแล้ว กรุณาติดต่อแอดมินหากต้องการความช่วยเหลือ/);
   assert.equal(calls, 1);
   root.bookingUrgent.render.onLeave();
 });
 
-test("urgent request key is generated once, reused on resubmits, and cleared on a genuinely new request", () => {
+test("urgent request key is generated once and reused by a retry of the same request", async () => {
   const context = makeContext();
   const root = loadCustomerFrontend(context);
   root.state.updateDraft("urgent", {
@@ -767,41 +770,28 @@ test("urgent request key is generated once, reused on resubmits, and cleared on 
   const container = new WizardContainer(root);
   root.bookingUrgent.render(container);
 
-  let capturedPayload = null;
-  root.api.submitUrgentRequest = async (payload) => { capturedPayload = payload; return { success: true, booking_code: "BK3", token: "TOK3" }; };
+  const capturedPayloads = [];
+  root.api.submitUrgentRequest = async (payload) => {
+    capturedPayloads.push(payload);
+    if (capturedPayloads.length === 1) throw new TypeError("offline");
+    return { success: true, booking_code: "BK3", token: "TOK3" };
+  };
 
   root.state.setUrgentFlow({ step: "review" });
   root.bookingUrgent.render(container);
-  return container.querySelectorAll("[data-urgent-action]")
-    .find((button) => button.getAttribute("data-urgent-action") === "confirm").click()
-    .then(() => {
-      assert.ok(capturedPayload.urgent_request_key);
-      assert.equal(capturedPayload.urgent_request_key.length >= 16, true);
-      const firstKey = capturedPayload.urgent_request_key;
-      assert.equal(root.state.draft.urgent.urgent_request_key, firstKey);
+  await container.querySelectorAll("[data-urgent-action]")
+    .find((button) => button.getAttribute("data-urgent-action") === "confirm").click();
+  const firstKey = capturedPayloads[0].urgent_request_key;
+  assert.ok(firstKey);
+  assert.equal(firstKey.length >= 16, true);
+  assert.equal(root.state.draft.urgent.urgent_request_key, firstKey);
+  assert.match(container.innerHTML, /เชื่อมต่อระบบไม่สำเร็จ กรุณาลองอีกครั้ง/);
 
-      root.bookingUrgent.render.onLeave();
-
-      // While the request is still non-terminal (waiting/time_proposed/
-      // admin_review), "new-request" must be a no-op: the key must survive.
-      return container.querySelectorAll("[data-urgent-action]")
-        .find((button) => button.getAttribute("data-urgent-action") === "new-request")
-        .click()
-        .then(() => {
-          assert.equal(root.state.draft.urgent.urgent_request_key, firstKey);
-
-          // Only once the live status is genuinely terminal does the
-          // "new-request" action clear the key and reset the flow.
-          root.state.setUrgentFlow({ liveStatus: { terminal: true, phase: "closed" } });
-          root.bookingUrgent.render(container);
-          return container.querySelectorAll("[data-urgent-action]")
-            .find((button) => button.getAttribute("data-urgent-action") === "new-request")
-            .click();
-        });
-    })
-    .then(() => {
-      assert.equal(root.state.draft.urgent.urgent_request_key, "");
-    });
+  await container.querySelectorAll("[data-urgent-action]")
+    .find((button) => button.getAttribute("data-urgent-action") === "confirm").click();
+  assert.equal(capturedPayloads[1].urgent_request_key, firstKey);
+  assert.equal(root.state.urgentFlow.step, "submitted");
+  root.bookingUrgent.render.onLeave();
 });
 
 test("store contains no hardcoded fake catalog items and only sources data from the real API", () => {
