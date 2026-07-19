@@ -89,7 +89,8 @@ test("scheduled idempotency is payload-bound and checked before the availability
 
 test("idempotency payload comparison covers every canonical material field", () => {
   // Scalars persisted on the jobs row.
-  assert.match(bookingServiceSrc, /function scheduledScalarsMatch\(jobRow, incoming\)/);
+  assert.match(bookingServiceSrc, /function scheduledScalarsMatch\(jobRow, incoming, options = \{\}\)/);
+  assert.match(bookingServiceSrc, /options\.serverAppointmentAuthoritative !== true/);
   for (const field of ["customer_phone", "customer_name", "address_text", "maps_url", "job_zone", "job_type", "customer_note", "allow_time_proposal", "duration_min"]) {
     assert.match(bookingServiceSrc, new RegExp(field), `scalar comparison must include ${field}`);
   }
@@ -100,7 +101,7 @@ test("idempotency payload comparison covers every canonical material field", () 
   assert.match(bookingServiceSrc, /buildIncomingBookingLineSignature/);
   assert.match(bookingServiceSrc, /customerPricingHelpers\.buildCustomerServiceLineItemsFromPayload/);
   // The full match = scalars + line signature.
-  assert.match(bookingServiceSrc, /async function scheduledPayloadMatchesExisting\(db, jobRow, incoming\)/);
+  assert.match(bookingServiceSrc, /async function scheduledPayloadMatchesExisting\(db, jobRow, incoming, options = \{\}\)/);
   assert.match(bookingServiceSrc, /storedSig === incomingSig/);
   // The pre-flight replay lookup still precedes the availability gate.
   const preflightIdx = bookHandler.indexOf("Payload-bound idempotency (checked BEFORE the availability gate)");

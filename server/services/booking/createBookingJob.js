@@ -2,8 +2,10 @@
 
 const crypto = require("crypto");
 const { JOB_STATUS, ASSIGNMENT_STATUS, OFFER_STATUS } = require("./bookingStatuses");
+const { ensureBookingJobUnits } = require("./bookingJobUnits");
 
 function createBookingJobService(dependencies = {}) {
+  const ensureCanonicalBookingJobUnits = dependencies.ensureBookingJobUnits || ensureBookingJobUnits;
   const {
     pool,
     urgentPublicAdapter,
@@ -25,7 +27,6 @@ function createBookingJobService(dependencies = {}) {
     technicianMatchesServiceZone,
     http409Conflict,
     generateUniqueBookingCode,
-    ensureJobUnits,
     effectiveBlockMin,
     isTechFree,
     getJwtSecret,
@@ -715,7 +716,7 @@ function createBookingJobService(dependencies = {}) {
         console.log("[admin_book_v2] urgent_offers", { job_id, booking_code, count: available.length });
       }
 
-      await ensureJobUnits(job_id, client);
+      await ensureCanonicalBookingJobUnits(job_id, client);
       await client.query(`UPDATE public.jobs SET per_unit_evidence_enabled=TRUE WHERE job_id=$1`, [job_id]);
 
       await client.query("COMMIT");
@@ -899,14 +900,16 @@ function createBookingJobService(dependencies = {}) {
 
   // Scalar material fields persisted on the jobs row (everything but the service
   // lines, which are compared via the signature above).
-  function scheduledScalarsMatch(jobRow, incoming) {
+  function scheduledScalarsMatch(jobRow, incoming, options = {}) {
     const apptTime = (v) => {
       const t = new Date(v).getTime();
       return Number.isFinite(t) ? t : NaN;
     };
-    const a = apptTime(jobRow.appointment_datetime);
-    const b = apptTime(normalizeAppointmentDatetime(incoming.appointment_datetime));
-    if (!(Number.isFinite(a) && Number.isFinite(b) && a === b)) return false;
+    if (options.serverAppointmentAuthoritative !== true) {
+      const a = apptTime(jobRow.appointment_datetime);
+      const b = apptTime(normalizeAppointmentDatetime(incoming.appointment_datetime));
+      if (!(Number.isFinite(a) && Number.isFinite(b) && a === b)) return false;
+    }
     if (normalizedBookingScalar(jobRow.customer_phone).replace(/\D/g, "") !== normalizedBookingScalar(incoming.customer_phone).replace(/\D/g, "")) return false;
     if (normalizedBookingScalar(jobRow.customer_name) !== normalizedBookingScalar(incoming.customer_name)) return false;
     if (normalizedBookingScalar(jobRow.address_text) !== normalizedBookingScalar(incoming.address_text)) return false;
@@ -921,8 +924,8 @@ function createBookingJobService(dependencies = {}) {
 
   // Full canonical match = scalar fields + service-line signature. Used identically
   // by the pre-flight replay and the in-transaction race path.
-  async function scheduledPayloadMatchesExisting(db, jobRow, incoming) {
-    if (!scheduledScalarsMatch(jobRow, incoming)) return false;
+  async function scheduledPayloadMatchesExisting(db, jobRow, incoming, options = {}) {
+    if (!scheduledScalarsMatch(jobRow, incoming, options)) return false;
     const storedSig = await loadStoredBookingLineSignature(db, jobRow.job_id);
     const incomingSig = await buildIncomingBookingLineSignature(db, incoming.payloadV2, incoming.itemIdQty, incoming.standardPrice);
     return storedSig === incomingSig;
@@ -941,6 +944,9 @@ function createBookingJobService(dependencies = {}) {
     const requestKey = incoming.urgent_request_key;
     if (!requestKey || requestKey.length < 16) {
       return res.status(400).json({ error: "MISSING_REQUEST_KEY", code: "MISSING_REQUEST_KEY" });
+    }
+    if (!urgentPublicAdapter.isStrictUrgentCleaningPayload(incoming)) {
+      return res.status(400).json({ error: "URGENT_CLEANING_ONLY", code: "URGENT_CLEANING_ONLY" });
     }
 
     req.cwfBookSource = "customer";
@@ -1129,11 +1135,7 @@ function createBookingJobService(dependencies = {}) {
     };
     if (Array.isArray(services) && services.length) payloadV2.services = services;
     if (bm === "urgent") {
-      const urgentServices = Array.isArray(payloadV2.services) && payloadV2.services.length
-        ? payloadV2.services
-        : [payloadV2];
-      const cleaningOnly = urgentServices.every((service) => /(?:ล้าง|wash|clean)/i.test(String(service?.job_type || "")));
-      if (!cleaningOnly) {
+      if (!urgentPublicAdapter.isStrictUrgentCleaningPayload(payloadV2)) {
         return res.status(400).json({ error: "URGENT_CLEANING_ONLY", code: "URGENT_CLEANING_ONLY" });
       }
     }
@@ -1220,7 +1222,7 @@ function createBookingJobService(dependencies = {}) {
           job_zone, job_type, customer_note, allow_time_proposal: allowTimeProposal,
           duration_min: duration_min_v2, payloadV2, itemIdQty, standardPrice: standard_price,
         };
-        if (!(await scheduledPayloadMatchesExisting(pool, prior, incomingBooking))) {
+        if (!(await scheduledPayloadMatchesExisting(pool, prior, incomingBooking, { serverAppointmentAuthoritative: bm === "urgent" }))) {
           // Same key, materially different booking. No mutation, no identifiers/PII.
           return res.status(409).json({
             error: "คำขอนี้ถูกใช้ไปแล้วกับการจองอื่น กรุณาเริ่มการจองใหม่",
@@ -1305,7 +1307,7 @@ function createBookingJobService(dependencies = {}) {
             job_zone, job_type, customer_note, allow_time_proposal: allowTimeProposal,
             duration_min: duration_min_v2, payloadV2, itemIdQty, standardPrice: standard_price,
           };
-          if (!(await scheduledPayloadMatchesExisting(pool, row, incomingBooking))) {
+          if (!(await scheduledPayloadMatchesExisting(pool, row, incomingBooking, { serverAppointmentAuthoritative: bm === "urgent" }))) {
             return res.status(409).json({
               error: "คำขอนี้ถูกใช้ไปแล้วกับการจองอื่น กรุณาเริ่มการจองใหม่",
               code: "IDEMPOTENCY_KEY_REUSED",
@@ -1554,7 +1556,7 @@ function createBookingJobService(dependencies = {}) {
         );
       }
 
-      await ensureJobUnits(job_id, client);
+      await ensureCanonicalBookingJobUnits(job_id, client);
       await client.query(`UPDATE public.jobs SET per_unit_evidence_enabled=TRUE WHERE job_id=$1`, [job_id]);
 
       await client.query("COMMIT");

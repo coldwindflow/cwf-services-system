@@ -1,6 +1,7 @@
 "use strict";
 
 const { JOB_STATUS, ASSIGNMENT_STATUS, OFFER_STATUS } = require("./bookingStatuses");
+const { loadCanonicalServiceCriteria } = require("./bookingJobUnits");
 
 function createBookingApprovalService(dependencies = {}) {
   const {
@@ -42,29 +43,7 @@ function createBookingApprovalService(dependencies = {}) {
   }
 
   async function loadServiceCriteria(client, job) {
-    const units = await client.query(
-      `SELECT item_name, ac_type, wash_type, btu
-         FROM public.job_units
-        WHERE job_id=$1
-        ORDER BY unit_no`,
-      [job.job_id]
-    );
-    if (units.rows.length) {
-      return units.rows.map((unit) => ({
-        job_type: String(unit.item_name || job.job_type || ""),
-        ac_type: String(unit.ac_type || ""),
-        wash_variant: String(unit.wash_type || ""),
-        btu: Number(unit.btu || 0),
-        machine_count: 1,
-      }));
-    }
-    const items = await client.query(
-      `SELECT COALESCE(SUM(GREATEST(COALESCE(qty,0),0)),0)::int AS units
-         FROM public.job_items
-        WHERE job_id=$1`,
-      [job.job_id]
-    );
-    return [{ job_type: job.job_type, machine_count: Math.max(1, Number(items.rows[0]?.units || 1)) }];
+    return loadCanonicalServiceCriteria(client, job.job_id);
   }
 
   async function reserveScheduledTechnician(client, job) {

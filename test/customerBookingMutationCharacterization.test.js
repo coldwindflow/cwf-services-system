@@ -8,6 +8,9 @@ const { Pool } = require("pg");
 
 const { createBookingJobService } = require("../server/services/booking/createBookingJob");
 const { createBookingApprovalService } = require("../server/services/booking/bookingApprovalService");
+const availabilityEngine = require("../server/services/booking/availabilityEngine");
+const pricingHelpers = require("../server/pricing");
+const { parseCanonicalServiceItem } = require("../server/services/booking/bookingJobUnits");
 const {
   JOB_STATUS,
   ASSIGNMENT_STATUS,
@@ -179,7 +182,8 @@ test.before(async () => {
   }
 
   await pool.query(`
-    DROP TABLE IF EXISTS public.job_updates_v2, public.job_units, public.job_promotions, public.job_offers, public.job_assignments,
+    DROP TABLE IF EXISTS public.technician_monthly_work_calendar, public.technician_service_matrix,
+      public.job_updates_v2, public.job_units, public.job_promotions, public.job_offers, public.job_assignments,
       public.job_team_members, public.job_items, public.catalog_items,
       public.technician_profiles, public.users, public.jobs CASCADE
   `);
@@ -220,6 +224,7 @@ test.before(async () => {
   `);
   await pool.query(`
     CREATE TABLE public.job_items (
+      job_item_id BIGSERIAL PRIMARY KEY,
       job_id BIGINT,
       item_id BIGINT,
       item_name TEXT,
@@ -239,7 +244,25 @@ test.before(async () => {
   await pool.query(`CREATE TABLE public.job_assignments (job_id BIGINT, technician_username TEXT, status TEXT, UNIQUE(job_id, technician_username))`);
   await pool.query(`CREATE TABLE public.job_offers (offer_id BIGSERIAL PRIMARY KEY, job_id BIGINT, technician_username TEXT, status TEXT, expires_at TIMESTAMPTZ)`);
   await pool.query(`CREATE TABLE public.job_promotions (job_id BIGINT PRIMARY KEY, promo_id BIGINT, applied_discount NUMERIC)`);
-  await pool.query(`CREATE TABLE public.job_units (unit_id BIGSERIAL PRIMARY KEY, job_id BIGINT, unit_no INT, item_name TEXT, ac_type TEXT, wash_type TEXT, btu TEXT)`);
+  await pool.query(`
+    CREATE TABLE public.job_units (
+      unit_id BIGSERIAL PRIMARY KEY,
+      job_id BIGINT,
+      unit_code TEXT,
+      unit_no INT,
+      item_name TEXT,
+      ac_type TEXT,
+      wash_type TEXT,
+      btu TEXT,
+      location_label TEXT,
+      assigned_technician TEXT,
+      status TEXT DEFAULT 'pending',
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(job_id, unit_code),
+      UNIQUE(job_id, unit_no)
+    )
+  `);
   await pool.query(`CREATE TABLE public.job_updates_v2 (update_id BIGSERIAL PRIMARY KEY, job_id BIGINT, action TEXT, payload_json JSONB)`);
   await pool.query(`CREATE TABLE public.catalog_items (item_id BIGSERIAL PRIMARY KEY, item_name TEXT, base_price NUMERIC, is_active BOOLEAN, is_customer_visible BOOLEAN)`);
   await pool.query(`CREATE TABLE public.users (username TEXT PRIMARY KEY, role TEXT)`);
@@ -253,6 +276,22 @@ test.before(async () => {
       home_service_zone_code TEXT,
       secondary_service_zone_code TEXT,
       allow_out_of_zone BOOLEAN
+      ,customer_slot_visible BOOLEAN DEFAULT FALSE
+    )
+  `);
+  await pool.query(`CREATE TABLE public.technician_service_matrix (username TEXT PRIMARY KEY, matrix_json JSONB)`);
+  await pool.query(`
+    CREATE TABLE public.technician_monthly_work_calendar (
+      technician_username TEXT,
+      work_date DATE,
+      day_status TEXT,
+      can_accept_advance_job BOOLEAN,
+      start_time TEXT,
+      end_time TEXT,
+      max_jobs_per_day INT,
+      max_units_per_day INT,
+      source TEXT,
+      PRIMARY KEY (technician_username, work_date)
     )
   `);
 });
@@ -260,7 +299,8 @@ test.before(async () => {
 test.after(async () => {
   if (!pool) return;
   await pool.query(`
-    DROP TABLE IF EXISTS public.job_updates_v2, public.job_units, public.job_promotions, public.job_offers, public.job_assignments,
+    DROP TABLE IF EXISTS public.technician_monthly_work_calendar, public.technician_service_matrix,
+      public.job_updates_v2, public.job_units, public.job_promotions, public.job_offers, public.job_assignments,
       public.job_team_members, public.job_items, public.catalog_items,
       public.technician_profiles, public.users, public.jobs CASCADE
   `);
@@ -269,7 +309,8 @@ test.after(async () => {
 
 test.beforeEach(async () => {
   if (!pool) return;
-  await pool.query(`TRUNCATE public.job_updates_v2, public.job_units, public.job_promotions, public.job_offers, public.job_assignments,
+  await pool.query(`TRUNCATE public.technician_monthly_work_calendar, public.technician_service_matrix,
+    public.job_updates_v2, public.job_units, public.job_promotions, public.job_offers, public.job_assignments,
     public.job_team_members, public.job_items, public.catalog_items,
     public.technician_profiles, public.users, public.jobs RESTART IDENTITY CASCADE`);
 });
@@ -296,16 +337,9 @@ function makeDependencies(overrides = {}) {
     computeDurationMinMulti: () => 60,
     customerPricingHelpers: {
       resolveCustomerPricingMulti: async () => ({ active_price: 800, standard_price: 800 }),
-      buildCustomerServiceLineItemsFromPayload: async () => [{
-        item_id: null,
-        item_name: "ล้างแอร์",
-        qty: 1,
-        unit_price: 800,
-        line_total: 800,
-        assigned_technician_username: null,
-        is_service: true,
-        customer_price_source: "standard",
-      }],
+      buildCustomerServiceLineItemsFromPayload: async (payload) => pricingHelpers
+        .buildServiceLineItemsFromPayload(payload)
+        .map((item) => ({ ...item, customer_price_source: "standard" })),
     },
     coordFieldProvided: (value) => value !== undefined && value !== null && String(value).trim() !== "",
     strictLatLngPairOrNull: () => null,
@@ -323,7 +357,6 @@ function makeDependencies(overrides = {}) {
     technicianMatchesServiceZone: async () => ({ matches: true }),
     http409Conflict: (res, conflict) => res.status(409).json({ error: "ชนคิว", conflict }),
     generateUniqueBookingCode: async () => `CWF-PR2-${++bookingCodeSequence}`,
-    ensureJobUnits: async () => {},
     effectiveBlockMin: (duration) => Number(duration) + 30,
     isTechFree: async () => true,
     getJwtSecret: () => "",
@@ -361,11 +394,89 @@ async function seedTechnicians() {
   await pool.query(`INSERT INTO public.users (username, role) VALUES ('tech-a','technician'),('tech-b','technician')`);
   await pool.query(`
     INSERT INTO public.technician_profiles
-      (username, weekly_off_days, accept_status, accept_status_expires_at, employment_type, allow_out_of_zone)
+      (username, weekly_off_days, accept_status, accept_status_expires_at, employment_type, allow_out_of_zone, customer_slot_visible)
     VALUES
-      ('tech-a','','ready',NOW() + INTERVAL '1 day','partner',FALSE),
-      ('tech-b','','ready',NOW() + INTERVAL '1 day','company',FALSE)
+      ('tech-a','','ready',NOW() + INTERVAL '1 day','partner',FALSE,TRUE),
+      ('tech-b','','ready',NOW() + INTERVAL '1 day','company',FALSE,TRUE)
   `);
+}
+
+function toMinute(value) {
+  const [hour, minute] = String(value || "").slice(0, 5).split(":").map(Number);
+  return (hour * 60) + minute;
+}
+
+function collisionFreeIntervals(blocks, windowStart, windowEnd, durationMin) {
+  const sorted = (blocks || []).slice().sort((a, b) => a.start_min - b.start_min);
+  const intervals = [];
+  let cursor = windowStart;
+  for (const block of sorted) {
+    const latestStart = Number(block.start_min) - durationMin;
+    if (latestStart >= cursor) intervals.push({ startMin: cursor, endMin: latestStart });
+    cursor = Math.max(cursor, Number(block.end_min));
+  }
+  if (cursor + durationMin <= windowEnd) intervals.push({ startMin: cursor, endMin: windowEnd - durationMin });
+  return intervals;
+}
+
+function realAvailabilityDependencies(db) {
+  return {
+    pool: db,
+    db,
+    listTechniciansByType: async (type) => {
+      const result = await db.query(
+        `SELECT username, employment_type, customer_slot_visible
+           FROM public.technician_profiles
+          WHERE ($1='all' OR employment_type=$1)
+          ORDER BY username`,
+        [String(type || "all")]
+      );
+      return result.rows;
+    },
+    listBusyBlocksForTechOnDate: async (username, date, ignoreJobId) => {
+      const result = await db.query(
+        `SELECT
+           (EXTRACT(HOUR FROM appointment_datetime AT TIME ZONE 'Asia/Bangkok')::int * 60
+             + EXTRACT(MINUTE FROM appointment_datetime AT TIME ZONE 'Asia/Bangkok')::int) AS start_min,
+           (EXTRACT(HOUR FROM appointment_datetime AT TIME ZONE 'Asia/Bangkok')::int * 60
+             + EXTRACT(MINUTE FROM appointment_datetime AT TIME ZONE 'Asia/Bangkok')::int
+             + COALESCE(duration_min,60)::int) AS end_min
+           FROM public.jobs
+          WHERE technician_username=$1
+            AND (appointment_datetime AT TIME ZONE 'Asia/Bangkok')::date=$2::date
+            AND ($3::bigint IS NULL OR job_id <> $3::bigint)
+            AND COALESCE(job_status,'') <> 'ยกเลิก'`,
+        [username, date, ignoreJobId || null]
+      );
+      return result.rows.map((row) => ({ start_min: Number(row.start_min), end_min: Number(row.end_min) }));
+    },
+    buildStartIntervalsByCollision: collisionFreeIntervals,
+    toMin: toMinute,
+    minToHHMM: (minute) => `${String(Math.floor(Number(minute) / 60)).padStart(2, "0")}:${String(Number(minute) % 60).padStart(2, "0")}`,
+    getNowBangkokParts: () => ({ ymd: "2026-07-01", hour: 8, minute: 0 }),
+  };
+}
+
+async function seedRealAvailability() {
+  await seedTechnicians();
+  const matrix = {
+    job_types: { wash: true, repair: true, install: true },
+    ac_types: { wall: true, fourway: true, hanging: true, ceiling: true },
+    wash_wall_variants: { normal: true, premium: true, coil: true, overhaul: true },
+    repair_variants: { inspection: true, leak_check: true, parts: true, general: true },
+  };
+  await pool.query(
+    `INSERT INTO public.technician_service_matrix (username, matrix_json)
+     VALUES ('tech-a',$1::jsonb),('tech-b',$1::jsonb)`,
+    [JSON.stringify(matrix)]
+  );
+  await pool.query(
+    `INSERT INTO public.technician_monthly_work_calendar
+       (technician_username, work_date, day_status, can_accept_advance_job, start_time, end_time, max_jobs_per_day, max_units_per_day, source)
+     VALUES
+       ('tech-a','2026-08-01','working',TRUE,'09:00','18:00',5,10,'test'),
+       ('tech-b','2026-08-01','working',TRUE,'09:00','18:00',5,10,'test')`
+  );
 }
 
 dbTest("real PostgreSQL: public scheduled success preserves response, status, items, pricing, and assignment reservation", async () => {
@@ -383,7 +494,7 @@ dbTest("real PostgreSQL: public scheduled success preserves response, status, it
     "travel_buffer_min", "applied_promo", "base_total",
   ]);
   assert.equal(result.body.booking_mode, "scheduled");
-  assert.equal(result.body.base_total, 800);
+  assert.equal(result.body.base_total, 600);
   assert.equal(Object.hasOwn(result.body, "technician_username"), false);
   assert.equal(Object.hasOwn(result.body, "technician"), false);
 
@@ -391,8 +502,8 @@ dbTest("real PostgreSQL: public scheduled success preserves response, status, it
   const items = (await pool.query(`SELECT item_name, qty::int, line_total::int FROM public.job_items ORDER BY item_name`)).rows;
   assert.equal(job.job_status, JOB_STATUS.CUSTOMER_SCHEDULED_REVIEW);
   assert.equal(job.technician_username, "tech-a");
-  assert.equal(Number(job.job_price), 800);
-  assert.deepEqual(items, [{ item_name: "ล้างแอร์", qty: 1, line_total: 800 }]);
+  assert.equal(Number(job.job_price), 600);
+  assert.deepEqual(items, [{ item_name: "ล้างแอร์ผนัง • ล้างธรรมดา • 12000 BTU • 1 เครื่อง", qty: 1, line_total: 600 }]);
   assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_assignments`)).rows[0].count), 0);
   assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_team_members`)).rows[0].count), 0);
   assert.deepEqual(sideEffects, []);
@@ -415,6 +526,31 @@ dbTest("real PostgreSQL: public scheduled success preserves response, status, it
   assert.equal(reviewQueue.rows[0].count, 1);
 });
 
+test("canonical booking criteria preserve wash/repair variants, BTU, and line quantity without inference defaults", () => {
+  assert.deepEqual(parseCanonicalServiceItem({
+    item_name: "ล้างแอร์ผนัง • ล้างพรีเมียม • 18000 BTU • 2 เครื่อง",
+    qty: 2,
+  }), {
+    job_type: "ล้าง",
+    ac_type: "ผนัง",
+    wash_variant: "ล้างพรีเมียม",
+    repair_variant: "",
+    btu: 18000,
+    machine_count: 2,
+  });
+  assert.deepEqual(parseCanonicalServiceItem({
+    item_name: "ซ่อมแอร์ผนัง • ตรวจเช็ครั่ว • 12000 BTU • 1 เครื่อง",
+    qty: 1,
+  }), {
+    job_type: "ซ่อม",
+    ac_type: "ผนัง",
+    wash_variant: "",
+    repair_variant: "ตรวจเช็ครั่ว",
+    btu: 12000,
+    machine_count: 1,
+  });
+});
+
 dbTest("real PostgreSQL: scheduled retry replays the same job without duplicate items", async () => {
   const service = createBookingJobService(makeDependencies());
   const body = publicScheduledBody();
@@ -430,7 +566,7 @@ dbTest("real PostgreSQL: scheduled retry replays the same job without duplicate 
 
 dbTest("real PostgreSQL: scheduled rollback leaves no partial job or items", async () => {
   const service = createBookingJobService(makeDependencies({
-    ensureJobUnits: async () => { throw new Error("fixture assignment failure"); },
+    ensureBookingJobUnits: async () => { throw new Error("fixture assignment failure"); },
   }));
   const result = await invoke(service.handlePublicBook, publicScheduledBody({ scheduled_request_key: "scheduled-pr2-key-rollback" }));
   assert.equal(result.statusCode, 500);
@@ -465,6 +601,64 @@ dbTest("real PostgreSQL: public urgent waits for admin with zero offers, assignm
   assert.equal(urgentJob.technician_username, null);
   assert.equal(notifications.length, 0);
   assert.equal(income.length, 0);
+});
+
+dbTest("real PostgreSQL: urgent retry keeps the first server appointment authoritative and rejects material payload reuse", async () => {
+  const appointments = ["2026-08-01T09:00:00+07:00", "2026-08-01T09:30:00+07:00", "2026-08-01T10:00:00+07:00"];
+  let appointmentIndex = 0;
+  const adapter = {
+    ...urgentPublicAdapterBase,
+    computeCustomerUrgentAppointmentIso: () => appointments[Math.min(appointmentIndex++, appointments.length - 1)],
+  };
+  const service = createBookingJobService(makeDependencies({ urgentPublicAdapter: adapter }));
+  const body = publicUrgentBody({ urgent_request_key: "urgent-pr3-clock-replay-0001" });
+  const first = await invoke(service.handlePublicBook, body);
+  const replay = await invoke(service.handlePublicBook, body);
+  assert.equal(first.statusCode, 200);
+  assert.equal(replay.statusCode, 200);
+  assert.equal(replay.body.replayed, true);
+  assert.equal(replay.body.job_id, first.body.job_id);
+  const stored = (await pool.query(`SELECT appointment_datetime FROM public.jobs WHERE job_id=$1`, [first.body.job_id])).rows[0];
+  assert.equal(new Date(stored.appointment_datetime).getTime(), new Date(appointments[0]).getTime());
+  assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.jobs`)).rows[0].count), 1);
+
+  const changed = await invoke(service.handlePublicBook, { ...body, customer_note: "materially changed" });
+  assert.equal(changed.statusCode, 409);
+  assert.equal(changed.body.code, "IDEMPOTENCY_KEY_REUSED");
+  assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.jobs`)).rows[0].count), 1);
+});
+
+dbTest("real PostgreSQL: strict urgent cleaning classifier rejects tampering before pricing and DB mutation", async () => {
+  let pricingCalls = 0;
+  const baseDependencies = makeDependencies();
+  const service = createBookingJobService(makeDependencies({
+    customerPricingHelpers: {
+      ...baseDependencies.customerPricingHelpers,
+      resolveCustomerPricingMulti: async () => {
+        pricingCalls += 1;
+        throw new Error("pricing must not run for rejected urgent payload");
+      },
+    },
+  }));
+  const cleanLine = { job_type: "ล้าง", ac_type: "ผนัง", btu: 12000, machine_count: 1, wash_variant: "ล้างธรรมดา" };
+  const cases = [
+    { name: "top-level repair with cleaning services", patch: { job_type: "ซ่อม", services: [cleanLine] } },
+    { name: "Thai mixed cleaning and repair", patch: { job_type: "ล้างและซ่อม" } },
+    { name: "English mixed cleaning and repair", patch: { job_type: "clean and repair" } },
+    { name: "one non-cleaning service line", patch: { job_type: "ล้าง", services: [cleanLine, { ...cleanLine, job_type: "ซ่อม" }] } },
+  ];
+  for (let index = 0; index < cases.length; index += 1) {
+    const entry = cases[index];
+    const result = await invoke(service.handlePublicBook, publicUrgentBody({
+      urgent_request_key: `urgent-pr3-tamper-${String(index + 1).padStart(4, "0")}`,
+      ...entry.patch,
+    }));
+    assert.equal(result.statusCode, 400, entry.name);
+    assert.equal(result.body.code, "URGENT_CLEANING_ONLY", entry.name);
+    assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.jobs`)).rows[0].count), 0, entry.name);
+    assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_items`)).rows[0].count), 0, entry.name);
+  }
+  assert.equal(pricingCalls, 0);
 });
 
 dbTest("real PostgreSQL: concurrent scheduled retry commits exactly one job and item set", async () => {
@@ -523,6 +717,54 @@ function makeApprovalService(events = {}, overrides = {}) {
     ...overrides,
   });
 }
+
+dbTest("real PostgreSQL: production-shaped units and real availability engine approve multi-service scheduled booking", async () => {
+  await seedRealAvailability();
+  const depsFor = (db = pool) => realAvailabilityDependencies(db);
+  const booking = createBookingJobService(makeDependencies({
+    computeDurationMinMulti: (payload) => pricingHelpers.computeDurationMinMulti(payload, { source: "pr3_real_engine", conservative: true }),
+    customerAvailability: availabilityEngine,
+    publicCustomerAvailabilityDeps: depsFor,
+  }));
+  const created = await invoke(booking.handlePublicBook, publicScheduledBody({
+    scheduled_request_key: "scheduled-pr3-real-engine-0001",
+    job_type: "ล้าง",
+    ac_type: "ผนัง",
+    btu: 12000,
+    machine_count: 3,
+    services: [
+      { job_type: "ล้าง", ac_type: "ผนัง", wash_variant: "ล้างธรรมดา", btu: 12000, machine_count: 2 },
+      { job_type: "ล้าง", ac_type: "สี่ทิศทาง", wash_variant: "", btu: 24000, machine_count: 1 },
+    ],
+  }));
+  assert.equal(created.statusCode, 200);
+
+  const units = (await pool.query(
+    `SELECT unit_no, ac_type, wash_type, btu
+       FROM public.job_units
+      WHERE job_id=$1
+      ORDER BY unit_no`,
+    [created.body.job_id]
+  )).rows;
+  assert.deepEqual(units, [
+    { unit_no: 1, ac_type: "ผนัง", wash_type: "ล้างธรรมดา", btu: "12000" },
+    { unit_no: 2, ac_type: "ผนัง", wash_type: "ล้างธรรมดา", btu: "12000" },
+    { unit_no: 3, ac_type: "สี่ทิศทาง", wash_type: null, btu: "24000" },
+  ]);
+
+  const events = {};
+  const approval = makeApprovalService(events, {
+    availabilityEngine,
+    getAvailabilityDependencies: depsFor,
+  });
+  const approved = await invokeApproval(approval.approve, created.body.job_id);
+  assert.equal(approved.statusCode, 200);
+  assert.equal(approved.body.replayed, false);
+  assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_assignments WHERE job_id=$1`, [created.body.job_id])).rows[0].count), 1);
+  assert.equal((await pool.query(`SELECT job_status FROM public.jobs WHERE job_id=$1`, [created.body.job_id])).rows[0].job_status, JOB_STATUS.ADMIN_SCHEDULED_PENDING);
+  assert.equal(events.income.length, 1);
+  assert.equal(events.direct.length, 1);
+});
 
 async function invokeApproval(handler, jobId, body = {}) {
   const req = { params: { job_id: String(jobId) }, body, auth: { username: "admin-test" } };
@@ -744,7 +986,7 @@ dbTest("real PostgreSQL: internal booking preserves validation and admin-notific
 dbTest("real PostgreSQL: urgent transaction rollback leaves no partial job, items, or offers", async () => {
   await seedTechnicians();
   const service = createBookingJobService(makeDependencies({
-    ensureJobUnits: async () => { throw new Error("fixture urgent rollback"); },
+    ensureBookingJobUnits: async () => { throw new Error("fixture urgent rollback"); },
   }));
   const result = await invoke(service.handlePublicBook, publicUrgentBody({ urgent_request_key: "urgent-pr2-key-rollback" }));
   assert.equal(result.statusCode, 500);
