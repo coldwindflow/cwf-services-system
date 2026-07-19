@@ -35,6 +35,49 @@
     "NO_AVAILABLE_SLOTS",
     "AVAILABILITY_EMPTY",
   ]);
+  const URGENT_ACTIONABLE_PHASES = new Set(["approved", "accepted", "assigned", "in_progress"]);
+  const URGENT_TERMINAL_PHASES = new Set(["terminal", "rejected", "cancelled", "canceled", "closed"]);
+  const urgentSubmittedViews = Object.freeze({
+    pending: Object.freeze({
+      state: "pending",
+      mark: "✓",
+      kicker: "ส่งคำขอแล้ว",
+      title: "ส่งคำขอแล้ว",
+      message: messages.urgentPending,
+      detail: "ระบบรับคำขอของคุณแล้ว และจะแจ้งสถานะเมื่อแอดมินตรวจสอบเสร็จ",
+      statusLabel: "รอแอดมินตรวจสอบ",
+      railLabel: "รอแอดมิน",
+      boxClass: "is-warning",
+      cardClass: "success-card",
+      showAdminContact: false,
+    }),
+    actionable: Object.freeze({
+      state: "actionable",
+      mark: "✓",
+      kicker: "คำขอได้รับการยืนยันแล้ว",
+      title: "คำขอได้รับการยืนยันแล้ว",
+      message: messages.urgentApproved,
+      detail: "ดูรายละเอียดล่าสุดและความคืบหน้าได้ที่หน้าติดตามงาน",
+      statusLabel: "พร้อมติดตามงาน",
+      railLabel: "ติดตามงาน",
+      boxClass: "is-success",
+      cardClass: "success-card",
+      showAdminContact: false,
+    }),
+    terminal: Object.freeze({
+      state: "terminal",
+      mark: "!",
+      kicker: "คำขอสิ้นสุดแล้ว",
+      title: "คำขอสิ้นสุดแล้ว",
+      message: messages.urgentClosed,
+      detail: "หากต้องการจองใหม่หรือตรวจสอบรายละเอียด กรุณาติดต่อแอดมิน",
+      statusLabel: "สิ้นสุดแล้ว",
+      railLabel: "สิ้นสุด",
+      boxClass: "is-warning",
+      cardClass: "",
+      showAdminContact: true,
+    }),
+  });
 
   function errorCode(error) {
     return String(error?.data?.code || error?.code || "").trim().toUpperCase();
@@ -64,11 +107,15 @@
     return messages.noSlots;
   }
 
-  function urgentStatus(status) {
-    if (status?.terminal === true) return messages.urgentClosed;
+  function urgentSubmittedView(status) {
     const phase = String(status?.phase || "").trim().toLowerCase();
-    if (["approved", "accepted", "assigned", "in_progress"].includes(phase)) return messages.urgentApproved;
-    return messages.urgentPending;
+    if (status?.terminal === true || URGENT_TERMINAL_PHASES.has(phase)) return urgentSubmittedViews.terminal;
+    if (status?.confirmed === true || URGENT_ACTIONABLE_PHASES.has(phase)) return urgentSubmittedViews.actionable;
+    return urgentSubmittedViews.pending;
+  }
+
+  function urgentStatus(status) {
+    return urgentSubmittedView(status).message;
   }
 
   root.customerCopy = {
@@ -76,5 +123,6 @@
     bookingError,
     availabilityEmpty,
     urgentStatus,
+    urgentSubmittedView,
   };
 })();

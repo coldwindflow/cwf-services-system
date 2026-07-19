@@ -237,7 +237,7 @@ test("Customer App build id is consistent across shell and service worker", () =
   const sw = read("customer-app/sw.js");
   const app = read("customer-app/assets/customer-app.js");
   const manifest = read("customer-app/manifest.webmanifest");
-  const build = "20260719_customer_booking_pr4_v1";
+  const build = "20260720_customer_booking_pr4_v2";
 
   assert.match(index, new RegExp(`customer-app\\.css\\?v=${build}`));
   assert.match(index, new RegExp(`modules\\/api\\.js\\?v=${build}`));
@@ -255,7 +255,7 @@ test("Customer App build id is consistent across shell and service worker", () =
 test("store module is loaded in index.html and precached in the service worker app shell", () => {
   const index = read("customer-app/index.html");
   const sw = read("customer-app/sw.js");
-  const build = "20260719_customer_booking_pr4_v1";
+  const build = "20260720_customer_booking_pr4_v2";
 
   assert.match(index, new RegExp(`modules/store\\.js\\?v=${build}`));
   assert.match(sw, /`\.\/modules\/store\.js\?v=\$\{BUILD_ID\}`/);
@@ -704,6 +704,31 @@ test("customer urgent submitted state polls status without rendering backend pha
   assert.doesNotMatch(statusRoute, /tech_name|full_name|matrix_json|technician_count/);
 });
 
+test("urgent submitted pending DOM contains only pending-state copy", async () => {
+  const context = makeContext();
+  const root = loadCustomerFrontend(context);
+  root.state.setRoute("urgent");
+  root.state.setUrgentFlow({
+    step: "submitted", status: "success", error: "",
+    result: { booking_code: "BK0", token: "TOK0" },
+    liveStatus: null, liveStatusError: "",
+  });
+  root.api.loadUrgentStatus = async () => ({
+    success: true, booking_code: "BK0", phase: "admin_review", confirmed: false, terminal: false,
+  });
+
+  const container = new WizardContainer(root);
+  root.bookingUrgent.render(container);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.match(container.innerHTML, /แอดมินกำลังตรวจสอบรายละเอียดก่อนส่งต่อให้ช่างที่ว่าง/);
+  assert.match(container.innerHTML, /รอแอดมินตรวจสอบ/);
+  assert.match(container.innerHTML, /รอแอดมิน/);
+  assert.doesNotMatch(container.innerHTML, /คำขอได้รับการยืนยันแล้ว|พร้อมติดตามงาน|คำขอสิ้นสุดแล้ว|คำขอนี้สิ้นสุดแล้ว|สิ้นสุดแล้ว/);
+  assert.doesNotMatch(container.innerHTML, /phase|admin_review/);
+  root.bookingUrgent.render.onLeave();
+});
+
 test("urgent submitted state maps approved status to safe Thai copy without automatic navigation", async () => {
   const context = makeContext();
   const root = loadCustomerFrontend(context);
@@ -726,6 +751,8 @@ test("urgent submitted state maps approved status to safe Thai copy without auto
 
   assert.deepEqual(routeCalls, []);
   assert.match(container.innerHTML, /แอดมินยืนยันคำขอแล้ว กรุณาติดตามสถานะงาน/);
+  assert.match(container.innerHTML, /คำขอได้รับการยืนยันแล้ว|พร้อมติดตามงาน/);
+  assert.doesNotMatch(container.innerHTML, /แอดมินกำลังตรวจสอบรายละเอียดก่อนส่งต่อให้ช่างที่ว่าง|รอแอดมินตรวจสอบ|รอแอดมิน|คำขอสิ้นสุดแล้ว|คำขอนี้สิ้นสุดแล้ว|สิ้นสุดแล้ว/);
   assert.doesNotMatch(container.innerHTML, /phase|accepted/);
   root.bookingUrgent.render.onLeave();
 });
@@ -757,6 +784,9 @@ test("urgent submitted state shows a safe terminal message and stops polling wit
   assert.deepEqual(routeCalls, []);
   assert.equal(root.state.urgentFlow.liveStatus.terminal, true);
   assert.match(container.innerHTML, /คำขอนี้สิ้นสุดแล้ว กรุณาติดต่อแอดมินหากต้องการความช่วยเหลือ/);
+  assert.match(container.innerHTML, /ติดต่อแอดมินทาง LINE/);
+  assert.doesNotMatch(container.innerHTML, /แอดมินกำลังตรวจสอบรายละเอียดก่อนส่งต่อให้ช่างที่ว่าง|รอแอดมินตรวจสอบ|รอแอดมิน|คำขอได้รับการยืนยันแล้ว|แอดมินยืนยันคำขอแล้ว|พร้อมติดตามงาน/);
+  assert.doesNotMatch(container.innerHTML, /phase|admin_review/);
   assert.equal(calls, 1);
   root.bookingUrgent.render.onLeave();
 });

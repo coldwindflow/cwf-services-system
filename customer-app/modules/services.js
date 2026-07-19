@@ -320,14 +320,14 @@
     primaryActions: [
       { route: "scheduled", glyph: "calendar", title: "จองล้างแอร์", copy: "เลือกวัน เวลา และคิวว่างจริง" },
       { route: "urgent", glyph: "bolt", title: "จองล้างแอร์ด่วน", copy: "ส่งรายละเอียดให้แอดมินตรวจสอบก่อนจัดหาช่างที่ว่าง" },
-      { route: "tracking", glyph: "pin", title: "ติดตามงาน", copy: "ดูสถานะงานด้วย Booking Code" },
+      { route: "tracking", glyph: "pin", title: "ติดตามงาน", copy: "ดูสถานะงานด้วยรหัสการจอง" },
       { route: "profile", glyph: "phone", title: "ติดต่อ CWF", copy: "โทรหรือ LINE หาแอดมิน" },
     ],
     trustItems: [
       { glyph: "shield", title: "ช่างผ่านการคัดกรอง", copy: "แสดงคิวเฉพาะช่างที่เปิดให้ลูกค้าจองได้" },
       { glyph: "tag", title: "แจ้งราคาก่อนส่งคำขอ", copy: "ระบบคำนวณราคาและเวลาทำงานหลังเลือกบริการ" },
       { glyph: "sparkle", title: "รองรับหลายเครื่อง", copy: "แยกรายการตามชนิดแอร์ BTU และวิธีล้าง" },
-      { glyph: "pin", title: "ติดตามสถานะได้", copy: "ใช้ Booking Code ดูสถานะสำคัญของงาน" },
+      { glyph: "pin", title: "ติดตามสถานะได้", copy: "ใช้รหัสการจองดูสถานะสำคัญของงาน" },
     ],
     commerceCategories,
     quickServices,

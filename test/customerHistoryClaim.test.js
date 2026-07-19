@@ -813,8 +813,8 @@ test("Customer App schema-not-ready state offers retry and admin contact without
 test("Customer App renders one responsive search input, preview, and explicit link action", () => {
   const src = fs.readFileSync(path.join(REPO_ROOT, "customer-app/modules/profile.js"), "utf8");
   const css = fs.readFileSync(path.join(REPO_ROOT, "customer-app/assets/customer-app.css"), "utf8");
-  assert.match(src, /<label for="history-identifier">เบอร์โทร หรือ Booking Code<\/label>/);
-  assert.match(src, /name="identifier"[\s\S]*?placeholder="กรอกเบอร์โทรหรือรหัสงาน"/);
+  assert.match(src, /<label for="history-identifier">เบอร์โทร หรือรหัสการจอง<\/label>/);
+  assert.match(src, /name="identifier"[\s\S]*?placeholder="กรอกเบอร์โทรหรือรหัสการจอง"/);
   assert.match(src, /"ค้นหางาน"/);
   assert.match(src, /"ผูกประวัติกับบัญชีนี้"/);
   assert.match(src, /profile-history-preview-card/);
@@ -845,7 +845,7 @@ test("Customer History search and preview keep 360px and 390px width contracts",
 });
 
 test("Customer App cache version is bumped consistently", () => {
-  const expected = "20260719_customer_booking_pr4_v1";
+  const expected = "20260720_customer_booking_pr4_v2";
   for (const file of [
     "customer-app/index.html",
     "customer-app/sw.js",

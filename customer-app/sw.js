@@ -1,6 +1,6 @@
 "use strict";
 
-const BUILD_ID = "20260719_customer_booking_pr4_v1";
+const BUILD_ID = "20260720_customer_booking_pr4_v2";
 const CACHE_NAME = `cwf-customer-app-v2-${BUILD_ID}`;
 const APP_SHELL = [
   `./index.html?v=${BUILD_ID}`,

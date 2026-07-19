@@ -788,8 +788,8 @@ test("phone multi-result list renders safe fields and never renders the signed s
 
 test("tracking UI uses one phone-or-code field and removes the old phone-proof flow", () => {
   const source = fs.readFileSync(path.join(ROOT, "customer-app", "modules", "tracking.js"), "utf8");
-  assert.match(source, /เบอร์โทร หรือ Booking Code/);
-  assert.match(source, /placeholder="กรอกเบอร์โทรหรือรหัสงาน"/);
+  assert.match(source, /เบอร์โทร หรือรหัสการจอง/);
+  assert.match(source, /placeholder="กรอกเบอร์โทรหรือรหัสการจอง"/);
   assert.match(source, /lookupTracking\(q\)/);
   assert.match(source, /selectTracking\(reference\)/);
   assert.match(source, /if \(jobs\.length === 1\) return openSelection/);
@@ -969,7 +969,7 @@ test("tracking UI exposes loading, not-found, rate-limit and offline states", ()
 });
 
 test("tracking assets share the full-read cache build id", () => {
-  const build = "20260719_customer_booking_pr4_v1";
+  const build = "20260720_customer_booking_pr4_v2";
   for (const file of [
     "customer-app/index.html",
     "customer-app/sw.js",

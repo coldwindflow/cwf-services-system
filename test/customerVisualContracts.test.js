@@ -45,6 +45,7 @@ test("visual unification keeps scheduled booking data hooks and submit API contr
 
 test("visual unification keeps urgent, tracking, and profile hooks intact", () => {
   const urgent = read("customer-app/modules/bookingUrgent.js");
+  const customerCopy = read("customer-app/modules/customerCopy.js");
   const tracking = read("customer-app/modules/tracking.js");
   const profile = read("customer-app/modules/profile.js");
 
@@ -52,7 +53,8 @@ test("visual unification keeps urgent, tracking, and profile hooks intact", () =
     assert.match(urgent, new RegExp(hook));
   }
   assert.match(urgent, /root\.api\.submitUrgentRequest\(buildSubmitPayload\(\)\)/);
-  assert.match(urgent, /แอดมินกำลังตรวจสอบรายละเอียดก่อนส่งต่อให้ช่างที่ว่าง/);
+  assert.match(urgent, /root\.customerCopy\.urgentSubmittedView/);
+  assert.match(customerCopy, /แอดมินกำลังตรวจสอบรายละเอียดก่อนส่งต่อให้ช่างที่ว่าง/);
 
   for (const hook of ["data-action=\"track-read\"", "data-tracking-result", "data-tracking-view", "data-tracking-panel", "data-review-form"]) {
     assert.match(tracking, new RegExp(hook.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));

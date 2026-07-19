@@ -163,11 +163,11 @@
     `;
   }
 
-  function flowRail(active) {
+  function flowRail(active, submittedView) {
     const steps = [
       { key: "form", label: "กรอกข้อมูล" },
       { key: "review", label: "ตรวจสอบ" },
-      { key: "submitted", label: "รอแอดมิน" },
+      { key: "submitted", label: submittedView?.railLabel || "รอแอดมิน" },
     ];
     const order = { form: 0, review: 1, submitted: 2 };
     const activeIndex = order[active] ?? 0;
@@ -269,30 +269,32 @@
   }
 
   function isUrgentRequestTerminal(status) {
-    return status?.terminal === true;
+    return root.customerCopy.urgentSubmittedView(status).state === "terminal";
   }
 
-  function renderSubmitted() {
+  function renderSubmitted(submittedView) {
     const d = draft();
     const flow = root.state.urgentFlow || {};
     const result = flow.result || {};
     const trackingKey = trackingKeyFromResult(result);
+    const view = submittedView || root.customerCopy.urgentSubmittedView(flow.liveStatus);
     return `
-      <section class="card success-card booking-result-card urgent-card-fx">
-        <div class="success-mark">✓</div>
-        <span class="section-kicker">ส่งคำขอแล้ว</span>
-        <h2>ส่งคำขอแล้ว</h2>
-        <div class="state-box is-success" data-urgent-live-status>${root.utils.escapeHtml(root.customerCopy.urgentStatus(flow.liveStatus))}</div>
-        <p class="muted">แอดมินกำลังตรวจสอบรายละเอียดก่อนส่งต่อให้ช่างที่ว่าง</p>
+      <section class="card ${view.cardClass} booking-result-card urgent-card-fx">
+        <div class="success-mark">${root.utils.escapeHtml(view.mark)}</div>
+        <span class="section-kicker">${root.utils.escapeHtml(view.kicker)}</span>
+        <h2>${root.utils.escapeHtml(view.title)}</h2>
+        <div class="state-box ${view.boxClass}" data-urgent-live-status>${root.utils.escapeHtml(view.message)}</div>
+        <p class="muted">${root.utils.escapeHtml(view.detail)}</p>
         <div class="data-list">
-          <div class="data-row"><strong>Booking Code</strong><span class="booking-code-value">${root.utils.escapeHtml(result.booking_code || "-")}</span></div>
+          <div class="data-row"><strong>รหัสการจอง</strong><span class="booking-code-value">${root.utils.escapeHtml(result.booking_code || "-")}</span></div>
           <div class="data-row"><strong>บริการ</strong><span class="muted">${root.utils.escapeHtml(serviceSummary())}</span></div>
           <div class="data-row"><strong>พื้นที่</strong><span class="muted">${root.utils.escapeHtml(d.job_zone || "-")}</span></div>
-          <div class="data-row"><strong>สถานะ</strong><span class="muted">รอแอดมินตรวจสอบ</span></div>
+          <div class="data-row"><strong>สถานะ</strong><span class="muted">${root.utils.escapeHtml(view.statusLabel)}</span></div>
         </div>
         ${flow.liveStatusError ? `<div class="state-box is-error" role="alert">${root.utils.escapeHtml(flow.liveStatusError)}</div>` : ""}
         <div class="button-row">
           ${trackingKey ? `<button class="primary-btn" type="button" data-urgent-action="track-created" data-tracking-key="${root.utils.escapeHtml(trackingKey)}">ติดตามสถานะงาน</button>` : ""}
+          ${view.showAdminContact ? `<a class="secondary-btn line-fallback-btn" href="${ADMIN_LINE_URL}" target="_blank" rel="noopener noreferrer">ติดต่อแอดมินทาง LINE</a>` : ""}
           <button class="secondary-btn" type="button" data-route="home">กลับหน้าแรก</button>
         </div>
       </section>
@@ -367,20 +369,23 @@
     window.addEventListener("pageshow", refresh);
   }
 
-  function body() {
+  function body(submittedView) {
     const step = root.state.urgentFlow.step || "form";
     if (step === "review") return renderReview();
-    if (step === "submitted") return renderSubmitted();
+    if (step === "submitted") return renderSubmitted(submittedView);
     return renderForm();
   }
 
   function paint(container) {
     const step = root.state.urgentFlow.step || "form";
+    const submittedView = step === "submitted"
+      ? root.customerCopy.urgentSubmittedView(root.state.urgentFlow.liveStatus)
+      : null;
     container.innerHTML = `
       <section class="screen urgent-screen" data-urgent-step="${step}">
         ${hero()}
-        ${flowRail(step)}
-        <div class="urgent-body" data-urgent-body>${body()}</div>
+        ${flowRail(step, submittedView)}
+        <div class="urgent-body" data-urgent-body>${body(submittedView)}</div>
       </section>
     `;
     bind(container);

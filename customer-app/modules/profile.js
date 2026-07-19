@@ -126,10 +126,10 @@
         ${claimed ? "" : `
           <form class="profile-history-search-form" data-history-search-form>
             <div class="field field-wide">
-              <label for="history-identifier">เบอร์โทร หรือ Booking Code</label>
+              <label for="history-identifier">เบอร์โทร หรือรหัสการจอง</label>
               <input id="history-identifier" class="input" name="identifier" autocomplete="off"
                 autocapitalize="characters" value="${root.utils.escapeHtml(h.searchIdentifier || "")}"
-                placeholder="กรอกเบอร์โทรหรือรหัสงาน" required>
+                placeholder="กรอกเบอร์โทรหรือรหัสการจอง" required>
             </div>
             ${h.searchError ? `<div class="state-box is-error">${root.utils.escapeHtml(h.searchError)}</div>` : ""}
             ${h.claimError ? `<div class="state-box is-error">${root.utils.escapeHtml(h.claimError)}</div>` : ""}

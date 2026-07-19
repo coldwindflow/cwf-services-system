@@ -655,7 +655,7 @@
         <div class="state-box is-success">ระบบกันช่วงเวลานี้ไว้ให้ชั่วคราว</div>
         <p class="muted">แอดมินจะตรวจสอบรายละเอียดและยืนยันคิวให้คุณ</p>
         <div class="data-list">
-          <div class="data-row"><strong>Booking Code</strong><span class="booking-code-value">${root.utils.escapeHtml(result.booking_code || "-")}</span></div>
+          <div class="data-row"><strong>รหัสการจอง</strong><span class="booking-code-value">${root.utils.escapeHtml(result.booking_code || "-")}</span></div>
           <div class="data-row"><strong>วันและเวลา</strong><span class="muted">${root.utils.escapeHtml(selected.date || draft().date || "-")} · ${root.utils.escapeHtml(selected.start || "-")}-${root.utils.escapeHtml(selected.end || "-")} น.</span></div>
           <div class="data-row"><strong>ราคา</strong><span class="muted">${root.utils.formatBaht(result.base_total)}</span></div>
           <div class="data-row"><strong>เวลาทำงาน</strong><span class="muted">${root.utils.escapeHtml(result.duration_min || "-")} นาที</span></div>

@@ -5,7 +5,7 @@ const path = require("node:path");
 const vm = require("node:vm");
 
 const ROOT = path.resolve(__dirname, "..");
-const BUILD = "20260719_customer_booking_pr4_v1";
+const BUILD = "20260720_customer_booking_pr4_v2";
 
 function read(relativePath) {
   return fs.readFileSync(path.join(ROOT, relativePath), "utf8");
@@ -79,6 +79,22 @@ test("central customer copy maps booking failures without exposing raw backend d
   const output = copy.bookingError(hostile);
   assert.equal(output, "ระบบขัดข้องชั่วคราว กรุณาลองใหม่หรือติดต่อแอดมิน");
   assert.doesNotMatch(output, /SQL|jobs|\/public\/book|INTERNAL|relation/i);
+});
+
+test("central urgent submitted view model classifies pending, actionable, and terminal states", () => {
+  const { root } = loadFrontend(["customer-app/modules/customerCopy.js"]);
+  const viewFor = root.customerCopy.urgentSubmittedView;
+
+  assert.equal(viewFor(null).state, "pending");
+  assert.equal(viewFor({ phase: "admin_review", confirmed: false, terminal: false }).state, "pending");
+  for (const phase of ["approved", "assigned", "accepted", "in_progress"]) {
+    assert.equal(viewFor({ phase, confirmed: false, terminal: false }).state, "actionable");
+  }
+  assert.equal(viewFor({ phase: "waiting", confirmed: true, terminal: false }).state, "actionable");
+  for (const phase of ["terminal", "rejected", "cancelled", "canceled", "closed"]) {
+    assert.equal(viewFor({ phase, confirmed: false, terminal: false }).state, "terminal");
+  }
+  assert.equal(viewFor({ phase: "accepted", confirmed: true, terminal: true }).state, "terminal");
 });
 
 test("urgent UI is cleaning-only and a stale repair draft cannot alter its payload", () => {
@@ -161,7 +177,8 @@ test("Scheduled and Urgent success screens use pending-admin copy and hide reser
   assert.match(scheduled, /ระบบกันช่วงเวลานี้ไว้ให้ชั่วคราว/);
   assert.match(scheduled, /แอดมินจะตรวจสอบรายละเอียดและยืนยันคิวให้คุณ/);
   assert.match(scheduled, /รอแอดมินยืนยัน/);
-  assert.doesNotMatch(scheduled, /จองสำเร็จ|ยืนยันคิวแล้ว|ได้ช่างแล้ว|reserved-tech-secret|technician_username/);
+  assert.match(scheduled, /รหัสการจอง/);
+  assert.doesNotMatch(scheduled, /Booking Code|จองสำเร็จ|ยืนยันคิวแล้ว|ได้ช่างแล้ว|reserved-tech-secret|technician_username/);
 
   root.state.updateDraft("urgent", { customer_name: "สมชาย", job_zone: "บางนา" });
   root.state.setUrgentFlow({ result: { booking_code: "CWF456", technician_username: "urgent-tech-secret" }, liveStatus: null, liveStatusError: "" });
@@ -169,7 +186,8 @@ test("Scheduled and Urgent success screens use pending-admin copy and hide reser
   assert.match(urgent, /ส่งคำขอแล้ว/);
   assert.match(urgent, /แอดมินกำลังตรวจสอบรายละเอียดก่อนส่งต่อให้ช่างที่ว่าง/);
   assert.match(urgent, /รอแอดมินตรวจสอบ/);
-  assert.doesNotMatch(urgent, /urgent-tech-secret|technician_username|Partner-first|Waiting Room|Live status|offer|radar/);
+  assert.match(urgent, /รหัสการจอง/);
+  assert.doesNotMatch(urgent, /Booking Code|urgent-tech-secret|technician_username|Partner-first|Waiting Room|Live status|offer|radar/);
 });
 
 test("repair, install, move, and inspection gateway stays contact-only and never creates booking payloads", () => {
@@ -201,6 +219,7 @@ test("booking presentation sources do not render raw errors or retired pre-appro
   assert.doesNotMatch(presentation, /error\.message|data\.error/);
   assert.doesNotMatch(urgent, /Partner-first|Urgent request|Waiting Room|Final check|Live status|Next best action|offer countdown|radar|รอพาร์ทเนอร์|กดรับหรือปฏิเสธ/);
   assert.doesNotMatch(presentation, /console\.info/);
+  assert.doesNotMatch(presentation, /Booking Code/);
 });
 
 test("Customer App build and cache IDs include the central copy module consistently", () => {

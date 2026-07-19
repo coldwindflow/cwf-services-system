@@ -112,8 +112,8 @@
   function limitedAccessNoticeHtml() {
     return `
       <div class="tracking-limited-note" data-limited-access role="note">
-        <strong>โหมดจำกัดข้อมูล (ค้นด้วยเลขงาน)</strong>
-        <p class="muted">เพื่อความปลอดภัย การค้นด้วยเลขงานจะแสดงเฉพาะสถานะและข้อมูลเบื้องต้น ข้อมูลทีมช่างจะแสดงเมื่อเปิดจากลิงก์ติดตามงานที่ได้รับในข้อความยืนยัน</p>
+        <strong>โหมดจำกัดข้อมูล (ค้นด้วยรหัสการจอง)</strong>
+        <p class="muted">เพื่อความปลอดภัย การค้นด้วยรหัสการจองจะแสดงเฉพาะสถานะและข้อมูลเบื้องต้น ข้อมูลทีมช่างจะแสดงเมื่อเปิดจากลิงก์ติดตามงานที่ได้รับในข้อความยืนยัน</p>
       </div>`;
   }
 
@@ -1363,7 +1363,7 @@
 
   function renderTrackingResult() {
     const state = root.state.tracking;
-    if (state.status === "idle") return `<div class="tracking-empty-state"><strong>ค้นหางานของคุณ</strong><span>กรอกเบอร์โทรที่ใช้จอง หรือ Booking Code</span></div>`;
+    if (state.status === "idle") return `<div class="tracking-empty-state"><strong>ค้นหางานของคุณ</strong><span>กรอกเบอร์โทรที่ใช้จอง หรือรหัสการจอง</span></div>`;
     if (state.status === "loading") return `
       <div class="tracking-skeleton" role="status" aria-live="polite" aria-label="กำลังค้นหางาน">
         <span class="skeleton-line is-title"></span>
@@ -1397,7 +1397,7 @@
     const units = unitList(data);
     const appointmentText = data.appointment_datetime ? root.utils.formatDateTime(data.appointment_datetime) : "-";
     // Read visibility and privileged actions are separate capabilities. A
-    // booking code may show customer-facing assignment details without gaining
+    // รหัสการจองอาจแสดงรายละเอียดการมอบหมายที่เปิดเผยต่อลูกค้าได้ โดยไม่เพิ่ม
     // document, review, or mutation controls.
     const heroTitle = statusCopy(data, mode);
     const heroDetail = statusDetailCopy(data, mode);
@@ -1494,7 +1494,7 @@
         <div class="tracking-topline">
           <span class="mode-badge is-${mode}">${mode === "urgent" ? "คิวด่วน" : "จองล่วงหน้า"}</span>
           <div class="tracking-code-wrap">
-            <div class="tracking-code-pill">${esc(data.booking_code || "ไม่พบเลขงาน")}</div>
+            <div class="tracking-code-pill">${esc(data.booking_code || "ไม่พบรหัสการจอง")}</div>
             ${data.booking_code ? `<button class="tracking-copy-btn" type="button" data-action="copy-tracking-code" data-code="${esc(data.booking_code)}" aria-label="คัดลอกเลขติดตาม">คัดลอก</button>` : ""}
           </div>
         </div>
@@ -1602,7 +1602,7 @@
   }
 
   // Deep-link tokens retain the existing GET contract. Customer-typed phone
-  // numbers and Booking Codes use a body-only lookup and then a signed selection
+  // เบอร์โทรและรหัสการจองใช้ body-only lookup ก่อนเข้าสู่ signed selection
   // reference, so the typed identifier is never copied into a request URL.
   async function lookup(container, opts) {
     opts = opts || {};
@@ -1618,7 +1618,7 @@
       root.state.updateDraft("tracking", { trackingCode: q });
     }
     if (!q) {
-      root.state.setTracking({ status: "error", data: null, error: "กรุณากรอกเบอร์โทรหรือ Booking Code" });
+      root.state.setTracking({ status: "error", data: null, error: "กรุณากรอกเบอร์โทรหรือรหัสการจอง" });
       finishTrackingRender(container);
       return;
     }
@@ -1831,10 +1831,10 @@
           <section class="card lookup-card" aria-labelledby="tracking-search-title">
             <h2 id="tracking-search-title" class="tracking-search-title">ค้นหางาน</h2>
             <div class="field">
-              <label for="tracking-code">เบอร์โทร หรือ Booking Code</label>
-              <input id="tracking-code" class="input tracking-code-input" placeholder="กรอกเบอร์โทรหรือรหัสงาน" value="${esc(code)}"
+              <label for="tracking-code">เบอร์โทร หรือรหัสการจอง</label>
+              <input id="tracking-code" class="input tracking-code-input" placeholder="กรอกเบอร์โทรหรือรหัสการจอง" value="${esc(code)}"
                 inputmode="text" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="32">
-              <span class="field-help">ค้นหาด้วยเบอร์ที่ใช้จอง หรือรหัสงานจาก CWF</span>
+              <span class="field-help">ค้นหาด้วยเบอร์ที่ใช้จอง หรือรหัสการจองจาก CWF</span>
             </div>
             <div class="button-row">
               <button class="primary-btn tracking-search-btn" type="button" data-action="track-read">ค้นหางาน</button>
