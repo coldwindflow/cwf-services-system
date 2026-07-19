@@ -3307,6 +3307,16 @@ document.addEventListener("DOMContentLoaded", init);
 // =============================================================
 (function initAccountingQuotePrefill(){
   function safeSet(id, value){ try{ const x = document.getElementById(id); if(x && value != null && String(value) !== ''){ x.value = value; x.dispatchEvent(new Event('input', { bubbles:true })); x.dispatchEvent(new Event('change', { bubbles:true })); } }catch(_){} }
+  function quoteParams(){ return new URLSearchParams(window.location.search || ''); }
+  function isIntentionalLineAiFlow(p){ return p.get('source') === 'line_ai' && !!p.get('ai_intake_id'); }
+  function isExplicitAccountingFlow(p){ return p.get('source') === 'accounting_quotation' || !!p.get('from_quote') || !!p.get('accounting_quote_id'); }
+  function isLineAiDerivedQuote(data){
+    const doc = String(data?.document_no || '').trim().toUpperCase();
+    const note = String(data?.customer_note || '').trim();
+    const desc = Array.isArray(data?.service_lines) ? data.service_lines.map(x => String(x?.description || '')).join(' ') : '';
+    return doc.startsWith('LINE-AI-') || /LINE AI/i.test(`${note} ${desc}`);
+  }
+  function clearQuotePrefill(){ try { localStorage.removeItem('cwf_accounting_quote_prefill'); } catch(_) {} }
   function normalizeLine(x){
     const jobRaw = String(x?.job_type || 'ล้าง').replace('ล้างแอร์','ล้าง');
     const acRaw = String(x?.ac_type || 'ผนัง').replace('แอร์ผนัง','ผนัง');
@@ -3328,7 +3338,19 @@ document.addEventListener("DOMContentLoaded", init);
     let data = null;
     try { data = JSON.parse(raw); } catch(_) { return; }
     if(!data || data.source !== 'accounting_quotation') return;
-    try { localStorage.removeItem('cwf_accounting_quote_prefill'); } catch(_) {}
+    const p = quoteParams();
+    const lineAiFlow = isIntentionalLineAiFlow(p);
+    const accountingFlow = isExplicitAccountingFlow(p);
+    const lineAiDerived = isLineAiDerivedQuote(data);
+    if (lineAiDerived && !lineAiFlow) {
+      clearQuotePrefill();
+      return;
+    }
+    if (!lineAiFlow && !accountingFlow) {
+      clearQuotePrefill();
+      return;
+    }
+    clearQuotePrefill();
     safeSet('customer_name', data.customer_name || '');
     safeSet('customer_phone', data.customer_phone || '');
     safeSet('address_text', data.address_text || '');
