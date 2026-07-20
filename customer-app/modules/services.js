@@ -234,6 +234,7 @@
       services: [line],
       selectedSlot: null,
       catalog_item_id: catalogItemId,
+      ...(scope === "scheduled" ? { scheduled_request_key: "" } : {}),
     });
     root.state.selectedService = { id: item.id || item.title || "", route: scope };
     if (scope === "scheduled") {

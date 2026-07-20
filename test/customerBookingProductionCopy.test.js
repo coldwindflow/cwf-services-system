@@ -5,7 +5,7 @@ const path = require("node:path");
 const vm = require("node:vm");
 
 const ROOT = path.resolve(__dirname, "..");
-const BUILD = "20260720_customer_booking_pr4_v2";
+const BUILD = "20260720_customer_booking_postdeploy_hardening_v1";
 
 function read(relativePath) {
   return fs.readFileSync(path.join(ROOT, relativePath), "utf8");
@@ -95,6 +95,31 @@ test("central urgent submitted view model classifies pending, actionable, and te
     assert.equal(viewFor({ phase, confirmed: false, terminal: false }).state, "terminal");
   }
   assert.equal(viewFor({ phase: "accepted", confirmed: true, terminal: true }).state, "terminal");
+});
+
+test("central booking approval view maps deployed pending, actionable, and terminal contracts without raw status copy", () => {
+  const { root } = loadFrontend(["customer-app/modules/customerCopy.js"]);
+  const viewFor = root.customerCopy.bookingApprovalView;
+
+  const scheduledPending = viewFor({ booking_mode: "scheduled", job_status: "รอตรวจสอบ" });
+  assert.equal(scheduledPending.state, "pending");
+  assert.equal(scheduledPending.statusLabel, "รอแอดมินยืนยัน");
+
+  const urgentPending = viewFor({ booking_mode: "urgent", phase: "admin_review", confirmed: false, terminal: false });
+  assert.equal(urgentPending.state, "pending");
+  assert.equal(urgentPending.statusLabel, "รอแอดมินตรวจสอบ");
+
+  const urgentApproved = viewFor({ booking_mode: "urgent", phase: "waiting", confirmed: false, terminal: false });
+  assert.equal(urgentApproved.state, "actionable");
+  assert.equal(urgentApproved.statusLabel, "พร้อมติดตามงาน");
+
+  const cancelled = viewFor({ booking_mode: "scheduled", job_status: "cancelled" });
+  assert.equal(cancelled.state, "terminal");
+  assert.equal(cancelled.statusLabel, "สิ้นสุดแล้ว");
+
+  for (const view of [scheduledPending, urgentPending, urgentApproved, cancelled]) {
+    assert.doesNotMatch(JSON.stringify(view), /admin_review|pending_review|job_status|cancelled/i);
+  }
 });
 
 test("urgent UI is cleaning-only and a stale repair draft cannot alter its payload", () => {
@@ -212,6 +237,30 @@ test("repair, install, move, and inspection gateway stays contact-only and never
   assert.match(otherServices, /https:\/\/lin\.ee\/fG1Oq7y|tel:0988777321/);
 });
 
+test("homepage active booking card maps internal status to customer-safe approval copy", () => {
+  const { root } = loadFrontend([
+    "customer-app/modules/state.js",
+    "customer-app/modules/utils.js",
+    "customer-app/modules/customerCopy.js",
+    "customer-app/modules/services.js",
+    "customer-app/modules/ui.js",
+  ]);
+  root.state.setHomepage({
+    status: "success",
+    config: {
+      sections: [{ id: "active_job", type: "active_job", enabled: true, sort_order: 1, title: "งานของฉัน" }],
+    },
+  });
+  root.state.setCollection("homeActiveJob", {
+    status: "success",
+    data: { booking_mode: "urgent", job_status: "admin_review", job_type: "ล้าง", booking_code: "CWFSAFE1" },
+  });
+
+  const html = root.ui._test.renderHomepageSectionsWithAdvisor();
+  assert.match(html, /รอแอดมินตรวจสอบ/);
+  assert.doesNotMatch(html, /admin_review|job_status/);
+});
+
 test("booking presentation sources do not render raw errors or retired pre-approval terminology", () => {
   const scheduled = read("customer-app/modules/bookingScheduled.js");
   const urgent = read("customer-app/modules/bookingUrgent.js");
@@ -220,6 +269,13 @@ test("booking presentation sources do not render raw errors or retired pre-appro
   assert.doesNotMatch(urgent, /Partner-first|Urgent request|Waiting Room|Final check|Live status|Next best action|offer countdown|radar|รอพาร์ทเนอร์|กดรับหรือปฏิเสธ/);
   assert.doesNotMatch(presentation, /console\.info/);
   assert.doesNotMatch(presentation, /Booking Code/);
+});
+
+test("tracking presentation has no startup debug log or raw booking status/error rendering contract", () => {
+  const tracking = read("customer-app/modules/tracking.js");
+  assert.doesNotMatch(tracking, /console\.info\(/);
+  assert.doesNotMatch(tracking, /esc\(job\.job_status|esc\(data\.job_status/);
+  assert.doesNotMatch(tracking, /status\.textContent\s*=\s*\(?error(?:\s*&&|\.)/);
 });
 
 test("Customer App build and cache IDs include the central copy module consistently", () => {

@@ -5,7 +5,10 @@
   const ADMIN_LINE_URL = "https://lin.ee/fG1Oq7y";
   let submitInFlight = false;
   let pollTimer = null;
+  let pollInFlight = null;
+  let pollEpoch = 0;
   let activeContainer = null;
+  let visibilityRefresh = null;
 
   function draft() {
     return root.state.draft.urgent || {};
@@ -268,10 +271,6 @@
     `;
   }
 
-  function isUrgentRequestTerminal(status) {
-    return root.customerCopy.urgentSubmittedView(status).state === "terminal";
-  }
-
   function renderSubmitted(submittedView) {
     const d = draft();
     const flow = root.state.urgentFlow || {};
@@ -293,8 +292,10 @@
         </div>
         ${flow.liveStatusError ? `<div class="state-box is-error" role="alert">${root.utils.escapeHtml(flow.liveStatusError)}</div>` : ""}
         <div class="button-row">
+          ${flow.liveStatusError ? `<button class="primary-btn" type="button" data-urgent-action="retry-status">ลองตรวจสอบสถานะอีกครั้ง</button>` : ""}
           ${trackingKey ? `<button class="primary-btn" type="button" data-urgent-action="track-created" data-tracking-key="${root.utils.escapeHtml(trackingKey)}">ติดตามสถานะงาน</button>` : ""}
           ${view.showAdminContact ? `<a class="secondary-btn line-fallback-btn" href="${ADMIN_LINE_URL}" target="_blank" rel="noopener noreferrer">ติดต่อแอดมินทาง LINE</a>` : ""}
+          ${view.state === "terminal" ? `<button class="secondary-btn" type="button" data-urgent-action="new-request">จองล้างแอร์ใหม่</button>` : ""}
           <button class="secondary-btn" type="button" data-route="home">กลับหน้าแรก</button>
         </div>
       </section>
@@ -303,15 +304,18 @@
 
   async function submitUrgent(container) {
     if (submitInFlight || root.state.urgentFlow.status === "submitting") return;
+    const submitEpoch = pollEpoch;
     submitInFlight = true;
     root.state.setUrgentFlow({ step: "review", status: "submitting", error: "", result: null, disabled_line_url: "" });
     paint(container);
     try {
       const result = await root.api.submitUrgentRequest(buildSubmitPayload());
+      if (submitEpoch !== pollEpoch) return;
       const trackingKey = trackingKeyFromResult(result);
       if (trackingKey) root.state.updateDraft("tracking", { trackingCode: trackingKey });
       root.state.setUrgentFlow({ step: "submitted", status: "success", error: "", result, liveStatus: null, liveStatusError: "" });
     } catch (error) {
+      if (submitEpoch !== pollEpoch) return;
       const disabled = ["URGENT_BOOKING_DISABLED", "CUSTOMER_BOOKING_DISABLED", "ONLINE_BOOKING_DISABLED"]
         .includes(String(error?.data?.code || "").trim().toUpperCase());
       root.state.setUrgentFlow({
@@ -323,7 +327,7 @@
       });
     } finally {
       submitInFlight = false;
-      paint(container);
+      if (submitEpoch === pollEpoch) paint(container);
     }
   }
 
@@ -336,37 +340,80 @@
     return root.state.currentRoute === "urgent" && root.state.urgentFlow.step === "submitted";
   }
 
+  function statusFingerprint() {
+    const flow = root.state.urgentFlow || {};
+    const view = root.customerCopy.urgentSubmittedView(flow.liveStatus);
+    return `${view.state}|${view.statusLabel}|${String(flow.liveStatusError || "")}`;
+  }
+
+  function shouldPollUrgentStatus() {
+    const flow = root.state.urgentFlow || {};
+    const key = trackingKeyFromResult(flow.result || null);
+    const view = root.customerCopy.urgentSubmittedView(flow.liveStatus);
+    return Boolean(key)
+      && onSubmittedScreen()
+      && !flow.liveStatusError
+      && view.state === "pending";
+  }
+
   async function pollUrgentStatus(container) {
+    if (pollInFlight) return pollInFlight;
     const key = trackingKeyFromResult(root.state.urgentFlow?.result || null);
-    if (!key) return;
-    try {
-      const status = await root.api.loadUrgentStatus(key);
-      root.state.setUrgentFlow({ liveStatus: status, liveStatusError: "" });
-      if (onSubmittedScreen()) paint(container);
-      if (isUrgentRequestTerminal(status)) stopPolling();
-    } catch (error) {
-      root.state.setUrgentFlow({ liveStatusError: root.customerCopy.bookingError(error) });
-      if (onSubmittedScreen()) paint(container);
+    if (!key || !onSubmittedScreen()) {
+      stopPolling();
+      return null;
     }
+    const requestEpoch = pollEpoch;
+    const before = statusFingerprint();
+    pollInFlight = (async () => {
+      try {
+        const status = await root.api.loadUrgentStatus(key);
+        if (requestEpoch !== pollEpoch || !onSubmittedScreen()) return null;
+        root.state.setUrgentFlow({ liveStatus: status, liveStatusError: "" });
+        const view = root.customerCopy.urgentSubmittedView(status);
+        if (view.state !== "pending") stopPolling();
+        if (before !== statusFingerprint()) paint(container);
+        return status;
+      } catch (error) {
+        if (requestEpoch !== pollEpoch || !onSubmittedScreen()) return null;
+        root.state.setUrgentFlow({ liveStatusError: root.customerCopy.bookingError(error) });
+        stopPolling();
+        if (before !== statusFingerprint()) paint(container);
+        return null;
+      } finally {
+        if (requestEpoch === pollEpoch) pollInFlight = null;
+      }
+    })();
+    return pollInFlight;
   }
 
   function startPolling(container) {
     activeContainer = container;
+    if (!shouldPollUrgentStatus()) {
+      stopPolling();
+      return;
+    }
     if (pollTimer) return;
-    pollUrgentStatus(container);
     pollTimer = setInterval(() => pollUrgentStatus(container), 10000);
+    pollUrgentStatus(container);
   }
 
-  let visibilityBound = false;
   function bindVisibilityRefresh() {
-    if (visibilityBound) return;
-    visibilityBound = true;
-    const refresh = () => {
+    if (visibilityRefresh) return;
+    visibilityRefresh = () => {
       if (document.visibilityState === "visible" && onSubmittedScreen() && activeContainer) pollUrgentStatus(activeContainer);
     };
-    document.addEventListener("visibilitychange", refresh);
-    window.addEventListener("focus", refresh);
-    window.addEventListener("pageshow", refresh);
+    document.addEventListener("visibilitychange", visibilityRefresh);
+    window.addEventListener("focus", visibilityRefresh);
+    window.addEventListener("pageshow", visibilityRefresh);
+  }
+
+  function unbindVisibilityRefresh() {
+    if (!visibilityRefresh) return;
+    document.removeEventListener?.("visibilitychange", visibilityRefresh);
+    window.removeEventListener?.("focus", visibilityRefresh);
+    window.removeEventListener?.("pageshow", visibilityRefresh);
+    visibilityRefresh = null;
   }
 
   function body(submittedView) {
@@ -389,7 +436,7 @@
       </section>
     `;
     bind(container);
-    if (step === "submitted" && !isUrgentRequestTerminal(root.state.urgentFlow.liveStatus)) startPolling(container);
+    if (step === "submitted" && shouldPollUrgentStatus()) startPolling(container);
     else stopPolling();
   }
 
@@ -432,6 +479,12 @@
           paint(container);
         } else if (action === "confirm") {
           await submitUrgent(container);
+        } else if (action === "retry-status") {
+          root.state.setUrgentFlow({ liveStatusError: "" });
+          paint(container);
+        } else if (action === "new-request") {
+          root.state.resetUrgentDraft();
+          paint(container);
         } else if (action === "track-created") {
           const key = button.getAttribute("data-tracking-key") || "";
           root.state.updateDraft("tracking", { trackingCode: key });
@@ -443,9 +496,10 @@
   }
 
   function render(container) {
+    const lifecycleEpoch = pollEpoch;
     sanitizeUrgentDraft();
     root.state.ensureSavedAddressPrefill("urgent", () => {
-      if (root.state.currentRoute === "urgent") render(container);
+      if (lifecycleEpoch === pollEpoch && root.state.currentRoute === "urgent") render(container);
     });
     if (!root.state.urgentFlow || !root.state.urgentFlow.step) {
       root.state.setUrgentFlow({ step: "form", status: "idle", error: "", result: null, liveStatus: null, liveStatusError: "" });
@@ -455,7 +509,13 @@
   }
 
   render.onLeave = () => {
+    pollEpoch += 1;
+    pollInFlight = null;
+    if (root.state.urgentFlow.status === "submitting") {
+      root.state.setUrgentFlow({ step: "review", status: "idle", error: "" });
+    }
     stopPolling();
+    unbindVisibilityRefresh();
     activeContainer = null;
   };
 

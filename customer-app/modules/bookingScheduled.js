@@ -6,9 +6,11 @@
   const STEP_MAX = 3;
   let availabilityRequestSeq = 0;
   let calendarRequestSeq = 0;
-  let recoveryInFlight = false;
+  let recoveryInFlight = null;
   let sameDayRefreshTimer = null;
-  let sameDayRefreshBound = false;
+  let sameDayRefreshInFlight = null;
+  let sameDayVisibilityRefresh = null;
+  let scheduledLifecycleEpoch = 0;
   let latestContainer = null;
 
   function draft() {
@@ -405,27 +407,42 @@
   }
 
   function shouldRefreshSameDaySlots() {
-    return step() >= 2
+    return root.state.currentRoute === "scheduled"
+      && step() >= 2
       && isSelectedDateToday()
       && root.state.scheduledSubmit.status !== "success"
+      && root.state.scheduledPreview.availability.status !== "error"
       && Boolean(currentAvailabilityQuery());
   }
 
   async function refreshSameDaySlots(container) {
-    if (!container || !shouldRefreshSameDaySlots()) return;
-    await refreshAvailability(container, { preserveSelection: true });
+    if (!container || !shouldRefreshSameDaySlots()) return null;
+    if (sameDayRefreshInFlight) return sameDayRefreshInFlight;
+    let request;
+    request = refreshAvailability(container, { preserveSelection: true })
+      .finally(() => {
+        if (sameDayRefreshInFlight === request) sameDayRefreshInFlight = null;
+      });
+    sameDayRefreshInFlight = request;
+    return sameDayRefreshInFlight;
+  }
+
+  function stopSameDayRefresh() {
+    if (!sameDayRefreshTimer) return;
+    const clearTimer = typeof window.clearInterval === "function"
+      ? window.clearInterval.bind(window)
+      : (typeof globalThis.clearInterval === "function" ? globalThis.clearInterval.bind(globalThis) : null);
+    if (clearTimer) clearTimer(sameDayRefreshTimer);
+    sameDayRefreshTimer = null;
   }
 
   function ensureSameDayRefresh(container) {
     latestContainer = container || latestContainer;
-    if (sameDayRefreshTimer) {
-      const clearTimer = typeof window.clearInterval === "function"
-        ? window.clearInterval.bind(window)
-        : (typeof globalThis.clearInterval === "function" ? globalThis.clearInterval.bind(globalThis) : null);
-      if (clearTimer) clearTimer(sameDayRefreshTimer);
-      sameDayRefreshTimer = null;
+    if (root.state.currentRoute !== "scheduled") {
+      stopSameDayRefresh();
+      return;
     }
-    if (shouldRefreshSameDaySlots()) {
+    if (shouldRefreshSameDaySlots() && !sameDayRefreshTimer) {
       const setTimer = typeof window.setInterval === "function"
         ? window.setInterval.bind(window)
         : (typeof globalThis.setInterval === "function" ? globalThis.setInterval.bind(globalThis) : null);
@@ -434,17 +451,27 @@
           refreshSameDaySlots(latestContainer).catch(() => {});
         }, 5 * 60 * 1000);
       }
+    } else if (!shouldRefreshSameDaySlots()) {
+      stopSameDayRefresh();
     }
-    if (!sameDayRefreshBound) {
-      sameDayRefreshBound = true;
-      if (typeof document.addEventListener === "function") document.addEventListener("visibilitychange", () => {
+    if (!sameDayVisibilityRefresh) {
+      sameDayVisibilityRefresh = () => {
         if (document.visibilityState === "visible") refreshSameDaySlots(latestContainer).catch(() => {});
-      });
+      };
+      if (typeof document.addEventListener === "function") document.addEventListener("visibilitychange", sameDayVisibilityRefresh);
       if (typeof window.addEventListener === "function") {
-        window.addEventListener("pageshow", () => refreshSameDaySlots(latestContainer).catch(() => {}));
-        window.addEventListener("focus", () => refreshSameDaySlots(latestContainer).catch(() => {}));
+        window.addEventListener("pageshow", sameDayVisibilityRefresh);
+        window.addEventListener("focus", sameDayVisibilityRefresh);
       }
     }
+  }
+
+  function unbindSameDayRefresh() {
+    if (!sameDayVisibilityRefresh) return;
+    document.removeEventListener?.("visibilitychange", sameDayVisibilityRefresh);
+    window.removeEventListener?.("pageshow", sameDayVisibilityRefresh);
+    window.removeEventListener?.("focus", sameDayVisibilityRefresh);
+    sameDayVisibilityRefresh = null;
   }
 
   function renderCalendar() {
@@ -739,6 +766,7 @@
   async function refreshPricing(container, opts = {}) {
     const payload = payloadFromDraft();
     if (!payload) throw new Error("ข้อมูลบริการไม่ครบ");
+    const lifecycleEpoch = scheduledLifecycleEpoch;
     root.state.setScheduledPreview("pricing", { status: "loading", data: null, error: "" });
     // During recovery the service has not changed, so keep any restored calendar/slot selection
     // and only recompute the missing pricing. A normal (re)calculation invalidates dependents.
@@ -750,14 +778,16 @@
     paint(container);
     try {
       const data = await root.api.previewPricing(payload);
+      if (lifecycleEpoch !== scheduledLifecycleEpoch) return null;
       if (!data || !Number(data.duration_min || 0)) throw new Error("ระบบยังไม่สามารถคำนวณระยะเวลางานนี้ได้");
       root.state.setScheduledPreview("pricing", { status: "success", data, error: "" });
       return data;
     } catch (error) {
+      if (lifecycleEpoch !== scheduledLifecycleEpoch) return null;
       root.state.setScheduledPreview("pricing", { status: "error", data: null, error: root.customerCopy.bookingError(error) });
       throw error;
     } finally {
-      paint(container);
+      if (lifecycleEpoch === scheduledLifecycleEpoch) paint(container);
     }
   }
 
@@ -770,19 +800,20 @@
     }
     const expectedKey = root.availability.calendarQueryKey(query);
     const requestId = ++calendarRequestSeq;
+    const lifecycleEpoch = scheduledLifecycleEpoch;
     root.state.setScheduledPreview("calendar", { status: "loading", data: null, error: "", query_key: expectedKey, loaded_at: "" });
     paint(container);
     try {
       const data = await root.api.loadAvailabilityCalendar(query);
-      if (requestId !== calendarRequestSeq || expectedKey !== currentCalendarKey()) return null;
+      if (lifecycleEpoch !== scheduledLifecycleEpoch || requestId !== calendarRequestSeq || expectedKey !== currentCalendarKey()) return null;
       root.state.setScheduledPreview("calendar", { status: "success", data, error: "", query_key: expectedKey, loaded_at: new Date().toISOString() });
       return data;
     } catch (error) {
-      if (requestId !== calendarRequestSeq) return null;
+      if (lifecycleEpoch !== scheduledLifecycleEpoch || requestId !== calendarRequestSeq) return null;
       root.state.setScheduledPreview("calendar", { status: "error", data: null, error: root.customerCopy.bookingError(error), query_key: expectedKey, loaded_at: "" });
       return null;
     } finally {
-      if (requestId === calendarRequestSeq) paint(container);
+      if (lifecycleEpoch === scheduledLifecycleEpoch && requestId === calendarRequestSeq) paint(container);
     }
   }
 
@@ -800,6 +831,7 @@
     }
     const expectedKey = root.availability.queryKey(query);
     const requestId = ++availabilityRequestSeq;
+    const lifecycleEpoch = scheduledLifecycleEpoch;
     // During recovery a restored slot selection (same service/date) is kept so the customer is not
     // silently bumped; selectedSlotIsCurrent() still re-validates it against the fresh response.
     if (!opts.preserveSelection) {
@@ -809,24 +841,26 @@
     paint(container);
     try {
       const data = await root.api.loadAvailability(query);
-      if (requestId !== availabilityRequestSeq || expectedKey !== currentAvailabilityKey()) return null;
+      if (lifecycleEpoch !== scheduledLifecycleEpoch || requestId !== availabilityRequestSeq || expectedKey !== currentAvailabilityKey()) return null;
       root.state.setScheduledPreview("availability", { status: "success", data, error: "", query_key: expectedKey, loaded_at: new Date().toISOString() });
       return data;
     } catch (error) {
-      if (requestId !== availabilityRequestSeq) return null;
+      if (lifecycleEpoch !== scheduledLifecycleEpoch || requestId !== availabilityRequestSeq) return null;
       root.state.setScheduledPreview("availability", { status: "error", data: null, error: root.customerCopy.bookingError(error), query_key: expectedKey, loaded_at: "" });
       return null;
     } finally {
-      if (requestId === availabilityRequestSeq) paint(container);
+      if (lifecycleEpoch === scheduledLifecycleEpoch && requestId === availabilityRequestSeq) paint(container);
     }
   }
 
   async function revalidateSelectedSlot() {
+    const lifecycleEpoch = scheduledLifecycleEpoch;
     const selected = draft().selectedSlot || null;
     const query = currentAvailabilityQuery();
     if (!selected || !query) throw new Error("ข้อมูลคิวไม่พร้อม กรุณาเลือกเวลาใหม่");
     const expectedKey = root.availability.queryKey(query);
     const data = await root.api.loadAvailability(query);
+    if (lifecycleEpoch !== scheduledLifecycleEpoch) return false;
     root.state.setScheduledPreview("availability", { status: "success", data, error: "", query_key: expectedKey, loaded_at: new Date().toISOString() });
     const latest = root.availability.normalizePublicSlots(data, query.duration_min)
       .find((slot) => slot.key === selected.key && slot.date === selected.date && slot.start === selected.start);
@@ -842,6 +876,7 @@
   }
 
   async function goNext(container) {
+    const lifecycleEpoch = scheduledLifecycleEpoch;
     const current = step();
     root.state.setScheduledWizard({ error: "" });
     if (current === 1) {
@@ -854,10 +889,12 @@
         scrollToWizardTop(container);
         return;
       }
+      if (lifecycleEpoch !== scheduledLifecycleEpoch) return;
       root.state.setScheduledWizard({ step: 2, error: "" });
       paint(container);
       scrollToWizardTop(container);
       await refreshCalendar(container);
+      if (lifecycleEpoch !== scheduledLifecycleEpoch) return;
       await refreshAvailability(container);
       return;
     }
@@ -882,6 +919,7 @@
 
   async function submit(container) {
     if (["validating", "checking_slot", "submitting"].includes(root.state.scheduledSubmit.status)) return;
+    const lifecycleEpoch = scheduledLifecycleEpoch;
     const contactError = validateContactStep();
     const serviceError = validateServiceStep();
     const pricingError = validatePricingStep();
@@ -899,10 +937,12 @@
     root.state.setScheduledSubmit({ status: "checking_slot", error: "", result: null, disabled_line_url: "" });
     paint(container);
     try {
-      await revalidateSelectedSlot();
+      const slotIsCurrent = await revalidateSelectedSlot();
+      if (lifecycleEpoch !== scheduledLifecycleEpoch || slotIsCurrent === false) return;
       root.state.setScheduledSubmit({ status: "submitting", error: "", result: null });
       paint(container);
       const result = await root.api.submitScheduledBooking(buildSubmitPayload());
+      if (lifecycleEpoch !== scheduledLifecycleEpoch) return;
       if (!result?.success || (!result.booking_code && !result.token)) throw new Error("ระบบไม่ได้ส่งรหัสติดตามกลับมา");
       root.state.setScheduledSubmit({ status: "success", error: "", result });
       try {
@@ -912,6 +952,7 @@
       paint(container);
       scrollToWizardTop(container);
     } catch (error) {
+      if (lifecycleEpoch !== scheduledLifecycleEpoch) return;
       // Kill switch: the booking lane is closed server-side (503 +
       // SCHEDULED_BOOKING_DISABLED). No job was created, so the LINE hand-off
       // below cannot duplicate anything. Don't bounce back to the slot step —
@@ -1123,25 +1164,29 @@
     const needCalendar = preview.calendar.status === "idle";
     const needAvailability = preview.availability.status === "idle";
     if (!needPricing && !needCalendar && !needAvailability) return;
-    recoveryInFlight = true;
+    const recovery = { lifecycleEpoch: scheduledLifecycleEpoch };
+    recoveryInFlight = recovery;
     try {
       if (needPricing) {
         try { await refreshPricing(container, { preserveDependents: true }); }
         catch (_) { return; }
       }
+      if (recovery.lifecycleEpoch !== scheduledLifecycleEpoch) return;
       if (!root.state.scheduledPreview.pricing.data) return;
       if (root.state.scheduledPreview.calendar.status === "idle") {
         await refreshCalendar(container);
       }
+      if (recovery.lifecycleEpoch !== scheduledLifecycleEpoch) return;
       if (root.state.scheduledPreview.availability.status === "idle") {
         await refreshAvailability(container, { preserveSelection: true });
       }
     } finally {
-      recoveryInFlight = false;
+      if (recoveryInFlight === recovery) recoveryInFlight = null;
     }
   }
 
   function render(container) {
+    const lifecycleEpoch = scheduledLifecycleEpoch;
     paint(container);
     if (step() === 1) {
       if (root.state.scheduledPreview.pricing.status === "idle") {
@@ -1150,8 +1195,29 @@
     } else {
       recoverScheduledDependencies(container);
     }
-    root.state.ensureSavedAddressPrefill("scheduled", () => paint(container));
+    root.state.ensureSavedAddressPrefill("scheduled", () => {
+      if (lifecycleEpoch === scheduledLifecycleEpoch && root.state.currentRoute === "scheduled") paint(container);
+    });
   }
+
+  render.onLeave = () => {
+    scheduledLifecycleEpoch += 1;
+    availabilityRequestSeq += 1;
+    calendarRequestSeq += 1;
+    recoveryInFlight = null;
+    sameDayRefreshInFlight = null;
+    for (const name of ["pricing", "availability", "calendar"]) {
+      if (root.state.scheduledPreview[name]?.status === "loading") {
+        root.state.setScheduledPreview(name, { status: "idle", data: null, error: "" });
+      }
+    }
+    if (["checking_slot", "submitting"].includes(root.state.scheduledSubmit.status)) {
+      root.state.setScheduledSubmit({ status: "idle", error: "", result: null });
+    }
+    stopSameDayRefresh();
+    unbindSameDayRefresh();
+    latestContainer = null;
+  };
 
   root.bookingScheduled = {
     render,
