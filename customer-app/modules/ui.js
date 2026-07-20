@@ -501,6 +501,7 @@
     const sid = root.utils.escapeHtml(section.id || "active_job");
     if (!job || bucket.status !== "success") return `<div data-home-active-job data-section-id="${sid}"></div>`;
     const dateLabel = job.appointment_datetime ? root.utils.formatDateTime(job.appointment_datetime) : "";
+    const approval = root.customerCopy.bookingApprovalView(job);
     return `
       <section class="homepage-section homepage-active-job" data-home-active-job data-section-id="${sid}">
         <div class="homepage-section-head">
@@ -510,7 +511,7 @@
           </div>
         </div>
         <button class="homepage-active-job-card" type="button" data-route="tracking">
-          <span>${root.utils.escapeHtml(job.job_status || "")}</span>
+          <span>${root.utils.escapeHtml(approval.statusLabel)}</span>
           <strong>${root.utils.escapeHtml(job.job_type || job.booking_code || "")}</strong>
           ${dateLabel ? `<small>${root.utils.escapeHtml(dateLabel)}</small>` : ""}
           <small>${root.utils.escapeHtml(job.booking_code || "")}</small>

@@ -761,13 +761,16 @@
   function jobPhase(data, mode) {
     const status = clean(data.job_status);
     const noTech = status.includes("ไม่พบช่าง") || status.includes("ตีกลับ");
+    const approval = root.customerCopy.bookingApprovalView({ ...data, booking_mode: mode });
     if (isCanceled(data)) return "canceled";
     if (isDone(data)) return "completed";
+    if (approval.state === "pending") return mode === "urgent" ? "urgent_waiting" : "waiting";
     if (mode === "urgent" && noTech) return "urgent_no_tech";
     if (clean(data.started_at)) return "started";
     if (clean(data.checkin_at)) return "checked_in";
     if (clean(data.travel_started_at)) return "traveling";
     if (hasAssignedTech(data) || status.includes("รอดำเนินการ")) return "assigned";
+    if (approval.state === "actionable") return "approved";
     return mode === "urgent" ? "urgent_waiting" : "waiting";
   }
 
@@ -779,8 +782,9 @@
     if (phase === "checked_in") return "ช่างถึงหน้างานแล้ว";
     if (phase === "traveling") return "ช่างกำลังเดินทาง";
     if (phase === "assigned") return mode === "urgent" ? "ช่างรับงานแล้ว" : "ยืนยันคิวแล้ว";
+    if (phase === "approved") return "คำขอได้รับการยืนยันแล้ว";
     if (phase === "urgent_no_tech") return "แอดมินกำลังช่วยตรวจสอบคิวด่วน";
-    if (phase === "urgent_waiting") return "ส่งคำขอคิวด่วนแล้ว รอช่างรับงานหรือแอดมินยืนยัน";
+    if (phase === "urgent_waiting") return "แอดมินกำลังตรวจสอบรายละเอียดก่อนส่งต่อให้ช่างที่ว่าง";
     return "รับคำขอจองแล้ว รอแอดมินตรวจสอบคิว";
   }
 
@@ -788,7 +792,7 @@
     const phase = jobPhase(data, mode);
     const hasPhotos = hasPhotoContent(data);
     if (phase === "canceled") {
-      return clean(data.cancel_reason) ? `เหตุผล: ${clean(data.cancel_reason)}` : "งานนี้สิ้นสุดแล้ว หากต้องการความช่วยเหลือกรุณาติดต่อ CWF";
+      return "คำขอนี้สิ้นสุดแล้ว หากต้องการตรวจสอบหรือจองใหม่ กรุณาติดต่อแอดมิน";
     }
     if (phase === "completed") {
       if (!canUseTokenActions(data)) {
@@ -804,8 +808,9 @@
     if (phase === "checked_in") return "ทีมช่างถึงหน้างานแล้ว";
     if (phase === "traveling") return "ช่างกำลังเดินทางไปยังสถานที่นัดหมาย";
     if (phase === "assigned") return "มีทีมช่างรับผิดชอบงานนี้แล้ว";
+    if (phase === "approved") return "ดูรายละเอียดและความคืบหน้าได้ที่หน้าติดตามงาน";
     if (phase === "urgent_no_tech") return "แอดมินกำลังช่วยตรวจสอบคิวด่วน คำขอยังไม่ถือว่ายืนยันงาน";
-    if (phase === "urgent_waiting") return "กำลังรอช่างรับงานหรือแอดมินยืนยัน คำขอยังไม่ถือว่ายืนยันงาน";
+    if (phase === "urgent_waiting") return "ส่งคำขอแล้ว และอยู่ระหว่างรอแอดมินตรวจสอบ";
     return "แอดมินจะตรวจสอบคิวและมอบหมายทีมก่อนถึงเวลานัด";
   }
 
@@ -827,8 +832,9 @@
     if (phase === "checked_in") return "เตรียมพื้นที่หน้างานให้พร้อมสำหรับเริ่มบริการ";
     if (phase === "traveling") return "รอรับทีมช่างที่กำลังเดินทางไปหน้างาน";
     if (phase === "assigned") return "รอถึงเวลานัด หรือเปิดแผนที่หากต้องการดูสถานที่งาน";
+    if (phase === "approved") return "พร้อมติดตามงาน";
     if (phase === "urgent_no_tech") return "รอแอดมินช่วยตรวจสอบ หรือเปลี่ยนเป็นจองล่วงหน้าถ้าไม่รีบด่วน";
-    if (phase === "urgent_waiting") return "รอช่างรับงาน หรือให้แอดมินช่วยยืนยันคิวด่วน";
+    if (phase === "urgent_waiting") return "รอแอดมินตรวจสอบ";
     return "รอแอดมินยืนยันคิว หรือติดต่อ CWF หากต้องการเลื่อนนัด";
   }
 
@@ -874,7 +880,7 @@
             <p class="passport-lead">รายงานสุขภาพแอร์จากงานบริการล่าสุด</p>
             <div class="passport-data">
               <div><b>ข้อมูลงาน</b><span>${esc(data.booking_code || "-")}</span></div>
-              <div><b>สถานะ</b><span>${esc(data.job_status || "-")}</span></div>
+              <div><b>สถานะ</b><span>${esc(root.customerCopy.bookingApprovalView(data).statusLabel)}</span></div>
               <div><b>บริการ</b><span>${esc(serviceSummary(data))}</span></div>
               <div><b>วันที่บริการ</b><span>${esc(serviceDateText)}</span></div>
             </div>
@@ -922,6 +928,17 @@
   }
 
   function renderTechnicianCard(data) {
+    const approval = root.customerCopy.bookingApprovalView(data);
+    if (approval.state === "pending") {
+      return `
+        <div class="tracking-tech-card is-empty" data-tech-pending>
+          <div>
+            <strong>แอดมินกำลังช่วยจัดคิวให้</strong>
+            <span class="muted">ข้อมูลทีมช่างจะแสดงหลังแอดมินยืนยันคำขอแล้ว</span>
+          </div>
+        </div>
+      `;
+    }
     // Code-only access redacts technician identity. Never render the "no
     // technician yet" empty card here — that would misrepresent a possibly
     // assigned job as unassigned. Show a neutral limited-data note instead.
@@ -1275,9 +1292,6 @@
     if (data.payment_status || data.paid_at) {
       rows.push(`<div class="data-row"><strong>การชำระเงิน</strong><span class="muted">${esc(paymentStatusLabel(data.payment_status, data.paid_at))}</span></div>`);
     }
-    if (data.cancel_reason) {
-      rows.push(`<div class="data-row"><strong>เหตุผลยกเลิก</strong><span class="muted">${esc(data.cancel_reason)}</span></div>`);
-    }
     return `<div class="data-list tracking-summary-list">${rows.join("")}</div>`;
   }
 
@@ -1354,7 +1368,7 @@
             <button class="tracking-choice" type="button" data-tracking-choice="${index}">
               <strong>${esc(job.booking_code || "งาน CWF")}</strong>
               <span>${esc(job.appointment_datetime ? root.utils.formatDateTime(job.appointment_datetime) : "ไม่ระบุวันนัดหมาย")}</span>
-              <span>${esc(job.service_summary || "บริการ CWF")} · ${esc(job.job_status || "รอตรวจสอบสถานะ")}</span>
+              <span>${esc(job.service_summary || "บริการ CWF")} · ${esc(root.customerCopy.bookingApprovalView(job).statusLabel)}</span>
               ${job.location_summary ? `<small>${esc(job.location_summary)}</small>` : ""}
             </button>`).join("")}
         </div>
@@ -1511,9 +1525,10 @@
   function renderTimeline() {
     const data = root.state.tracking.data || {};
     const mode = modeFromData(data);
+    const approval = root.customerCopy.bookingApprovalView({ ...data, booking_mode: mode });
     const canView = canViewDetails(data);
     const canUseActions = canUseTokenActions(data);
-    const assigned = hasAssignedTech(data);
+    const assigned = approval.state !== "pending" && hasAssignedTech(data);
     const travel = !!clean(data.travel_started_at);
     const checkin = !!clean(data.checkin_at);
     const started = !!clean(data.started_at);
@@ -1532,9 +1547,7 @@
     if (canceled) {
       steps.push({
         title: "งานถูกยกเลิก",
-        copy: clean(data.cancel_reason)
-          ? `เหตุผล: ${clean(data.cancel_reason)}`
-          : (data.canceled_at ? root.utils.formatDateTime(data.canceled_at) : "งานนี้สิ้นสุดแล้ว"),
+        copy: "คำขอนี้สิ้นสุดแล้ว หากต้องการตรวจสอบหรือจองใหม่ กรุณาติดต่อแอดมิน",
         ok: true,
       });
       return root.utils.timeline(steps.map((step) => ({ title: step.title, copy: step.copy, kind: "" })));
@@ -1773,11 +1786,16 @@
             body: JSON.stringify(payload),
           });
           const data = await response.json().catch(() => ({}));
-          if (!response.ok) throw new Error(data.error || "ส่งรีวิวไม่สำเร็จ");
+          if (!response.ok) {
+            const requestError = new Error("review request failed");
+            requestError.status = response.status;
+            requestError.data = { code: data && data.code };
+            throw requestError;
+          }
           if (status) status.textContent = "ส่งรีวิวเรียบร้อย ขอบคุณครับ";
           setTimeout(() => reloadCurrent(container), 500);
         } catch (error) {
-          if (status) status.textContent = error.message || "ส่งรีวิวไม่สำเร็จ";
+          if (status) status.textContent = root.customerCopy.bookingError(error);
           if (submit) submit.disabled = false;
           form.removeAttribute("aria-busy");
         }
@@ -1809,7 +1827,7 @@
           if (status) status.textContent = "ส่งรีวิวแล้ว รอแอดมินตรวจสอบ";
           setTimeout(() => reloadCurrent(container), 500);
         } catch (error) {
-          if (status) status.textContent = (error && error.message) || "ส่งรีวิวไม่สำเร็จ";
+          if (status) status.textContent = root.customerCopy.bookingError(error);
           if (submit) submit.disabled = false;
           catalogForm.removeAttribute("aria-busy");
         }
@@ -1902,5 +1920,4 @@
       unitInspection,
     },
   };
-  console.info("[customer-tracking] phone lookup review direct v1 loaded");
 })();
