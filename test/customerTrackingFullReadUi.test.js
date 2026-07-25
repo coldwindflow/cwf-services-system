@@ -829,6 +829,110 @@ test("pending approval never renders reserved technician identity even if the ba
   assert.doesNotMatch(html, /ช่างลับก่อนอนุมัติ|ทีมลับก่อนอนุมัติ|reserved-secret|reserved-team|0899999999/);
 });
 
+test("urgent pending hero timeline and technician card only describe admin review for code and token access", () => {
+  const app = loadTrackingRuntime();
+  for (const access of ["code", "token"]) {
+    const data = {
+      ...codeReadPayload(),
+      access_level: access,
+      can_use_token_actions: access === "token",
+      capabilities: {
+        can_view_full_tracking: true,
+        can_use_token_actions: access === "token",
+      },
+      booking_mode: "urgent",
+      job_status: "admin_review",
+      technician: { full_name: "ช่างลับ", username: "reserved-secret" },
+      technician_team: [{ full_name: "ทีมลับ", username: "reserved-team" }],
+    };
+    app.state.tracking = { status: "success", data, error: "" };
+    const dom = `${app.tracking._test.renderTrackingResult()}\n${app.tracking._test.renderTimeline()}`;
+    assert.match(dom, /รอแอดมินตรวจสอบ/, access);
+    assert.match(dom, /แอดมินกำลังตรวจสอบรายละเอียดคำขอ/, access);
+    assert.doesNotMatch(dom, /ช่างรับงาน|มีช่างรับ|แอดมินยืนยัน|กำลังจัดหาช่าง|ช่างลับ|ทีมลับ|reserved-/i, access);
+  }
+});
+
+test("urgent approved without a technician consistently says admin confirmed and is arranging a technician", () => {
+  const app = loadTrackingRuntime();
+  for (const access of ["code", "token"]) {
+    const data = {
+      ...codeReadPayload(),
+      access_level: access,
+      can_use_token_actions: access === "token",
+      capabilities: {
+        can_view_full_tracking: true,
+        can_use_token_actions: access === "token",
+      },
+      booking_mode: "urgent",
+      job_status: "approved",
+      technician: null,
+      technician_team: [],
+    };
+    app.state.tracking = { status: "success", data, error: "" };
+    const dom = `${app.tracking._test.renderTrackingResult()}\n${app.tracking._test.renderTimeline()}`;
+    assert.match(dom, /แอดมินยืนยันคำขอแล้ว/, access);
+    assert.match(dom, /กำลังจัดหาช่างที่ว่าง/, access);
+    assert.doesNotMatch(dom, /รอแอดมินตรวจสอบ|ช่างรับงาน|มีช่างรับ|งานจะยืนยันเมื่อ/i, access);
+  }
+});
+
+test("passport preserves every customer lifecycle state instead of flattening to approval copy", () => {
+  const app = loadTrackingRuntime();
+  const cases = [
+    [{ job_status: "ยกเลิก", finished_at: "done", started_at: "started" }, "สิ้นสุดแล้ว"],
+    [{ finished_at: "done", started_at: "started" }, "งานเสร็จแล้ว"],
+    [{ started_at: "started", checkin_at: "checkin", travel_started_at: "travel" }, "กำลังให้บริการ"],
+    [{ checkin_at: "checkin", travel_started_at: "travel" }, "ช่างถึงหน้างานแล้ว"],
+    [{ travel_started_at: "travel", assigned_at: "assigned" }, "ช่างกำลังเดินทาง"],
+    [{ assigned_at: "assigned", job_status: "รอดำเนินการ" }, "ยืนยันคิวแล้ว"],
+    [{ booking_mode: "urgent", job_status: "admin_review" }, "รอแอดมินตรวจสอบ"],
+    [{ booking_mode: "urgent", job_status: "approved" }, "พร้อมติดตามงาน"],
+  ];
+  for (const [source, label] of cases) {
+    const html = app.tracking._test.renderPassport({
+      ...codeReadPayload(),
+      technician: null,
+      technician_team: [],
+      finished_at: null,
+      started_at: null,
+      checkin_at: null,
+      travel_started_at: null,
+      assigned_at: null,
+      ...source,
+    });
+    assert.match(html, new RegExp(label), label);
+    assert.doesNotMatch(html, /admin_review|job_status|approved/i, label);
+  }
+});
+
+test("tracking customer views use Thai headings without exposed English UI labels", () => {
+  const app = loadTrackingRuntime();
+  app.state.tracking = {
+    status: "success",
+    data: {
+      ...completedHealthPayload(),
+      access_level: "token",
+      can_use_token_actions: true,
+      capabilities: { can_view_full_tracking: true, can_use_token_actions: true },
+      booking_token: "private-token",
+      photos: [{ url: "https://example.test/after.jpg", phase: "after" }],
+      technician_note: "ล้างเรียบร้อย",
+      review: { already_reviewed: true, rating: 5, review_text: "ดีมาก" },
+      catalog_review: {
+        eligible: false,
+        already_reviewed: true,
+        review: { rating: 5, comment: "บริการดี", moderation_status: "approved" },
+      },
+    },
+    error: "",
+  };
+  const html = app.tracking._test.renderTrackingResult();
+  assert.match(html, /ติดตามงาน|รูปงาน|หมายเหตุ|รีวิวทีมช่าง|รีวิวบริการ/);
+  assert.doesNotMatch(html, />\s*(?:Tracking|Photos|Note|Technician Review|Service Review|Review)\s*</);
+  assert.doesNotMatch(html, /aria-label="Tracking views"|CWF Tracking/);
+});
+
 test("tracking passport renders a customer-safe completed label instead of raw job status", () => {
   const app = loadTrackingRuntime();
   const html = app.tracking._test.renderPassport(completedHealthPayload({ job_status: "INTERNAL_DONE_STATE" }));
@@ -1021,7 +1125,7 @@ test("tracking UI exposes loading, not-found, rate-limit and offline states", ()
 });
 
 test("tracking assets share the full-read cache build id", () => {
-  const build = "20260720_customer_booking_postdeploy_hardening_v1";
+  const build = "20260720_customer_booking_postdeploy_hardening_v2";
   for (const file of [
     "customer-app/index.html",
     "customer-app/sw.js",

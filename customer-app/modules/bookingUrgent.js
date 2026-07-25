@@ -3,7 +3,7 @@
 
   const root = window.CWFCustomerAppV2 = window.CWFCustomerAppV2 || {};
   const ADMIN_LINE_URL = "https://lin.ee/fG1Oq7y";
-  let submitInFlight = false;
+  let activeSubmit = null;
   let pollTimer = null;
   let pollInFlight = null;
   let pollEpoch = 0;
@@ -303,9 +303,10 @@
   }
 
   async function submitUrgent(container) {
-    if (submitInFlight || root.state.urgentFlow.status === "submitting") return;
+    if (activeSubmit || root.state.urgentFlow.status === "submitting") return;
     const submitEpoch = pollEpoch;
-    submitInFlight = true;
+    const submitAttempt = { epoch: submitEpoch };
+    activeSubmit = submitAttempt;
     root.state.setUrgentFlow({ step: "review", status: "submitting", error: "", result: null, disabled_line_url: "" });
     paint(container);
     try {
@@ -326,7 +327,7 @@
         disabled_line_url: disabled ? ADMIN_LINE_URL : "",
       });
     } finally {
-      submitInFlight = false;
+      if (activeSubmit === submitAttempt) activeSubmit = null;
       if (submitEpoch === pollEpoch) paint(container);
     }
   }
@@ -511,6 +512,7 @@
   render.onLeave = () => {
     pollEpoch += 1;
     pollInFlight = null;
+    activeSubmit = null;
     if (root.state.urgentFlow.status === "submitting") {
       root.state.setUrgentFlow({ step: "review", status: "idle", error: "" });
     }

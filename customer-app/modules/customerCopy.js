@@ -43,6 +43,9 @@
     "รอดำเนินการ", "รอช่างยืนยัน", "กำลังทำ", "กำลังดำเนินการ",
   ]);
   const TERMINAL_STATUSES = new Set(["rejected", "cancelled", "canceled", "closed", "ยกเลิก", "ปฏิเสธ"]);
+  const COMPLETED_STATUSES = new Set(["done", "completed", "เสร็จแล้ว", "ปิดงาน"]);
+  const STARTED_STATUSES = new Set(["started", "in_progress", "กำลังทำ", "กำลังดำเนินการ", "กำลังให้บริการ"]);
+  const ASSIGNED_STATUSES = new Set(["assigned", "accepted", "รอดำเนินการ", "รอช่างยืนยัน"]);
   const urgentSubmittedViews = Object.freeze({
     pending: Object.freeze({
       state: "pending",
@@ -125,23 +128,10 @@
       || jobStatus.includes("ปฏิเสธ");
     if (terminal) return urgentSubmittedViews.terminal;
 
-    const completed = Boolean(source.finished_at)
-      || jobStatus === "done"
-      || jobStatus === "completed"
-      || jobStatus.includes("เสร็จ");
-    if (completed) {
-      return Object.freeze({
-        ...urgentSubmittedViews.actionable,
-        statusLabel: "งานเสร็จแล้ว",
-        railLabel: "งานเสร็จแล้ว",
-      });
-    }
-
     const explicitlyPending = PENDING_STATUSES.has(phase) || PENDING_STATUSES.has(jobStatus);
     const actionable = !explicitlyPending && (source.confirmed === true
       || ACTIONABLE_PHASES.has(phase)
-      || ACTIONABLE_STATUSES.has(jobStatus)
-      || Boolean(source.started_at || source.checkin_at || source.travel_started_at));
+      || ACTIONABLE_STATUSES.has(jobStatus));
     if (actionable) return urgentSubmittedViews.actionable;
     if (mode === "scheduled") {
       return Object.freeze({
@@ -153,6 +143,73 @@
       });
     }
     return urgentSubmittedViews.pending;
+  }
+
+  function customerLifecycleView(status) {
+    const source = status || {};
+    const approval = bookingApprovalView(source);
+    const phase = String(source.phase || "").trim().toLowerCase();
+    const jobStatus = String(source.job_status || source.status || "").trim().toLowerCase();
+    const cancelled = Boolean(source.canceled_at || source.cancelled_at)
+      || approval.state === "terminal"
+      || TERMINAL_STATUSES.has(jobStatus)
+      || jobStatus.includes("ยกเลิก")
+      || jobStatus.includes("ปฏิเสธ");
+    if (cancelled) {
+      return Object.freeze({ ...approval, state: "cancelled", statusLabel: "สิ้นสุดแล้ว", railLabel: "สิ้นสุดแล้ว" });
+    }
+    if (Boolean(source.finished_at)
+      || COMPLETED_STATUSES.has(jobStatus)
+      || jobStatus.includes("เสร็จ")) {
+      return Object.freeze({
+        ...urgentSubmittedViews.actionable,
+        state: "completed",
+        statusLabel: "งานเสร็จแล้ว",
+        railLabel: "งานเสร็จแล้ว",
+      });
+    }
+    if (Boolean(source.started_at) || STARTED_STATUSES.has(jobStatus)) {
+      return Object.freeze({
+        ...urgentSubmittedViews.actionable,
+        state: "started",
+        statusLabel: "กำลังให้บริการ",
+        railLabel: "กำลังให้บริการ",
+      });
+    }
+    if (Boolean(source.checkin_at)) {
+      return Object.freeze({
+        ...urgentSubmittedViews.actionable,
+        state: "checked_in",
+        statusLabel: "ช่างถึงหน้างานแล้ว",
+        railLabel: "ถึงหน้างานแล้ว",
+      });
+    }
+    if (Boolean(source.travel_started_at)) {
+      return Object.freeze({
+        ...urgentSubmittedViews.actionable,
+        state: "traveling",
+        statusLabel: "ช่างกำลังเดินทาง",
+        railLabel: "กำลังเดินทาง",
+      });
+    }
+    const hasAssignedTechnician = Boolean(
+      source.assigned_at
+      || source.accepted_at
+      || source.technician
+      || (Array.isArray(source.technician_team) && source.technician_team.length),
+    );
+    const assigned = approval.state !== "pending" && (hasAssignedTechnician
+      || ASSIGNED_STATUSES.has(phase)
+      || ASSIGNED_STATUSES.has(jobStatus));
+    if (assigned) {
+      return Object.freeze({
+        ...urgentSubmittedViews.actionable,
+        state: "assigned",
+        statusLabel: "ยืนยันคิวแล้ว",
+        railLabel: "ยืนยันคิวแล้ว",
+      });
+    }
+    return approval;
   }
 
   function urgentSubmittedView(status) {
@@ -168,6 +225,7 @@
     bookingError,
     availabilityEmpty,
     bookingApprovalView,
+    customerLifecycleView,
     urgentStatus,
     urgentSubmittedView,
   };

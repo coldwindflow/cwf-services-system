@@ -293,7 +293,7 @@ test("Customer App build id is consistent across shell and service worker", () =
   const sw = read("customer-app/sw.js");
   const app = read("customer-app/assets/customer-app.js");
   const manifest = read("customer-app/manifest.webmanifest");
-  const build = "20260720_customer_booking_postdeploy_hardening_v1";
+  const build = "20260720_customer_booking_postdeploy_hardening_v2";
 
   assert.match(index, new RegExp(`customer-app\\.css\\?v=${build}`));
   assert.match(index, new RegExp(`modules\\/api\\.js\\?v=${build}`));
@@ -311,7 +311,7 @@ test("Customer App build id is consistent across shell and service worker", () =
 test("store module is loaded in index.html and precached in the service worker app shell", () => {
   const index = read("customer-app/index.html");
   const sw = read("customer-app/sw.js");
-  const build = "20260720_customer_booking_postdeploy_hardening_v1";
+  const build = "20260720_customer_booking_postdeploy_hardening_v2";
 
   assert.match(index, new RegExp(`modules/store\\.js\\?v=${build}`));
   assert.match(sw, /`\.\/modules\/store\.js\?v=\$\{BUILD_ID\}`/);
@@ -982,6 +982,49 @@ test("urgent request key is generated once and reused by a retry of the same req
     .find((button) => button.getAttribute("data-urgent-action") === "confirm").click();
   assert.equal(capturedPayloads[1].urgent_request_key, firstKey);
   assert.equal(root.state.urgentFlow.step, "submitted");
+  root.bookingUrgent.render.onLeave();
+});
+
+test("urgent unresolved submit can leave and retry with the same key while the old response is ignored", async () => {
+  const context = makeLifecycleContext();
+  const root = loadCustomerFrontend(context);
+  root.state.setRoute("urgent");
+  root.state.updateDraft("urgent", {
+    customer_name: "Somchai",
+    customer_phone: "0812345678",
+    address_text: "123 Rd",
+    symptom: "ล้างแอร์",
+  });
+  root.state.setUrgentFlow({ step: "review", status: "idle", error: "" });
+  const requests = [];
+  root.api.submitUrgentRequest = (payload) => new Promise((resolve) => {
+    requests.push({ payload, resolve });
+  });
+  const firstContainer = new WizardContainer(root);
+  root.bookingUrgent.render(firstContainer);
+  const firstSubmit = firstContainer.querySelectorAll("[data-urgent-action]")
+    .find((button) => button.getAttribute("data-urgent-action") === "confirm").click();
+  assert.equal(requests.length, 1);
+  const requestKey = requests[0].payload.urgent_request_key;
+
+  root.bookingUrgent.render.onLeave();
+  root.state.setRoute("home");
+  root.state.setRoute("urgent");
+  const retryContainer = new WizardContainer(root);
+  root.bookingUrgent.render(retryContainer);
+  const retrySubmit = retryContainer.querySelectorAll("[data-urgent-action]")
+    .find((button) => button.getAttribute("data-urgent-action") === "confirm").click();
+  assert.equal(requests.length, 2);
+  assert.equal(requests[1].payload.urgent_request_key, requestKey);
+
+  requests[1].resolve({ success: true, booking_code: "BK-NEW", token: "TOKEN-NEW" });
+  await retrySubmit;
+  assert.equal(root.state.urgentFlow.result.booking_code, "BK-NEW");
+
+  requests[0].resolve({ success: true, booking_code: "BK-OLD", token: "TOKEN-OLD" });
+  await firstSubmit;
+  assert.equal(root.state.urgentFlow.result.booking_code, "BK-NEW");
+  assert.equal(root.state.draft.urgent.urgent_request_key, requestKey);
   root.bookingUrgent.render.onLeave();
 });
 
