@@ -55,6 +55,60 @@ function makeContext() {
   return vm.createContext(context);
 }
 
+function makeLifecycleContext() {
+  const context = makeContext();
+  const listeners = {
+    window: new Map(),
+    document: new Map(),
+  };
+  const intervals = new Map();
+  let nextIntervalId = 1;
+
+  function addListener(target, type, listener) {
+    if (!listeners[target].has(type)) listeners[target].set(type, new Set());
+    listeners[target].get(type).add(listener);
+  }
+
+  function removeListener(target, type, listener) {
+    listeners[target].get(type)?.delete(listener);
+  }
+
+  function setTestInterval(callback) {
+    const id = nextIntervalId;
+    nextIntervalId += 1;
+    intervals.set(id, callback);
+    return id;
+  }
+
+  function clearTestInterval(id) {
+    intervals.delete(id);
+  }
+
+  context.window.addEventListener = (type, listener) => addListener("window", type, listener);
+  context.window.removeEventListener = (type, listener) => removeListener("window", type, listener);
+  context.document.visibilityState = "visible";
+  context.document.addEventListener = (type, listener) => addListener("document", type, listener);
+  context.document.removeEventListener = (type, listener) => removeListener("document", type, listener);
+  context.window.setInterval = setTestInterval;
+  context.window.clearInterval = clearTestInterval;
+  context.setInterval = setTestInterval;
+  context.clearInterval = clearTestInterval;
+  context.__lifecycle = {
+    intervals,
+    listenerCount(target, type) {
+      return listeners[target].get(type)?.size || 0;
+    },
+    async fire(target, type) {
+      const callbacks = [...(listeners[target].get(type) || [])];
+      await Promise.all(callbacks.map((callback) => callback({ type })));
+    },
+    async runIntervals() {
+      await Promise.all([...intervals.values()].map((callback) => callback()));
+    },
+  };
+  return context;
+}
+
 function load(context, modules) {
   for (const modulePath of modules) {
     vm.runInContext(read(modulePath), context, { filename: modulePath });
@@ -111,9 +165,11 @@ class WizardContainer {
     this.root = root;
     this.buttons = [];
     this.inputs = [];
+    this.renderCount = 0;
     this._innerHTML = "";
   }
   set innerHTML(value) {
+    this.renderCount += 1;
     this._innerHTML = String(value || "");
     this.buttons = [];
     this.inputs = [];
@@ -237,7 +293,7 @@ test("Customer App build id is consistent across shell and service worker", () =
   const sw = read("customer-app/sw.js");
   const app = read("customer-app/assets/customer-app.js");
   const manifest = read("customer-app/manifest.webmanifest");
-  const build = "20260720_customer_booking_pr4_v2";
+  const build = "20260720_customer_booking_postdeploy_hardening_v2";
 
   assert.match(index, new RegExp(`customer-app\\.css\\?v=${build}`));
   assert.match(index, new RegExp(`modules\\/api\\.js\\?v=${build}`));
@@ -255,7 +311,7 @@ test("Customer App build id is consistent across shell and service worker", () =
 test("store module is loaded in index.html and precached in the service worker app shell", () => {
   const index = read("customer-app/index.html");
   const sw = read("customer-app/sw.js");
-  const build = "20260720_customer_booking_pr4_v2";
+  const build = "20260720_customer_booking_postdeploy_hardening_v2";
 
   assert.match(index, new RegExp(`modules/store\\.js\\?v=${build}`));
   assert.match(sw, /`\.\/modules\/store\.js\?v=\$\{BUILD_ID\}`/);
@@ -615,6 +671,111 @@ test("scheduled booking renders one active step and preserves draft across three
   assert.doesNotMatch(container.innerHTML, /data-booking-step="1"|data-booking-step="2"|data-booking-step="4"|data-booking-step="5"/);
   assert.equal(root.state.draft.scheduled.address_text, "123 Test Condo");
 });
+
+test("scheduled route leave removes same-day timers/listeners and ignores an in-flight availability response", async () => {
+  const context = makeLifecycleContext();
+  const root = loadCustomerFrontend(context);
+  root.state.setRoute("scheduled");
+  root.state.setScheduledWizard({ step: 2 });
+  root.state.setScheduledPreview("pricing", { status: "success", data: { duration_min: 60, active_price: 900 }, error: "" });
+  const query = root.bookingScheduled._test.currentAvailabilityQuery();
+  const queryKey = root.availability.queryKey(query);
+  root.state.setScheduledPreview("calendar", {
+    status: "success",
+    data: { month: root.state.draft.scheduled.calendar_month, days: [] },
+    error: "",
+    query_key: root.availability.calendarQueryKey(root.bookingScheduled._test.currentCalendarQuery()),
+    loaded_at: "",
+  });
+  root.state.setScheduledPreview("availability", {
+    status: "success", data: { date: root.state.draft.scheduled.date, duration_min: 60, slots: [] },
+    error: "", query_key: queryKey, loaded_at: "",
+  });
+
+  let resolveAvailability;
+  root.api.loadAvailability = () => new Promise((resolve) => { resolveAvailability = resolve; });
+  const container = new WizardContainer(root);
+  root.bookingScheduled.render(container);
+  const pending = root.bookingScheduled.refreshAvailability(container, { preserveSelection: true });
+  const paintsBeforeLeave = container.renderCount;
+
+  assert.equal(context.__lifecycle.intervals.size, 1);
+  assert.equal(context.__lifecycle.listenerCount("document", "visibilitychange"), 1);
+  assert.equal(context.__lifecycle.listenerCount("window", "focus"), 1);
+  assert.equal(context.__lifecycle.listenerCount("window", "pageshow"), 1);
+  assert.equal(typeof root.bookingScheduled.render.onLeave, "function");
+
+  root.bookingScheduled.render.onLeave();
+  root.state.setRoute("home");
+  resolveAvailability({ date: root.state.draft.scheduled.date, duration_min: 60, slots: [] });
+  await pending;
+
+  assert.equal(context.__lifecycle.intervals.size, 0);
+  assert.equal(context.__lifecycle.listenerCount("document", "visibilitychange"), 0);
+  assert.equal(context.__lifecycle.listenerCount("window", "focus"), 0);
+  assert.equal(context.__lifecycle.listenerCount("window", "pageshow"), 0);
+  assert.equal(container.renderCount, paintsBeforeLeave);
+  assert.notEqual(root.state.scheduledPreview.availability.status, "success");
+});
+
+test("selecting a genuine new scheduled service clears the prior request key while retries reuse one key", () => {
+  const context = makeContext();
+  const root = loadCustomerFrontend(context);
+  root.state.updateDraft("scheduled", { scheduled_request_key: "old-completed-request" });
+
+  assert.equal(root.services.applyCommerceDraft("scheduled", root.services.quickServices[0]), true);
+  assert.equal(root.state.draft.scheduled.scheduled_request_key, "");
+
+  const first = root.bookingScheduled._test.buildSubmitPayload().scheduled_request_key;
+  const retry = root.bookingScheduled._test.buildSubmitPayload().scheduled_request_key;
+  assert.ok(first);
+  assert.equal(retry, first);
+});
+
+test("scheduled double submit creates one booking request", async () => {
+  const context = makeLifecycleContext();
+  const root = loadCustomerFrontend(context);
+  root.state.setRoute("scheduled");
+  root.state.setScheduledWizard({ step: 3 });
+  root.state.updateDraft("scheduled", {
+    customer_name: "Test Customer",
+    customer_phone: "0812345678",
+    address_text: "123 Test Condo",
+  });
+  root.state.setScheduledPreview("pricing", { status: "success", data: { duration_min: 60, active_price: 900 }, error: "" });
+  const query = root.bookingScheduled._test.currentAvailabilityQuery();
+  const queryKey = root.availability.queryKey(query);
+  const availabilityData = {
+    date: root.state.draft.scheduled.date,
+    duration_min: 60,
+    slots: [{ start: "10:00", end: "11:00", available: true }],
+  };
+  const selected = root.availability.normalizePublicSlots(availabilityData, 60)[0];
+  root.state.updateDraft("scheduled", { selectedSlot: { ...selected, query_key: queryKey } });
+  root.state.setScheduledPreview("availability", {
+    status: "success", data: availabilityData, error: "", query_key: queryKey, loaded_at: "",
+  });
+  root.api.loadAvailability = async () => availabilityData;
+  let resolveSubmit;
+  let submitCalls = 0;
+  root.api.submitScheduledBooking = async () => {
+    submitCalls += 1;
+    return new Promise((resolve) => { resolveSubmit = resolve; });
+  };
+  const container = new WizardContainer(root);
+  root.bookingScheduled.render(container);
+  const submit = container.querySelectorAll("[data-action]")
+    .find((button) => button.getAttribute("data-action") === "submit-scheduled");
+
+  const firstSubmit = submit.click();
+  const secondSubmit = submit.click();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(submitCalls, 1);
+  resolveSubmit({ success: true, booking_code: "BK-SCHEDULED", token: "TOKEN-SCHEDULED" });
+  await Promise.all([firstSubmit, secondSubmit]);
+  root.bookingScheduled.render.onLeave();
+});
+
 test("anonymous slots render without technician identity or counts", () => {
   const context = makeContext();
   const root = loadCustomerFrontend(context);
@@ -721,7 +882,7 @@ test("urgent submitted pending DOM contains only pending-state copy", async () =
   root.bookingUrgent.render(container);
   await new Promise((resolve) => setTimeout(resolve, 0));
 
-  assert.match(container.innerHTML, /แอดมินกำลังตรวจสอบรายละเอียดก่อนส่งต่อให้ช่างที่ว่าง/);
+  assert.match(container.innerHTML, /แอดมินกำลังตรวจสอบรายละเอียดคำขอ/);
   assert.match(container.innerHTML, /รอแอดมินตรวจสอบ/);
   assert.match(container.innerHTML, /รอแอดมิน/);
   assert.doesNotMatch(container.innerHTML, /คำขอได้รับการยืนยันแล้ว|พร้อมติดตามงาน|คำขอสิ้นสุดแล้ว|คำขอนี้สิ้นสุดแล้ว|สิ้นสุดแล้ว/);
@@ -750,9 +911,9 @@ test("urgent submitted state maps approved status to safe Thai copy without auto
   await new Promise((resolve) => setTimeout(resolve, 0));
 
   assert.deepEqual(routeCalls, []);
-  assert.match(container.innerHTML, /แอดมินยืนยันคำขอแล้ว กรุณาติดตามสถานะงาน/);
+  assert.match(container.innerHTML, /แอดมินยืนยันคำขอแล้ว และกำลังจัดทีมช่างให้คุณ/);
   assert.match(container.innerHTML, /คำขอได้รับการยืนยันแล้ว|พร้อมติดตามงาน/);
-  assert.doesNotMatch(container.innerHTML, /แอดมินกำลังตรวจสอบรายละเอียดก่อนส่งต่อให้ช่างที่ว่าง|รอแอดมินตรวจสอบ|รอแอดมิน|คำขอสิ้นสุดแล้ว|คำขอนี้สิ้นสุดแล้ว|สิ้นสุดแล้ว/);
+  assert.doesNotMatch(container.innerHTML, /แอดมินกำลังตรวจสอบรายละเอียดคำขอ|รอแอดมินตรวจสอบ|รอแอดมิน|คำขอสิ้นสุดแล้ว|คำขอนี้สิ้นสุดแล้ว|สิ้นสุดแล้ว/);
   assert.doesNotMatch(container.innerHTML, /phase|accepted/);
   root.bookingUrgent.render.onLeave();
 });
@@ -785,7 +946,7 @@ test("urgent submitted state shows a safe terminal message and stops polling wit
   assert.equal(root.state.urgentFlow.liveStatus.terminal, true);
   assert.match(container.innerHTML, /คำขอนี้สิ้นสุดแล้ว กรุณาติดต่อแอดมินหากต้องการความช่วยเหลือ/);
   assert.match(container.innerHTML, /ติดต่อแอดมินทาง LINE/);
-  assert.doesNotMatch(container.innerHTML, /แอดมินกำลังตรวจสอบรายละเอียดก่อนส่งต่อให้ช่างที่ว่าง|รอแอดมินตรวจสอบ|รอแอดมิน|คำขอได้รับการยืนยันแล้ว|แอดมินยืนยันคำขอแล้ว|พร้อมติดตามงาน/);
+  assert.doesNotMatch(container.innerHTML, /แอดมินกำลังตรวจสอบรายละเอียดคำขอ|รอแอดมินตรวจสอบ|รอแอดมิน|คำขอได้รับการยืนยันแล้ว|แอดมินยืนยันคำขอแล้ว|พร้อมติดตามงาน/);
   assert.doesNotMatch(container.innerHTML, /phase|admin_review/);
   assert.equal(calls, 1);
   root.bookingUrgent.render.onLeave();
@@ -821,6 +982,185 @@ test("urgent request key is generated once and reused by a retry of the same req
     .find((button) => button.getAttribute("data-urgent-action") === "confirm").click();
   assert.equal(capturedPayloads[1].urgent_request_key, firstKey);
   assert.equal(root.state.urgentFlow.step, "submitted");
+  root.bookingUrgent.render.onLeave();
+});
+
+test("urgent unresolved submit can leave and retry with the same key while the old response is ignored", async () => {
+  const context = makeLifecycleContext();
+  const root = loadCustomerFrontend(context);
+  root.state.setRoute("urgent");
+  root.state.updateDraft("urgent", {
+    customer_name: "Somchai",
+    customer_phone: "0812345678",
+    address_text: "123 Rd",
+    symptom: "ล้างแอร์",
+  });
+  root.state.setUrgentFlow({ step: "review", status: "idle", error: "" });
+  const requests = [];
+  root.api.submitUrgentRequest = (payload) => new Promise((resolve) => {
+    requests.push({ payload, resolve });
+  });
+  const firstContainer = new WizardContainer(root);
+  root.bookingUrgent.render(firstContainer);
+  const firstSubmit = firstContainer.querySelectorAll("[data-urgent-action]")
+    .find((button) => button.getAttribute("data-urgent-action") === "confirm").click();
+  assert.equal(requests.length, 1);
+  const requestKey = requests[0].payload.urgent_request_key;
+
+  root.bookingUrgent.render.onLeave();
+  root.state.setRoute("home");
+  root.state.setRoute("urgent");
+  const retryContainer = new WizardContainer(root);
+  root.bookingUrgent.render(retryContainer);
+  const retrySubmit = retryContainer.querySelectorAll("[data-urgent-action]")
+    .find((button) => button.getAttribute("data-urgent-action") === "confirm").click();
+  assert.equal(requests.length, 2);
+  assert.equal(requests[1].payload.urgent_request_key, requestKey);
+
+  requests[1].resolve({ success: true, booking_code: "BK-NEW", token: "TOKEN-NEW" });
+  await retrySubmit;
+  assert.equal(root.state.urgentFlow.result.booking_code, "BK-NEW");
+
+  requests[0].resolve({ success: true, booking_code: "BK-OLD", token: "TOKEN-OLD" });
+  await firstSubmit;
+  assert.equal(root.state.urgentFlow.result.booking_code, "BK-NEW");
+  assert.equal(root.state.draft.urgent.urgent_request_key, requestKey);
+  root.bookingUrgent.render.onLeave();
+});
+
+test("urgent submitted polling requires a valid tracking key", () => {
+  const context = makeLifecycleContext();
+  const root = loadCustomerFrontend(context);
+  root.state.setRoute("urgent");
+  root.state.setUrgentFlow({
+    step: "submitted", status: "success", error: "", result: {}, liveStatus: null, liveStatusError: "",
+  });
+
+  root.bookingUrgent.render(new WizardContainer(root));
+
+  assert.equal(context.__lifecycle.intervals.size, 0);
+  root.bookingUrgent.render.onLeave();
+});
+
+test("urgent polling is single-interval and single-flight across render, focus, and pageshow", async () => {
+  const context = makeLifecycleContext();
+  const root = loadCustomerFrontend(context);
+  root.state.setRoute("urgent");
+  root.state.setUrgentFlow({
+    step: "submitted", status: "success", error: "", result: { token: "VALID-KEY" },
+    liveStatus: null, liveStatusError: "",
+  });
+  let resolveStatus;
+  let calls = 0;
+  root.api.loadUrgentStatus = async () => {
+    calls += 1;
+    return new Promise((resolve) => { resolveStatus = resolve; });
+  };
+  const container = new WizardContainer(root);
+
+  root.bookingUrgent.render(container);
+  root.bookingUrgent.render(container);
+  await context.__lifecycle.fire("window", "focus");
+  await context.__lifecycle.fire("window", "pageshow");
+
+  assert.equal(context.__lifecycle.intervals.size, 1);
+  assert.equal(calls, 1);
+  resolveStatus({ phase: "admin_review", confirmed: false, terminal: false });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  root.bookingUrgent.render.onLeave();
+  assert.equal(context.__lifecycle.intervals.size, 0);
+  assert.equal(context.__lifecycle.listenerCount("document", "visibilitychange"), 0);
+  assert.equal(context.__lifecycle.listenerCount("window", "focus"), 0);
+  assert.equal(context.__lifecycle.listenerCount("window", "pageshow"), 0);
+});
+
+test("unchanged urgent polling state does not repaint the submitted screen", async () => {
+  const context = makeLifecycleContext();
+  const root = loadCustomerFrontend(context);
+  root.state.setRoute("urgent");
+  const status = { phase: "admin_review", confirmed: false, terminal: false };
+  root.state.setUrgentFlow({
+    step: "submitted", status: "success", error: "", result: { token: "VALID-KEY" },
+    liveStatus: status, liveStatusError: "",
+  });
+  root.api.loadUrgentStatus = async () => ({ ...status });
+  const container = new WizardContainer(root);
+
+  root.bookingUrgent.render(container);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const paintsBeforePoll = container.renderCount;
+  await context.__lifecycle.runIntervals();
+
+  assert.equal(container.renderCount, paintsBeforePoll);
+  root.bookingUrgent.render.onLeave();
+});
+
+test("urgent polling stops on network failure and exposes one explicit retry action", async () => {
+  const context = makeLifecycleContext();
+  const root = loadCustomerFrontend(context);
+  root.state.setRoute("urgent");
+  root.state.setUrgentFlow({
+    step: "submitted", status: "success", error: "", result: { token: "VALID-KEY" },
+    liveStatus: null, liveStatusError: "",
+  });
+  root.api.loadUrgentStatus = async () => { throw new TypeError("Failed to fetch https://internal.example/status"); };
+  const container = new WizardContainer(root);
+
+  root.bookingUrgent.render(container);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.equal(context.__lifecycle.intervals.size, 0);
+  assert.match(container.innerHTML, /เชื่อมต่อระบบไม่สำเร็จ กรุณาลองอีกครั้ง/);
+  assert.doesNotMatch(container.innerHTML, /internal|Failed to fetch|\/status/i);
+  const retryButtons = container.querySelectorAll("[data-urgent-action]")
+    .filter((button) => button.getAttribute("data-urgent-action") === "retry-status");
+  assert.equal(retryButtons.length, 1);
+  root.api.loadUrgentStatus = async () => ({ phase: "admin_review", confirmed: false, terminal: false });
+  await retryButtons[0].click();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(root.state.urgentFlow.liveStatusError, "");
+  assert.equal(context.__lifecycle.intervals.size, 1);
+  root.bookingUrgent.render.onLeave();
+});
+
+test("urgent double submit sends one request and a terminal new request gets a new idempotency key", async () => {
+  const context = makeLifecycleContext();
+  const root = loadCustomerFrontend(context);
+  root.state.setRoute("urgent");
+  root.state.updateDraft("urgent", {
+    customer_name: "Somchai", customer_phone: "0812345678", address_text: "123 Rd", symptom: "ล้างแอร์",
+  });
+  root.state.setUrgentFlow({ step: "review", status: "idle", error: "" });
+  let resolveSubmit;
+  let submitCalls = 0;
+  root.api.submitUrgentRequest = async () => {
+    submitCalls += 1;
+    return new Promise((resolve) => { resolveSubmit = resolve; });
+  };
+  root.api.loadUrgentStatus = async () => ({ phase: "admin_review", confirmed: false, terminal: false });
+  const container = new WizardContainer(root);
+  root.bookingUrgent.render(container);
+  const confirm = container.querySelectorAll("[data-urgent-action]")
+    .find((button) => button.getAttribute("data-urgent-action") === "confirm");
+
+  const firstSubmit = confirm.click();
+  const secondSubmit = confirm.click();
+  assert.equal(submitCalls, 1);
+  const firstKey = root.state.draft.urgent.urgent_request_key;
+  resolveSubmit({ success: true, booking_code: "BK-ONCE", token: "TOKEN-ONCE" });
+  await Promise.all([firstSubmit, secondSubmit]);
+
+  root.state.setUrgentFlow({ liveStatus: { phase: "cancelled", terminal: true }, liveStatusError: "" });
+  root.bookingUrgent.render(container);
+  const newRequest = container.querySelectorAll("[data-urgent-action]")
+    .find((button) => button.getAttribute("data-urgent-action") === "new-request");
+  assert.ok(newRequest);
+  await newRequest.click();
+  assert.equal(root.state.draft.urgent.urgent_request_key, "");
+  const nextKey = root.bookingUrgent._test.buildSubmitPayload().urgent_request_key;
+  assert.ok(nextKey);
+  assert.notEqual(nextKey, firstKey);
   root.bookingUrgent.render.onLeave();
 });
 
@@ -2032,6 +2372,7 @@ test("store shows สอบถามราคา when there is no price at all",
 function loadTrackingFrontend(context = makeContext()) {
   return load(context, [
     "customer-app/modules/utils.js",
+    "customer-app/modules/customerCopy.js",
     "customer-app/modules/state.js",
     "customer-app/modules/api.js",
     "customer-app/modules/tracking.js",

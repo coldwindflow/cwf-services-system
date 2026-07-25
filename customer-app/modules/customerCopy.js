@@ -9,8 +9,8 @@
     disabled: "ขณะนี้ยังไม่เปิดรับจองออนไลน์ กรุณาติดต่อแอดมิน",
     network: "เชื่อมต่อระบบไม่สำเร็จ กรุณาลองอีกครั้ง",
     unknown: "ระบบขัดข้องชั่วคราว กรุณาลองใหม่หรือติดต่อแอดมิน",
-    urgentPending: "แอดมินกำลังตรวจสอบรายละเอียดก่อนส่งต่อให้ช่างที่ว่าง",
-    urgentApproved: "แอดมินยืนยันคำขอแล้ว กรุณาติดตามสถานะงาน",
+    urgentPending: "แอดมินกำลังตรวจสอบรายละเอียดคำขอ",
+    urgentApproved: "แอดมินยืนยันคำขอแล้ว และกำลังจัดทีมช่างให้คุณ",
     urgentClosed: "คำขอนี้สิ้นสุดแล้ว กรุณาติดต่อแอดมินหากต้องการความช่วยเหลือ",
     otherServices: "งานซ่อม ติดตั้ง ย้ายแอร์ หรือตรวจอาการ กรุณาติดต่อแอดมินเพื่อประเมินรายละเอียด ราคา และจัดคิวให้เหมาะสม",
   });
@@ -35,8 +35,17 @@
     "NO_AVAILABLE_SLOTS",
     "AVAILABILITY_EMPTY",
   ]);
-  const URGENT_ACTIONABLE_PHASES = new Set(["approved", "accepted", "assigned", "in_progress"]);
-  const URGENT_TERMINAL_PHASES = new Set(["terminal", "rejected", "cancelled", "canceled", "closed"]);
+  const ACTIONABLE_PHASES = new Set(["approved", "accepted", "assigned", "in_progress"]);
+  const TERMINAL_PHASES = new Set(["terminal", "rejected", "cancelled", "canceled", "closed"]);
+  const PENDING_STATUSES = new Set(["pending", "pending_review", "admin_review", "รอตรวจสอบ"]);
+  const ACTIONABLE_STATUSES = new Set([
+    "approved", "accepted", "assigned", "in_progress",
+    "รอดำเนินการ", "รอช่างยืนยัน", "กำลังทำ", "กำลังดำเนินการ",
+  ]);
+  const TERMINAL_STATUSES = new Set(["rejected", "cancelled", "canceled", "closed", "ยกเลิก", "ปฏิเสธ"]);
+  const COMPLETED_STATUSES = new Set(["done", "completed", "เสร็จแล้ว", "ปิดงาน"]);
+  const STARTED_STATUSES = new Set(["started", "in_progress", "กำลังทำ", "กำลังดำเนินการ", "กำลังให้บริการ"]);
+  const ASSIGNED_STATUSES = new Set(["assigned", "accepted", "รอดำเนินการ", "รอช่างยืนยัน"]);
   const urgentSubmittedViews = Object.freeze({
     pending: Object.freeze({
       state: "pending",
@@ -107,11 +116,104 @@
     return messages.noSlots;
   }
 
-  function urgentSubmittedView(status) {
-    const phase = String(status?.phase || "").trim().toLowerCase();
-    if (status?.terminal === true || URGENT_TERMINAL_PHASES.has(phase)) return urgentSubmittedViews.terminal;
-    if (status?.confirmed === true || URGENT_ACTIONABLE_PHASES.has(phase)) return urgentSubmittedViews.actionable;
+  function bookingApprovalView(status) {
+    const source = status || {};
+    const mode = String(source.booking_mode || source.mode || "urgent").trim().toLowerCase();
+    const phase = String(source.phase || "").trim().toLowerCase();
+    const jobStatus = String(source.job_status || source.status || "").trim().toLowerCase();
+    const terminal = source.terminal === true
+      || TERMINAL_PHASES.has(phase)
+      || TERMINAL_STATUSES.has(jobStatus)
+      || jobStatus.includes("ยกเลิก")
+      || jobStatus.includes("ปฏิเสธ");
+    if (terminal) return urgentSubmittedViews.terminal;
+
+    const explicitlyPending = PENDING_STATUSES.has(phase) || PENDING_STATUSES.has(jobStatus);
+    const actionable = !explicitlyPending && (source.confirmed === true
+      || ACTIONABLE_PHASES.has(phase)
+      || ACTIONABLE_STATUSES.has(jobStatus));
+    if (actionable) return urgentSubmittedViews.actionable;
+    if (mode === "scheduled") {
+      return Object.freeze({
+        ...urgentSubmittedViews.pending,
+        message: "ระบบกันช่วงเวลานี้ไว้ให้ชั่วคราว แอดมินจะตรวจสอบรายละเอียดและยืนยันคิวให้คุณ",
+        detail: "ส่งคำขอจองแล้ว และระบบกันช่วงเวลานี้ไว้ให้ชั่วคราว",
+        statusLabel: "รอแอดมินยืนยัน",
+        railLabel: "รอแอดมินยืนยัน",
+      });
+    }
     return urgentSubmittedViews.pending;
+  }
+
+  function customerLifecycleView(status) {
+    const source = status || {};
+    const approval = bookingApprovalView(source);
+    const phase = String(source.phase || "").trim().toLowerCase();
+    const jobStatus = String(source.job_status || source.status || "").trim().toLowerCase();
+    const cancelled = Boolean(source.canceled_at || source.cancelled_at)
+      || approval.state === "terminal"
+      || TERMINAL_STATUSES.has(jobStatus)
+      || jobStatus.includes("ยกเลิก")
+      || jobStatus.includes("ปฏิเสธ");
+    if (cancelled) {
+      return Object.freeze({ ...approval, state: "cancelled", statusLabel: "สิ้นสุดแล้ว", railLabel: "สิ้นสุดแล้ว" });
+    }
+    if (Boolean(source.finished_at)
+      || COMPLETED_STATUSES.has(jobStatus)
+      || jobStatus.includes("เสร็จ")) {
+      return Object.freeze({
+        ...urgentSubmittedViews.actionable,
+        state: "completed",
+        statusLabel: "งานเสร็จแล้ว",
+        railLabel: "งานเสร็จแล้ว",
+      });
+    }
+    if (Boolean(source.started_at) || STARTED_STATUSES.has(jobStatus)) {
+      return Object.freeze({
+        ...urgentSubmittedViews.actionable,
+        state: "started",
+        statusLabel: "กำลังให้บริการ",
+        railLabel: "กำลังให้บริการ",
+      });
+    }
+    if (Boolean(source.checkin_at)) {
+      return Object.freeze({
+        ...urgentSubmittedViews.actionable,
+        state: "checked_in",
+        statusLabel: "ช่างถึงหน้างานแล้ว",
+        railLabel: "ถึงหน้างานแล้ว",
+      });
+    }
+    if (Boolean(source.travel_started_at)) {
+      return Object.freeze({
+        ...urgentSubmittedViews.actionable,
+        state: "traveling",
+        statusLabel: "ช่างกำลังเดินทาง",
+        railLabel: "กำลังเดินทาง",
+      });
+    }
+    const hasAssignedTechnician = Boolean(
+      source.assigned_at
+      || source.accepted_at
+      || source.technician
+      || (Array.isArray(source.technician_team) && source.technician_team.length),
+    );
+    const assigned = approval.state !== "pending" && (hasAssignedTechnician
+      || ASSIGNED_STATUSES.has(phase)
+      || ASSIGNED_STATUSES.has(jobStatus));
+    if (assigned) {
+      return Object.freeze({
+        ...urgentSubmittedViews.actionable,
+        state: "assigned",
+        statusLabel: "ยืนยันคิวแล้ว",
+        railLabel: "ยืนยันคิวแล้ว",
+      });
+    }
+    return approval;
+  }
+
+  function urgentSubmittedView(status) {
+    return bookingApprovalView({ ...(status || {}), booking_mode: "urgent" });
   }
 
   function urgentStatus(status) {
@@ -122,6 +224,8 @@
     messages,
     bookingError,
     availabilityEmpty,
+    bookingApprovalView,
+    customerLifecycleView,
     urgentStatus,
     urgentSubmittedView,
   };

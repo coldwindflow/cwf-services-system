@@ -761,13 +761,17 @@
   function jobPhase(data, mode) {
     const status = clean(data.job_status);
     const noTech = status.includes("ไม่พบช่าง") || status.includes("ตีกลับ");
-    if (isCanceled(data)) return "canceled";
-    if (isDone(data)) return "completed";
+    const approval = root.customerCopy.bookingApprovalView({ ...data, booking_mode: mode });
+    const lifecycle = root.customerCopy.customerLifecycleView({ ...data, booking_mode: mode });
+    if (lifecycle.state === "cancelled") return "canceled";
+    if (lifecycle.state === "completed") return "completed";
+    if (lifecycle.state === "started") return "started";
+    if (lifecycle.state === "checked_in") return "checked_in";
+    if (lifecycle.state === "traveling") return "traveling";
+    if (lifecycle.state === "assigned") return "assigned";
+    if (approval.state === "pending") return mode === "urgent" ? "urgent_waiting" : "waiting";
     if (mode === "urgent" && noTech) return "urgent_no_tech";
-    if (clean(data.started_at)) return "started";
-    if (clean(data.checkin_at)) return "checked_in";
-    if (clean(data.travel_started_at)) return "traveling";
-    if (hasAssignedTech(data) || status.includes("รอดำเนินการ")) return "assigned";
+    if (approval.state === "actionable") return "approved";
     return mode === "urgent" ? "urgent_waiting" : "waiting";
   }
 
@@ -779,8 +783,9 @@
     if (phase === "checked_in") return "ช่างถึงหน้างานแล้ว";
     if (phase === "traveling") return "ช่างกำลังเดินทาง";
     if (phase === "assigned") return mode === "urgent" ? "ช่างรับงานแล้ว" : "ยืนยันคิวแล้ว";
+    if (phase === "approved") return "แอดมินยืนยันคำขอแล้ว";
     if (phase === "urgent_no_tech") return "แอดมินกำลังช่วยตรวจสอบคิวด่วน";
-    if (phase === "urgent_waiting") return "ส่งคำขอคิวด่วนแล้ว รอช่างรับงานหรือแอดมินยืนยัน";
+    if (phase === "urgent_waiting") return "ส่งคำขอแล้ว รอแอดมินตรวจสอบ";
     return "รับคำขอจองแล้ว รอแอดมินตรวจสอบคิว";
   }
 
@@ -788,7 +793,7 @@
     const phase = jobPhase(data, mode);
     const hasPhotos = hasPhotoContent(data);
     if (phase === "canceled") {
-      return clean(data.cancel_reason) ? `เหตุผล: ${clean(data.cancel_reason)}` : "งานนี้สิ้นสุดแล้ว หากต้องการความช่วยเหลือกรุณาติดต่อ CWF";
+      return "คำขอนี้สิ้นสุดแล้ว หากต้องการตรวจสอบหรือจองใหม่ กรุณาติดต่อแอดมิน";
     }
     if (phase === "completed") {
       if (!canUseTokenActions(data)) {
@@ -804,8 +809,9 @@
     if (phase === "checked_in") return "ทีมช่างถึงหน้างานแล้ว";
     if (phase === "traveling") return "ช่างกำลังเดินทางไปยังสถานที่นัดหมาย";
     if (phase === "assigned") return "มีทีมช่างรับผิดชอบงานนี้แล้ว";
+    if (phase === "approved") return "แอดมินยืนยันคำขอแล้ว และกำลังจัดทีมช่างให้คุณ";
     if (phase === "urgent_no_tech") return "แอดมินกำลังช่วยตรวจสอบคิวด่วน คำขอยังไม่ถือว่ายืนยันงาน";
-    if (phase === "urgent_waiting") return "กำลังรอช่างรับงานหรือแอดมินยืนยัน คำขอยังไม่ถือว่ายืนยันงาน";
+    if (phase === "urgent_waiting") return "แอดมินกำลังตรวจสอบรายละเอียดคำขอ";
     return "แอดมินจะตรวจสอบคิวและมอบหมายทีมก่อนถึงเวลานัด";
   }
 
@@ -827,8 +833,9 @@
     if (phase === "checked_in") return "เตรียมพื้นที่หน้างานให้พร้อมสำหรับเริ่มบริการ";
     if (phase === "traveling") return "รอรับทีมช่างที่กำลังเดินทางไปหน้างาน";
     if (phase === "assigned") return "รอถึงเวลานัด หรือเปิดแผนที่หากต้องการดูสถานที่งาน";
+    if (phase === "approved") return "กำลังจัดทีมช่างให้คุณ";
     if (phase === "urgent_no_tech") return "รอแอดมินช่วยตรวจสอบ หรือเปลี่ยนเป็นจองล่วงหน้าถ้าไม่รีบด่วน";
-    if (phase === "urgent_waiting") return "รอช่างรับงาน หรือให้แอดมินช่วยยืนยันคิวด่วน";
+    if (phase === "urgent_waiting") return "รอแอดมินตรวจสอบ";
     return "รอแอดมินยืนยันคิว หรือติดต่อ CWF หากต้องการเลื่อนนัด";
   }
 
@@ -874,7 +881,7 @@
             <p class="passport-lead">รายงานสุขภาพแอร์จากงานบริการล่าสุด</p>
             <div class="passport-data">
               <div><b>ข้อมูลงาน</b><span>${esc(data.booking_code || "-")}</span></div>
-              <div><b>สถานะ</b><span>${esc(data.job_status || "-")}</span></div>
+              <div><b>สถานะ</b><span>${esc(root.customerCopy.customerLifecycleView(data).statusLabel)}</span></div>
               <div><b>บริการ</b><span>${esc(serviceSummary(data))}</span></div>
               <div><b>วันที่บริการ</b><span>${esc(serviceDateText)}</span></div>
             </div>
@@ -922,6 +929,28 @@
   }
 
   function renderTechnicianCard(data) {
+    const approval = root.customerCopy.bookingApprovalView(data);
+    if (approval.state === "pending") {
+      return `
+        <div class="tracking-tech-card is-empty" data-tech-pending>
+          <div>
+            <strong>รอแอดมินตรวจสอบ</strong>
+            <span class="muted">แอดมินกำลังตรวจสอบรายละเอียดคำขอ</span>
+          </div>
+        </div>
+      `;
+    }
+    const list = techList(data);
+    if (!list.length && root.customerCopy.customerLifecycleView(data).state === "actionable") {
+      return `
+        <div class="tracking-tech-card is-empty">
+          <div>
+            <strong>แอดมินยืนยันคำขอแล้ว</strong>
+            <span class="muted">แอดมินยืนยันคำขอแล้ว และกำลังจัดทีมช่างให้คุณ</span>
+          </div>
+        </div>
+      `;
+    }
     // Code-only access redacts technician identity. Never render the "no
     // technician yet" empty card here — that would misrepresent a possibly
     // assigned job as unassigned. Show a neutral limited-data note instead.
@@ -935,13 +964,12 @@
         </div>
       `;
     }
-    const list = techList(data);
     if (!list.length) {
       return `
         <div class="tracking-tech-card is-empty">
           <div>
-            <strong>แอดมินกำลังช่วยจัดคิวให้</strong>
-            <span class="muted">ยังไม่มีช่างยืนยันงานนี้ หากเป็นคิวด่วน งานจะยืนยันเมื่อมีช่างรับหรือแอดมินยืนยันเท่านั้น</span>
+            <strong>ข้อมูลทีมช่าง</strong>
+            <span class="muted">แอดมินกำลังจัดเตรียมทีมที่เหมาะสมกับงานนี้</span>
           </div>
         </div>
       `;
@@ -967,7 +995,7 @@
     return `
       <section class="tracking-extra-card">
         <div class="section-head compact">
-          <span class="section-kicker">Photos</span>
+          <span class="section-kicker">รูปงาน</span>
           <h2>รูปหลังจบงาน</h2>
         </div>
         <div class="tracking-photo-grid">
@@ -986,7 +1014,7 @@
     return `
       <section class="tracking-extra-card">
         <div class="section-head compact">
-          <span class="section-kicker">Note</span>
+          <span class="section-kicker">หมายเหตุ</span>
           <h2>หมายเหตุจากช่าง</h2>
         </div>
         <p class="muted preserve-lines">${esc(data.technician_note)}</p>
@@ -1016,7 +1044,7 @@
     return `
       <section class="tracking-extra-card review-summary-card">
         <div class="section-head compact">
-          <span class="section-kicker">Technician Review</span>
+          <span class="section-kicker">รีวิวทีมช่าง</span>
           <h2>รีวิวทีมช่าง</h2>
         </div>
         <p><strong>${esc(review.rating || "-")} / 5</strong></p>
@@ -1040,7 +1068,7 @@
     return `
       <section class="tracking-extra-card review-form-card">
         <div class="section-head compact">
-          <span class="section-kicker">Review</span>
+          <span class="section-kicker">รีวิว</span>
           <h2>ให้คะแนนงานนี้</h2>
         </div>
         <form data-review-form>
@@ -1101,7 +1129,7 @@
     return `
       <section class="tracking-extra-card catalog-review-summary-card">
         <div class="section-head compact">
-          <span class="section-kicker">Service Review</span>
+          <span class="section-kicker">รีวิวบริการ</span>
           <h2>รีวิวบริการนี้</h2>
         </div>
         <p><strong>${esc(review.rating || "-")} / 5</strong> &middot; <span class="muted">${esc(catalogReviewStatusLabel(review.moderation_status))}</span></p>
@@ -1123,7 +1151,7 @@
     return `
       <section class="tracking-extra-card catalog-review-form-card">
         <div class="section-head compact">
-          <span class="section-kicker">Service Review</span>
+          <span class="section-kicker">รีวิวบริการ</span>
           <h2>รีวิวบริการนี้</h2>
         </div>
         <form data-catalog-review-form>
@@ -1163,7 +1191,7 @@
     return `
       <section class="tracking-extra-card review-readonly-card" role="note">
         <div class="section-head compact">
-          <span class="section-kicker">Review</span>
+          <span class="section-kicker">รีวิว</span>
           <h2>การให้คะแนนเป็นแบบอ่านอย่างเดียว</h2>
         </div>
         <p class="muted">งานนี้ยังไม่อยู่ในสถานะที่ส่งรีวิวได้</p>
@@ -1275,9 +1303,6 @@
     if (data.payment_status || data.paid_at) {
       rows.push(`<div class="data-row"><strong>การชำระเงิน</strong><span class="muted">${esc(paymentStatusLabel(data.payment_status, data.paid_at))}</span></div>`);
     }
-    if (data.cancel_reason) {
-      rows.push(`<div class="data-row"><strong>เหตุผลยกเลิก</strong><span class="muted">${esc(data.cancel_reason)}</span></div>`);
-    }
     return `<div class="data-list tracking-summary-list">${rows.join("")}</div>`;
   }
 
@@ -1346,7 +1371,7 @@
     return `
       <div class="tracking-choice-shell">
         <div class="section-head compact">
-          <span class="section-kicker">Tracking</span>
+          <span class="section-kicker">ติดตามงาน</span>
           <h2>เลือกงานที่ต้องการติดตาม</h2>
         </div>
         <div class="tracking-choice-list">
@@ -1354,7 +1379,7 @@
             <button class="tracking-choice" type="button" data-tracking-choice="${index}">
               <strong>${esc(job.booking_code || "งาน CWF")}</strong>
               <span>${esc(job.appointment_datetime ? root.utils.formatDateTime(job.appointment_datetime) : "ไม่ระบุวันนัดหมาย")}</span>
-              <span>${esc(job.service_summary || "บริการ CWF")} · ${esc(job.job_status || "รอตรวจสอบสถานะ")}</span>
+              <span>${esc(job.service_summary || "บริการ CWF")} · ${esc(root.customerCopy.customerLifecycleView(job).statusLabel)}</span>
               ${job.location_summary ? `<small>${esc(job.location_summary)}</small>` : ""}
             </button>`).join("")}
         </div>
@@ -1498,7 +1523,7 @@
             ${data.booking_code ? `<button class="tracking-copy-btn" type="button" data-action="copy-tracking-code" data-code="${esc(data.booking_code)}" aria-label="คัดลอกเลขติดตาม">คัดลอก</button>` : ""}
           </div>
         </div>
-        <div class="tracking-view-tabs" role="tablist" aria-label="Tracking views">
+        <div class="tracking-view-tabs" role="tablist" aria-label="มุมมองการติดตามงาน">
           ${views.map((view) => renderTrackingViewButton(view.id, view.label, view.meta, view.id === activeView)).join("")}
         </div>
         <div class="tracking-view-stack">
@@ -1511,9 +1536,10 @@
   function renderTimeline() {
     const data = root.state.tracking.data || {};
     const mode = modeFromData(data);
+    const approval = root.customerCopy.bookingApprovalView({ ...data, booking_mode: mode });
     const canView = canViewDetails(data);
     const canUseActions = canUseTokenActions(data);
-    const assigned = hasAssignedTech(data);
+    const assigned = approval.state !== "pending" && hasAssignedTech(data);
     const travel = !!clean(data.travel_started_at);
     const checkin = !!clean(data.checkin_at);
     const started = !!clean(data.started_at);
@@ -1524,7 +1550,7 @@
         title: mode === "urgent" ? "ส่งคำขอคิวด่วนแล้ว" : "รับคำขอจองแล้ว",
         copy: canView
           ? "ระบบได้รับคำขอของคุณแล้ว"
-          : (mode === "urgent" ? "ระบบรับคำขอแล้ว แต่ยังไม่ถือว่ายืนยันงานจนกว่าจะมีช่างรับหรือแอดมินยืนยัน" : "รอแอดมินตรวจสอบคิวและรายละเอียด"),
+          : (mode === "urgent" ? "ระบบได้รับคำขอของคุณแล้ว" : "รอแอดมินตรวจสอบคิวและรายละเอียด"),
         ok: true,
       },
     ];
@@ -1532,18 +1558,32 @@
     if (canceled) {
       steps.push({
         title: "งานถูกยกเลิก",
-        copy: clean(data.cancel_reason)
-          ? `เหตุผล: ${clean(data.cancel_reason)}`
-          : (data.canceled_at ? root.utils.formatDateTime(data.canceled_at) : "งานนี้สิ้นสุดแล้ว"),
+        copy: "คำขอนี้สิ้นสุดแล้ว หากต้องการตรวจสอบหรือจองใหม่ กรุณาติดต่อแอดมิน",
         ok: true,
       });
       return root.utils.timeline(steps.map((step) => ({ title: step.title, copy: step.copy, kind: "" })));
     }
 
+    if (mode === "urgent" && approval.state === "pending") {
+      steps[0].copy = "ระบบได้รับคำขอของคุณแล้ว";
+      steps.push({
+        title: "รอแอดมินตรวจสอบ",
+        copy: "แอดมินกำลังตรวจสอบรายละเอียดคำขอ",
+        ok: false,
+      });
+      return root.utils.timeline(steps.map((step, index) => ({
+        title: step.title,
+        copy: step.copy,
+        kind: step.ok ? "" : timelineState(false, index === 1),
+      })));
+    }
+
     if (canView) {
       steps.push({
-        title: mode === "urgent" ? "ช่างรับงาน / แอดมินยืนยัน" : "ยืนยันคิวและมอบหมายทีม",
-        copy: assigned ? "มีทีมดูแลงานนี้แล้ว" : "แอดมินกำลังช่วยจัดคิวให้",
+        title: mode === "urgent" ? "แอดมินยืนยันคำขอ" : "ยืนยันคิวและมอบหมายทีม",
+        copy: assigned
+          ? "มีทีมดูแลงานนี้แล้ว"
+          : (mode === "urgent" ? "แอดมินยืนยันคำขอแล้ว และกำลังจัดทีมช่างให้คุณ" : "แอดมินกำลังช่วยจัดคิวให้"),
         ok: assigned,
       });
     }
@@ -1773,11 +1813,16 @@
             body: JSON.stringify(payload),
           });
           const data = await response.json().catch(() => ({}));
-          if (!response.ok) throw new Error(data.error || "ส่งรีวิวไม่สำเร็จ");
+          if (!response.ok) {
+            const requestError = new Error("review request failed");
+            requestError.status = response.status;
+            requestError.data = { code: data && data.code };
+            throw requestError;
+          }
           if (status) status.textContent = "ส่งรีวิวเรียบร้อย ขอบคุณครับ";
           setTimeout(() => reloadCurrent(container), 500);
         } catch (error) {
-          if (status) status.textContent = error.message || "ส่งรีวิวไม่สำเร็จ";
+          if (status) status.textContent = root.customerCopy.bookingError(error);
           if (submit) submit.disabled = false;
           form.removeAttribute("aria-busy");
         }
@@ -1809,7 +1854,7 @@
           if (status) status.textContent = "ส่งรีวิวแล้ว รอแอดมินตรวจสอบ";
           setTimeout(() => reloadCurrent(container), 500);
         } catch (error) {
-          if (status) status.textContent = (error && error.message) || "ส่งรีวิวไม่สำเร็จ";
+          if (status) status.textContent = root.customerCopy.bookingError(error);
           if (submit) submit.disabled = false;
           catalogForm.removeAttribute("aria-busy");
         }
@@ -1824,7 +1869,7 @@
         <section class="screen">
           ${root.ui?.pageHeaderHtml ? root.ui.pageHeaderHtml("tracking") : ""}
           <div class="hero tracking-hero">
-            <div class="hero-badge">CWF Tracking</div>
+            <div class="hero-badge">ติดตามงาน CWF</div>
             <h1>ติดตามสถานะงาน</h1>
             <p>ดูสถานะ นัดหมาย และรายละเอียดงานล่าสุดได้จากเลขติดตามของคุณ</p>
           </div>
@@ -1902,5 +1947,4 @@
       unitInspection,
     },
   };
-  console.info("[customer-tracking] phone lookup review direct v1 loaded");
 })();

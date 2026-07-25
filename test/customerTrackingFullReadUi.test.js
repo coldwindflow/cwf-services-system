@@ -7,6 +7,7 @@ const path = require("node:path");
 const vm = require("node:vm");
 
 const ROOT = path.resolve(__dirname, "..");
+const CUSTOMER_COPY_SOURCE = fs.readFileSync(path.join(ROOT, "customer-app/modules/customerCopy.js"), "utf8");
 const TRACKING_SOURCE = fs.readFileSync(path.join(ROOT, "customer-app/modules/tracking.js"), "utf8");
 const CSS_SOURCE = fs.readFileSync(path.join(ROOT, "customer-app/assets/customer-app.css"), "utf8");
 
@@ -54,6 +55,7 @@ function loadTrackingRuntime(options = {}) {
     clearTimeout,
     Date,
   };
+  vm.runInNewContext(CUSTOMER_COPY_SOURCE, sandbox, { filename: "customerCopy.js" });
   vm.runInNewContext(TRACKING_SOURCE, sandbox, { filename: "tracking.js" });
   return app;
 }
@@ -548,9 +550,11 @@ test("canceled jobs render a terminal canceled hero and timeline", () => {
   const html = app.tracking._test.renderTrackingResult();
   const timeline = app.tracking._test.renderTimeline();
   assert.match(html, /งานนี้ถูกยกเลิกแล้ว/);
-  assert.match(html, /ลูกค้าแจ้งยกเลิกนัด/);
+  assert.match(html, /หากต้องการตรวจสอบหรือจองใหม่ กรุณาติดต่อแอดมิน/);
+  assert.doesNotMatch(html, /ลูกค้าแจ้งยกเลิกนัด/);
   assert.match(timeline, /งานถูกยกเลิก/);
-  assert.match(timeline, /ลูกค้าแจ้งยกเลิกนัด/);
+  assert.match(timeline, /หากต้องการตรวจสอบหรือจองใหม่ กรุณาติดต่อแอดมิน/);
+  assert.doesNotMatch(timeline, /ลูกค้าแจ้งยกเลิกนัด/);
   assert.doesNotMatch(timeline, /ช่างกำลังเดินทาง|ถึงหน้างาน|เริ่มให้บริการ|งานเสร็จแล้ว/);
   assert.equal(app.tracking._test.jobPhase(data, "scheduled"), "canceled");
 });
@@ -786,6 +790,189 @@ test("phone multi-result list renders safe fields and never renders the signed s
   assert.doesNotMatch(html, /opaque-one|opaque-two|selection_ref|job_id|customer_phone|address_text/);
 });
 
+test("phone multi-result list never renders a raw backend job status", () => {
+  const app = loadTrackingRuntime();
+  app.state.tracking = {
+    status: "choices",
+    data: {
+      jobs: [{
+        booking_code: "CWFABC9999",
+        service_summary: "ล้างแอร์",
+        job_status: "admin_review",
+        booking_mode: "urgent",
+        selection_ref: "opaque-internal",
+      }],
+    },
+    error: "",
+  };
+  const html = app.tracking._test.renderTrackingResult();
+  assert.match(html, /รอแอดมินตรวจสอบ/);
+  assert.doesNotMatch(html, /admin_review|opaque-internal|job_status/);
+});
+
+test("pending approval never renders reserved technician identity even if the backend payload contains it", () => {
+  const app = loadTrackingRuntime();
+  app.state.tracking = {
+    status: "success",
+    data: {
+      ...codeReadPayload(),
+      access_level: "token",
+      capabilities: { can_view_full_tracking: true, can_use_token_actions: true },
+      job_status: "รอตรวจสอบ",
+      technician: { full_name: "ช่างลับก่อนอนุมัติ", username: "reserved-secret", phone: "0899999999" },
+      technician_team: [{ full_name: "ทีมลับก่อนอนุมัติ", username: "reserved-team" }],
+    },
+    error: "",
+  };
+  const html = app.tracking._test.renderTrackingResult();
+  assert.match(html, /แอดมินกำลังช่วยจัดคิวให้/);
+  assert.doesNotMatch(html, /ช่างลับก่อนอนุมัติ|ทีมลับก่อนอนุมัติ|reserved-secret|reserved-team|0899999999/);
+});
+
+test("urgent pending hero timeline and technician card only describe admin review for code and token access", () => {
+  const app = loadTrackingRuntime();
+  for (const access of ["code", "token"]) {
+    const data = {
+      ...codeReadPayload(),
+      access_level: access,
+      can_use_token_actions: access === "token",
+      capabilities: {
+        can_view_full_tracking: true,
+        can_use_token_actions: access === "token",
+      },
+      booking_mode: "urgent",
+      job_status: "admin_review",
+      technician: { full_name: "ช่างลับ", username: "reserved-secret" },
+      technician_team: [{ full_name: "ทีมลับ", username: "reserved-team" }],
+    };
+    app.state.tracking = { status: "success", data, error: "" };
+    const dom = `${app.tracking._test.renderTrackingResult()}\n${app.tracking._test.renderTimeline()}`;
+    assert.match(dom, /รอแอดมินตรวจสอบ/, access);
+    assert.match(dom, /แอดมินกำลังตรวจสอบรายละเอียดคำขอ/, access);
+    assert.doesNotMatch(dom, /ช่างรับงาน|มีช่างรับ|แอดมินยืนยัน|กำลังจัดหาช่าง|ช่างลับ|ทีมลับ|reserved-/i, access);
+  }
+});
+
+test("urgent approved without a technician consistently says admin confirmed and is arranging a technician", () => {
+  const app = loadTrackingRuntime();
+  for (const access of ["code", "token"]) {
+    const data = {
+      ...codeReadPayload(),
+      access_level: access,
+      can_use_token_actions: access === "token",
+      capabilities: {
+        can_view_full_tracking: true,
+        can_use_token_actions: access === "token",
+      },
+      booking_mode: "urgent",
+      job_status: "approved",
+      technician: null,
+      technician_team: [],
+    };
+    app.state.tracking = { status: "success", data, error: "" };
+    const dom = `${app.tracking._test.renderTrackingResult()}\n${app.tracking._test.renderTimeline()}`;
+    assert.match(dom, /แอดมินยืนยันคำขอแล้ว/, access);
+    assert.match(dom, /กำลังจัดทีมช่างให้คุณ/, access);
+    assert.doesNotMatch(dom, /รอแอดมินตรวจสอบ|ช่างรับงาน|มีช่างรับ|งานจะยืนยันเมื่อ/i, access);
+  }
+});
+
+test("tracking hero preserves pending and every actual customer lifecycle state", () => {
+  const app = loadTrackingRuntime();
+  const cases = [
+    [{ booking_mode: "urgent", job_status: "admin_review" }, "ส่งคำขอแล้ว รอแอดมินตรวจสอบ"],
+    [{ assigned_at: "assigned", job_status: "รอดำเนินการ" }, "ยืนยันคิวแล้ว"],
+    [{ travel_started_at: "travel", assigned_at: "assigned" }, "ช่างกำลังเดินทาง"],
+    [{ checkin_at: "checkin", travel_started_at: "travel" }, "ช่างถึงหน้างานแล้ว"],
+    [{ started_at: "started", checkin_at: "checkin" }, "กำลังให้บริการ"],
+    [{ finished_at: "done", started_at: "started" }, "งานเสร็จแล้ว"],
+    [{ job_status: "ยกเลิก", finished_at: "done" }, "งานนี้ถูกยกเลิกแล้ว"],
+  ];
+  for (const [source, label] of cases) {
+    app.state.tracking = {
+      status: "success",
+      data: {
+        ...codeReadPayload(),
+        technician: null,
+        technician_team: [],
+        finished_at: null,
+        started_at: null,
+        checkin_at: null,
+        travel_started_at: null,
+        assigned_at: null,
+        ...source,
+      },
+      error: "",
+    };
+    const html = app.tracking._test.renderTrackingResult();
+    assert.match(html, new RegExp(label), label);
+    assert.doesNotMatch(html, /admin_review|job_status/i, label);
+  }
+});
+
+test("passport preserves every customer lifecycle state instead of flattening to approval copy", () => {
+  const app = loadTrackingRuntime();
+  const cases = [
+    [{ job_status: "ยกเลิก", finished_at: "done", started_at: "started" }, "สิ้นสุดแล้ว"],
+    [{ finished_at: "done", started_at: "started" }, "งานเสร็จแล้ว"],
+    [{ started_at: "started", checkin_at: "checkin", travel_started_at: "travel" }, "กำลังให้บริการ"],
+    [{ checkin_at: "checkin", travel_started_at: "travel" }, "ช่างถึงหน้างานแล้ว"],
+    [{ travel_started_at: "travel", assigned_at: "assigned" }, "ช่างกำลังเดินทาง"],
+    [{ assigned_at: "assigned", job_status: "รอดำเนินการ" }, "ยืนยันคิวแล้ว"],
+    [{ booking_mode: "urgent", job_status: "admin_review" }, "รอแอดมินตรวจสอบ"],
+    [{ booking_mode: "urgent", job_status: "approved" }, "พร้อมติดตามงาน"],
+  ];
+  for (const [source, label] of cases) {
+    const html = app.tracking._test.renderPassport({
+      ...codeReadPayload(),
+      technician: null,
+      technician_team: [],
+      finished_at: null,
+      started_at: null,
+      checkin_at: null,
+      travel_started_at: null,
+      assigned_at: null,
+      ...source,
+    });
+    assert.match(html, new RegExp(label), label);
+    assert.doesNotMatch(html, /admin_review|job_status|approved/i, label);
+  }
+});
+
+test("tracking customer views use Thai headings without exposed English UI labels", () => {
+  const app = loadTrackingRuntime();
+  app.state.tracking = {
+    status: "success",
+    data: {
+      ...completedHealthPayload(),
+      access_level: "token",
+      can_use_token_actions: true,
+      capabilities: { can_view_full_tracking: true, can_use_token_actions: true },
+      booking_token: "private-token",
+      photos: [{ url: "https://example.test/after.jpg", phase: "after" }],
+      technician_note: "ล้างเรียบร้อย",
+      review: { already_reviewed: true, rating: 5, review_text: "ดีมาก" },
+      catalog_review: {
+        eligible: false,
+        already_reviewed: true,
+        review: { rating: 5, comment: "บริการดี", moderation_status: "approved" },
+      },
+    },
+    error: "",
+  };
+  const html = app.tracking._test.renderTrackingResult();
+  assert.match(html, /ติดตามงาน|รูปงาน|หมายเหตุ|รีวิวทีมช่าง|รีวิวบริการ/);
+  assert.doesNotMatch(html, />\s*(?:Tracking|Photos|Note|Technician Review|Service Review|Review)\s*</);
+  assert.doesNotMatch(html, /aria-label="Tracking views"|CWF Tracking/);
+});
+
+test("tracking passport renders a customer-safe completed label instead of raw job status", () => {
+  const app = loadTrackingRuntime();
+  const html = app.tracking._test.renderPassport(completedHealthPayload({ job_status: "INTERNAL_DONE_STATE" }));
+  assert.match(html, /งานเสร็จแล้ว/);
+  assert.doesNotMatch(html, /INTERNAL_DONE_STATE/);
+});
+
 test("tracking UI uses one phone-or-code field and removes the old phone-proof flow", () => {
   const source = fs.readFileSync(path.join(ROOT, "customer-app", "modules", "tracking.js"), "utf8");
   assert.match(source, /เบอร์โทร หรือรหัสการจอง/);
@@ -828,7 +1015,7 @@ test("tracking review forms use five accessible 44px star choices and never rend
   assert.match(CSS_SOURCE, /\.review-star-radio:focus-visible \+ \.review-star-choice/);
 });
 
-test("failed technician review request re-enables submit and exposes the error", async () => {
+test("failed technician review request re-enables submit without exposing backend error text", async () => {
   let submitHandler;
   let requestBody;
   const status = { textContent: "" };
@@ -852,7 +1039,7 @@ test("failed technician review request re-enables submit and exposes the error",
     FormData: ReviewFormData,
     fetch: async (_url, options) => {
       requestBody = JSON.parse(options.body);
-      return { ok: false, json: async () => ({ error: "ส่งไม่สำเร็จ" }) };
+      return { ok: false, status: 500, json: async () => ({ error: "POST /public/review SQL relation jobs stack" }) };
     },
   });
   app.state.tracking.data = {
@@ -865,7 +1052,8 @@ test("failed technician review request re-enables submit and exposes the error",
   app.tracking._test.bindResultActions(container);
   await submitHandler({ preventDefault() {} });
   assert.equal(submit.disabled, false);
-  assert.equal(status.textContent, "ส่งไม่สำเร็จ");
+  assert.equal(status.textContent, "ระบบขัดข้องชั่วคราว กรุณาลองใหม่หรือติดต่อแอดมิน");
+  assert.doesNotMatch(status.textContent, /SQL|relation|\/public\/review|stack/i);
   assert.equal(busy.has("aria-busy"), false);
   assert.equal(requestBody.selection_ref, "opaque-selection-reference");
   assert.equal(requestBody.customer_phone, undefined);
@@ -879,7 +1067,7 @@ test("tracking choice and review controls remain width-safe at 360px and 390px",
   assert.match(CSS_SOURCE, /grid-template-columns:\s*repeat\(5,\s*minmax\(44px,\s*1fr\)\)/);
 });
 
-test("failed catalog review request re-enables submit and exposes the error", async () => {
+test("failed catalog review request re-enables submit with customer-safe network copy", async () => {
   let submitHandler;
   const status = { textContent: "" };
   const submit = { disabled: false };
@@ -899,7 +1087,7 @@ test("failed catalog review request re-enables submit and exposes the error", as
   }
   const app = loadTrackingRuntime({
     FormData: ReviewFormData,
-    api: { submitTrackingReview: async () => { throw new Error("ส่งไม่สำเร็จ"); } },
+    api: { submitTrackingReview: async () => { throw new TypeError("Failed to fetch https://internal.example/route"); } },
   });
   app.state.tracking.data = {
     access_level: "token",
@@ -912,7 +1100,8 @@ test("failed catalog review request re-enables submit and exposes the error", as
   app.tracking._test.bindResultActions(container);
   await submitHandler({ preventDefault() {} });
   assert.equal(submit.disabled, false);
-  assert.equal(status.textContent, "ส่งไม่สำเร็จ");
+  assert.equal(status.textContent, "เชื่อมต่อระบบไม่สำเร็จ กรุณาลองอีกครั้ง");
+  assert.doesNotMatch(status.textContent, /internal|route|Failed to fetch/i);
   assert.equal(busy.has("aria-busy"), false);
 });
 
@@ -969,7 +1158,7 @@ test("tracking UI exposes loading, not-found, rate-limit and offline states", ()
 });
 
 test("tracking assets share the full-read cache build id", () => {
-  const build = "20260720_customer_booking_pr4_v2";
+  const build = "20260720_customer_booking_postdeploy_hardening_v2";
   for (const file of [
     "customer-app/index.html",
     "customer-app/sw.js",

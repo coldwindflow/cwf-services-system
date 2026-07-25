@@ -5,7 +5,7 @@ const path = require("node:path");
 const vm = require("node:vm");
 
 const ROOT = path.resolve(__dirname, "..");
-const BUILD = "20260720_customer_booking_pr4_v2";
+const BUILD = "20260720_customer_booking_postdeploy_hardening_v2";
 
 function read(relativePath) {
   return fs.readFileSync(path.join(ROOT, relativePath), "utf8");
@@ -97,6 +97,116 @@ test("central urgent submitted view model classifies pending, actionable, and te
   assert.equal(viewFor({ phase: "accepted", confirmed: true, terminal: true }).state, "terminal");
 });
 
+test("central booking approval view maps deployed pending, actionable, and terminal contracts without raw status copy", () => {
+  const { root } = loadFrontend(["customer-app/modules/customerCopy.js"]);
+  const viewFor = root.customerCopy.bookingApprovalView;
+
+  const scheduledPending = viewFor({ booking_mode: "scheduled", job_status: "รอตรวจสอบ" });
+  assert.equal(scheduledPending.state, "pending");
+  assert.equal(scheduledPending.statusLabel, "รอแอดมินยืนยัน");
+
+  const urgentPending = viewFor({ booking_mode: "urgent", phase: "admin_review", confirmed: false, terminal: false });
+  assert.equal(urgentPending.state, "pending");
+  assert.equal(urgentPending.statusLabel, "รอแอดมินตรวจสอบ");
+
+  const ambiguousWaiting = viewFor({ booking_mode: "urgent", phase: "waiting", confirmed: false, terminal: false });
+  assert.equal(ambiguousWaiting.state, "pending");
+  assert.equal(ambiguousWaiting.statusLabel, "รอแอดมินตรวจสอบ");
+
+  const urgentApproved = viewFor({ booking_mode: "urgent", phase: "waiting", confirmed: true, terminal: false });
+  assert.equal(urgentApproved.state, "actionable");
+  assert.equal(urgentApproved.statusLabel, "พร้อมติดตามงาน");
+
+  const cancelled = viewFor({ booking_mode: "scheduled", job_status: "cancelled" });
+  assert.equal(cancelled.state, "terminal");
+  assert.equal(cancelled.statusLabel, "สิ้นสุดแล้ว");
+
+  for (const view of [scheduledPending, urgentPending, ambiguousWaiting, urgentApproved, cancelled]) {
+    assert.doesNotMatch(JSON.stringify(view), /admin_review|pending_review|job_status|cancelled/i);
+  }
+});
+
+test("customer lifecycle view preserves actual job progress before approval presentation", () => {
+  const { root } = loadFrontend(["customer-app/modules/customerCopy.js"]);
+  const viewFor = root.customerCopy.customerLifecycleView;
+  const cases = [
+    {
+      name: "cancelled",
+      source: {
+        job_status: "ยกเลิก",
+        finished_at: "2026-07-20T12:00:00+07:00",
+        started_at: "2026-07-20T11:00:00+07:00",
+      },
+      state: "cancelled",
+      label: "สิ้นสุดแล้ว",
+    },
+    {
+      name: "completed",
+      source: {
+        finished_at: "2026-07-20T12:00:00+07:00",
+        started_at: "2026-07-20T11:00:00+07:00",
+      },
+      state: "completed",
+      label: "งานเสร็จแล้ว",
+    },
+    {
+      name: "started",
+      source: {
+        started_at: "2026-07-20T11:00:00+07:00",
+        checkin_at: "2026-07-20T10:45:00+07:00",
+        travel_started_at: "2026-07-20T10:00:00+07:00",
+        assigned_at: "2026-07-20T09:00:00+07:00",
+      },
+      state: "started",
+      label: "กำลังให้บริการ",
+    },
+    {
+      name: "checked-in",
+      source: {
+        checkin_at: "2026-07-20T10:45:00+07:00",
+        travel_started_at: "2026-07-20T10:00:00+07:00",
+        assigned_at: "2026-07-20T09:00:00+07:00",
+      },
+      state: "checked_in",
+      label: "ช่างถึงหน้างานแล้ว",
+    },
+    {
+      name: "traveling",
+      source: {
+        travel_started_at: "2026-07-20T10:00:00+07:00",
+        assigned_at: "2026-07-20T09:00:00+07:00",
+      },
+      state: "traveling",
+      label: "ช่างกำลังเดินทาง",
+    },
+    {
+      name: "assigned",
+      source: { assigned_at: "2026-07-20T09:00:00+07:00", job_status: "รอดำเนินการ" },
+      state: "assigned",
+      label: "ยืนยันคิวแล้ว",
+    },
+    {
+      name: "approval pending",
+      source: { booking_mode: "urgent", job_status: "admin_review" },
+      state: "pending",
+      label: "รอแอดมินตรวจสอบ",
+    },
+    {
+      name: "approval actionable",
+      source: { booking_mode: "urgent", job_status: "approved" },
+      state: "actionable",
+      label: "พร้อมติดตามงาน",
+    },
+  ];
+
+  for (const entry of cases) {
+    const view = viewFor(entry.source);
+    assert.equal(view.state, entry.state, entry.name);
+    assert.equal(view.statusLabel, entry.label, entry.name);
+    assert.doesNotMatch(JSON.stringify(view), /admin_review|job_status|approved/i, entry.name);
+  }
+});
+
 test("urgent UI is cleaning-only and a stale repair draft cannot alter its payload", () => {
   const { root } = loadBookingModules();
   root.state.updateDraft("urgent", {
@@ -184,7 +294,7 @@ test("Scheduled and Urgent success screens use pending-admin copy and hide reser
   root.state.setUrgentFlow({ result: { booking_code: "CWF456", technician_username: "urgent-tech-secret" }, liveStatus: null, liveStatusError: "" });
   const urgent = root.bookingUrgent._test.renderSubmitted();
   assert.match(urgent, /ส่งคำขอแล้ว/);
-  assert.match(urgent, /แอดมินกำลังตรวจสอบรายละเอียดก่อนส่งต่อให้ช่างที่ว่าง/);
+  assert.match(urgent, /แอดมินกำลังตรวจสอบรายละเอียดคำขอ/);
   assert.match(urgent, /รอแอดมินตรวจสอบ/);
   assert.match(urgent, /รหัสการจอง/);
   assert.doesNotMatch(urgent, /Booking Code|urgent-tech-secret|technician_username|Partner-first|Waiting Room|Live status|offer|radar/);
@@ -212,6 +322,66 @@ test("repair, install, move, and inspection gateway stays contact-only and never
   assert.match(otherServices, /https:\/\/lin\.ee\/fG1Oq7y|tel:0988777321/);
 });
 
+test("homepage active booking card maps internal status to customer-safe approval copy", () => {
+  const { root } = loadFrontend([
+    "customer-app/modules/state.js",
+    "customer-app/modules/utils.js",
+    "customer-app/modules/customerCopy.js",
+    "customer-app/modules/services.js",
+    "customer-app/modules/ui.js",
+  ]);
+  root.state.setHomepage({
+    status: "success",
+    config: {
+      sections: [{ id: "active_job", type: "active_job", enabled: true, sort_order: 1, title: "งานของฉัน" }],
+    },
+  });
+  root.state.setCollection("homeActiveJob", {
+    status: "success",
+    data: { booking_mode: "urgent", job_status: "admin_review", job_type: "ล้าง", booking_code: "CWFSAFE1" },
+  });
+
+  const html = root.ui._test.renderHomepageSectionsWithAdvisor();
+  assert.match(html, /รอแอดมินตรวจสอบ/);
+  assert.doesNotMatch(html, /admin_review|job_status/);
+});
+
+test("homepage active booking card preserves every customer lifecycle state in priority order", () => {
+  const { root } = loadFrontend([
+    "customer-app/modules/state.js",
+    "customer-app/modules/utils.js",
+    "customer-app/modules/customerCopy.js",
+    "customer-app/modules/services.js",
+    "customer-app/modules/ui.js",
+  ]);
+  root.state.setHomepage({
+    status: "success",
+    config: {
+      sections: [{ id: "active_job", type: "active_job", enabled: true, sort_order: 1, title: "งานของฉัน" }],
+    },
+  });
+  const cases = [
+    [{ job_status: "ยกเลิก", finished_at: "done", started_at: "started" }, "สิ้นสุดแล้ว"],
+    [{ finished_at: "done", started_at: "started" }, "งานเสร็จแล้ว"],
+    [{ started_at: "started", checkin_at: "checkin", travel_started_at: "travel" }, "กำลังให้บริการ"],
+    [{ checkin_at: "checkin", travel_started_at: "travel" }, "ช่างถึงหน้างานแล้ว"],
+    [{ travel_started_at: "travel", assigned_at: "assigned" }, "ช่างกำลังเดินทาง"],
+    [{ assigned_at: "assigned", job_status: "รอดำเนินการ" }, "ยืนยันคิวแล้ว"],
+    [{ booking_mode: "urgent", job_status: "admin_review" }, "รอแอดมินตรวจสอบ"],
+    [{ booking_mode: "urgent", job_status: "approved" }, "พร้อมติดตามงาน"],
+  ];
+
+  for (const [source, label] of cases) {
+    root.state.setCollection("homeActiveJob", {
+      status: "success",
+      data: { ...source, job_type: "ล้าง", booking_code: "CWFSAFE1" },
+    });
+    const html = root.ui._test.renderHomepageSectionsWithAdvisor();
+    assert.match(html, new RegExp(label), label);
+    assert.doesNotMatch(html, /admin_review|job_status|approved/i, label);
+  }
+});
+
 test("booking presentation sources do not render raw errors or retired pre-approval terminology", () => {
   const scheduled = read("customer-app/modules/bookingScheduled.js");
   const urgent = read("customer-app/modules/bookingUrgent.js");
@@ -220,6 +390,13 @@ test("booking presentation sources do not render raw errors or retired pre-appro
   assert.doesNotMatch(urgent, /Partner-first|Urgent request|Waiting Room|Final check|Live status|Next best action|offer countdown|radar|รอพาร์ทเนอร์|กดรับหรือปฏิเสธ/);
   assert.doesNotMatch(presentation, /console\.info/);
   assert.doesNotMatch(presentation, /Booking Code/);
+});
+
+test("tracking presentation has no startup debug log or raw booking status/error rendering contract", () => {
+  const tracking = read("customer-app/modules/tracking.js");
+  assert.doesNotMatch(tracking, /console\.info\(/);
+  assert.doesNotMatch(tracking, /esc\(job\.job_status|esc\(data\.job_status/);
+  assert.doesNotMatch(tracking, /status\.textContent\s*=\s*\(?error(?:\s*&&|\.)/);
 });
 
 test("Customer App build and cache IDs include the central copy module consistently", () => {

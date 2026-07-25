@@ -90,6 +90,26 @@
     };
   }
 
+  function defaultUrgentDraft(current) {
+    const source = current || {};
+    return {
+      customer_name: String(source.customer_name || ""),
+      customer_phone: String(source.customer_phone || ""),
+      address_text: String(source.address_text || ""),
+      maps_url: String(source.maps_url || ""),
+      service_kind: "clean",
+      job_type: "ล้าง",
+      ac_type: "ผนัง",
+      wash_variant: "ล้างธรรมดา",
+      repair_variant: "",
+      btu: "12000",
+      machine_count: 1,
+      symptom: "",
+      job_zone: String(source.job_zone || ""),
+      urgent_request_key: "",
+    };
+  }
+
   function safeSessionGet() {
     try { return window.sessionStorage.getItem(SCHEDULED_STORAGE_KEY); }
     catch (_) { return null; }
@@ -170,21 +190,7 @@
     tracking: { status: "idle", data: null, error: "" },
     draft: {
       scheduled: defaultScheduledDraft(),
-      urgent: {
-        customer_name: "",
-        customer_phone: "",
-        address_text: "",
-        maps_url: "",
-        service_kind: "clean",
-        job_type: "ล้าง",
-        ac_type: "ผนัง",
-        wash_variant: "ล้างธรรมดา",
-        repair_variant: "",
-        btu: "12000",
-        machine_count: 1,
-        symptom: "",
-        job_zone: "",
-      },
+      urgent: defaultUrgentDraft(),
       tracking: {
         trackingCode: "",
       },
@@ -411,6 +417,17 @@
       this.urgentFlow = {
         ...(this.urgentFlow || {}),
         ...(patch || {}),
+      };
+    },
+    resetUrgentDraft() {
+      this.draft.urgent = defaultUrgentDraft(this.draft.urgent);
+      this.urgentFlow = {
+        step: "form",
+        status: "idle",
+        error: "",
+        result: null,
+        liveStatus: null,
+        liveStatusError: "",
       };
     },
     setTracking(patch) {
