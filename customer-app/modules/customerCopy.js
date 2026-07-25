@@ -9,8 +9,8 @@
     disabled: "ขณะนี้ยังไม่เปิดรับจองออนไลน์ กรุณาติดต่อแอดมิน",
     network: "เชื่อมต่อระบบไม่สำเร็จ กรุณาลองอีกครั้ง",
     unknown: "ระบบขัดข้องชั่วคราว กรุณาลองใหม่หรือติดต่อแอดมิน",
-    urgentPending: "แอดมินกำลังตรวจสอบรายละเอียดก่อนส่งต่อให้ช่างที่ว่าง",
-    urgentApproved: "แอดมินยืนยันคำขอแล้ว กรุณาติดตามสถานะงาน",
+    urgentPending: "แอดมินกำลังตรวจสอบรายละเอียดคำขอ",
+    urgentApproved: "แอดมินยืนยันคำขอแล้ว และกำลังจัดทีมช่างให้คุณ",
     urgentClosed: "คำขอนี้สิ้นสุดแล้ว กรุณาติดต่อแอดมินหากต้องการความช่วยเหลือ",
     otherServices: "งานซ่อม ติดตั้ง ย้ายแอร์ หรือตรวจอาการ กรุณาติดต่อแอดมินเพื่อประเมินรายละเอียด ราคา และจัดคิวให้เหมาะสม",
   });
@@ -35,11 +35,11 @@
     "NO_AVAILABLE_SLOTS",
     "AVAILABILITY_EMPTY",
   ]);
-  const ACTIONABLE_PHASES = new Set(["waiting", "approved", "accepted", "assigned", "in_progress"]);
+  const ACTIONABLE_PHASES = new Set(["approved", "accepted", "assigned", "in_progress"]);
   const TERMINAL_PHASES = new Set(["terminal", "rejected", "cancelled", "canceled", "closed"]);
   const PENDING_STATUSES = new Set(["pending", "pending_review", "admin_review", "รอตรวจสอบ"]);
   const ACTIONABLE_STATUSES = new Set([
-    "waiting", "approved", "accepted", "assigned", "in_progress",
+    "approved", "accepted", "assigned", "in_progress",
     "รอดำเนินการ", "รอช่างยืนยัน", "กำลังทำ", "กำลังดำเนินการ",
   ]);
   const TERMINAL_STATUSES = new Set(["rejected", "cancelled", "canceled", "closed", "ยกเลิก", "ปฏิเสธ"]);

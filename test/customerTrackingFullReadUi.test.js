@@ -872,8 +872,41 @@ test("urgent approved without a technician consistently says admin confirmed and
     app.state.tracking = { status: "success", data, error: "" };
     const dom = `${app.tracking._test.renderTrackingResult()}\n${app.tracking._test.renderTimeline()}`;
     assert.match(dom, /แอดมินยืนยันคำขอแล้ว/, access);
-    assert.match(dom, /กำลังจัดหาช่างที่ว่าง/, access);
+    assert.match(dom, /กำลังจัดทีมช่างให้คุณ/, access);
     assert.doesNotMatch(dom, /รอแอดมินตรวจสอบ|ช่างรับงาน|มีช่างรับ|งานจะยืนยันเมื่อ/i, access);
+  }
+});
+
+test("tracking hero preserves pending and every actual customer lifecycle state", () => {
+  const app = loadTrackingRuntime();
+  const cases = [
+    [{ booking_mode: "urgent", job_status: "admin_review" }, "ส่งคำขอแล้ว รอแอดมินตรวจสอบ"],
+    [{ assigned_at: "assigned", job_status: "รอดำเนินการ" }, "ยืนยันคิวแล้ว"],
+    [{ travel_started_at: "travel", assigned_at: "assigned" }, "ช่างกำลังเดินทาง"],
+    [{ checkin_at: "checkin", travel_started_at: "travel" }, "ช่างถึงหน้างานแล้ว"],
+    [{ started_at: "started", checkin_at: "checkin" }, "กำลังให้บริการ"],
+    [{ finished_at: "done", started_at: "started" }, "งานเสร็จแล้ว"],
+    [{ job_status: "ยกเลิก", finished_at: "done" }, "งานนี้ถูกยกเลิกแล้ว"],
+  ];
+  for (const [source, label] of cases) {
+    app.state.tracking = {
+      status: "success",
+      data: {
+        ...codeReadPayload(),
+        technician: null,
+        technician_team: [],
+        finished_at: null,
+        started_at: null,
+        checkin_at: null,
+        travel_started_at: null,
+        assigned_at: null,
+        ...source,
+      },
+      error: "",
+    };
+    const html = app.tracking._test.renderTrackingResult();
+    assert.match(html, new RegExp(label), label);
+    assert.doesNotMatch(html, /admin_review|job_status/i, label);
   }
 });
 

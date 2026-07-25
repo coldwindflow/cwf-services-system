@@ -109,7 +109,11 @@ test("central booking approval view maps deployed pending, actionable, and termi
   assert.equal(urgentPending.state, "pending");
   assert.equal(urgentPending.statusLabel, "รอแอดมินตรวจสอบ");
 
-  const urgentApproved = viewFor({ booking_mode: "urgent", phase: "waiting", confirmed: false, terminal: false });
+  const ambiguousWaiting = viewFor({ booking_mode: "urgent", phase: "waiting", confirmed: false, terminal: false });
+  assert.equal(ambiguousWaiting.state, "pending");
+  assert.equal(ambiguousWaiting.statusLabel, "รอแอดมินตรวจสอบ");
+
+  const urgentApproved = viewFor({ booking_mode: "urgent", phase: "waiting", confirmed: true, terminal: false });
   assert.equal(urgentApproved.state, "actionable");
   assert.equal(urgentApproved.statusLabel, "พร้อมติดตามงาน");
 
@@ -117,7 +121,7 @@ test("central booking approval view maps deployed pending, actionable, and termi
   assert.equal(cancelled.state, "terminal");
   assert.equal(cancelled.statusLabel, "สิ้นสุดแล้ว");
 
-  for (const view of [scheduledPending, urgentPending, urgentApproved, cancelled]) {
+  for (const view of [scheduledPending, urgentPending, ambiguousWaiting, urgentApproved, cancelled]) {
     assert.doesNotMatch(JSON.stringify(view), /admin_review|pending_review|job_status|cancelled/i);
   }
 });
@@ -290,7 +294,7 @@ test("Scheduled and Urgent success screens use pending-admin copy and hide reser
   root.state.setUrgentFlow({ result: { booking_code: "CWF456", technician_username: "urgent-tech-secret" }, liveStatus: null, liveStatusError: "" });
   const urgent = root.bookingUrgent._test.renderSubmitted();
   assert.match(urgent, /ส่งคำขอแล้ว/);
-  assert.match(urgent, /แอดมินกำลังตรวจสอบรายละเอียดก่อนส่งต่อให้ช่างที่ว่าง/);
+  assert.match(urgent, /แอดมินกำลังตรวจสอบรายละเอียดคำขอ/);
   assert.match(urgent, /รอแอดมินตรวจสอบ/);
   assert.match(urgent, /รหัสการจอง/);
   assert.doesNotMatch(urgent, /Booking Code|urgent-tech-secret|technician_username|Partner-first|Waiting Room|Live status|offer|radar/);

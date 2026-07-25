@@ -54,7 +54,8 @@ test("visual unification keeps urgent, tracking, and profile hooks intact", () =
   }
   assert.match(urgent, /root\.api\.submitUrgentRequest\(buildSubmitPayload\(\)\)/);
   assert.match(urgent, /root\.customerCopy\.urgentSubmittedView/);
-  assert.match(customerCopy, /แอดมินกำลังตรวจสอบรายละเอียดก่อนส่งต่อให้ช่างที่ว่าง/);
+  assert.match(customerCopy, /แอดมินกำลังตรวจสอบรายละเอียดคำขอ/);
+  assert.match(customerCopy, /แอดมินยืนยันคำขอแล้ว และกำลังจัดทีมช่างให้คุณ/);
 
   for (const hook of ["data-action=\"track-read\"", "data-tracking-result", "data-tracking-view", "data-tracking-panel", "data-review-form"]) {
     assert.match(tracking, new RegExp(hook.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));

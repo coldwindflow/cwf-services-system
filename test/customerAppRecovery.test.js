@@ -882,7 +882,7 @@ test("urgent submitted pending DOM contains only pending-state copy", async () =
   root.bookingUrgent.render(container);
   await new Promise((resolve) => setTimeout(resolve, 0));
 
-  assert.match(container.innerHTML, /แอดมินกำลังตรวจสอบรายละเอียดก่อนส่งต่อให้ช่างที่ว่าง/);
+  assert.match(container.innerHTML, /แอดมินกำลังตรวจสอบรายละเอียดคำขอ/);
   assert.match(container.innerHTML, /รอแอดมินตรวจสอบ/);
   assert.match(container.innerHTML, /รอแอดมิน/);
   assert.doesNotMatch(container.innerHTML, /คำขอได้รับการยืนยันแล้ว|พร้อมติดตามงาน|คำขอสิ้นสุดแล้ว|คำขอนี้สิ้นสุดแล้ว|สิ้นสุดแล้ว/);
@@ -911,9 +911,9 @@ test("urgent submitted state maps approved status to safe Thai copy without auto
   await new Promise((resolve) => setTimeout(resolve, 0));
 
   assert.deepEqual(routeCalls, []);
-  assert.match(container.innerHTML, /แอดมินยืนยันคำขอแล้ว กรุณาติดตามสถานะงาน/);
+  assert.match(container.innerHTML, /แอดมินยืนยันคำขอแล้ว และกำลังจัดทีมช่างให้คุณ/);
   assert.match(container.innerHTML, /คำขอได้รับการยืนยันแล้ว|พร้อมติดตามงาน/);
-  assert.doesNotMatch(container.innerHTML, /แอดมินกำลังตรวจสอบรายละเอียดก่อนส่งต่อให้ช่างที่ว่าง|รอแอดมินตรวจสอบ|รอแอดมิน|คำขอสิ้นสุดแล้ว|คำขอนี้สิ้นสุดแล้ว|สิ้นสุดแล้ว/);
+  assert.doesNotMatch(container.innerHTML, /แอดมินกำลังตรวจสอบรายละเอียดคำขอ|รอแอดมินตรวจสอบ|รอแอดมิน|คำขอสิ้นสุดแล้ว|คำขอนี้สิ้นสุดแล้ว|สิ้นสุดแล้ว/);
   assert.doesNotMatch(container.innerHTML, /phase|accepted/);
   root.bookingUrgent.render.onLeave();
 });
@@ -946,7 +946,7 @@ test("urgent submitted state shows a safe terminal message and stops polling wit
   assert.equal(root.state.urgentFlow.liveStatus.terminal, true);
   assert.match(container.innerHTML, /คำขอนี้สิ้นสุดแล้ว กรุณาติดต่อแอดมินหากต้องการความช่วยเหลือ/);
   assert.match(container.innerHTML, /ติดต่อแอดมินทาง LINE/);
-  assert.doesNotMatch(container.innerHTML, /แอดมินกำลังตรวจสอบรายละเอียดก่อนส่งต่อให้ช่างที่ว่าง|รอแอดมินตรวจสอบ|รอแอดมิน|คำขอได้รับการยืนยันแล้ว|แอดมินยืนยันคำขอแล้ว|พร้อมติดตามงาน/);
+  assert.doesNotMatch(container.innerHTML, /แอดมินกำลังตรวจสอบรายละเอียดคำขอ|รอแอดมินตรวจสอบ|รอแอดมิน|คำขอได้รับการยืนยันแล้ว|แอดมินยืนยันคำขอแล้ว|พร้อมติดตามงาน/);
   assert.doesNotMatch(container.innerHTML, /phase|admin_review/);
   assert.equal(calls, 1);
   root.bookingUrgent.render.onLeave();
