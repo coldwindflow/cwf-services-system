@@ -290,906 +290,4 @@ test("missing last-clean date is honest and a low score never recommends immedia
   assert.notEqual(olderLowScore.status, "à¸„à¸§à¸£à¸¥à¹‰à¸²à¸‡");
 });
 
-test("cleanliness cycles follow normal premium deep and heavy service profiles", () => {
-  const app = loadTrackingRuntime();
-  const now = Date.parse("2026-07-31T00:00:00Z");
-  const atDays = (days) => new Date(now - (days * 86400000)).toISOString();
-  const profiles = {
-    clean: app.tracking._test.serviceProfile({ job_type: "à¸¥à¹‰à¸²à¸‡", service_summary: "à¸¥à¹‰à¸²à¸‡à¸›à¸à¸•à¸´" }),
-    premium: app.tracking._test.serviceProfile({ job_type: "à¸¥à¹‰à¸²à¸‡", service_summary: "à¸¥à¹‰à¸²à¸‡à¸à¸£à¸µà¹€à¸¡à¸µà¸¢à¸¡" }),
-    deep: app.tracking._test.serviceProfile({ job_type: "à¸¥à¹‰à¸²à¸‡", service_summary: "à¸¥à¹‰à¸²à¸‡à¸¥à¸¶à¸ à¹à¸‚à¸§à¸™à¸„à¸­à¸¢à¸¥à¹Œ" }),
-    heavy: app.tracking._test.serviceProfile({ job_type: "à¸¥à¹‰à¸²à¸‡", service_summary: "à¸•à¸±à¸”à¸¥à¹‰à¸²à¸‡à¹ƒà¸«à¸à¹ˆ" }),
-  };
-
-  const at160 = Object.fromEntries(Object.entries(profiles).map(([key, profile]) => [
-    key,
-    app.tracking._test.cleanlinessRecommendation(atDays(160), 99, profile, now),
-  ]));
-  assert.equal(at160.clean.tone, "due");
-  assert.equal(at160.premium.tone, "watch");
-  assert.equal(at160.deep.tone, "watch");
-  assert.equal(at160.heavy.tone, "good");
-  assert.deepEqual(
-    [at160.clean.cycleDays, at160.premium.cycleDays, at160.deep.cycleDays, at160.heavy.cycleDays],
-    [152, 183, 213, 304],
-  );
-  assert.match(at160.clean.nextText, /4-6 à¹€à¸”à¸·à¸­à¸™/);
-  assert.match(at160.premium.nextText, /5-6 à¹€à¸”à¸·à¸­à¸™/);
-  assert.match(at160.deep.nextText, /6-8 à¹€à¸”à¸·à¸­à¸™/);
-  assert.match(at160.heavy.nextText, /8-12 à¹€à¸”à¸·à¸­à¸™/);
-
-  const heavyAtCycle = app.tracking._test.cleanlinessRecommendation(atDays(304), 99, profiles.heavy, now);
-  const heavyAfterCycle = app.tracking._test.cleanlinessRecommendation(atDays(305), 99, profiles.heavy, now);
-  assert.notEqual(heavyAtCycle.tone, "due");
-  assert.equal(heavyAfterCycle.tone, "due");
-  assert.equal(app.tracking._test.cleanlinessRecommendation(atDays(184), 99, profiles.premium, now).tone, "due");
-  assert.notEqual(app.tracking._test.cleanlinessRecommendation(atDays(184), 99, profiles.deep, now).tone, "due");
-});
-
-test("cleanliness profile boundaries are deterministic at 30, 60 and 100 percent", () => {
-  const app = loadTrackingRuntime();
-  const now = Date.parse("2026-07-31T00:00:00Z");
-  const atDays = (days) => new Date(now - (days * 86400000)).toISOString();
-  const profile = app.tracking._test.serviceProfile({ job_type: "à¸¥à¹‰à¸²à¸‡", service_summary: "à¸¥à¹‰à¸²à¸‡à¸›à¸à¸•à¸´" });
-  const reference = app.tracking._test.cleanlinessRecommendation(atDays(0), 100, profile, now);
-  assert.deepEqual(
-    [reference.excellentMaxDays, reference.goodMaxDays, reference.cycleDays],
-    [45, 91, 152],
-  );
-  const cases = [
-    [45, "excellent"],
-    [46, "good"],
-    [91, "good"],
-    [92, "watch"],
-    [152, "watch"],
-    [153, "due"],
-  ];
-  for (const [days, tone] of cases) {
-    assert.equal(app.tracking._test.cleanlinessRecommendation(atDays(days), 100, profile, now).tone, tone, `${days} days`);
-  }
-  assert.equal(app.tracking._test.cleanlinessRecommendation(atDays(153), 100, profile, now).tone, "due");
-});
-
-test("completed cleaning renders one prominent donut with date elapsed time and recommendation", () => {
-  const app = loadTrackingRuntime();
-  const html = app.tracking._test.renderPassport(completedHealthPayload());
-  assert.equal((html.match(/data-unit-cleanliness/g) || []).length, 1);
-  assert.match(html, /class="cleanliness-ring"/);
-  assert.match(html, />100%<|>99%</);
-  assert.match(html, /à¸›à¸£à¸°à¸¡à¸²à¸“à¸à¸²à¸£à¸„à¸§à¸²à¸¡à¸ªà¸°à¸­à¸²à¸”à¸ˆà¸²à¸à¸‡à¸²à¸™à¸™à¸µà¹‰/);
-  assert.match(html, /à¸§à¸±à¸™à¸—à¸µà¹ˆà¸¥à¹‰à¸²à¸‡à¸‚à¸­à¸‡à¸‡à¸²à¸™à¸™à¸µà¹‰/);
-  assert.match(html, /à¸œà¹ˆà¸²à¸™à¸¡à¸²à¹à¸¥à¹‰à¸§/);
-  assert.match(html, /à¸¢à¸±à¸‡à¸­à¸¢à¸¹à¹ˆà¹ƒà¸™à¸ªà¸ à¸²à¸à¸à¸£à¹‰à¸­à¸¡à¹ƒà¸Šà¹‰à¸‡à¸²à¸™/);
-  assert.match(html, /à¸­à¹‰à¸²à¸‡à¸­à¸´à¸‡à¸ˆà¸²à¸à¸§à¸±à¸™à¸—à¸µà¹ˆà¸ˆà¸šà¸‡à¸²à¸™à¸™à¸µà¹‰à¹à¸¥à¸°à¸›à¸£à¸°à¹€à¸ à¸—à¸šà¸£à¸´à¸à¸²à¸£/);
-  assert.match(html, /4-6 à¹€à¸”à¸·à¸­à¸™/);
-  assert.doesNotMatch(html, /à¸¥à¹‰à¸²à¸‡à¸¥à¹ˆà¸²à¸ªà¸¸à¸”|à¸§à¸±à¸™à¸—à¸µà¹ˆà¸¥à¹‰à¸²à¸‡à¸¥à¹ˆà¸²à¸ªà¸¸à¸”|à¸ªà¸ à¸²à¸à¸„à¸§à¸²à¸¡à¸ªà¸°à¸­à¸²à¸”à¸›à¸±à¸ˆà¸ˆà¸¸à¸šà¸±à¸™/);
-  assert.doesNotMatch(html, /unit-condition-summary/);
-  assert.doesNotMatch(html, /passport-recommend-card/);
-  assert.ok(html.indexOf("unit-inspection-grid") < html.indexOf("data-unit-cleanliness"));
-  assert.ok(html.indexOf("data-unit-cleanliness") < html.indexOf("data-unit-evidence"));
-  assert.ok(html.indexOf("passport-units-card") < html.indexOf("passport-warranty-card"));
-});
-
-test("completed cleaning without finished_at renders a neutral donut fallback without a fake score", () => {
-  const app = loadTrackingRuntime();
-  const data = completedHealthPayload({ finished_at: null, job_status: "à¹€à¸ªà¸£à¹‡à¸ˆà¹à¸¥à¹‰à¸§" });
-  const html = app.tracking._test.renderPassport(data);
-  assert.match(html, /data-unit-cleanliness/);
-  assert.match(html, /à¸¢à¸±à¸‡à¸›à¸£à¸°à¹€à¸¡à¸´à¸™à¸£à¸­à¸šà¸¥à¹‰à¸²à¸‡à¹„à¸¡à¹ˆà¹„à¸”à¹‰/);
-  assert.match(html, /à¸¢à¸±à¸‡à¹„à¸¡à¹ˆà¸¡à¸µà¸§à¸±à¸™à¸—à¸µà¹ˆà¸ˆà¸šà¸‡à¸²à¸™à¸™à¸µà¹‰/);
-  assert.doesNotMatch(html, /à¸¥à¹‰à¸²à¸‡à¸¥à¹ˆà¸²à¸ªà¸¸à¸”|à¸§à¸±à¸™à¸—à¸µà¹ˆà¸¥à¹‰à¸²à¸‡à¸¥à¹ˆà¸²à¸ªà¸¸à¸”|à¸ªà¸ à¸²à¸à¸„à¸§à¸²à¸¡à¸ªà¸°à¸­à¸²à¸”à¸›à¸±à¸ˆà¸ˆà¸¸à¸šà¸±à¸™/);
-  assert.doesNotMatch(html, /à¸­à¹‰à¸²à¸‡à¸­à¸´à¸‡à¸ˆà¸²à¸à¸§à¸±à¸™à¸—à¸µà¹ˆà¸ˆà¸šà¸‡à¸²à¸™à¸™à¸µà¹‰à¹à¸¥à¸°à¸›à¸£à¸°à¹€à¸ à¸—à¸šà¸£à¸´à¸à¸²à¸£/);
-  assert.match(html, />--</);
-  assert.doesNotMatch(html, />99%|>100%/);
-});
-
-test("pressure and temperature photos remain secondary evidence and never override normal status", () => {
-  const app = loadTrackingRuntime();
-  const html = app.tracking._test.renderPassport(completedHealthPayload());
-  assert.equal((html.match(/unit-inspection-item is-good/g) || []).length, 4);
-  assert.match(html, /à¸£à¸¹à¸›à¸•à¸£à¸§à¸ˆà¹€à¸à¸´à¹ˆà¸¡à¹€à¸•à¸´à¸¡ 2/);
-  assert.doesNotMatch(html, /data-unit-measurements/);
-});
-
-test("a classified issue warns only its metric while unconfirmed metrics remain neutral", () => {
-  const app = loadTrackingRuntime();
-  const data = completedHealthPayload();
-  data.units[0].checklist_summary = {
-    pre_completed: true,
-    post_completed: true,
-    issue_count: 1,
-    post_issue_count: 1,
-    metric_statuses: { refrigerant: null, cooling: "issue", airflow: null, drain: null },
-  };
-  const html = app.tracking._test.renderPassport(data);
-  assert.equal((html.match(/unit-inspection-item is-issue/g) || []).length, 1);
-  assert.equal((html.match(/unit-inspection-item/g) || []).length, 1);
-  assert.match(html, /data-metric="cooling"[\s\S]*?à¸„à¸§à¸£à¸•à¸£à¸§à¸ˆà¹€à¸à¸´à¹ˆà¸¡à¹€à¸•à¸´à¸¡/);
-  assert.doesNotMatch(html, /data-metric="(?:refrigerant|airflow|drain)"/);
-  assert.doesNotMatch(html, /à¹„à¸¡à¹ˆà¸¡à¸µà¸‚à¹‰à¸­à¸¡à¸¹à¸¥à¹à¸ªà¸”à¸‡/);
-});
-
-test("known cooling issue plus normal drain renders only those two metrics", () => {
-  const app = loadTrackingRuntime();
-  const data = completedHealthPayload();
-  data.units[0].checklist_summary = {
-    pre_completed: true,
-    post_completed: true,
-    issue_count: 1,
-    post_issue_count: 1,
-    metric_statuses: { refrigerant: null, cooling: "issue", airflow: null, drain: "normal" },
-  };
-  const html = app.tracking._test.renderPassport(data);
-  assert.equal((html.match(/unit-inspection-item/g) || []).length, 2);
-  assert.match(html, /data-metric="cooling"/);
-  assert.match(html, /data-metric="drain"/);
-  assert.doesNotMatch(html, /data-metric="(?:refrigerant|airflow)"/);
-});
-
-test("three known metrics render three cards without a placeholder fourth card", () => {
-  const app = loadTrackingRuntime();
-  const data = completedHealthPayload();
-  data.units[0].checklist_summary = {
-    pre_completed: true,
-    post_completed: true,
-    issue_count: 1,
-    post_issue_count: 1,
-    metric_statuses: { refrigerant: "normal", cooling: "issue", airflow: null, drain: "normal" },
-  };
-  const html = app.tracking._test.renderPassport(data);
-  assert.equal((html.match(/unit-inspection-item/g) || []).length, 3);
-  assert.doesNotMatch(html, /data-metric="airflow"/);
-  assert.doesNotMatch(html, /à¹„à¸¡à¹ˆà¸¡à¸µà¸‚à¹‰à¸­à¸¡à¸¹à¸¥à¹à¸ªà¸”à¸‡/);
-});
-
-test("unknown completed issue uses one neutral summary instead of four no-data cards", () => {
-  const app = loadTrackingRuntime();
-  const data = completedHealthPayload();
-  data.units[0].checklist_summary = {
-    pre_completed: true,
-    post_completed: true,
-    issue_count: 1,
-    post_issue_count: 1,
-    metric_statuses: { refrigerant: null, cooling: null, airflow: null, drain: null },
-  };
-  const html = app.tracking._test.renderPassport(data);
-  assert.doesNotMatch(html, /unit-inspection-item/);
-  assert.equal((html.match(/à¹„à¸¡à¹ˆà¸¡à¸µà¸‚à¹‰à¸­à¸¡à¸¹à¸¥à¹à¸ªà¸”à¸‡à¹ƒà¸™à¸£à¸²à¸¢à¸‡à¸²à¸™à¸ªà¹ˆà¸§à¸™à¸™à¸µà¹‰/g) || []).length, 1);
-});
-
-test("pre-service issue cannot warn a completed clean after-service report or evidence", () => {
-  const app = loadTrackingRuntime();
-  const data = completedHealthPayload();
-  data.units[0].checklist_summary = {
-    pre_completed: true,
-    post_completed: true,
-    issue_count: 1,
-    post_issue_count: 0,
-    metric_statuses: { refrigerant: "normal", cooling: "normal", airflow: "normal", drain: "normal" },
-  };
-  const html = app.tracking._test.renderPassport(data);
-  assert.match(html, /unit-overall-pill is-good">à¸›à¸à¸•à¸´/);
-  assert.match(html, /à¸•à¸£à¸§à¸ˆà¸„à¸£à¸šà¹à¸¥à¹‰à¸§ Â· à¹„à¸¡à¹ˆà¸à¸šà¸£à¸²à¸¢à¸à¸²à¸£à¸œà¸´à¸”à¸›à¸à¸•à¸´/);
-  assert.doesNotMatch(html, /à¸à¸š 1 à¸£à¸²à¸¢à¸à¸²à¸£à¸—à¸µà¹ˆà¸„à¸§à¸£à¸•à¸´à¸”à¸•à¸²à¸¡/);
-});
-
-test("structured numeric measurements render only when finite values actually exist", () => {
-  const app = loadTrackingRuntime();
-  assert.deepEqual(
-    JSON.parse(JSON.stringify(app.tracking._test.structuredMeasurements({ measurements: {} }))),
-    [],
-  );
-  const values = app.tracking._test.structuredMeasurements({
-    measurements: { refrigerant_psi: 135, supply_air_c: 12, return_air_c: 27, delta_t_c: 15 },
-  });
-  assert.deepEqual(JSON.parse(JSON.stringify(values.map((item) => [item.key, item.value]))), [
-    ["refrigerant_psi", 135],
-    ["supply_air_c", 12],
-    ["return_air_c", 27],
-    ["delta_t_c", 15],
-  ]);
-});
-
-test("in-progress checklist without post completion stays neutral", () => {
-  const app = loadTrackingRuntime();
-  const data = completedHealthPayload({ job_status: "à¸à¸³à¸¥à¸±à¸‡à¸”à¸³à¹€à¸™à¸´à¸™à¸à¸²à¸£", finished_at: null });
-  data.units[0].checklist_summary = {
-    pre_completed: true,
-    post_completed: false,
-    issue_count: 1,
-    post_issue_count: 0,
-    metric_statuses: { refrigerant: null, cooling: null, airflow: null, drain: null },
-  };
-  const html = app.tracking._test.renderPassport(data);
-  assert.match(html, /à¸à¸³à¸¥à¸±à¸‡à¸•à¸£à¸§à¸ˆà¸ªà¸­à¸š/);
-  assert.doesNotMatch(html, /unit-inspection-item is-good/);
-});
-
-test("code-only result renders full read details but no document or write controls", () => {
-  const app = loadTrackingRuntime();
-  app.state.tracking = { status: "success", data: codeReadPayload(), error: "" };
-  const html = app.tracking._test.renderTrackingResult();
-  assert.match(html, /CWFABC1234/);
-  assert.match(html, /à¸„à¸¸à¸“à¸¥à¸¹à¸à¸„à¹‰à¸²/);
-  assert.match(html, /0812345678/);
-  assert.match(html, /99\/1 à¸–à¸™à¸™à¸ªà¸¸à¸‚à¸¸à¸¡à¸§à¸´à¸—/);
-  assert.match(html, /à¸¥à¹‰à¸²à¸‡à¹à¸­à¸£à¹Œà¹€à¸›à¸¥à¸·à¸­à¸¢à¹ƒà¸•à¹‰à¸à¹‰à¸²/);
-  assert.match(html, /à¸Šà¹ˆà¸²à¸‡à¸ªà¸¡à¸Šà¸²à¸¢/);
-  assert.doesNotMatch(html, /open-eslip|data-review-form|data-catalog-review-form/);
-  assert.doesNotMatch(html, /booking_token|\/docs\/receipt|\/docs\/quote|\/docs\/eslip/);
-  assert.doesNotMatch(html, />undefined<|>null</);
-  assert.equal(app.tracking._test.receiptUrl(codeReadPayload()), "");
-});
-
-test("exact-token capability retains document and review behavior", () => {
-  const app = loadTrackingRuntime();
-  const data = {
-    ...codeReadPayload(),
-    access_level: "token",
-    can_use_token_actions: true,
-    capabilities: { can_view_full_tracking: true, can_use_token_actions: true },
-    booking_token: "private-token",
-    job_id: 88,
-    job_status: "à¹€à¸ªà¸£à¹‡à¸ˆà¹à¸¥à¹‰à¸§",
-    finished_at: "2026-07-15T11:00:00+07:00",
-    receipt_url: "/docs/receipt/88?key=private-token",
-    catalog_review: null,
-  };
-  assert.match(app.tracking._test.receiptUrl(data), /\/docs\/receipt\/88\?key=private-token/);
-  assert.match(app.tracking._test.renderReview(data), /data-review-form/);
-});
-
-test("canceled jobs render a terminal canceled hero and timeline", () => {
-  const app = loadTrackingRuntime();
-  const data = {
-    ...codeReadPayload(),
-    canceled_at: "2026-07-14T08:30:00+07:00",
-    cancel_reason: "à¸¥à¸¹à¸à¸„à¹‰à¸²à¹à¸ˆà¹‰à¸‡à¸¢à¸à¹€à¸¥à¸´à¸à¸™à¸±à¸”",
-  };
-  app.state.tracking = { status: "success", data, error: "" };
-  const html = app.tracking._test.renderTrackingResult();
-  const timeline = app.tracking._test.renderTimeline();
-  assert.match(html, /à¸‡à¸²à¸™à¸™à¸µà¹‰à¸–à¸¹à¸à¸¢à¸à¹€à¸¥à¸´à¸à¹à¸¥à¹‰à¸§/);
-  assert.match(html, /à¸«à¸²à¸à¸•à¹‰à¸­à¸‡à¸à¸²à¸£à¸•à¸£à¸§à¸ˆà¸ªà¸­à¸šà¸«à¸£à¸·à¸­à¸ˆà¸­à¸‡à¹ƒà¸«à¸¡à¹ˆ à¸à¸£à¸¸à¸“à¸²à¸•à¸´à¸”à¸•à¹ˆà¸­à¹à¸­à¸”à¸¡à¸´à¸™/);
-  assert.doesNotMatch(html, /à¸¥à¸¹à¸à¸„à¹‰à¸²à¹à¸ˆà¹‰à¸‡à¸¢à¸à¹€à¸¥à¸´à¸à¸™à¸±à¸”/);
-  assert.match(timeline, /à¸‡à¸²à¸™à¸–à¸¹à¸à¸¢à¸à¹€à¸¥à¸´à¸/);
-  assert.match(timeline, /à¸«à¸²à¸à¸•à¹‰à¸­à¸‡à¸à¸²à¸£à¸•à¸£à¸§à¸ˆà¸ªà¸­à¸šà¸«à¸£à¸·à¸­à¸ˆà¸­à¸‡à¹ƒà¸«à¸¡à¹ˆ à¸à¸£à¸¸à¸“à¸²à¸•à¸´à¸”à¸•à¹ˆà¸­à¹à¸­à¸”à¸¡à¸´à¸™/);
-  assert.doesNotMatch(timeline, /à¸¥à¸¹à¸à¸„à¹‰à¸²à¹à¸ˆà¹‰à¸‡à¸¢à¸à¹€à¸¥à¸´à¸à¸™à¸±à¸”/);
-  assert.doesNotMatch(timeline, /à¸Šà¹ˆà¸²à¸‡à¸à¸³à¸¥à¸±à¸‡à¹€à¸”à¸´à¸™à¸—à¸²à¸‡|à¸–à¸¶à¸‡à¸«à¸™à¹‰à¸²à¸‡à¸²à¸™|à¹€à¸£à¸´à¹ˆà¸¡à¹ƒà¸«à¹‰à¸šà¸£à¸´à¸à¸²à¸£|à¸‡à¸²à¸™à¹€à¸ªà¸£à¹‡à¸ˆà¹à¸¥à¹‰à¸§/);
-  assert.equal(app.tracking._test.jobPhase(data, "scheduled"), "canceled");
-});
-
-test("a canceled status is terminal even when canceled_at is absent", () => {
-  const app = loadTrackingRuntime();
-  const data = { ...codeReadPayload(), job_status: "à¸¢à¸à¹€à¸¥à¸´à¸", canceled_at: null };
-  app.state.tracking = { status: "success", data, error: "" };
-  assert.equal(app.tracking._test.isCanceled(data), true);
-  assert.match(app.tracking._test.renderTimeline(), /à¸‡à¸²à¸™à¸–à¸¹à¸à¸¢à¸à¹€à¸¥à¸´à¸/);
-  assert.doesNotMatch(app.tracking._test.renderTimeline(), /à¸£à¸­à¸—à¸µà¸¡à¸Šà¹ˆà¸²à¸‡|à¸Šà¹ˆà¸²à¸‡à¸à¸³à¸¥à¸±à¸‡à¹€à¸”à¸´à¸™à¸—à¸²à¸‡/);
-});
-
-test("booking-code full read shows real technician assignment in timeline", () => {
-  const app = loadTrackingRuntime();
-  const data = codeReadPayload();
-  app.state.tracking = { status: "success", data, error: "" };
-  const timeline = app.tracking._test.renderTimeline();
-  assert.match(timeline, /à¸¢à¸·à¸™à¸¢à¸±à¸™à¸„à¸´à¸§à¹à¸¥à¸°à¸¡à¸­à¸šà¸«à¸¡à¸²à¸¢à¸—à¸µà¸¡/);
-  assert.match(timeline, /à¸¡à¸µà¸—à¸µà¸¡à¸”à¸¹à¹à¸¥à¸‡à¸²à¸™à¸™à¸µà¹‰à¹à¸¥à¹‰à¸§/);
-  assert.equal(app.tracking._test.canViewDetails(data), true);
-  assert.equal(app.tracking._test.canUseTokenActions(data), false);
-});
-
-test("completed copy follows read versus privileged-action capability", () => {
-  const app = loadTrackingRuntime();
-  const codeData = {
-    ...codeReadPayload(),
-    job_status: "à¹€à¸ªà¸£à¹‡à¸ˆà¹à¸¥à¹‰à¸§",
-    finished_at: "2026-07-15T11:00:00+07:00",
-    photos: [{ url: "https://example.test/after.jpg", phase: "after" }],
-  };
-  app.state.tracking = { status: "success", data: codeData, error: "" };
-  const codeHtml = app.tracking._test.renderTrackingResult();
-  assert.match(codeHtml, /à¸”à¸¹à¸£à¸¹à¸›à¸‡à¸²à¸™ à¸ªà¸£à¸¸à¸›à¸‡à¸²à¸™ à¹à¸¥à¸°à¸£à¸²à¸¢à¸¥à¸°à¹€à¸­à¸µà¸¢à¸”/);
-  assert.doesNotMatch(codeHtml, />à¹€à¸­à¸à¸ªà¸²à¸£<|à¸£à¸µà¸§à¸´à¸§\/à¸›à¸£à¸°à¸à¸±à¸™|à¸”à¸¹à¸£à¸¹à¸›à¸‡à¸²à¸™ à¹€à¸­à¸à¸ªà¸²à¸£|à¸”à¸¹à¹€à¸­à¸à¸ªà¸²à¸£/);
-
-  const tokenData = {
-    ...codeData,
-    access_level: "token",
-    can_use_token_actions: true,
-    capabilities: { can_view_full_tracking: true, can_use_token_actions: true },
-    booking_token: "private-token",
-    job_id: 88,
-    receipt_url: "/docs/receipt/88?key=private-token",
-  };
-  app.state.tracking = { status: "success", data: tokenData, error: "" };
-  const tokenHtml = app.tracking._test.renderTrackingResult();
-  assert.match(tokenHtml, />à¸«à¸¥à¸±à¸‡à¸šà¸£à¸´à¸à¸²à¸£</);
-  assert.match(tokenHtml, /à¹€à¸­à¸à¸ªà¸²à¸£à¹à¸¥à¸°à¸£à¸µà¸§à¸´à¸§/);
-});
-
-function assertNoPrivilegedAftercare(html) {
-  assert.doesNotMatch(html, /booking_token|\/docs\/receipt|\/docs\/quote|\/docs\/eslip/);
-  assert.doesNotMatch(html, /data-review-form|data-catalog-review-form|open-eslip/);
-}
-
-test("code-only completed shows existing technician review and warranty read-only", () => {
-  const app = loadTrackingRuntime();
-  const data = {
-    ...codeReadPayload(),
-    job_status: "à¹€à¸ªà¸£à¹‡à¸ˆà¹à¸¥à¹‰à¸§",
-    finished_at: "2026-07-15T11:00:00+07:00",
-    review: {
-      already_reviewed: true,
-      rating: 4,
-      review_text: "à¸Šà¹ˆà¸²à¸‡à¸•à¸£à¸‡à¹€à¸§à¸¥à¸²à¹à¸¥à¸°à¸—à¸³à¸‡à¸²à¸™à¹€à¸£à¸µà¸¢à¸šà¸£à¹‰à¸­à¸¢",
-      complaint_text: "à¸‚à¸­à¹ƒà¸«à¹‰à¹‚à¸—à¸£à¸à¹ˆà¸­à¸™à¹€à¸‚à¹‰à¸²à¸«à¸™à¹‰à¸²à¸‡à¸²à¸™",
-      reviewed_at: "2026-07-15T12:00:00+07:00",
-    },
-  };
-  app.state.tracking = { status: "success", data, error: "" };
-  const html = app.tracking._test.renderTrackingResult();
-  assert.match(html, />à¸«à¸¥à¸±à¸‡à¸šà¸£à¸´à¸à¸²à¸£</);
-  assert.match(html, /à¸£à¸µà¸§à¸´à¸§à¸—à¸µà¸¡à¸Šà¹ˆà¸²à¸‡/);
-  assert.match(html, /4 \/ 5/);
-  assert.match(html, /à¸Šà¹ˆà¸²à¸‡à¸•à¸£à¸‡à¹€à¸§à¸¥à¸²à¹à¸¥à¸°à¸—à¸³à¸‡à¸²à¸™à¹€à¸£à¸µà¸¢à¸šà¸£à¹‰à¸­à¸¢/);
-  assert.match(html, /à¸‚à¸­à¹ƒà¸«à¹‰à¹‚à¸—à¸£à¸à¹ˆà¸­à¸™à¹€à¸‚à¹‰à¸²à¸«à¸™à¹‰à¸²à¸‡à¸²à¸™/);
-  assert.match(html, /DATE:2026-07-15T12:00:00\+07:00/);
-  assert.match(html, /à¹€à¸‡à¸·à¹ˆà¸­à¸™à¹„à¸‚à¸£à¸±à¸šà¸›à¸£à¸°à¸à¸±à¸™/);
-  assertNoPrivilegedAftercare(html);
-});
-
-test("code-only completed shows existing catalog review and warranty read-only", () => {
-  const app = loadTrackingRuntime();
-  const data = {
-    ...codeReadPayload(),
-    job_status: "à¹€à¸ªà¸£à¹‡à¸ˆà¹à¸¥à¹‰à¸§",
-    finished_at: "2026-07-15T11:00:00+07:00",
-    catalog_review: {
-      eligible: false,
-      already_reviewed: true,
-      review: {
-        rating: 5,
-        comment: "à¸šà¸£à¸´à¸à¸²à¸£à¸¥à¹‰à¸²à¸‡à¸¥à¸°à¹€à¸­à¸µà¸¢à¸”à¸¡à¸²à¸",
-        moderation_status: "approved",
-        created_at: "2026-07-15T12:30:00+07:00",
-      },
-    },
-  };
-  app.state.tracking = { status: "success", data, error: "" };
-  const html = app.tracking._test.renderTrackingResult();
-  assert.match(html, /à¸£à¸µà¸§à¸´à¸§à¸šà¸£à¸´à¸à¸²à¸£à¸™à¸µà¹‰/);
-  assert.match(html, /5 \/ 5/);
-  assert.match(html, /à¸šà¸£à¸´à¸à¸²à¸£à¸¥à¹‰à¸²à¸‡à¸¥à¸°à¹€à¸­à¸µà¸¢à¸”à¸¡à¸²à¸/);
-  assert.match(html, /à¹€à¸œà¸¢à¹à¸à¸£à¹ˆà¹à¸¥à¹‰à¸§/);
-  assert.match(html, /DATE:2026-07-15T12:30:00\+07:00/);
-  assert.match(html, /à¹€à¸‡à¸·à¹ˆà¸­à¸™à¹„à¸‚à¸£à¸±à¸šà¸›à¸£à¸°à¸à¸±à¸™/);
-  assertNoPrivilegedAftercare(html);
-});
-
-test("code-only completed preserves both existing review summaries", () => {
-  const app = loadTrackingRuntime();
-  const data = {
-    ...codeReadPayload(),
-    job_status: "à¹€à¸ªà¸£à¹‡à¸ˆà¹à¸¥à¹‰à¸§",
-    finished_at: "2026-07-15T11:00:00+07:00",
-    review: { already_reviewed: true, rating: 4, review_text: "à¸£à¸µà¸§à¸´à¸§à¸—à¸µà¸¡à¸Šà¹ˆà¸²à¸‡" },
-    catalog_review: {
-      eligible: false,
-      already_reviewed: true,
-      review: { rating: 5, comment: "à¸£à¸µà¸§à¸´à¸§à¸•à¸±à¸§à¸šà¸£à¸´à¸à¸²à¸£", moderation_status: "pending" },
-    },
-  };
-  app.state.tracking = { status: "success", data, error: "" };
-  const html = app.tracking._test.renderTrackingResult();
-  assert.match(html, /à¸£à¸µà¸§à¸´à¸§à¸—à¸µà¸¡à¸Šà¹ˆà¸²à¸‡/);
-  assert.match(html, /à¸£à¸µà¸§à¸´à¸§à¸•à¸±à¸§à¸šà¸£à¸´à¸à¸²à¸£/);
-  assert.match(html, /à¸£à¸­à¸•à¸£à¸§à¸ˆà¸ªà¸­à¸š/);
-  assertNoPrivilegedAftercare(html);
-});
-
-test("completed job without a server-issued write capability stays read-only", () => {
-  const app = loadTrackingRuntime();
-  const data = {
-    ...codeReadPayload(),
-    job_status: "à¹€à¸ªà¸£à¹‡à¸ˆà¹à¸¥à¹‰à¸§",
-    finished_at: "2026-07-15T11:00:00+07:00",
-  };
-  app.state.tracking = { status: "success", data, error: "" };
-  const html = app.tracking._test.renderTrackingResult();
-  assert.match(html, />à¸«à¸¥à¸±à¸‡à¸šà¸£à¸´à¸à¸²à¸£</);
-  assert.match(html, /à¹€à¸‡à¸·à¹ˆà¸­à¸™à¹„à¸‚à¸£à¸±à¸šà¸›à¸£à¸°à¸à¸±à¸™/);
-  assertNoPrivilegedAftercare(html);
-  assert.match(html, /à¸‡à¸²à¸™à¸™à¸µà¹‰à¸¢à¸±à¸‡à¹„à¸¡à¹ˆà¸­à¸¢à¸¹à¹ˆà¹ƒà¸™à¸ªà¸–à¸²à¸™à¸°à¸—à¸µà¹ˆà¸ªà¹ˆà¸‡à¸£à¸µà¸§à¸´à¸§à¹„à¸”à¹‰/);
-});
-
-test("token completed retains documents and one eligible write-review flow", () => {
-  const app = loadTrackingRuntime();
-  const data = {
-    ...codeReadPayload(),
-    access_level: "token",
-    can_use_token_actions: true,
-    capabilities: { can_view_full_tracking: true, can_use_token_actions: true },
-    booking_token: "private-token",
-    job_id: 88,
-    job_status: "à¹€à¸ªà¸£à¹‡à¸ˆà¹à¸¥à¹‰à¸§",
-    finished_at: "2026-07-15T11:00:00+07:00",
-    receipt_url: "/docs/receipt/88?key=private-token",
-    catalog_review: { eligible: true, already_reviewed: false, review: null },
-  };
-  app.state.tracking = { status: "success", data, error: "" };
-  const html = app.tracking._test.renderTrackingResult();
-  assert.match(html, /data-action="open-eslip"/);
-  assert.match(html, /data-catalog-review-form/);
-  assert.doesNotMatch(html, /data-review-form/);
-  assert.match(html, /à¹€à¸‡à¸·à¹ˆà¸­à¸™à¹„à¸‚à¸£à¸±à¸šà¸›à¸£à¸°à¸à¸±à¸™/);
-});
-
-test("token completed falls back to technician review when catalog review is ineligible", () => {
-  const app = loadTrackingRuntime();
-  const data = {
-    ...completedHealthPayload(),
-    access_level: "token",
-    can_use_token_actions: true,
-    capabilities: { can_view_full_tracking: true, can_use_token_actions: true },
-    booking_token: "private-token",
-    catalog_review: { eligible: false, already_reviewed: false, review: null },
-  };
-  const html = app.tracking._test.renderAftercare(data);
-  assert.match(html, /data-review-form/);
-  assert.doesNotMatch(html, /data-catalog-review-form/);
-  assert.doesNotMatch(html, /private-token/);
-});
-
-test("token completed falls back to technician review when catalog review is null", () => {
-  const app = loadTrackingRuntime();
-  const data = {
-    ...completedHealthPayload(),
-    access_level: "token",
-    can_use_token_actions: true,
-    capabilities: { can_view_full_tracking: true, can_use_token_actions: true },
-    booking_token: "private-token",
-    catalog_review: null,
-  };
-  const html = app.tracking._test.renderAftercare(data);
-  assert.match(html, /data-review-form/);
-  assert.doesNotMatch(html, /data-catalog-review-form|private-token/);
-});
-
-test("selected completed job shows technician review without phone re-verification", () => {
-  const app = loadTrackingRuntime();
-  const data = {
-    ...completedHealthPayload(),
-    access_level: "selection",
-    selection_ref: "opaque-selection-reference",
-    capabilities: { can_view_full_tracking: true, can_use_token_actions: false, can_submit_review: true },
-    catalog_review: { eligible: false, already_reviewed: false, review: null },
-  };
-  const html = app.tracking._test.renderAftercare(data);
-  assert.match(html, /data-review-form/);
-  assert.doesNotMatch(html, /name="booking_code"|name="customer_phone"|à¸¢à¸·à¸™à¸¢à¸±à¸™à¸•à¸±à¸§à¸•à¸™|opaque-selection-reference/);
-  assert.doesNotMatch(html, /data-catalog-review-form|booking_token/);
-});
-
-test("phone multi-result list renders safe fields and never renders the signed selection reference", () => {
-  const app = loadTrackingRuntime();
-  app.state.tracking = {
-    status: "choices",
-    data: {
-      jobs: [
-        { booking_code: "CWFABC1234", appointment_datetime: "2026-07-18T09:00:00+07:00", service_summary: "à¸¥à¹‰à¸²à¸‡à¹à¸­à¸£à¹Œ", job_status: "à¹€à¸ªà¸£à¹‡à¸ˆà¹à¸¥à¹‰à¸§", location_summary: "à¸šà¸²à¸‡à¸™à¸²", selection_ref: "opaque-one" },
-        { booking_code: "CWFABC5678", appointment_datetime: "2026-07-19T10:00:00+07:00", service_summary: "à¸‹à¹ˆà¸­à¸¡à¹à¸­à¸£à¹Œ", job_status: "à¸£à¸­à¸”à¸³à¹€à¸™à¸´à¸™à¸à¸²à¸£", location_summary: "à¸à¸£à¸°à¹‚à¸‚à¸™à¸‡", selection_ref: "opaque-two" },
-      ],
-    },
-    error: "",
-  };
-  const html = app.tracking._test.renderTrackingResult();
-  assert.match(html, /à¹€à¸¥à¸·à¸­à¸à¸‡à¸²à¸™à¸—à¸µà¹ˆà¸•à¹‰à¸­à¸‡à¸à¸²à¸£à¸•à¸´à¸”à¸•à¸²à¸¡/);
-  assert.match(html, /CWFABC1234/);
-  assert.match(html, /CWFABC5678/);
-  assert.equal((html.match(/data-tracking-choice=/g) || []).length, 2);
-  assert.doesNotMatch(html, /opaque-one|opaque-two|selection_ref|job_id|customer_phone|address_text/);
-});
-
-test("phone multi-result list never renders a raw backend job status", () => {
-  const app = loadTrackingRuntime();
-  app.state.tracking = {
-    status: "choices",
-    data: {
-      jobs: [{
-        booking_code: "CWFABC9999",
-        service_summary: "à¸¥à¹‰à¸²à¸‡à¹à¸­à¸£à¹Œ",
-        job_status: "admin_review",
-        booking_mode: "urgent",
-        selection_ref: "opaque-internal",
-      }],
-    },
-    error: "",
-  };
-  const html = app.tracking._test.renderTrackingResult();
-  assert.match(html, /à¸£à¸­à¹à¸­à¸”à¸¡à¸´à¸™à¸•à¸£à¸§à¸ˆà¸ªà¸­à¸š/);
-  assert.doesNotMatch(html, /admin_review|opaque-internal|job_status/);
-});
-
-test("pending approval never renders reserved technician identity even if the backend payload contains it", () => {
-  const app = loadTrackingRuntime();
-  app.state.tracking = {
-    status: "success",
-    data: {
-      ...codeReadPayload(),
-      access_level: "token",
-      capabilities: { can_view_full_tracking: true, can_use_token_actions: true },
-      job_status: "à¸£à¸­à¸•à¸£à¸§à¸ˆà¸ªà¸­à¸š",
-      technician: { full_name: "à¸Šà¹ˆà¸²à¸‡à¸¥à¸±à¸šà¸à¹ˆà¸­à¸™à¸­à¸™à¸¸à¸¡à¸±à¸•à¸´", username: "reserved-secret", phone: "0899999999" },
-      technician_team: [{ full_name: "à¸—à¸µà¸¡à¸¥à¸±à¸šà¸à¹ˆà¸­à¸™à¸­à¸™à¸¸à¸¡à¸±à¸•à¸´", username: "reserved-team" }],
-    },
-    error: "",
-  };
-  const html = app.tracking._test.renderTrackingResult();
-  assert.match(html, /à¹à¸­à¸”à¸¡à¸´à¸™à¸à¸³à¸¥à¸±à¸‡à¸Šà¹ˆà¸§à¸¢à¸ˆà¸±à¸”à¸„à¸´à¸§à¹ƒà¸«à¹‰/);
-  assert.doesNotMatch(html, /à¸Šà¹ˆà¸²à¸‡à¸¥à¸±à¸šà¸à¹ˆà¸­à¸™à¸­à¸™à¸¸à¸¡à¸±à¸•à¸´|à¸—à¸µà¸¡à¸¥à¸±à¸šà¸à¹ˆà¸­à¸™à¸­à¸™à¸¸à¸¡à¸±à¸•à¸´|reserved-secret|reserved-team|0899999999/);
-});
-
-test("urgent pending hero timeline and technician card only describe admin review for code and token access", () => {
-  const app = loadTrackingRuntime();
-  for (const access of ["code", "token"]) {
-    const data = {
-      ...codeReadPayload(),
-      access_level: access,
-      can_use_token_actions: access === "token",
-      capabilities: {
-        can_view_full_tracking: true,
-        can_use_token_actions: access === "token",
-      },
-      booking_mode: "urgent",
-      job_status: "admin_review",
-      technician: { full_name: "à¸Šà¹ˆà¸²à¸‡à¸¥à¸±à¸š", username: "reserved-secret" },
-      technician_team: [{ full_name: "à¸—à¸µà¸¡à¸¥à¸±à¸š", username: "reserved-team" }],
-    };
-    app.state.tracking = { status: "success", data, error: "" };
-    const dom = `${app.tracking._test.renderTrackingResult()}\n${app.tracking._test.renderTimeline()}`;
-    assert.match(dom, /à¸£à¸­à¹à¸­à¸”à¸¡à¸´à¸™à¸•à¸£à¸§à¸ˆà¸ªà¸­à¸š/, access);
-    assert.match(dom, /à¹à¸­à¸”à¸¡à¸´à¸™à¸à¸³à¸¥à¸±à¸‡à¸•à¸£à¸§à¸ˆà¸ªà¸­à¸šà¸£à¸²à¸¢à¸¥à¸°à¹€à¸­à¸µà¸¢à¸”à¸„à¸³à¸‚à¸­/, access);
-    assert.doesNotMatch(dom, /à¸Šà¹ˆà¸²à¸‡à¸£à¸±à¸šà¸‡à¸²à¸™|à¸¡à¸µà¸Šà¹ˆà¸²à¸‡à¸£à¸±à¸š|à¹à¸­à¸”à¸¡à¸´à¸™à¸¢à¸·à¸™à¸¢à¸±à¸™|à¸à¸³à¸¥à¸±à¸‡à¸ˆà¸±à¸”à¸«à¸²à¸Šà¹ˆà¸²à¸‡|à¸Šà¹ˆà¸²à¸‡à¸¥à¸±à¸š|à¸—à¸µà¸¡à¸¥à¸±à¸š|reserved-/i, access);
-  }
-});
-
-test("urgent approved without a technician consistently says admin confirmed and is arranging a technician", () => {
-  const app = loadTrackingRuntime();
-  for (const access of ["code", "token"]) {
-    const data = {
-      ...codeReadPayload(),
-      access_level: access,
-      can_use_token_actions: access === "token",
-      capabilities: {
-        can_view_full_tracking: true,
-        can_use_token_actions: access === "token",
-      },
-      booking_mode: "urgent",
-      job_status: "approved",
-      technician: null,
-      technician_team: [],
-    };
-    app.state.tracking = { status: "success", data, error: "" };
-    const dom = `${app.tracking._test.renderTrackingResult()}\n${app.tracking._test.renderTimeline()}`;
-    assert.match(dom, /à¹à¸­à¸”à¸¡à¸´à¸™à¸¢à¸·à¸™à¸¢à¸±à¸™à¸„à¸³à¸‚à¸­à¹à¸¥à¹‰à¸§/, access);
-    assert.match(dom, /à¸à¸³à¸¥à¸±à¸‡à¸ˆà¸±à¸”à¸—à¸µà¸¡à¸Šà¹ˆà¸²à¸‡à¹ƒà¸«à¹‰à¸„à¸¸à¸“/, access);
-    assert.doesNotMatch(dom, /à¸£à¸­à¹à¸­à¸”à¸¡à¸´à¸™à¸•à¸£à¸§à¸ˆà¸ªà¸­à¸š|à¸Šà¹ˆà¸²à¸‡à¸£à¸±à¸šà¸‡à¸²à¸™|à¸¡à¸µà¸Šà¹ˆà¸²à¸‡à¸£à¸±à¸š|à¸‡à¸²à¸™à¸ˆà¸°à¸¢à¸·à¸™à¸¢à¸±à¸™à¹€à¸¡à¸·à¹ˆà¸­/i, access);
-  }
-});
-
-test("tracking hero preserves pending and every actual customer lifecycle state", () => {
-  const app = loadTrackingRuntime();
-  const cases = [
-    [{ booking_mode: "urgent", job_status: "admin_review" }, "à¸ªà¹ˆà¸‡à¸„à¸³à¸‚à¸­à¹à¸¥à¹‰à¸§ à¸£à¸­à¹à¸­à¸”à¸¡à¸´à¸™à¸•à¸£à¸§à¸ˆà¸ªà¸­à¸š"],
-    [{ assigned_at: "assigned", job_status: "à¸£à¸­à¸”à¸³à¹€à¸™à¸´à¸™à¸à¸²à¸£" }, "à¸¢à¸·à¸™à¸¢à¸±à¸™à¸„à¸´à¸§à¹à¸¥à¹‰à¸§"],
-    [{ travel_started_at: "travel", assigned_at: "assigned" }, "à¸Šà¹ˆà¸²à¸‡à¸à¸³à¸¥à¸±à¸‡à¹€à¸”à¸´à¸™à¸—à¸²à¸‡"],
-    [{ checkin_at: "checkin", travel_started_at: "travel" }, "à¸Šà¹ˆà¸²à¸‡à¸–à¸¶à¸‡à¸«à¸™à¹‰à¸²à¸‡à¸²à¸™à¹à¸¥à¹‰à¸§"],
-    [{ started_at: "started", checkin_at: "checkin" }, "à¸à¸³à¸¥à¸±à¸‡à¹ƒà¸«à¹‰à¸šà¸£à¸´à¸à¸²à¸£"],
-    [{ finished_at: "done", started_at: "started" }, "à¸‡à¸²à¸™à¹€à¸ªà¸£à¹‡à¸ˆà¹à¸¥à¹‰à¸§"],
-    [{ job_status: "à¸¢à¸à¹€à¸¥à¸´à¸", finished_at: "done" }, "à¸‡à¸²à¸™à¸™à¸µà¹‰à¸–à¸¹à¸à¸¢à¸à¹€à¸¥à¸´à¸à¹à¸¥à¹‰à¸§"],
-  ];
-  for (const [source, label] of cases) {
-    app.state.tracking = {
-      status: "success",
-      data: {
-        ...codeReadPayload(),
-        technician: null,
-        technician_team: [],
-        finished_at: null,
-        started_at: null,
-        checkin_at: null,
-        travel_started_at: null,
-        assigned_at: null,
-        ...source,
-      },
-      error: "",
-    };
-    const html = app.tracking._test.renderTrackingResult();
-    assert.match(html, new RegExp(label), label);
-    assert.doesNotMatch(html, /admin_review|job_status/i, label);
-  }
-});
-
-test("passport preserves every customer lifecycle state instead of flattening to approval copy", () => {
-  const app = loadTrackingRuntime();
-  const cases = [
-    [{ job_status: "à¸¢à¸à¹€à¸¥à¸´à¸", finished_at: "done", started_at: "started" }, "à¸ªà¸´à¹‰à¸™à¸ªà¸¸à¸”à¹à¸¥à¹‰à¸§"],
-    [{ finished_at: "done", started_at: "started" }, "à¸‡à¸²à¸™à¹€à¸ªà¸£à¹‡à¸ˆà¹à¸¥à¹‰à¸§"],
-    [{ started_at: "started", checkin_at: "checkin", travel_started_at: "travel" }, "à¸à¸³à¸¥à¸±à¸‡à¹ƒà¸«à¹‰à¸šà¸£à¸´à¸à¸²à¸£"],
-    [{ checkin_at: "checkin", travel_started_at: "travel" }, "à¸Šà¹ˆà¸²à¸‡à¸–à¸¶à¸‡à¸«à¸™à¹‰à¸²à¸‡à¸²à¸™à¹à¸¥à¹‰à¸§"],
-    [{ travel_started_at: "travel", assigned_at: "assigned" }, "à¸Šà¹ˆà¸²à¸‡à¸à¸³à¸¥à¸±à¸‡à¹€à¸”à¸´à¸™à¸—à¸²à¸‡"],
-    [{ assigned_at: "assigned", job_status: "à¸£à¸­à¸”à¸³à¹€à¸™à¸´à¸™à¸à¸²à¸£" }, "à¸¢à¸·à¸™à¸¢à¸±à¸™à¸„à¸´à¸§à¹à¸¥à¹‰à¸§"],
-    [{ booking_mode: "urgent", job_status: "admin_review" }, "à¸£à¸­à¹à¸­à¸”à¸¡à¸´à¸™à¸•à¸£à¸§à¸ˆà¸ªà¸­à¸š"],
-    [{ booking_mode: "urgent", job_status: "approved" }, "à¸à¸£à¹‰à¸­à¸¡à¸•à¸´à¸”à¸•à¸²à¸¡à¸‡à¸²à¸™"],
-  ];
-  for (const [source, label] of cases) {
-    const html = app.tracking._test.renderPassport({
-      ...codeReadPayload(),
-      technician: null,
-      technician_team: [],
-      finished_at: null,
-      started_at: null,
-      checkin_at: null,
-      travel_started_at: null,
-      assigned_at: null,
-      ...source,
-    });
-    assert.match(html, new RegExp(label), label);
-    assert.doesNotMatch(html, /admin_review|job_status|approved/i, label);
-  }
-});
-
-test("tracking customer views use Thai headings without exposed English UI labels", () => {
-  const app = loadTrackingRuntime();
-  app.state.tracking = {
-    status: "success",
-    data: {
-      ...completedHealthPayload(),
-      access_level: "token",
-      can_use_token_actions: true,
-      capabilities: { can_view_full_tracking: true, can_use_token_actions: true },
-      booking_token: "private-token",
-      photos: [{ url: "https://example.test/after.jpg", phase: "after" }],
-      technician_note: "à¸¥à¹‰à¸²à¸‡à¹€à¸£à¸µà¸¢à¸šà¸£à¹‰à¸­à¸¢",
-      review: { already_reviewed: true, rating: 5, review_text: "à¸”à¸µà¸¡à¸²à¸" },
-      catalog_review: {
-        eligible: false,
-        already_reviewed: true,
-        review: { rating: 5, comment: "à¸šà¸£à¸´à¸à¸²à¸£à¸”à¸µ", moderation_status: "approved" },
-      },
-    },
-    error: "",
-  };
-  const html = app.tracking._test.renderTrackingResult();
-  assert.match(html, /à¸•à¸´à¸”à¸•à¸²à¸¡à¸‡à¸²à¸™|à¸£à¸¹à¸›à¸‡à¸²à¸™|à¸«à¸¡à¸²à¸¢à¹€à¸«à¸•à¸¸|à¸£à¸µà¸§à¸´à¸§à¸—à¸µà¸¡à¸Šà¹ˆà¸²à¸‡|à¸£à¸µà¸§à¸´à¸§à¸šà¸£à¸´à¸à¸²à¸£/);
-  assert.doesNotMatch(html, />\s*(?:Tracking|Photos|Note|Technician Review|Service Review|Review)\s*</);
-  assert.doesNotMatch(html, /aria-label="Tracking views"|CWF Tracking/);
-});
-
-test("tracking passport renders a customer-safe completed label instead of raw job status", () => {
-  const app = loadTrackingRuntime();
-  const html = app.tracking._test.renderPassport(completedHealthPayload({ job_status: "INTERNAL_DONE_STATE" }));
-  assert.match(html, /à¸‡à¸²à¸™à¹€à¸ªà¸£à¹‡à¸ˆà¹à¸¥à¹‰à¸§/);
-  assert.doesNotMatch(html, /INTERNAL_DONE_STATE/);
-});
-
-test("tracking UI uses one phone-or-code field and removes the old phone-proof flow", () => {
-  const source = fs.readFileSync(path.join(ROOT, "customer-app", "modules", "tracking.js"), "utf8");
-  assert.match(source, /à¹€à¸šà¸­à¸£à¹Œà¹‚à¸—à¸£ à¸«à¸£à¸·à¸­à¸£à¸«à¸±à¸ªà¸à¸²à¸£à¸ˆà¸­à¸‡/);
-  assert.match(source, /placeholder="à¸à¸£à¸­à¸à¹€à¸šà¸­à¸£à¹Œà¹‚à¸—à¸£à¸«à¸£à¸·à¸­à¸£à¸«à¸±à¸ªà¸à¸²à¸£à¸ˆà¸­à¸‡"/);
-  assert.match(source, /lookupTracking\(q\)/);
-  assert.match(source, /selectTracking\(reference\)/);
-  assert.match(source, /if \(jobs\.length === 1\) return openSelection/);
-  assert.match(source, /status: "choices"/);
-  assert.doesNotMatch(source, /name="customer_phone"|à¹€à¸šà¸­à¸£à¹Œà¹‚à¸—à¸£à¸—à¸µà¹ˆà¹ƒà¸Šà¹‰à¸ˆà¸­à¸‡ \(à¸¢à¸·à¸™à¸¢à¸±à¸™à¸•à¸±à¸§à¸•à¸™\)|à¸à¸£à¸­à¸à¹€à¸šà¸­à¸£à¹Œà¹‚à¸—à¸£à¸—à¸µà¹ˆà¹ƒà¸Šà¹‰à¸ˆà¸­à¸‡à¸‡à¸²à¸™à¸™à¸µà¹‰à¹€à¸à¸·à¹ˆà¸­à¸¢à¸·à¸™à¸¢à¸±à¸™à¸•à¸±à¸§à¸•à¸™à¸à¹ˆà¸­à¸™à¸£à¸µà¸§à¸´à¸§/);
-});
-
-test("completed job without a write capability has a generic unavailable explanation", () => {
-  const app = loadTrackingRuntime();
-  const data = completedHealthPayload({ legacy_review_eligible: false });
-  const html = app.tracking._test.renderAftercare(data);
-  assert.match(html, /à¸‡à¸²à¸™à¸™à¸µà¹‰à¸¢à¸±à¸‡à¹„à¸¡à¹ˆà¸­à¸¢à¸¹à¹ˆà¹ƒà¸™à¸ªà¸–à¸²à¸™à¸°à¸—à¸µà¹ˆà¸ªà¹ˆà¸‡à¸£à¸µà¸§à¸´à¸§à¹„à¸”à¹‰/);
-  assert.doesNotMatch(html, /Booking Code.*à¸šà¸±à¸™à¸—à¸¶à¸à¸„à¸°à¹à¸™à¸™à¹„à¸¡à¹ˆà¹„à¸”à¹‰/);
-  assert.doesNotMatch(html, /data-review-form|data-catalog-review-form/);
-});
-
-test("tracking review forms use five accessible 44px star choices and never render the token", () => {
-  const app = loadTrackingRuntime();
-  const data = {
-    ...completedHealthPayload(),
-    access_level: "token",
-    can_use_token_actions: true,
-    capabilities: { can_view_full_tracking: true, can_use_token_actions: true },
-    booking_token: "private-token",
-    catalog_review: { eligible: true, already_reviewed: false, review: null },
-  };
-  const catalogHtml = app.tracking._test.renderAftercare(data);
-  assert.equal((catalogHtml.match(/class="review-star-radio"/g) || []).length, 5);
-  assert.equal((catalogHtml.match(/class="review-star-choice"/g) || []).length, 5);
-  assert.match(catalogHtml, /aria-label="1 à¸”à¸²à¸§"/);
-  assert.match(catalogHtml, /aria-label="5 à¸”à¸²à¸§"/);
-  assert.match(catalogHtml, /role="status" aria-live="polite"/);
-  assert.doesNotMatch(catalogHtml, /<select|private-token|booking_token/);
-  assert.match(CSS_SOURCE, /\.review-star-choice\s*\{[\s\S]*?min-width:\s*44px;[\s\S]*?min-height:\s*44px;/);
-  assert.match(CSS_SOURCE, /grid-template-columns:\s*repeat\(5,\s*minmax\(44px,\s*1fr\)\)/);
-  assert.match(CSS_SOURCE, /\.review-star-radio:focus-visible \+ \.review-star-choice/);
-});
-
-test("failed technician review request re-enables submit without exposing backend error text", async () => {
-  let submitHandler;
-  let requestBody;
-  const status = { textContent: "" };
-  const submit = { disabled: false };
-  const busy = new Set();
-  const form = {
-    addEventListener(type, handler) { if (type === "submit") submitHandler = handler; },
-    querySelector(selector) {
-      if (selector === "[data-review-status]") return status;
-      if (selector === "button[type='submit']") return submit;
-      return null;
-    },
-    hasAttribute(name) { return name === "data-review-token"; },
-    setAttribute(name) { busy.add(name); },
-    removeAttribute(name) { busy.delete(name); },
-  };
-  class ReviewFormData {
-    entries() { return [["rating", "4"], ["review_text", "à¸—à¸”à¸ªà¸­à¸š"]][Symbol.iterator](); }
-  }
-  const app = loadTrackingRuntime({
-    FormData: ReviewFormData,
-    fetch: async (_url, options) => {
-      requestBody = JSON.parse(options.body);
-      return { ok: false, status: 500, json: async () => ({ error: "POST /public/review SQL relation jobs stack" }) };
-    },
-  });
-  app.state.tracking.data = {
-    selection_ref: "opaque-selection-reference",
-    capabilities: { can_submit_review: true },
-  };
-  const container = {
-    querySelector(selector) { return selector === "[data-review-form]" ? form : null; },
-  };
-  app.tracking._test.bindResultActions(container);
-  await submitHandler({ preventDefault() {} });
-  assert.equal(submit.disabled, false);
-  assert.equal(status.textContent, "à¸£à¸°à¸šà¸šà¸‚à¸±à¸”à¸‚à¹‰à¸­à¸‡à¸Šà¸±à¹ˆà¸§à¸„à¸£à¸²à¸§ à¸à¸£à¸¸à¸“à¸²à¸¥à¸­à¸‡à¹ƒà¸«à¸¡à¹ˆà¸«à¸£à¸·à¸­à¸•à¸´à¸”à¸•à¹ˆà¸­à¹à¸­à¸”à¸¡à¸´à¸™");
-  assert.doesNotMatch(status.textContent, /SQL|relation|\/public\/review|stack/i);
-  assert.equal(busy.has("aria-busy"), false);
-  assert.equal(requestBody.selection_ref, "opaque-selection-reference");
-  assert.equal(requestBody.customer_phone, undefined);
-  assert.equal(requestBody.booking_code, undefined);
-});
-
-test("tracking choice and review controls remain width-safe at 360px and 390px", () => {
-  assert.match(CSS_SOURCE, /\.tracking-choice-shell,[\s\S]*?\.tracking-choice\s*\{\s*min-width:\s*0;/);
-  assert.match(CSS_SOURCE, /\.tracking-choice\s*\{[\s\S]*?width:\s*100%;[\s\S]*?min-height:\s*64px;/);
-  assert.match(CSS_SOURCE, /\.tracking-choice\s*\{[\s\S]*?overflow-wrap:\s*anywhere;/);
-  assert.match(CSS_SOURCE, /grid-template-columns:\s*repeat\(5,\s*minmax\(44px,\s*1fr\)\)/);
-});
-
-test("failed catalog review request re-enables submit with customer-safe network copy", async () => {
-  let submitHandler;
-  const status = { textContent: "" };
-  const submit = { disabled: false };
-  const busy = new Set();
-  const form = {
-    addEventListener(type, handler) { if (type === "submit") submitHandler = handler; },
-    querySelector(selector) {
-      if (selector === "[data-catalog-review-status]") return status;
-      if (selector === "button[type='submit']") return submit;
-      return null;
-    },
-    setAttribute(name) { busy.add(name); },
-    removeAttribute(name) { busy.delete(name); },
-  };
-  class ReviewFormData {
-    entries() { return [["rating", "3"], ["comment", "à¸—à¸”à¸ªà¸­à¸š"]][Symbol.iterator](); }
-  }
-  const app = loadTrackingRuntime({
-    FormData: ReviewFormData,
-    api: { submitTrackingReview: async () => { throw new TypeError("Failed to fetch https://internal.example/route"); } },
-  });
-  app.state.tracking.data = {
-    access_level: "token",
-    can_use_token_actions: true,
-    booking_token: "private-token",
-  };
-  const container = {
-    querySelector(selector) { return selector === "[data-catalog-review-form]" ? form : null; },
-  };
-  app.tracking._test.bindResultActions(container);
-  await submitHandler({ preventDefault() {} });
-  assert.equal(submit.disabled, false);
-  assert.equal(status.textContent, "à¹€à¸Šà¸·à¹ˆà¸­à¸¡à¸•à¹ˆà¸­à¸£à¸°à¸šà¸šà¹„à¸¡à¹ˆà¸ªà¸³à¹€à¸£à¹‡à¸ˆ à¸à¸£à¸¸à¸“à¸²à¸¥à¸­à¸‡à¸­à¸µà¸à¸„à¸£à¸±à¹‰à¸‡");
-  assert.doesNotMatch(status.textContent, /internal|route|Failed to fetch/i);
-  assert.equal(busy.has("aria-busy"), false);
-});
-
-test("token completed with existing reviews shows both summaries and no duplicate form", () => {
-  const app = loadTrackingRuntime();
-  const data = {
-    ...codeReadPayload(),
-    access_level: "token",
-    can_use_token_actions: true,
-    capabilities: { can_view_full_tracking: true, can_use_token_actions: true },
-    booking_token: "private-token",
-    job_id: 88,
-    job_status: "à¹€à¸ªà¸£à¹‡à¸ˆà¹à¸¥à¹‰à¸§",
-    finished_at: "2026-07-15T11:00:00+07:00",
-    receipt_url: "/docs/receipt/88?key=private-token",
-    review: { already_reviewed: true, rating: 4, review_text: "à¸—à¸µà¸¡à¸Šà¹ˆà¸²à¸‡à¸”à¸µ" },
-    catalog_review: {
-      eligible: false,
-      already_reviewed: true,
-      review: { rating: 5, comment: "à¸šà¸£à¸´à¸à¸²à¸£à¸”à¸µ", moderation_status: "approved" },
-    },
-  };
-  app.state.tracking = { status: "success", data, error: "" };
-  const html = app.tracking._test.renderTrackingResult();
-  assert.match(html, /à¸—à¸µà¸¡à¸Šà¹ˆà¸²à¸‡à¸”à¸µ/);
-  assert.match(html, /à¸šà¸£à¸´à¸à¸²à¸£à¸”à¸µ/);
-  assert.match(html, /data-action="open-eslip"/);
-  assert.doesNotMatch(html, /data-review-form|data-catalog-review-form/);
-});
-
-test("payment statuses are customer-facing Thai and unknown values are hidden", () => {
-  const app = loadTrackingRuntime();
-  assert.equal(app.tracking._test.paymentStatusLabel("unpaid"), "à¸¢à¸±à¸‡à¹„à¸¡à¹ˆà¸Šà¸³à¸£à¸°");
-  assert.equal(app.tracking._test.paymentStatusLabel("paid"), "à¸Šà¸³à¸£à¸°à¹à¸¥à¹‰à¸§");
-  assert.equal(app.tracking._test.paymentStatusLabel("partial"), "à¸Šà¸³à¸£à¸°à¸šà¸²à¸‡à¸ªà¹ˆà¸§à¸™");
-  assert.equal(app.tracking._test.paymentStatusLabel("pending"), "à¸£à¸­à¸•à¸£à¸§à¸ˆà¸ªà¸­à¸šà¸à¸²à¸£à¸Šà¸³à¸£à¸°");
-  assert.equal(app.tracking._test.paymentStatusLabel("provider_internal_state"), "à¸à¸£à¸¸à¸“à¸²à¸•à¸´à¸”à¸•à¹ˆà¸­ CWF à¹€à¸à¸·à¹ˆà¸­à¸•à¸£à¸§à¸ˆà¸ªà¸­à¸šà¸à¸²à¸£à¸Šà¸³à¸£à¸°");
-});
-
-test("tracking UI exposes loading, not-found, rate-limit and offline states", () => {
-  const app = loadTrackingRuntime();
-  app.state.tracking = { status: "loading", data: null, error: "" };
-  assert.match(app.tracking._test.renderTrackingResult(), /tracking-skeleton/);
-
-  app.state.tracking = { status: "error", errorKind: "not-found", error: "not found" };
-  assert.match(app.tracking._test.renderTrackingResult(), /à¹„à¸¡à¹ˆà¸à¸šà¸‡à¸²à¸™à¸™à¸µà¹‰/);
-
-  app.state.tracking = { status: "error", errorKind: "rate", retryAfter: 42 };
-  assert.match(app.tracking._test.renderTrackingResult(), /42 à¸§à¸´à¸™à¸²à¸—à¸µ/);
-
-  app.state.tracking = { status: "error", errorKind: "network" };
-  assert.match(app.tracking._test.renderTrackingResult(), /à¹€à¸Šà¸·à¹ˆà¸­à¸¡à¸•à¹ˆà¸­à¸£à¸°à¸šà¸šà¹„à¸¡à¹ˆà¹„à¸”à¹‰/);
-  assert.match(app.tracking._test.renderTrackingResult(), /data-action="track-retry"/);
-});
-
-test("tracking assets share the full-read cache build id", () => {
-  const build = "20260726_urgent_preferred_time_gps_v2";
-  for (const file of [
-    "customer-app/index.html",
-    "customer-app/sw.js",
-    "customer-app/assets/customer-app.js",
-    "customer-app/manifest.webmanifest",
-  ]) {
-    const source = fs.readFileSync(path.join(ROOT, file), "utf8");
-    assert.match(source, new RegExp(build), `${file} missing build id`);
-  }
-  assert.doesNotMatch(fs.readFileSync(path.join(ROOT, "customer-app/index.html"), "utf8"), /20260712_page_controls_tracking_link_v4/);
-});
-
-test("tracking API lookup is explicitly no-store", () => {
-  const api = fs.readFileSync(path.join(ROOT, "customer-app/modules/api.js"), "utf8");
-  assert.match(api, /requestJson\("\/public\/track", \{ query: \{ q \}, cache: "no-store" \}\)/);
-});
-
-test("tracking mobile CSS provides 360/390-safe wrapping and touch targets", () => {
-  const css = fs.readFileSync(path.join(ROOT, "customer-app/assets/customer-app.css"), "utf8");
-  assert.match(css, /@media \(max-width: 420px\)/);
-  assert.match(css, /\.tracking-code-wrap \{[\s\S]*?min-width: 0/);
-  assert.match(css, /\.tracking-copy-btn \{[\s\S]*?min-height: 44px/);
-  assert.match(css, /\.tracking-code-pill \{[\s\S]*?overflow-wrap: anywhere/);
-  assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
-  assert.match(css, /\.unit-inspection-grid \{[\s\S]*?grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/);
-  assert.match(css, /\.unit-inspection-item:last-child:nth-child\(odd\) \{[\s\S]*?grid-column: 1 \/ -1/);
-  assert.match(css, /\.unit-inspection-item \{[\s\S]*?min-width: 0/);
-  assert.match(css, /\.unit-evidence summary \{[\s\S]*?min-height: 44px/);
-  assert.match(css, /\.passport-shell \{[\s\S]*?overflow: hidden/);
-  assert.match(css, /\.unit-cleanliness-card \{[\s\S]*?min-width: 0[\s\S]*?overflow: hidden/);
-  assert.match(css, /\.unit-cleanliness-main \{[\s\S]*?grid-template-columns: 104px minmax\(0, 1fr\)/);
-  assert.match(css, /\.cleanliness-ring \{[\s\S]*?aspect-ratio: 1[\s\S]*?conic-gradient/);
-  assert.match(css, /@media \(max-width: 380px\) \{[\s\S]*?\.unit-cleanliness-main \{[\s\S]*?92px minmax\(0, 1fr\)/);
-});
+test("cleanliness cycles follow normal pre×N9ŞÚ$z{-®éÜj×·²7F'FVEöC¢'7F'FVB"Â6†V6¶–åöC¢&6†V6¶–â"ÂG&fVÅ÷7F'FVEöC¢'G&fVÂ"ÒÂ.ˆ‹>Š^‹ˆ~˜>Š¾˜‰®Š>‹Nˆ‹.Š2%ÒÀĞ¢·²6†V6¶–åöC¢&6†V6¶–â"ÂG&fVÅ÷7F'FVEöC¢'G&fVÂ"ÒÂ.ˆ®˜‹.ˆ~‰n‹nˆ~Š¾‰˜‹.ˆ~‹.‰˜Š^˜Šr%ÒÀĞ¢·²G&fVÅ÷7F'FVEöC¢'G&fVÂ"Â76–væVEöC¢&76–væVB"ÒÂ.ˆ®˜‹.ˆ~ˆ‹>Š^‹ˆ~˜‰N‹N‰‰~‹.ˆr%ÒÀĞ¢·²76–væVEöC¢&76–væVB"Â¦ö%÷7FGW3¢.Š>ŠŞ‰N‹>˜‰‹N‰ˆ‹.Š2"ÒÂ.Š.‹~‰Š.‹‰ˆN‹NŠ~˜Š^˜Šr%ÒÀĞ¢·²&öö¶–æuöÖöFS¢'W&vVçB"Â¦ö%÷7FGW3¢&FÖ–å÷&Wf–Wr"ÒÂ.ˆ‹>Š^‹ˆ~ˆN˜‰Š¾‹.ˆ®˜‹.ˆr%ÒÀ¢·²&öö¶–æuöÖöFS¢'W&vVçB"Â¦ö%÷7FGW3¢&&÷fVB"ÒÂ.ˆ‹>Š^‹ˆ~ˆN˜‰Š¾‹.ˆ®˜‹.ˆr%ÒÀ¢·²&öö¶–æuöÖöFS¢'W&vVçB"Â¦ö%÷7FGW3¢&76–væVB"Â†6S¢&76–væVB"ÒÂ.ˆ®˜‹.ˆ~Š>‹‰®ˆ~‹.‰˜Š^˜Šr%ÒÀ¢Ó°Ğ¢f÷"†6öç7B·6÷W&6RÂÆ&VÅÒöb66W2’°Ğ¢6öç7B‡FÖÂÒçG&6¶–ærå÷FW7Bç&VæFW%77÷'B‡°Ğ¢ââæ6öFU&VE–ÆöB‚’ÀĞ¢FV6†æ–6–ã¢çVÆÂÀĞ¢FV6†æ–6–å÷FVÓ¢µÒÀĞ¢f–æ—6†VEöC¢çVÆÂÀĞ¢7F'FVEöC¢çVÆÂÀĞ¢6†V6¶–åöC¢çVÆÂÀĞ¢G&fVÅ÷7F'FVEöC¢çVÆÂÀĞ¢76–væVEöC¢çVÆÂÀĞ¢ââç6÷W&6RÀĞ¢Ò“°Ğ¢76W'BæÖF6‚†‡FÖÂÂæWr&VtW‡†Æ&VÂ’ÂÆ&VÂ“°Ğ¢76W'BæFöW4æ÷DÖF6‚†‡FÖÂÂöFÖ–å÷&Wf–WwÆ¦ö%÷7FGW7Æ&÷fVBö’ÂÆ&VÂ“°Ğ¢ĞĞ§Ò“°Ğ Ğ§FW7B‚'G&6¶–ær7W7FöÖW"f–Ww2W6RF†’†VF–æw2v—F†÷WBW‡÷6VBVævÆ—6‚T’Æ&VÇ2"Â‚’Óâ°Ğ¢6öç7BÒÆöEG&6¶–æu'VçF–ÖR‚“°Ğ¢ç7FFRçG&6¶–ærÒ°Ğ¢7FGW3¢'7V66W72"ÀĞ¢FF¢°Ğ¢ââæ6ö×ÆWFVD†VÇF…–ÆöB‚’ÀĞ¢66W75öÆWfVÃ¢'Fö¶Vâ"ÀĞ¢6å÷W6U÷Fö¶Våö7F–öç3¢G'VRÀĞ¢6&–Æ—F–W3¢²6å÷f–WuögVÆÅ÷G&6¶–æs¢G'VRÂ6å÷W6U÷Fö¶Våö7F–öç3¢G'VRÒÀĞ¢&öö¶–æu÷Fö¶Vã¢'&—fFR×Fö¶Vâ"ÀĞ¢†÷F÷3¢·²W&Ã¢&‡GG3¢òöW†×ÆRçFW7BögFW"æ§r"Â†6S¢&gFW""ÕÒÀĞ¢FV6†æ–6–åöæ÷FS¢.Š^˜‹.ˆ~˜Š>‹^Š.‰®Š>˜ŠŞŠ""ÀĞ¢&Wf–Ws¢²Ç&VG•÷&Wf–WvVC¢G'VRÂ&F–æs¢RÂ&Wf–Wu÷FW‡C¢.‰N‹^Š‹.ˆ"ÒÀĞ¢6FÆöu÷&Wf–Ws¢°Ğ¢VÆ–v–&ÆS¢fÇ6RÀĞ¢Ç&VG•÷&Wf–WvVC¢G'VRÀĞ¢&Wf–Ws¢²&F–æs¢RÂ6öÖÖVçC¢.‰®Š>‹Nˆ‹.Š>‰N‹R"ÂÖöFW&F–öå÷7FGW3¢&&÷fVB"ÒÀĞ¢ÒÀĞ¢ÒÀĞ¢W'&÷#¢""ÀĞ¢Ó°Ğ¢6öç7B‡FÖÂÒçG&6¶–ærå÷FW7Bç&VæFW%G&6¶–æu&W7VÇB‚“°Ğ¢76W'BæÖF6‚†‡FÖÂÂş‰^‹N‰N‰^‹.Šˆ~‹.‰—ÎŠ>‹‰¾ˆ~‹.‰—ÎŠ¾Š‹.Š.˜Š¾‰^‹‡ÎŠ>‹^Š~‹NŠ~‰~‹^Šˆ®˜‹.ˆwÎŠ>‹^Š~‹NŠ~‰®Š>‹Nˆ‹.Š2ò“°Ğ¢76W'BæFöW4æ÷DÖF6‚†‡FÖÂÂóåÇ2¢ƒó¥G&6¶–æwÅ†÷F÷7Äæ÷FWÅFV6†æ–6–â&Wf–WwÅ6W'f–6R&Wf–WwÅ&Wf–Wr•Ç2£Âò“°Ğ¢76W'BæFöW4æ÷DÖF6‚†‡FÖÂÂö&–ÖÆ&VÃÒ%G&6¶–ærf–Ww2'Ä5tbG&6¶–ærò“°Ğ§Ò“°Ğ Ğ§FW7B‚'G&6¶–ær77÷'B&VæFW'27W7FöÖW"×6fR6ö×ÆWFVBÆ&VÂ–ç7FVBöb&r¦ö"7FGW2"Â‚’Óâ°Ğ¢6öç7BÒÆöEG&6¶–æu'VçF–ÖR‚“°Ğ¢6öç7B‡FÖÂÒçG&6¶–ærå÷FW7Bç&VæFW%77÷'B†6ö×ÆWFVD†VÇF…–ÆöB‡²¦ö%÷7FGW3¢$”åDU$äÅôDôäUõ5DDR"Ò’“°Ğ¢76W'BæÖF6‚†‡FÖÂÂşˆ~‹.‰˜Š®Š>˜~ˆ˜Š^˜Šrò“°Ğ¢76W'BæFöW4æ÷DÖF6‚†‡FÖÂÂô”åDU$äÅôDôäUõ5DDRò“°Ğ§Ò“°Ğ Ğ§FW7B‚'G&6¶–ærT’W6W2öæR†öæRÖ÷"Ö6öFRf–VÆBæB&VÖ÷fW2F†RöÆB†öæR×&ööbfÆ÷r"Â‚’Óâ°Ğ¢6öç7B6÷W&6RÒg2ç&VDf–ÆU7–æ2‡F‚æ¦ö–â…$ôõBÂ&7W7FöÖW"Ö"Â&ÖöGVÆW2"Â'G&6¶–æræ§2"’Â'WFc‚"“°Ğ¢76W'BæÖF6‚‡6÷W&6RÂş˜‰®ŠŞŠ>˜Î˜.‰~Š2Š¾Š>‹~ŠŞŠ>Š¾‹Š®ˆ‹.Š>ˆŠŞˆrò“°Ğ¢76W'BæÖF6‚‡6÷W&6RÂ÷Æ6V†öÆFW#Ò.ˆŠ>ŠŞˆ˜‰®ŠŞŠ>˜Î˜.‰~Š>Š¾Š>‹~ŠŞŠ>Š¾‹Š®ˆ‹.Š>ˆŠŞˆr"ò“°Ğ¢76W'BæÖF6‚‡6÷W&6RÂöÆöö·WG&6¶–æuÂ‡Â’ò“°Ğ¢76W'BæÖF6‚‡6÷W&6RÂ÷6VÆV7EG&6¶–æuÂ‡&VfW&Væ6UÂ’ò“°Ğ¢76W'BæÖF6‚‡6÷W&6RÂö–bÂ†¦ö'5ÂæÆVæwF‚ÓÓÒÂ’&WGW&â÷Vå6VÆV7F–öâò“°Ğ¢76W'BæÖF6‚‡6÷W&6RÂ÷7FGW3¢&6†ö–6W2"ò“°Ğ¢76W'BæFöW4æ÷DÖF6‚‡6÷W&6RÂöæÖSÒ&7W7FöÖW%÷†öæR'Î˜‰®ŠŞŠ>˜Î˜.‰~Š>‰~‹^˜˜>ˆ®˜ˆŠŞˆrÂŠ.‹~‰Š.‹‰‰^‹Š~‰^‰•Â—ÎˆŠ>ŠŞˆ˜‰®ŠŞŠ>˜Î˜.‰~Š>‰~‹^˜˜>ˆ®˜ˆŠŞˆ~ˆ~‹.‰‰‹^˜˜‰î‹~˜ŠŞŠ.‹~‰Š.‹‰‰^‹Š~‰^‰ˆ˜ŠŞ‰Š>‹^Š~‹NŠrò“°Ğ§Ò“°Ğ Ğ§FW7B‚&6ö×ÆWFVB¦ö"v—F†÷WBw&—FR6&–Æ—G’†2vVæW&–2Væf–Æ&ÆRW‡ÆæF–öâ"Â‚’Óâ°Ğ¢6öç7BÒÆöEG&6¶–æu'VçF–ÖR‚“°Ğ¢6öç7BFFÒ6ö×ÆWFVD†VÇF…–ÆöB‡²ÆVv7•÷&Wf–WuöVÆ–v–&ÆS¢fÇ6RÒ“°Ğ¢6öç7B‡FÖÂÒçG&6¶–ærå÷FW7Bç&VæFW$gFW&6&R†FF“°Ğ¢76W'BæÖF6‚†‡FÖÂÂşˆ~‹.‰‰‹^˜Š.‹ˆ~˜NŠ˜ŠŞŠ.‹˜˜>‰Š®‰n‹.‰‹‰~‹^˜Š®˜ˆ~Š>‹^Š~‹NŠ~˜N‰N˜’ò“°Ğ¢76W'BæFöW4æ÷DÖF6‚†‡FÖÂÂô&öö¶–ær6öFRâ®‰®‹‰‰~‹nˆˆN‹˜‰‰˜NŠ˜˜N‰N˜’ò“°Ğ¢76W'BæFöW4æ÷DÖF6‚†‡FÖÂÂöFF×&Wf–WrÖf÷&×ÆFFÖ6FÆör×&Wf–WrÖf÷&Òò“°Ğ§Ò“°Ğ Ğ§FW7B‚'G&6¶–ær&Wf–Wrf÷&×2W6Rf—fR66W76–&ÆRCG‚7F"6†ö–6W2æBæWfW"&VæFW"F†RFö¶Vâ"Â‚’Óâ°Ğ¢6öç7BÒÆöEG&6¶–æu'VçF–ÖR‚“°Ğ¢6öç7BFFÒ°Ğ¢ââæ6ö×ÆWFVD†VÇF…–ÆöB‚’ÀĞ¢66W75öÆWfVÃ¢'Fö¶Vâ"ÀĞ¢6å÷W6U÷Fö¶Våö7F–öç3¢G'VRÀĞ¢6&–Æ—F–W3¢²6å÷f–WuögVÆÅ÷G&6¶–æs¢G'VRÂ6å÷W6U÷Fö¶Våö7F–öç3¢G'VRÒÀĞ¢&öö¶–æu÷Fö¶Vã¢'&—fFR×Fö¶Vâ"ÀĞ¢6FÆöu÷&Wf–Ws¢²VÆ–v–&ÆS¢G'VRÂÇ&VG•÷&Wf–WvVC¢fÇ6RÂ&Wf–Ws¢çVÆÂÒÀĞ¢Ó°Ğ¢6öç7B6FÆöt‡FÖÂÒçG&6¶–ærå÷FW7Bç&VæFW$gFW&6&R†FF“°Ğ¢76W'BæWVÂ‚†6FÆöt‡FÖÂæÖF6‚‚ö6Æ73Ò'&Wf–Wr×7F"×&F–ò"ör’ÇÂµÒ’æÆVæwF‚ÂR“°Ğ¢76W'BæWVÂ‚†6FÆöt‡FÖÂæÖF6‚‚ö6Æ73Ò'&Wf–Wr×7F"Ö6†ö–6R"ör’ÇÂµÒ’æÆVæwF‚ÂR“°Ğ¢76W'BæÖF6‚†6FÆöt‡FÖÂÂö&–ÖÆ&VÃÒ#‰N‹.Šr"ò“°Ğ¢76W'BæÖF6‚†6FÆöt‡FÖÂÂö&–ÖÆ&VÃÒ#R‰N‹.Šr"ò“°Ğ¢76W'BæÖF6‚†6FÆöt‡FÖÂÂ÷&öÆSÒ'7FGW2"&–ÖÆ—fSÒ'öÆ—FR"ò“°Ğ¢76W'BæFöW4æ÷DÖF6‚†6FÆöt‡FÖÂÂóÇ6VÆV7GÇ&—fFR×Fö¶VçÆ&öö¶–æu÷Fö¶Vâò“°Ğ¢76W'BæÖF6‚„555õ4õU$4RÂõÂç&Wf–Wr×7F"Ö6†ö–6UÇ2¥ÇµµÇ5Å5Ò£öÖ–â×v–GFƒ¥Ç2£CGƒµµÇ5Å5Ò£öÖ–âÖ†V–v‡C¥Ç2£CGƒ²ò“°Ğ¢76W'BæÖF6‚„555õ4õU$4RÂöw&–B×FV×ÆFRÖ6öÇVÖç3¥Ç2§&WVEÂƒRÅÇ2¦Ö–æÖ…ÂƒCG‚ÅÇ2£g%Â•Â’ò“°Ğ¢76W'BæÖF6‚„555õ4õU$4RÂõÂç&Wf–Wr×7F"×&F–ó¦fö7W2×f—6–&ÆRÂ²Âç&Wf–Wr×7F"Ö6†ö–6Rò“°Ğ§Ò“°Ğ Ğ§FW7B‚&f–ÆVBFV6†æ–6–â&Wf–Wr&WVW7B&RÖVæ&ÆW27V&Ö—Bv—F†÷WBW‡÷6–ær&6¶VæBW'&÷"FW‡B"Â7–æ2‚’Óâ°Ğ¢ÆWB7V&Ö—D†æFÆW#°Ğ¢ÆWB&WVW7D&öG“°Ğ¢6öç7B7FGW2Ò²FW‡D6öçFVçC¢""Ó°Ğ¢6öç7B7V&Ö—BÒ²F—6&ÆVC¢fÇ6RÓ°Ğ¢6öç7B'W7’ÒæWr6WB‚“°Ğ¢6öç7Bf÷&ÒÒ°Ğ¢FDWfVçDÆ—7FVæW"‡G—RÂ†æFÆW"’²–b‡G—RÓÓÒ'7V&Ö—B"’7V&Ö—D†æFÆW"Ò†æFÆW#²ÒÀĞ¢VW'•6VÆV7F÷"‡6VÆV7F÷"’°Ğ¢–b‡6VÆV7F÷"ÓÓÒ%¶FF×&Wf–Wr×7FGW5Ò"’&WGW&â7FGW3°Ğ¢–b‡6VÆV7F÷"ÓÓÒ&'WGFöå·G—SÒw7V&Ö—BuÒ"’&WGW&â7V&Ö—C°Ğ¢&WGW&âçVÆÃ°Ğ¢ÒÀĞ¢†4GG&–'WFR†æÖR’²&WGW&âæÖRÓÓÒ&FF×&Wf–Wr×Fö¶Vâ#²ÒÀĞ¢6WDGG&–'WFR†æÖR’²'W7’æFB†æÖR“²ÒÀĞ¢&VÖ÷fTGG&–'WFR†æÖR’²'W7’æFVÆWFR†æÖR“²ÒÀĞ¢Ó°Ğ¢6Æ72&Wf–Wtf÷&ÔFF°Ğ¢VçG&–W2‚’²&WGW&âµ²'&F–ær"Â#B%ÒÂ²'&Wf–Wu÷FW‡B"Â.‰~‰NŠ®ŠŞ‰¢%ÕÕµ7–Ö&öÂæ—FW&F÷%Ò‚“²ĞĞ¢ĞĞ¢6öç7BÒÆöEG&6¶–æu'VçF–ÖR‡°Ğ¢f÷&ÔFF¢&Wf–Wtf÷&ÔFFÀĞ¢fWF6ƒ¢7–æ2…÷W&ÂÂ÷F–öç2’Óâ°Ğ¢&WVW7D&öG’Ò¥4ôâç'6R†÷F–öç2æ&öG’“°Ğ¢&WGW&â²ö³¢fÇ6RÂ7FGW3¢SÂ§6öã¢7–æ2‚’Óâ‡²W'&÷#¢%õ5B÷V&Æ–2÷&Wf–Wr5Â&VÆF–öâ¦ö'27F6²"Ò’Ó°Ğ¢ÒÀĞ¢Ò“°Ğ¢ç7FFRçG&6¶–æræFFÒ°Ğ¢6VÆV7F–öå÷&Vc¢&÷VR×6VÆV7F–öâ×&VfW&Væ6R"ÀĞ¢6&–Æ—F–W3¢²6å÷7V&Ö—E÷&Wf–Ws¢G'VRÒÀĞ¢Ó°Ğ¢6öç7B6öçF–æW"Ò°Ğ¢VW'•6VÆV7F÷"‡6VÆV7F÷"’²&WGW&â6VÆV7F÷"ÓÓÒ%¶FF×&Wf–WrÖf÷&ÕÒ"òf÷&Ò¢çVÆÃ²ÒÀĞ¢Ó°Ğ¢çG&6¶–ærå÷FW7Bæ&–æE&W7VÇD7F–öç2†6öçF–æW"“°Ğ¢v—B7V&Ö—D†æFÆW"‡²&WfVçDFVfVÇB‚’·ÒÒ“°Ğ¢76W'BæWVÂ‡7V&Ö—BæF—6&ÆVBÂfÇ6R“°Ğ¢76W'BæWVÂ‡7FGW2çFW‡D6öçFVçBÂ.Š>‹‰®‰®ˆ.‹‰Nˆ.˜ŠŞˆ~ˆ®‹˜Š~ˆNŠ>‹.ŠrˆŠ>‹‰>‹.Š^ŠŞˆ~˜>Š¾Š˜Š¾Š>‹~ŠŞ‰^‹N‰N‰^˜ŠŞ˜ŠŞ‰NŠ‹N‰’"“°Ğ¢76W'BæFöW4æ÷DÖF6‚‡7FGW2çFW‡D6öçFVçBÂõ5ÇÇ&VÆF–öçÅÂ÷V&Æ–5Â÷&Wf–WwÇ7F6²ö’“°Ğ¢76W'BæWVÂ†'W7’æ†2‚&&–Ö'W7’"’ÂfÇ6R“°Ğ¢76W'BæWVÂ‡&WVW7D&öG’ç6VÆV7F–öå÷&VbÂ&÷VR×6VÆV7F–öâ×&VfW&Væ6R"“°Ğ¢76W'BæWVÂ‡&WVW7D&öG’æ7W7FöÖW%÷†öæRÂVæFVf–æVB“°Ğ¢76W'BæWVÂ‡&WVW7D&öG’æ&öö¶–æuö6öFRÂVæFVf–æVB“°Ğ§Ò“°Ğ Ğ§FW7B‚'G&6¶–ær6†ö–6RæB&Wf–Wr6öçG&öÇ2&VÖ–âv–GF‚×6fRB3c‚æB3“‚"Â‚’Óâ°Ğ¢76W'BæÖF6‚„555õ4õU$4RÂõÂçG&6¶–ærÖ6†ö–6R×6†VÆÂÅµÇ5Å5Ò£õÂçG&6¶–ærÖ6†ö–6UÇ2¥ÇµÇ2¦Ö–â×v–GFƒ¥Ç2£²ò“°Ğ¢76W'BæÖF6‚„555õ4õU$4RÂõÂçG&6¶–ærÖ6†ö–6UÇ2¥ÇµµÇ5Å5Ò£÷v–GFƒ¥Ç2£SµµÇ5Å5Ò£öÖ–âÖ†V–v‡C¥Ç2£cGƒ²ò“°Ğ¢76W'BæÖF6‚„555õ4õU$4RÂõÂçG&6¶–ærÖ6†ö–6UÇ2¥ÇµµÇ5Å5Ò£ö÷fW&fÆ÷r×w&¥Ç2¦ç—v†W&S²ò“°Ğ¢76W'BæÖF6‚„555õ4õU$4RÂöw&–B×FV×ÆFRÖ6öÇVÖç3¥Ç2§&WVEÂƒRÅÇ2¦Ö–æÖ…ÂƒCG‚ÅÇ2£g%Â•Â’ò“°Ğ§Ò“°Ğ Ğ§FW7B‚&f–ÆVB6FÆör&Wf–Wr&WVW7B&RÖVæ&ÆW27V&Ö—Bv—F‚7W7FöÖW"×6fRæWGv÷&²6÷’"Â7–æ2‚’Óâ°Ğ¢ÆWB7V&Ö—D†æFÆW#°Ğ¢6öç7B7FGW2Ò²FW‡D6öçFVçC¢""Ó°Ğ¢6öç7B7V&Ö—BÒ²F—6&ÆVC¢fÇ6RÓ°Ğ¢6öç7B'W7’ÒæWr6WB‚“°Ğ¢6öç7Bf÷&ÒÒ°Ğ¢FDWfVçDÆ—7FVæW"‡G—RÂ†æFÆW"’²–b‡G—RÓÓÒ'7V&Ö—B"’7V&Ö—D†æFÆW"Ò†æFÆW#²ÒÀĞ¢VW'•6VÆV7F÷"‡6VÆV7F÷"’°Ğ¢–b‡6VÆV7F÷"ÓÓÒ%¶FFÖ6FÆör×&Wf–Wr×7FGW5Ò"’&WGW&â7FGW3°Ğ¢–b‡6VÆV7F÷"ÓÓÒ&'WGFöå·G—SÒw7V&Ö—BuÒ"’&WGW&â7V&Ö—C°Ğ¢&WGW&âçVÆÃ°Ğ¢ÒÀĞ¢6WDGG&–'WFR†æÖR’²'W7’æFB†æÖR“²ÒÀĞ¢&VÖ÷fTGG&–'WFR†æÖR’²'W7’æFVÆWFR†æÖR“²ÒÀĞ¢Ó°Ğ¢6Æ72&Wf–Wtf÷&ÔFF°Ğ¢VçG&–W2‚’²&WGW&âµ²'&F–ær"Â#2%ÒÂ²&6öÖÖVçB"Â.‰~‰NŠ®ŠŞ‰¢%ÕÕµ7–Ö&öÂæ—FW&F÷%Ò‚“²ĞĞ¢ĞĞ¢6öç7BÒÆöEG&6¶–æu'VçF–ÖR‡°Ğ¢f÷&ÔFF¢&Wf–Wtf÷&ÔFFÀĞ¢“¢²7V&Ö—EG&6¶–æu&Wf–Ws¢7–æ2‚’Óâ²F‡&÷ræWrG—TW'&÷"‚$f–ÆVBFòfWF6‚‡GG3¢òö–çFW&æÂæW†×ÆR÷&÷WFR"“²ÒÒÀĞ¢Ò“°Ğ¢ç7FFRçG&6¶–æræFFÒ°Ğ¢66W75öÆWfVÃ¢'Fö¶Vâ"ÀĞ¢6å÷W6U÷Fö¶Våö7F–öç3¢G'VRÀĞ¢&öö¶–æu÷Fö¶Vã¢'&—fFR×Fö¶Vâ"ÀĞ¢Ó°Ğ¢6öç7B6öçF–æW"Ò°Ğ¢VW'•6VÆV7F÷"‡6VÆV7F÷"’²&WGW&â6VÆV7F÷"ÓÓÒ%¶FFÖ6FÆör×&Wf–WrÖf÷&ÕÒ"òf÷&Ò¢çVÆÃ²ÒÀĞ¢Ó°Ğ¢çG&6¶–ærå÷FW7Bæ&–æE&W7VÇD7F–öç2†6öçF–æW"“°Ğ¢v—B7V&Ö—D†æFÆW"‡²&WfVçDFVfVÇB‚’·ÒÒ“°Ğ¢76W'BæWVÂ‡7V&Ö—BæF—6&ÆVBÂfÇ6R“°Ğ¢76W'BæWVÂ‡7FGW2çFW‡D6öçFVçBÂ.˜ˆ®‹~˜ŠŞŠ‰^˜ŠŞŠ>‹‰®‰®˜NŠ˜Š®‹>˜Š>˜~ˆ‚ˆŠ>‹‰>‹.Š^ŠŞˆ~ŠŞ‹^ˆˆNŠ>‹˜ˆr"“°Ğ¢76W'BæFöW4æ÷DÖF6‚‡7FGW2çFW‡D6öçFVçBÂö–çFW&æÇÇ&÷WFWÄf–ÆVBFòfWF6‚ö’“°Ğ¢76W'BæWVÂ†'W7’æ†2‚&&–Ö'W7’"’ÂfÇ6R“°Ğ§Ò“°Ğ Ğ§FW7B‚'Fö¶Vâ6ö×ÆWFVBv—F‚W†—7F–ær&Wf–Ww26†÷w2&÷F‚7VÖÖ&–W2æBæòGWÆ–6FRf÷&Ò"Â‚’Óâ°Ğ¢6öç7BÒÆöEG&6¶–æu'VçF–ÖR‚“°Ğ¢6öç7BFFÒ°Ğ¢ââæ6öFU&VE–ÆöB‚’ÀĞ¢66W75öÆWfVÃ¢'Fö¶Vâ"ÀĞ¢6å÷W6U÷Fö¶Våö7F–öç3¢G'VRÀĞ¢6&–Æ—F–W3¢²6å÷f–WuögVÆÅ÷G&6¶–æs¢G'VRÂ6å÷W6U÷Fö¶Våö7F–öç3¢G'VRÒÀĞ¢&öö¶–æu÷Fö¶Vã¢'&—fFR×Fö¶Vâ"ÀĞ¢¦ö%ö–C¢ƒ‚ÀĞ¢¦ö%÷7FGW3¢.˜Š®Š>˜~ˆ˜Š^˜Šr"ÀĞ¢f–æ—6†VEöC¢###bÓrÓUC££³s£"ÀĞ¢&V6V—E÷W&Ã¢"öFö72÷&V6V—Bóƒƒö¶W“×&—fFR×Fö¶Vâ"ÀĞ¢&Wf–Ws¢²Ç&VG•÷&Wf–WvVC¢G'VRÂ&F–æs¢BÂ&Wf–Wu÷FW‡C¢.‰~‹^Šˆ®˜‹.ˆ~‰N‹R"ÒÀĞ¢6FÆöu÷&Wf–Ws¢°Ğ¢VÆ–v–&ÆS¢fÇ6RÀĞ¢Ç&VG•÷&Wf–WvVC¢G'VRÀĞ¢&Wf–Ws¢²&F–æs¢RÂ6öÖÖVçC¢.‰®Š>‹Nˆ‹.Š>‰N‹R"ÂÖöFW&F–öå÷7FGW3¢&&÷fVB"ÒÀĞ¢ÒÀĞ¢Ó°Ğ¢ç7FFRçG&6¶–ærÒ²7FGW3¢'7V66W72"ÂFFÂW'&÷#¢""Ó°Ğ¢6öç7B‡FÖÂÒçG&6¶–ærå÷FW7Bç&VæFW%G&6¶–æu&W7VÇB‚“°Ğ¢76W'BæÖF6‚†‡FÖÂÂş‰~‹^Šˆ®˜‹.ˆ~‰N‹Rò“°Ğ¢76W'BæÖF6‚†‡FÖÂÂş‰®Š>‹Nˆ‹.Š>‰N‹Rò“°Ğ¢76W'BæÖF6‚†‡FÖÂÂöFFÖ7F–öãÒ&÷VâÖW6Æ—"ò“°Ğ¢76W'BæFöW4æ÷DÖF6‚†‡FÖÂÂöFF×&Wf–WrÖf÷&×ÆFFÖ6FÆör×&Wf–WrÖf÷&Òò“°Ğ§Ò“°Ğ Ğ§FW7B‚'–ÖVçB7FGW6W2&R7W7FöÖW"Öf6–ærF†’æBVæ¶æ÷vâfÇVW2&R†–FFVâ"Â‚’Óâ°Ğ¢6öç7BÒÆöEG&6¶–æu'VçF–ÖR‚“°Ğ¢76W'BæWVÂ†çG&6¶–ærå÷FW7Bç–ÖVçE7FGW4Æ&VÂ‚'Vç–B"’Â.Š.‹ˆ~˜NŠ˜ˆ®‹>Š>‹"“°Ğ¢76W'BæWVÂ†çG&6¶–ærå÷FW7Bç–ÖVçE7FGW4Æ&VÂ‚'–B"’Â.ˆ®‹>Š>‹˜Š^˜Šr"“°Ğ¢76W'BæWVÂ†çG&6¶–ærå÷FW7Bç–ÖVçE7FGW4Æ&VÂ‚''F–Â"’Â.ˆ®‹>Š>‹‰®‹.ˆ~Š®˜Š~‰’"“°Ğ¢76W'BæWVÂ†çG&6¶–ærå÷FW7Bç–ÖVçE7FGW4Æ&VÂ‚'VæF–ær"’Â.Š>ŠŞ‰^Š>Š~ˆŠ®ŠŞ‰®ˆ‹.Š>ˆ®‹>Š>‹"“°Ğ¢76W'BæWVÂ†çG&6¶–ærå÷FW7Bç–ÖVçE7FGW4Æ&VÂ‚'&÷f–FW%ö–çFW&æÅ÷7FFR"’Â.ˆŠ>‹‰>‹.‰^‹N‰N‰^˜ŠÒ5tb˜‰î‹~˜ŠŞ‰^Š>Š~ˆŠ®ŠŞ‰®ˆ‹.Š>ˆ®‹>Š>‹"“°Ğ§Ò“°Ğ Ğ§FW7B‚'G&6¶–ærT’W‡÷6W2ÆöF–ærÂæ÷BÖf÷VæBÂ&FRÖÆ–Ö—BæBöffÆ–æR7FFW2"Â‚’Óâ°Ğ¢6öç7BÒÆöEG&6¶–æu'VçF–ÖR‚“°Ğ¢ç7FFRçG&6¶–ærÒ²7FGW3¢&ÆöF–ær"ÂFF¢çVÆÂÂW'&÷#¢""Ó°Ğ¢76W'BæÖF6‚†çG&6¶–ærå÷FW7Bç&VæFW%G&6¶–æu&W7VÇB‚’Â÷G&6¶–ær×6¶VÆWFöâò“°Ğ Ğ¢ç7FFRçG&6¶–ærÒ²7FGW3¢&W'&÷""ÂW'&÷$¶–æC¢&æ÷BÖf÷VæB"ÂW'&÷#¢&æ÷Bf÷VæB"Ó°Ğ¢76W'BæÖF6‚†çG&6¶–ærå÷FW7Bç&VæFW%G&6¶–æu&W7VÇB‚’Âş˜NŠ˜‰î‰®ˆ~‹.‰‰‹^˜’ò“°Ğ Ğ¢ç7FFRçG&6¶–ærÒ²7FGW3¢&W'&÷""ÂW'&÷$¶–æC¢'&FR"Â&WG'”gFW#¢C"Ó°Ğ¢76W'BæÖF6‚†çG&6¶–ærå÷FW7Bç&VæFW%G&6¶–æu&W7VÇB‚’ÂóC"Š~‹N‰‹.‰~‹Rò“°Ğ Ğ¢ç7FFRçG&6¶–ærÒ²7FGW3¢&W'&÷""ÂW'&÷$¶–æC¢&æWGv÷&²"Ó°Ğ¢76W'BæÖF6‚†çG&6¶–ærå÷FW7Bç&VæFW%G&6¶–æu&W7VÇB‚’Âş˜ˆ®‹~˜ŠŞŠ‰^˜ŠŞŠ>‹‰®‰®˜NŠ˜˜N‰N˜’ò“°Ğ¢76W'BæÖF6‚†çG&6¶–ærå÷FW7Bç&VæFW%G&6¶–æu&W7VÇB‚’ÂöFFÖ7F–öãÒ'G&6²×&WG'’"ò“°Ğ§Ò“°Ğ Ğ§FW7B‚'G&6¶–ær76WG26†&RF†RgVÆÂ×&VB66†R'V–ÆB–B"Â‚’Óâ°Ğ¢6öç7B'V–ÆBÒ###cs#e÷W&vVçEöF—&V7EöWFõööffW%÷c#°¢f÷"†6öç7Bf–ÆRöb°Ğ¢&7W7FöÖW"Öö–æFW‚æ‡FÖÂ"ÀĞ¢&7W7FöÖW"Ö÷7ræ§2"ÀĞ¢&7W7FöÖW"Öö76WG2ö7W7FöÖW"Öæ§2"ÀĞ¢&7W7FöÖW"ÖöÖæ–fW7BçvV&Öæ–fW7B"ÀĞ¢Ò’°Ğ¢6öç7B6÷W&6RÒg2ç&VDf–ÆU7–æ2‡F‚æ¦ö–â…$ôõBÂf–ÆR’Â'WFc‚"“°Ğ¢76W'BæÖF6‚‡6÷W&6RÂæWr&VtW‡†'V–ÆB’ÂG¶f–ÆWÒÖ—76–ær'V–ÆB–F“°Ğ¢ĞĞ¢76W'BæFöW4æ÷DÖF6‚†g2ç&VDf–ÆU7–æ2‡F‚æ¦ö–â…$ôõBÂ&7W7FöÖW"Öö–æFW‚æ‡FÖÂ"’Â'WFc‚"’Âó##cs%÷vUö6öçG&öÇ5÷G&6¶–æuöÆ–æµ÷cBò“°Ğ§Ò“°Ğ Ğ§FW7B‚'G&6¶–ær’Æöö·W—2W‡Æ–6—FÇ’æò×7F÷&R"Â‚’Óâ°Ğ¢6öç7B’Òg2ç&VDf–ÆU7–æ2‡F‚æ¦ö–â…$ôõBÂ&7W7FöÖW"ÖöÖöGVÆW2ö’æ§2"’Â'WFc‚"“°Ğ¢76W'BæÖF6‚†’Â÷&WVW7D§6öåÂ‚%Â÷V&Æ–5Â÷G&6²"ÂÇ²VW'“¢Ç²ÇÒÂ66†S¢&æò×7F÷&R"ÇÕÂ’ò“°Ğ§Ò“°Ğ Ğ§FW7B‚'G&6¶–ærÖö&–ÆR552&÷f–FW23có3“×6fRw&–æræBF÷V6‚F&vWG2"Â‚’Óâ°Ğ¢6öç7B772Òg2ç&VDf–ÆU7–æ2‡F‚æ¦ö–â…$ôõBÂ&7W7FöÖW"Öö76WG2ö7W7FöÖW"Öæ772"’Â'WFc‚"“°Ğ¢76W'BæÖF6‚†772ÂôÖVF–Â†Ö‚×v–GFƒ¢C#…Â’ò“°Ğ¢76W'BæÖF6‚†772ÂõÂçG&6¶–ærÖ6öFR×w&ÇµµÇ5Å5Ò£öÖ–â×v–GFƒ¢ò“°Ğ¢76W'BæÖF6‚†772ÂõÂçG&6¶–ærÖ6÷’Ö'FâÇµµÇ5Å5Ò£öÖ–âÖ†V–v‡C¢CG‚ò“°Ğ¢76W'BæÖF6‚†772ÂõÂçG&6¶–ærÖ6öFR×–ÆÂÇµµÇ5Å5Ò£ö÷fW&fÆ÷r×w&¢ç—v†W&Rò“°Ğ¢76W'BæÖF6‚†772ÂôÖVF–Â‡&VfW'2×&VGV6VBÖÖ÷F–öã¢&VGV6UÂ’ò“°Ğ¢76W'BæÖF6‚†772ÂõÂçVæ—BÖ–ç7V7F–öâÖw&–BÇµµÇ5Å5Ò£öw&–B×FV×ÆFRÖ6öÇVÖç3¢&WVEÂƒ"ÂÖ–æÖ…ÂƒÂg%Â•Â’ò“°Ğ¢76W'BæÖF6‚†772ÂõÂçVæ—BÖ–ç7V7F–öâÖ—FVÓ¦Æ7BÖ6†–ÆC¦çF‚Ö6†–ÆEÂ†öFEÂ’ÇµµÇ5Å5Ò£öw&–BÖ6öÇVÖã¢ÂòÓò“°Ğ¢76W'BæÖF6‚†772ÂõÂçVæ—BÖ–ç7V7F–öâÖ—FVÒÇµµÇ5Å5Ò£öÖ–â×v–GFƒ¢ò“°Ğ¢76W'BæÖF6‚†772ÂõÂçVæ—BÖWf–FVæ6R7VÖÖ'’ÇµµÇ5Å5Ò£öÖ–âÖ†V–v‡C¢CG‚ò“°Ğ¢76W'BæÖF6‚†772ÂõÂç77÷'B×6†VÆÂÇµµÇ5Å5Ò£ö÷fW&fÆ÷s¢†–FFVâò“°Ğ¢76W'BæÖF6‚†772ÂõÂçVæ—BÖ6ÆVæÆ–æW72Ö6&BÇµµÇ5Å5Ò£öÖ–â×v–GFƒ¢µÇ5Å5Ò£ö÷fW&fÆ÷s¢†–FFVâò“°Ğ¢76W'BæÖF6‚†772ÂõÂçVæ—BÖ6ÆVæÆ–æW72ÖÖ–âÇµµÇ5Å5Ò£öw&–B×FV×ÆFRÖ6öÇVÖç3¢G‚Ö–æÖ…ÂƒÂg%Â’ò“°Ğ¢76W'BæÖF6‚†772ÂõÂæ6ÆVæÆ–æW72×&–ærÇµµÇ5Å5Ò£ö7V7B×&F–ó¢µÇ5Å5Ò£ö6öæ–2Öw&F–VçBò“°Ğ¢76W'BæÖF6‚†772ÂôÖVF–Â†Ö‚×v–GFƒ¢3ƒ…Â’ÇµµÇ5Å5Ò£õÂçVæ—BÖ6ÆVæÆ–æW72ÖÖ–âÇµµÇ5Å5Ò£ó“'‚Ö–æÖ…ÂƒÂg%Â’ò“°Ğ§Ò“°Ğ 

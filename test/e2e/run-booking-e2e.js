@@ -26,7 +26,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const { Pool, Client } = require("pg");
-const { chromium } = require("playwright");
+const chromium = process.env.E2E_API_ONLY === "1" ? null : require("playwright").chromium;
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const PG = {
@@ -91,7 +91,7 @@ function assert(cond, msg) { if (!cond) throw new Error(msg); }
 // under test is exactly the schema the app declares.
 function extractCreateTableStatements(src) {
   const out = [];
-  const re = /CREATE TABLE IF NOT EXISTS public\.([a-z_]+)\s*\(/g;
+  const re = /CREATE TABLE IF NOT EXISTS public\.([a-z0-9_]+)\s*\(/g;
   let m;
   while ((m = re.exec(src))) {
     let i = re.lastIndex;
@@ -200,8 +200,12 @@ function bootApp(port, extraEnv = {}) {
       DB_PASSWORD: PG.password, DB_NAME,
       PORT: String(port),
       CWF_JWT_SECRET: "e2e-test-secret",
+      ...(process.env.E2E_API_ONLY === "1"
+        ? { NODE_OPTIONS: `--require=${path.join(__dirname, "local-postgres-preload.js")}` }
+        : {}),
       ENABLE_CUSTOMER_SCHEDULED_BOOKING: "true",
-      ENABLE_CUSTOMER_URGENT_BOOKING: "true",
+      // Customer urgent must ignore this legacy ENV and use the persisted CMS switch.
+      ENABLE_CUSTOMER_URGENT_BOOKING: "false",
       ...extraEnv,
     },
     stdio: ["ignore", out, out],
@@ -229,7 +233,7 @@ async function assertCoreSchema() {
     "jobs", "job_offers", "job_items", "job_promotions",
     "technician_service_matrix", "technician_monthly_work_calendar",
     "catalog_items", "customer_service_price_rules", "auth_sessions",
-    "users", "technician_profiles",
+    "users", "technician_profiles", "job_updates_v2",
   ];
   const r = await pool.query(
     `SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_name = ANY($1::text[])`,
@@ -307,961 +311,4 @@ async function seedAdminSession() {
 
 // ------------------------------------------------------------ ui drivers ----
 
-async function fillContactStep(page, { name = "à¸¥à¸¹à¸à¸„à¹‰à¸² à¸—à¸”à¸ªà¸­à¸š", phone = "0812345678", address = "99/1 à¸«à¸¡à¸¹à¹ˆà¸šà¹‰à¸²à¸™à¸—à¸”à¸ªà¸­à¸š à¸–à¸™à¸™à¸­à¹ˆà¸­à¸™à¸™à¸¸à¸Š à¹€à¸‚à¸•à¸ªà¸§à¸™à¸«à¸¥à¸§à¸‡ à¸à¸—à¸¡ 10250" } = {}) {
-  await page.locator('[data-scheduled-field="customer_name"]').fill(name);
-  await page.locator('[data-scheduled-field="customer_phone"]').fill(phone);
-  await page.locator('[data-scheduled-field="address_text"]').fill(address);
-}
-
-async function chooseWashWallService(page, scope = null) {
-  // Step 1 service line: pick à¸œà¸™à¸±à¸‡ -> BTU 12000 -> à¸¥à¹‰à¸²à¸‡à¸˜à¸£à¸£à¸¡à¸”à¸² via choice buttons.
-  const rootLoc = scope || page;
-  const pick = async (field, value) => {
-    const btn = rootLoc.locator(`[data-line-choice="${field}"][data-choice-value="${value}"]`).first();
-    await tap(btn);
-    await page.waitForTimeout(250); // re-render
-  };
-  await pick("ac_type", "à¸œà¸™à¸±à¸‡");
-  await pick("btu", "12000");
-  await pick("wash_variant", "à¸¥à¹‰à¸²à¸‡à¸˜à¸£à¸£à¸¡à¸”à¸²");
-}
-
-async function goToBookingWizard(page, appUrl) {
-  await page.goto(`${appUrl}#scheduled`, { waitUntil: "domcontentloaded" });
-  // A restored draft may land on a later step â€” reset to a clean wizard.
-  await page.evaluate(() => {
-    try { window.CWFCustomerAppV2.state.resetScheduledDraft(); } catch (_) {}
-  });
-  await page.reload({ waitUntil: "domcontentloaded" });
-  await page.waitForSelector("[data-line-choice]", { timeout: 20000 }); // step 1: services
-}
-
-async function pickDateAndSlot(page, ymd, { slotIndex = 0 } = {}) {
-  const day = page.locator(`[data-calendar-date="${ymd}"]`);
-  await tap(day, { timeout: 25000 });
-  const slot = page.locator("[data-real-slot-key]").nth(slotIndex);
-  await slot.waitFor({ state: "attached", timeout: 25000 });
-  const slotKey = await slot.getAttribute("data-real-slot-key");
-  await tap(slot);
-  return slotKey;
-}
-
-async function chooseTimeProposal(page, value = "false") {
-  const btn = page.locator(`[data-time-proposal="${value}"]`);
-  if (await btn.count()) await tap(btn.first());
-}
-
-async function nextStep(page) {
-  await tap(page.locator('[data-action="wizard-next"]'));
-  await page.waitForTimeout(400);
-}
-
-async function completeScheduledWizard(page, appUrl, ymd, opts = {}) {
-  // Wizard: step 1 = services -> step 2 = contact + calendar + slot -> step 3 = review.
-  await goToBookingWizard(page, appUrl);
-  await chooseWashWallService(page);
-  await nextStep(page); // -> step 2
-  await page.waitForSelector('[data-scheduled-field="customer_name"]', { timeout: 20000 });
-  await fillContactStep(page, opts.contact || {});
-  const slotKey = await pickDateAndSlot(page, ymd, opts);
-  await chooseTimeProposal(page, "false");
-  await nextStep(page); // -> step 3 (review)
-  await page.waitForSelector('[data-action="submit-scheduled"]', { timeout: 15000 });
-  return slotKey;
-}
-
-async function submitAndWaitSuccess(page) {
-  await tap(page.locator('[data-action="submit-scheduled"]'));
-  await page.waitForSelector(".booking-result-card", { timeout: 30000 });
-  const code = (await page.locator(".booking-code-value").textContent() || "").trim();
-  assert(/^CWF/.test(code), `expected booking code, got "${code}"`);
-  return code;
-}
-
-// -------------------------------------------------------------- helpers ----
-
-async function jobCountWhere(where, params = []) {
-  const r = await pool.query(`SELECT COUNT(*)::int AS n FROM public.jobs WHERE ${where}`, params);
-  return r.rows[0].n;
-}
-
-async function apiBook(base, payload) {
-  const res = await fetch(`${base}/public/book`, {
-    method: "POST", headers: { "content-type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  let body = null;
-  try { body = await res.json(); } catch (_) { body = null; }
-  return { status: res.status, body };
-}
-
-function scheduledPayload(ymd, start, overrides = {}) {
-  return {
-    customer_name: "à¸¥à¸¹à¸à¸„à¹‰à¸² API", customer_phone: "0899999999",
-    job_type: "à¸¥à¹‰à¸²à¸‡à¹à¸­à¸£à¹Œ", appointment_datetime: `${ymd}T${start}:00`,
-    address_text: "99/2 à¸—à¸”à¸ªà¸­à¸š API à¸à¸—à¸¡", booking_mode: "scheduled",
-    client_app: "customer_app_v2", allow_time_proposal: false,
-    ac_type: "à¸œà¸™à¸±à¸‡", btu: 12000, machine_count: 1, wash_variant: "à¸¥à¹‰à¸²à¸‡à¸˜à¸£à¸£à¸¡à¸”à¸²",
-    scheduled_request_key: crypto.randomBytes(16).toString("hex"),
-    ...overrides,
-  };
-}
-
-// ------------------------------------------------------------- scenarios ----
-
-async function main() {
-  assertSafeTarget();
-  log(`E2E database: ${DB_NAME} on ${PG.host}:${PG.port} (outbound integrations disabled)`);
-  const adminPool = new Client({ ...PG, database: "postgres" });
-  await adminPool.connect();
-  await adminPool.query("SELECT 1");
-  await adminPool.end();
-
-  await createDatabase();
-  pool = new Pool({ ...PG, database: DB_NAME, max: 5 });
-  await assertCoreSchema();
-
-  log("booting app A (booking enabled) + app B (booking disabled)...");
-  bootApp(PORT_A, {});
-  bootApp(PORT_B, { ENABLE_CUSTOMER_SCHEDULED_BOOKING: "false", ENABLE_CUSTOMER_URGENT_BOOKING: "false" });
-  await waitForReady(BASE_A);
-  await waitForReady(BASE_B);
-  log("apps ready.");
-
-  const tomorrow = ymdBangkok(1);
-  const dayAfter = ymdBangkok(2);
-  const today = ymdBangkok(0);
-
-  // Capacity note: tech_a works tomorrow+dayAfter (1 job/day). tech_race works
-  // dayAfter only â€” scenario 4 uses dayAfter where both techs are free but each
-  // capped at 1 job... for a true "last slot" race we use a dedicated date with
-  // ONE technician only (raceDay = day 3).
-  const raceDay = ymdBangkok(3);
-  const staleDay = ymdBangkok(4);
-  const multiDay = ymdBangkok(5);
-  const retryDay = ymdBangkok(6);
-  const reloadDay = ymdBangkok(7);
-  const r2Day = ymdBangkok(8); // round-2 canonical-protection probes (headroom for replay)
-
-  await seedTechnician("tech_a", { date: [tomorrow, dayAfter, multiDay, reloadDay, r2Day], maxJobs: 3, maxUnits: 9 });
-  await seedTechnician("tech_solo", { date: [raceDay, staleDay, retryDay], maxJobs: 1, maxUnits: 5 });
-  await seedTechnician("tech_partner", { employment: "partner", date: [today, tomorrow], urgentOk: true });
-  await seedTechnician("tech_partner2", { employment: "partner", date: [today, tomorrow], urgentOk: true });
-  // Zone A covers à¹€à¸‚à¸•à¸ªà¸§à¸™à¸«à¸¥à¸§à¸‡ â€” the urgent offer engine targets partners by zone.
-  await pool.query(`UPDATE public.technician_profiles SET home_service_zone_code='A' WHERE username IN ('tech_partner','tech_partner2')`).catch(() => {});
-
-  async function seedSessionFor(username, role) {
-    const token = crypto.randomBytes(24).toString("hex");
-    await pool.query(
-      `INSERT INTO public.auth_sessions (session_token, username, role, expires_at) VALUES ($1,$2,$3, NOW() + INTERVAL '4 hours')`,
-      [token, username, role]
-    );
-    return token;
-  }
-  const adminSession = await seedAdminSession();
-
-  // The sandbox pre-installs Chromium at a pinned build; point Playwright at
-  // it explicitly so a version-mismatched registry lookup can't fail the run.
-  const chromiumCandidates = [
-    process.env.E2E_CHROMIUM_PATH,
-    "/opt/pw-browsers/chromium-1194/chrome-linux/chrome",
-    "/opt/pw-browsers/chromium/chrome-linux/chrome",
-  ].filter(Boolean);
-  const executablePath = chromiumCandidates.find((p) => { try { fs.accessSync(p); return true; } catch (_) { return false; } });
-  const browser = await chromium.launch(executablePath ? { executablePath } : {});
-  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
-  const page = await ctx.newPage();
-  lastPages.add(page);
-  ctx.on("page", (p) => { lastPages.add(p); p.on("close", () => lastPages.delete(p)); });
-
-  // 1) Scheduled booking success through the real UI.
-  let bookingCode1 = "";
-  let bookingToken1 = "";
-  await record("S1 scheduled booking succeeds end-to-end (UI -> PostgreSQL)", async () => {
-    await completeScheduledWizard(page, APP_URL_A, tomorrow);
-    bookingCode1 = await submitAndWaitSuccess(page);
-    const r = await pool.query(
-      `SELECT booking_token, job_status, booking_mode, job_source, technician_username, job_price, duration_min
-         FROM public.jobs WHERE booking_code=$1`, [bookingCode1]);
-    assert(r.rows.length === 1, "job row not found in PostgreSQL");
-    const job = r.rows[0];
-    bookingToken1 = job.booking_token;
-    assert(job.booking_mode === "scheduled" && job.job_source === "customer", "wrong mode/source");
-    assert(job.technician_username, "no technician reserved");
-    assert(Number(job.job_price) > 0, "job_price must be > 0");
-    assert(Number(job.duration_min) > 0, "duration_min must be > 0");
-  });
-
-  // 2) Double-click cannot create two jobs.
-  await record("S2 double-click submit creates exactly one job", async () => {
-    const before = await jobCountWhere("job_source='customer'");
-    await completeScheduledWizard(page, APP_URL_A, tomorrow, { slotIndex: 1 });
-    // A realistic double-tap: two click events in the same burst. (A third,
-    // later click would land on the success screen's next button â€” a different
-    // gesture entirely.) The server-side request key + in-flight guard must
-    // still produce exactly one job.
-    await page.evaluate(() => {
-      const el = document.querySelector('[data-action="submit-scheduled"]');
-      el.click(); el.click();
-    });
-    await page.waitForSelector(".booking-result-card", { timeout: 30000 });
-    const after = await jobCountWhere("job_source='customer'");
-    assert(after === before + 1, `expected +1 job, got +${after - before}`);
-  });
-
-  // 3) Network drop after server commit -> reload -> resubmit must NOT duplicate.
-  // Under payload-bound idempotency, resubmitting the same request key with the
-  // exact same payload replays the job; re-picking a different slot with the
-  // reused key is correctly refused (409 IDEMPOTENCY_KEY_REUSED). Either way the
-  // DB must hold exactly one job â€” a reload can never create a duplicate.
-  await record("S3 reload after a committed-but-lost submit never creates a duplicate", async () => {
-    const p2 = await ctx.newPage();
-    await completeScheduledWizard(p2, APP_URL_A, reloadDay);
-    // First submit: forward the EXACT request to the server (it commits), then
-    // cut the response â€” the phone never learns the booking succeeded.
-    let intercepted = false;
-    await p2.route("**/public/book", async (route) => {
-      if (!intercepted) {
-        intercepted = true;
-        try {
-          const resp = await fetch(`${BASE_A}/public/book`, {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: route.request().postData(),
-          });
-          await resp.text();
-        } catch (_) { /* the assertion below verifies the commit */ }
-        await route.abort("connectionreset");
-        return;
-      }
-      await route.continue();
-    });
-    await tap(p2.locator('[data-action="submit-scheduled"]'));
-    await p2.waitForTimeout(4000); // let the server-side booking commit
-    const midCount = await jobCountWhere("appointment_datetime::date=$1", [reloadDay]);
-    assert(midCount === 1, `expected 1 committed job after network drop, got ${midCount}`);
-    await p2.unroute("**/public/book");
-    await p2.reload({ waitUntil: "domcontentloaded" });
-    await p2.waitForSelector('[data-action="submit-scheduled"], [data-action="wizard-next"], [data-calendar-date]', { timeout: 25000 });
-    // The draft (incl. scheduled_request_key) survives the reload. The customer
-    // re-attempts; whether that replays or is refused as a key-reuse, the key is
-    // already bound to the committed job, so no second job can be created.
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      if (await p2.locator('[data-action="submit-scheduled"]').count()) {
-        await tap(p2.locator('[data-action="submit-scheduled"]'));
-        try {
-          await p2.waitForSelector(".booking-result-card", { timeout: 8000 });
-          break; // clean replay
-        } catch (_) { /* refused (key reuse) or bounced to slot step */ }
-      }
-      if (await p2.locator(`[data-calendar-date="${reloadDay}"]`).count()) {
-        await pickDateAndSlot(p2, reloadDay);
-        await chooseTimeProposal(p2, "false");
-        if (await p2.locator('[data-action="wizard-next"]').count()) await nextStep(p2);
-      } else if (await p2.locator('[data-action="wizard-next"]').count()) {
-        await nextStep(p2);
-      }
-      await p2.waitForTimeout(600);
-    }
-    const finalCount = await jobCountWhere("appointment_datetime::date=$1", [reloadDay]);
-    assert(finalCount === 1, `reload/resubmit must never create a second job (got ${finalCount})`);
-    await p2.close();
-  });
-
-  // 4) Two browsers race for the last capacity -> exactly one wins.
-  await record("S4 concurrent booking of the last slot: exactly one succeeds", async () => {
-    const ctxB = await browser.newContext({ viewport: { width: 390, height: 844 } });
-    const pA = await ctx.newPage();
-    const pB = await ctxB.newPage();
-    await completeScheduledWizard(pA, APP_URL_A, raceDay);
-    await completeScheduledWizard(pB, APP_URL_A, raceDay);
-    const [ra, rb] = await Promise.allSettled([
-      (async () => { await pA.locator('[data-action="submit-scheduled"]').dispatchEvent("click"); await pA.waitForSelector(".booking-result-card", { timeout: 30000 }); return "ok"; })(),
-      (async () => { await pB.locator('[data-action="submit-scheduled"]').dispatchEvent("click"); await pB.waitForSelector(".booking-result-card", { timeout: 30000 }); return "ok"; })(),
-    ]);
-    const wins = [ra, rb].filter((x) => x.status === "fulfilled").length;
-    const jobs = await jobCountWhere("appointment_datetime::date=$1", [raceDay]);
-    assert(jobs === 1, `overbooking: ${jobs} jobs on race day (max_jobs_per_day=1)`);
-    assert(wins === 1, `expected exactly 1 UI success, got ${wins}`);
-    // The loser must see the "slot taken" message.
-    const loser = ra.status === "fulfilled" ? pB : pA;
-    const text = await loser.textContent("body");
-    assert(/à¹€à¸•à¹‡à¸¡|à¹€à¸¥à¸·à¸­à¸à¸Šà¹ˆà¸§à¸‡à¹€à¸§à¸¥à¸²à¹ƒà¸«à¸¡à¹ˆ|à¹€à¸¥à¸·à¸­à¸à¹€à¸§à¸¥à¸²à¸­à¸·à¹ˆà¸™/.test(text || ""), "loser did not see slot-full feedback");
-    await pA.close(); await pB.close(); await ctxB.close();
-  });
-
-  // 5) Slot booked while the page is open -> submit rejected, customer re-picks.
-  await record("S5 stale slot is rejected at confirm (no silent double-book)", async () => {
-    const p = await ctx.newPage();
-    await completeScheduledWizard(p, APP_URL_A, staleDay);
-    // Someone else takes the capacity via API while our page sits on review.
-    const api = await apiBook(BASE_A, scheduledPayload(staleDay, "09:00"));
-    assert(api.status === 200 && api.body?.success, `API prebook failed: HTTP ${api.status}`);
-    await tap(p.locator('[data-action="submit-scheduled"]'));
-    await p.waitForTimeout(3500);
-    const jobs = await jobCountWhere("appointment_datetime::date=$1", [staleDay]);
-    assert(jobs === 1, `expected 1 job on stale day, got ${jobs}`);
-    const text = await p.textContent("body");
-    assert(/à¹€à¸•à¹‡à¸¡|à¹€à¸¥à¸·à¸­à¸à¸Šà¹ˆà¸§à¸‡à¹€à¸§à¸¥à¸²à¹ƒà¸«à¸¡à¹ˆ|à¹€à¸¥à¸·à¸­à¸à¹€à¸§à¸¥à¸²à¸­à¸·à¹ˆà¸™/.test(text || ""), "no stale-slot feedback shown");
-    await p.close();
-  });
-
-  // 6) Same-day cutoff: past-start today is rejected server-side.
-  await record("S6 same-day cutoff rejects a start time already in the past", async () => {
-    const api = await apiBook(BASE_A, scheduledPayload(today, "00:01"));
-    assert(api.status === 409, `expected 409 SLOT_IN_PAST, got ${api.status}`);
-    assert((api.body?.code || api.body?.error || "").includes("SLOT_IN_PAST") || api.status === 409, "wrong error");
-  });
-
-  // 7) Multi-service booking books once with combined duration/price.
-  await record("S7 multi-service booking persists one job with combined services", async () => {
-    const p = await ctx.newPage();
-    await goToBookingWizard(p, APP_URL_A);
-    await chooseWashWallService(p);
-    await tap(p.locator('[data-action="add-line"]'));
-    // Configure the second line (last service-line card).
-    const pickLast = async (field, value) => {
-      await tap(p.locator("[data-service-line-card]").last()
-        .locator(`[data-line-choice="${field}"][data-choice-value="${value}"]`).first());
-      await p.waitForTimeout(250);
-    };
-    await pickLast("ac_type", "à¸œà¸™à¸±à¸‡"); await pickLast("btu", "12000"); await pickLast("wash_variant", "à¸¥à¹‰à¸²à¸‡à¸˜à¸£à¸£à¸¡à¸”à¸²");
-    await nextStep(p); // -> step 2
-    await p.waitForSelector('[data-scheduled-field="customer_name"]', { timeout: 20000 });
-    await fillContactStep(p);
-    await pickDateAndSlot(p, multiDay);
-    await chooseTimeProposal(p, "false");
-    await nextStep(p);
-    const code = await submitAndWaitSuccess(p);
-    const r = await pool.query(`SELECT job_price, duration_min FROM public.jobs WHERE booking_code=$1`, [code]);
-    assert(r.rows.length === 1, "multi-service job missing");
-    const items = await pool.query(`SELECT COUNT(*)::int AS n FROM public.job_items ji JOIN public.jobs j ON j.job_id=ji.job_id WHERE j.booking_code=$1`, [code]);
-    assert(items.rows[0].n >= 2, `expected >=2 job_items, got ${items.rows[0].n}`);
-    await p.close();
-  });
-
-  // 8) Urgent booking with an available partner -> offer created + waiting room.
-  let urgentToken = "";
-  await record("S8 urgent booking creates one job + partner offer, waiting room live", async () => {
-    const p = await ctx.newPage();
-    await p.goto(`${APP_URL_A}#urgent`, { waitUntil: "domcontentloaded" });
-    await p.waitForSelector('[data-urgent-field="customer_name"]', { timeout: 20000 });
-    await p.locator('[data-urgent-field="customer_name"]').fill("à¸¥à¸¹à¸à¸„à¹‰à¸² à¸”à¹ˆà¸§à¸™");
-    await p.locator('[data-urgent-field="customer_phone"]').fill("0822222222");
-    await p.locator('[data-urgent-field="address_text"]').fill("55/5 à¸«à¸¡à¸¹à¹ˆà¸šà¹‰à¸²à¸™à¸—à¸”à¸ªà¸­à¸š à¹€à¸‚à¸•à¸ªà¸§à¸™à¸«à¸¥à¸§à¸‡ à¸à¸£à¸¸à¸‡à¹€à¸—à¸à¸¯ 10250");
-    // Service taxonomy: à¸¥à¹‰à¸²à¸‡ -> à¸œà¸™à¸±à¸‡ -> à¸¥à¹‰à¸²à¸‡à¸˜à¸£à¸£à¸¡à¸”à¸² -> 12000 BTU.
-    const choose = async (field, value) => {
-      const btn = p.locator(`[data-urgent-choice="${field}"][data-choice-value="${value}"]`).first();
-      await tap(btn);
-      await p.waitForTimeout(250);
-    };
-    await choose("service_kind", "clean");
-    await choose("ac_type", "à¸œà¸™à¸±à¸‡");
-    await choose("wash_variant", "à¸¥à¹‰à¸²à¸‡à¸˜à¸£à¸£à¸¡à¸”à¸²");
-    await choose("btu", "12000");
-    const symptom = p.locator('[data-urgent-field="symptom"]');
-    if (await symptom.count()) await symptom.fill("à¹à¸­à¸£à¹Œà¹„à¸¡à¹ˆà¹€à¸¢à¹‡à¸™ à¸•à¹‰à¸­à¸‡à¸à¸²à¸£à¸Šà¹ˆà¸²à¸‡à¸”à¹ˆà¸§à¸™");
-    await tap(p.locator('[data-urgent-action="to-review"]'));
-    await p.waitForSelector('[data-urgent-action="confirm"]', { timeout: 15000 });
-    await tap(p.locator('[data-urgent-action="confirm"]'));
-    await p.waitForSelector(".waiting-room, [data-urgent-live-status]", { timeout: 30000 });
-    const r = await pool.query(`SELECT job_id, booking_token FROM public.jobs WHERE booking_mode='urgent' ORDER BY job_id DESC LIMIT 1`);
-    assert(r.rows.length === 1, "urgent job not found");
-    urgentToken = r.rows[0].booking_token;
-    const offers = await pool.query(`SELECT offer_id, technician_username, status FROM public.job_offers WHERE job_id=$1`, [r.rows[0].job_id]);
-    assert(offers.rows.length >= 1, "no partner offer created");
-    assert(offers.rows.every((o) => ["tech_partner", "tech_partner2"].includes(o.technician_username)), "offer sent to wrong technician");
-
-    // Both partners race to accept â€” exactly one may win, and the job must be
-    // assigned to the winner (single-winner guarantee, real HTTP + real DB).
-    const offerByTech = new Map(offers.rows.map((o) => [o.technician_username, o.offer_id]));
-    const attempts = [];
-    for (const tech of ["tech_partner", "tech_partner2"]) {
-      const offerId = offerByTech.get(tech);
-      if (!offerId) continue;
-      const session = await seedSessionFor(tech, "technician");
-      attempts.push(
-        fetch(`${BASE_A}/offers/${offerId}/accept`, {
-          method: "POST",
-          headers: { "content-type": "application/json", cookie: `cwf_session=${session}` },
-          body: "{}",
-        }).then(async (resp) => ({ tech, status: resp.status, body: await resp.json().catch(() => null) }))
-      );
-    }
-    const raceResults = await Promise.all(attempts);
-    const winners = raceResults.filter((x) => x.status === 200);
-    assert(winners.length === 1, `expected exactly 1 accepted offer, got ${winners.length} (${JSON.stringify(raceResults.map((x) => x.status))})`);
-    const assigned = await pool.query(`SELECT technician_username FROM public.jobs WHERE job_id=$1`, [r.rows[0].job_id]);
-    assert(assigned.rows[0].technician_username === winners[0].tech, "job not assigned to the accepting technician");
-    // The customer's waiting room flips to accepted via the public status feed.
-    const statusRes = await (await fetch(`${BASE_A}/public/urgent-status?token=${encodeURIComponent(urgentToken)}`)).json();
-    assert(statusRes.phase === "accepted" && statusRes.confirmed === true, `urgent status should be accepted, got ${statusRes.phase}`);
-    await p.close();
-  });
-
-  // 9) Urgent with no acceptance -> offer expires -> job lands in admin review (not lost).
-  await record("S9 expired urgent offer falls back to admin review (job never lost)", async () => {
-    // A fresh urgent request via the public API (S8's job is already accepted).
-    const api = await apiBook(BASE_A, {
-      customer_name: "à¸¥à¸¹à¸à¸„à¹‰à¸² à¸”à¹ˆà¸§à¸™à¸ªà¸­à¸‡", customer_phone: "0833333333",
-      job_type: "à¸¥à¹‰à¸²à¸‡", appointment_datetime: new Date().toISOString(),
-      address_text: "77/7 à¹€à¸‚à¸•à¸ªà¸§à¸™à¸«à¸¥à¸§à¸‡ à¸à¸£à¸¸à¸‡à¹€à¸—à¸à¸¯", booking_mode: "urgent",
-      client_app: "customer_app_v2", allow_time_proposal: true,
-      urgent_request_key: crypto.randomBytes(16).toString("hex"),
-      ac_type: "à¸œà¸™à¸±à¸‡", btu: 12000, machine_count: 1, wash_variant: "à¸¥à¹‰à¸²à¸‡à¸˜à¸£à¸£à¸¡à¸”à¸²",
-    });
-    assert(api.status === 200 && api.body?.job_id, `urgent API booking failed: HTTP ${api.status}`);
-    const jobId = api.body.job_id;
-    await pool.query(`UPDATE public.job_offers SET expires_at = NOW() - INTERVAL '5 minutes' WHERE job_id=$1`, [jobId]);
-    // The app's own finalizer runner ticks every 60s â€” call the same finalizer
-    // through the real module against the same database to avoid a flaky wait.
-    const finalizer = require(path.join(REPO_ROOT, "server", "services", "urgent", "finalizer"));
-    await finalizer.autoFinalizeUrgentJobs(pool);
-    const after = await pool.query(`SELECT job_status, canceled_at, booking_code FROM public.jobs WHERE job_id=$1`, [jobId]);
-    assert(after.rows[0].canceled_at === null, "urgent job must not be canceled/lost");
-    assert(String(after.rows[0].job_status || "").length > 0, "urgent job lost its status");
-    const offers = await pool.query(`SELECT status FROM public.job_offers WHERE job_id=$1`, [jobId]);
-    assert(offers.rows.every((o) => o.status !== "pending"), "expired offers must not stay pending");
-    // The reviewer requires positive proof the abandoned job is recoverable by
-    // admin â€” assert it actually surfaces in the admin review queue (the same
-    // data feed admin-review-v2.html renders), keyed by the real admin session.
-    const abandonedCode = after.rows[0].booking_code;
-    const queueRes = await fetch(`${BASE_A}/admin/review_queue_v2?status=all&limit=500`, {
-      headers: { cookie: `cwf_session=${adminSession}` },
-    });
-    assert(queueRes.status === 200, `admin review queue must load, got ${queueRes.status}`);
-    const queue = await queueRes.json();
-    assert(Array.isArray(queue.rows), "admin review queue payload malformed");
-    const found = queue.rows.find((row) => row.booking_code === abandonedCode);
-    assert(found, `no-accept urgent job ${abandonedCode} missing from admin review queue`);
-    assert(found.job_id === jobId, "admin review queue row mismatched job_id");
-  });
-
-  // 10) Admin sees the new bookings in the review queue.
-  await record("S10 admin review queue shows the customer bookings (with admin session)", async () => {
-    const adminCtx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
-    await adminCtx.addCookies([{ name: "cwf_session", value: adminSession, url: BASE_A }]);
-    const p = await adminCtx.newPage();
-    await p.goto(`${BASE_A}/admin-review-v2.html`, { waitUntil: "domcontentloaded" });
-    await p.waitForTimeout(5000); // let the queue load + notifications evaluate
-    const text = await p.textContent("body");
-    assert(text && text.includes(bookingCode1), `admin queue does not show ${bookingCode1}`);
-    await p.close(); await adminCtx.close();
-  });
-
-  // 11) Customer tracking after booking + privacy split (token vs code).
-  await record("S11 tracking works after booking; booking_code lookups are PII-redacted", async () => {
-    // token lookup -> full detail
-    const full = await (await fetch(`${BASE_A}/public/track?q=${encodeURIComponent(bookingToken1)}`)).json();
-    assert(full.access_level === "token", "token lookup should be full access");
-    assert(full.customer_phone === "0812345678", "full access should return the real phone");
-    // code lookup -> masked
-    const red = await (await fetch(`${BASE_A}/public/track?q=${encodeURIComponent(bookingCode1)}`)).json();
-    assert(red.access_level === "code", "code lookup should be limited access");
-    // The allowlist drops these by construction, so they are absent (undefined)
-    // rather than explicitly null â€” either way they must not carry a value.
-    assert(red.booking_token == null, "code lookup must not echo the token");
-    assert(String(red.customer_phone || "").includes("5678") && !String(red.customer_phone).includes("0812345678"), "phone must be masked");
-    assert(red.gps_latitude == null && red.maps_url == null, "GPS/maps must be hidden");
-    assert(red.receipt_url == null, "receipt link must be hidden for code lookups");
-    // In-browser: tracking page renders for the customer.
-    const p = await ctx.newPage();
-    await p.goto(`${APP_URL_A}#tracking`, { waitUntil: "domcontentloaded" });
-    await p.locator("#tracking-code").fill(bookingCode1);
-    await tap(p.locator('[data-action="track-read"]'));
-    await p.waitForTimeout(2500);
-    const text = await p.textContent("body");
-    assert(text.includes(bookingCode1) || /à¸ªà¸–à¸²à¸™à¸°|à¸£à¸­à¸”à¸³à¹€à¸™à¸´à¸™à¸à¸²à¸£|à¸£à¸­à¸•à¸£à¸§à¸ˆà¸ªà¸­à¸š/.test(text), "tracking result not rendered");
-    await p.close();
-  });
-
-  // 12) Offline/timeout recovery: submit while offline -> error -> retry online -> one job.
-  await record("S12 offline submit recovers without duplicate after reconnect", async () => {
-    const p = await ctx.newPage();
-    try {
-      await completeScheduledWizard(p, APP_URL_A, retryDay);
-      await ctx.setOffline(true);
-      await tap(p.locator('[data-action="submit-scheduled"]'));
-      await p.waitForTimeout(3500);
-      const errText = await p.textContent("body");
-      // Note: a pure network failure currently surfaces fetch's raw message â€”
-      // recorded as a P2 wording follow-up; the recovery behavior is what P0 needs.
-      assert(/à¹„à¸¡à¹ˆà¸ªà¸³à¹€à¸£à¹‡à¸ˆ|à¸œà¸´à¸”à¸à¸¥à¸²à¸”|à¹€à¸Šà¸·à¹ˆà¸­à¸¡à¸•à¹ˆà¸­|à¸¥à¸­à¸‡à¹ƒà¸«à¸¡à¹ˆ|à¹€à¸•à¹‡à¸¡|à¸­à¸­à¸Ÿà¹„à¸¥à¸™à¹Œ|failed to fetch/i.test(errText || ""), "no offline error message shown");
-    } finally {
-      await ctx.setOffline(false); // never leak offline state into later scenarios
-    }
-    // Retrying may need a fresh slot revalidation round-trip first.
-    await p.waitForTimeout(1000);
-    await tap(p.locator('[data-action="submit-scheduled"]'));
-    await p.waitForSelector(".booking-result-card", { timeout: 30000 });
-    const jobs = await jobCountWhere("appointment_datetime::date=$1", [retryDay]);
-    assert(jobs === 1, `expected exactly 1 job after offline retry, got ${jobs}`);
-    await p.close();
-  });
-
-  // 13) Kill switch: booking disabled -> 503 + LINE fallback, zero jobs created.
-  await record("S13 kill switch shows LINE fallback and never creates a job", async () => {
-    const before = await jobCountWhere("TRUE");
-    const p = await ctx.newPage();
-    await completeScheduledWizard(p, APP_URL_B, tomorrow);
-    // Earlier scenarios shift live capacity, so the first submit may bounce on
-    // slot revalidation â€” re-pick and resubmit until the 503 gate answers.
-    let lineShown = false;
-    for (let attempt = 0; attempt < 3 && !lineShown; attempt += 1) {
-      if (await p.locator('[data-action="submit-scheduled"]').count()) {
-        await tap(p.locator('[data-action="submit-scheduled"]'));
-      }
-      try {
-        await p.waitForSelector(".line-fallback-btn", { timeout: 12000 });
-        lineShown = true;
-        break;
-      } catch (_) { /* bounced â€” re-pick a slot */ }
-      if (await p.locator("[data-calendar-date]").count()) {
-        const day = p.locator("[data-calendar-date]").first();
-        await tap(day);
-        const slot = p.locator("[data-real-slot-key]").first();
-        await slot.waitFor({ state: "attached", timeout: 20000 }).catch(() => {});
-        if (await slot.count()) await tap(slot);
-        await chooseTimeProposal(p, "false");
-        if (await p.locator('[data-action="wizard-next"]').count()) await nextStep(p);
-      }
-    }
-    assert(lineShown, "LINE fallback button never appeared");
-    const href = await p.locator(".line-fallback-btn").getAttribute("href");
-    assert(href && href.startsWith("https://lin.ee/"), "LINE fallback link missing");
-    // Direct API double-check for both lanes.
-    const sched = await apiBook(BASE_B, scheduledPayload(tomorrow, "13:00"));
-    assert(sched.status === 503 && sched.body?.code === "SCHEDULED_BOOKING_DISABLED", "scheduled lane not closed");
-    const urgent = await apiBook(BASE_B, {
-      customer_name: "x", customer_phone: "0811111111", job_type: "à¸¥à¹‰à¸²à¸‡à¹à¸­à¸£à¹Œ",
-      appointment_datetime: new Date().toISOString(), address_text: "y",
-      booking_mode: "urgent", client_app: "customer_app_v2",
-      urgent_request_key: crypto.randomBytes(16).toString("hex"),
-      ac_type: "à¸œà¸™à¸±à¸‡", btu: 12000, machine_count: 1, wash_variant: "à¸¥à¹‰à¸²à¸‡à¸˜à¸£à¸£à¸¡à¸”à¸²",
-    });
-    assert(urgent.status === 503 && urgent.body?.code === "URGENT_BOOKING_DISABLED", "urgent lane not closed");
-    const after = await jobCountWhere("TRUE");
-    assert(after === before, `kill switch leaked ${after - before} job(s)`);
-    await p.close();
-  });
-
-  // Bonus hardening probes (rate limit + receipt gate) â€” part of privacy verification.
-  await record("P1 rate limit answers 429 after the per-minute budget", async () => {
-    let got429 = false;
-    for (let i = 0; i < 40; i += 1) {
-      const res = await fetch(`${BASE_A}/public/track?q=CWFNOPE${i}`, { headers: { "x-forwarded-for": "203.0.113.99" } });
-      if (res.status === 429) { got429 = true; break; }
-    }
-    assert(got429, "no 429 after 40 rapid lookups");
-  });
-
-  await record("P2 receipt requires booking_token key (bare job_id 404s; key works)", async () => {
-    const r = await pool.query(`SELECT job_id, booking_token FROM public.jobs WHERE booking_code=$1`, [bookingCode1]);
-    const { job_id, booking_token } = r.rows[0];
-    await pool.query(`UPDATE public.jobs SET job_status='à¹€à¸ªà¸£à¹‡à¸ˆà¹à¸¥à¹‰à¸§', finished_at=NOW() WHERE job_id=$1`, [job_id]);
-    const bare = await fetch(`${BASE_A}/docs/receipt/${job_id}`, { headers: { "x-forwarded-for": "203.0.113.50" } });
-    assert(bare.status === 404, `bare job_id receipt must 404, got ${bare.status}`);
-    const keyed = await fetch(`${BASE_A}/docs/receipt/${job_id}?key=${encodeURIComponent(booking_token)}`, { headers: { "x-forwarded-for": "203.0.113.51" } });
-    assert(keyed.status === 200, `keyed receipt must 200, got ${keyed.status}`);
-  });
-
-  // ---------------- negative / bypass probes (reviewer-requested) ----------
-
-  // S14) The kill switch must gate on the canonical booking_mode, never on the
-  // attacker-supplied client_app. Forging client_app (or omitting it) must NOT
-  // reopen a closed lane, an unknown mode must be rejected outright, and zero
-  // jobs may be created on the disabled instance across every attempt.
-  await record("S14 kill switch cannot be bypassed by forging/omitting client_app", async () => {
-    const before = await jobCountWhere("TRUE");
-    const forgedApps = ["admin_console", "internal", "", "customer_app_v2", "cwf_admin"];
-    for (const app of forgedApps) {
-      const sched = await apiBook(BASE_B, scheduledPayload(tomorrow, "10:30", { client_app: app }));
-      assert(sched.status === 503 && sched.body?.code === "SCHEDULED_BOOKING_DISABLED",
-        `scheduled lane bypassed with client_app=${JSON.stringify(app)} (HTTP ${sched.status})`);
-      const urgent = await apiBook(BASE_B, {
-        customer_name: "bypass", customer_phone: "0810000000", job_type: "à¸¥à¹‰à¸²à¸‡à¹à¸­à¸£à¹Œ",
-        appointment_datetime: new Date().toISOString(), address_text: "z",
-        booking_mode: "urgent", client_app: app,
-        urgent_request_key: crypto.randomBytes(16).toString("hex"),
-        ac_type: "à¸œà¸™à¸±à¸‡", btu: 12000, machine_count: 1, wash_variant: "à¸¥à¹‰à¸²à¸‡à¸˜à¸£à¸£à¸¡à¸”à¸²",
-      });
-      assert(urgent.status === 503 && urgent.body?.code === "URGENT_BOOKING_DISABLED",
-        `urgent lane bypassed with client_app=${JSON.stringify(app)} (HTTP ${urgent.status})`);
-    }
-    // A client_app with no booking_mode still defaults to scheduled (closed).
-    const noMode = await apiBook(BASE_B, scheduledPayload(tomorrow, "11:00", { client_app: "admin", booking_mode: undefined }));
-    assert(noMode.status === 503, `missing booking_mode must default to the closed scheduled lane, got ${noMode.status}`);
-    // An unknown booking_mode is rejected, not silently routed anywhere.
-    const bogus = await apiBook(BASE_B, scheduledPayload(tomorrow, "11:30", { booking_mode: "wholesale" }));
-    assert(bogus.status === 400 && bogus.body?.code === "UNKNOWN_BOOKING_MODE",
-      `unknown booking_mode must 400, got ${bogus.status}`);
-    // Even on the OPEN instance an unknown mode must not create a job.
-    const bogusOpen = await apiBook(BASE_A, scheduledPayload(tomorrow, "11:45", { booking_mode: "wholesale" }));
-    assert(bogusOpen.status === 400 && bogusOpen.body?.code === "UNKNOWN_BOOKING_MODE",
-      `unknown booking_mode must 400 on the open instance too, got ${bogusOpen.status}`);
-    const after = await jobCountWhere("TRUE");
-    assert(after === before, `bypass probes leaked ${after - before} job(s)`);
-  });
-
-  // S15) The public-lookup rate limiter must key off the proxy-derived req.ip
-  // (the nearest trusted hop), NOT the raw first X-Forwarded-For token. Rotate
-  // the attacker-controlled LEFT-most XFF entry on every request while pinning
-  // the nearest-hop entry: a limiter that trusted the raw first token would see
-  // a fresh key each time and never trip. It must still answer 429.
-  await record("S15 rotating a spoofed X-Forwarded-For does not bypass the rate limit", async () => {
-    const pinnedHop = "203.0.113.222"; // the entry the trusted proxy would append
-    let got429 = false;
-    for (let i = 0; i < 45 && !got429; i += 1) {
-      const spoof = `10.9.${i}.${(i * 7) % 255}`; // rotates every request
-      const res = await fetch(`${BASE_A}/public/track?q=CWFSPOOF${i}`, {
-        headers: { "x-forwarded-for": `${spoof}, ${pinnedHop}` },
-      });
-      if (res.status === 429) got429 = true;
-    }
-    assert(got429, "rate limit never tripped â€” a rotating spoofed XFF bypassed it");
-  });
-
-  // S16) A booking_code grants the customer-facing read model, never a private
-  // credential, internal identifier, document capability, or write capability.
-  await record("S16 booking_code returns full read details without privileged fields", async () => {
-    const red = await (await fetch(`${BASE_A}/public/track?q=${encodeURIComponent(bookingCode1)}`,
-      { headers: { "x-forwarded-for": "198.51.100.7" } })).json();
-    assert(red.access_level === "code", "expected booking-code read access");
-    assert(red.can_view_full_tracking === true, "code lookup must allow customer-facing details");
-    assert(red.can_use_token_actions === false, "code lookup must deny privileged actions");
-    assert(red.capabilities?.can_view_full_tracking === true, "nested read capability must be explicit");
-    assert(red.capabilities?.can_view_documents === false, "code lookup must deny documents");
-    assert(red.capabilities?.can_submit_review === false, "code lookup must deny review writes");
-
-    // Positive contract: full customer-facing fields are present even when a
-    // particular seeded job has null/empty optional values.
-    for (const key of [
-      "customer_name", "customer_phone", "address_text", "maps_url", "job_type",
-      "job_status", "appointment_datetime", "job_price", "payment_status",
-      "service_items", "photos", "units", "technician", "technician_team",
-    ]) {
-      assert(Object.prototype.hasOwnProperty.call(red, key), `code lookup missing read field: ${key}`);
-    }
-    assert(Array.isArray(red.service_items), "service_items must be an array");
-    assert(Array.isArray(red.photos), "photos must be an array");
-    assert(Array.isArray(red.units), "units must be an array");
-    assert(Array.isArray(red.technician_team), "technician_team must be an array");
-
-    const forbidden = [
-      "booking_token", "job_id", "receipt_url", "quote_url", "eslip_url",
-      "document_key", "auth_token", "session", "session_id", "privileged_url",
-      "payment_secret", "webhook_data", "private_key", "admin_note",
-    ];
-    const leaked = forbidden.filter((k) => red[k] !== undefined && red[k] !== null);
-    assert(leaked.length === 0, `booking_code lookup leaked fields: ${leaked.join(", ")}`);
-    const serialized = JSON.stringify(red);
-    for (const nestedKey of ["photo_id", "unit_id", "technician_username", "tracking_token_hash"]) {
-      assert(!serialized.includes(`\"${nestedKey}\"`), `booking_code lookup leaked nested field: ${nestedKey}`);
-    }
-    assert(red.booking_code === bookingCode1, "code lookup must echo the booking_code");
-    assert(typeof red.job_status === "string", "code lookup must return status");
-  });
-
-  // S17) /public/review is a WRITE. A tokened job must NOT be reviewable via the
-  // short booking_code (no downgrade); only the exact booking_token authorises.
-  // A genuine legacy job (no token) may still be reviewed via code + full phone,
-  // and a wrong phone is denied â€” with the same generic error either way.
-  await record("S17 review write: code denied on tokened job, token accepted; legacy code+phone still works", async () => {
-    const jr = await pool.query(`SELECT job_id, customer_phone FROM public.jobs WHERE booking_code=$1`, [bookingCode1]);
-    const tokenJobId = jr.rows[0].job_id;
-    const tokenPhone = jr.rows[0].customer_phone;
-    // Make the tokened job reviewable (completed, has a technician, unreviewed).
-    await pool.query(
-      `UPDATE public.jobs SET job_status='à¹€à¸ªà¸£à¹‡à¸ˆà¹à¸¥à¹‰à¸§', finished_at=NOW(),
-              technician_username='tech_a', customer_rating=NULL, reviewed_at=NULL
-       WHERE job_id=$1`, [tokenJobId]);
-    await pool.query(`DELETE FROM public.technician_reviews WHERE job_id=$1`, [tokenJobId]);
-
-    const postReview = (payload, ip) => fetch(`${BASE_A}/public/review`, {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-forwarded-for": ip },
-      body: JSON.stringify(payload),
-    }).then(async (r) => ({ status: r.status, body: await r.json().catch(() => null) }));
-
-    // (a) Downgrade attempt: booking_code + phone on a TOKENED job -> denied.
-    const downgrade = await postReview(
-      { booking_code: bookingCode1, customer_phone: tokenPhone, rating: 5, review_text: "bypass" }, "198.51.100.20");
-    assert(downgrade.status !== 200 && !downgrade.body?.success,
-      `tokened job must reject code+phone review, got HTTP ${downgrade.status}`);
-    const afterDowngrade = await pool.query(`SELECT customer_rating FROM public.jobs WHERE job_id=$1`, [tokenJobId]);
-    assert(afterDowngrade.rows[0].customer_rating === null, "downgrade attempt must not write a review");
-
-    // (b) Exact token authorises the write.
-    const tokened = await postReview({ booking_token: bookingToken1, rating: 5, review_text: "à¸”à¸µà¸¡à¸²à¸" }, "198.51.100.21");
-    assert(tokened.status === 200 && tokened.body?.success === true, `token review must succeed, got HTTP ${tokened.status}`);
-    // Response must not leak PII/token/confirmation beyond {success:true}.
-    assert(Object.keys(tokened.body).join(",") === "success", `review response leaked keys: ${Object.keys(tokened.body)}`);
-    const reviewed = await pool.query(`SELECT customer_rating FROM public.jobs WHERE job_id=$1`, [tokenJobId]);
-    assert(Number(reviewed.rows[0].customer_rating) === 5, "token review did not persist");
-    // Replaying the token review on an already-reviewed job is denied.
-    const replay = await postReview({ booking_token: bookingToken1, rating: 1 }, "198.51.100.22");
-    assert(replay.status !== 200 && !replay.body?.success, "already-reviewed job must reject a second review");
-
-    // (c) Legacy job (no token) remains reviewable via code + FULL phone.
-    const spare = await pool.query(
-      `SELECT job_id, booking_code FROM public.jobs
-        WHERE booking_token IS NOT NULL AND booking_code <> $1 AND booking_code IS NOT NULL
-        ORDER BY job_id DESC LIMIT 1`, [bookingCode1]);
-    if (spare.rows.length) {
-      const legacyId = spare.rows[0].job_id;
-      const legacyCode = spare.rows[0].booking_code;
-      const legacyPhone = "0870000009";
-      await pool.query(
-        `UPDATE public.jobs SET booking_token=NULL, job_status='à¹€à¸ªà¸£à¹‡à¸ˆà¹à¸¥à¹‰à¸§', finished_at=NOW(),
-                technician_username='tech_a', customer_phone=$2, customer_rating=NULL, reviewed_at=NULL
-         WHERE job_id=$1`, [legacyId, legacyPhone]);
-      await pool.query(`DELETE FROM public.technician_reviews WHERE job_id=$1`, [legacyId]);
-      // Wrong phone -> denied.
-      const wrongPhone = await postReview(
-        { booking_code: legacyCode, customer_phone: "0899999999", rating: 4 }, "198.51.100.23");
-      assert(wrongPhone.status !== 200 && !wrongPhone.body?.success, "legacy review with wrong phone must be denied");
-      // Correct full phone -> accepted.
-      const legacyOk = await postReview(
-        { booking_code: legacyCode, customer_phone: legacyPhone, rating: 4, review_text: "legacy ok" }, "198.51.100.24");
-      assert(legacyOk.status === 200 && legacyOk.body?.success === true,
-        `legacy code+phone review must succeed, got HTTP ${legacyOk.status}`);
-    }
-  });
-
-  // S18) The quote document is gated identically to the receipt: a bare
-  // sequential job_id 404s, the booking_token key unlocks it, and the response
-  // carries the private/no-store/no-index headers.
-  await record("S18 quote route: bare job_id 404s, booking_token key unlocks it with sensitive headers", async () => {
-    const r = await pool.query(`SELECT job_id, booking_token FROM public.jobs WHERE booking_code=$1`, [bookingCode1]);
-    const { job_id, booking_token } = r.rows[0];
-    const bare = await fetch(`${BASE_A}/docs/quote/${job_id}`, { headers: { "x-forwarded-for": "198.51.100.30" } });
-    assert(bare.status === 404, `bare job_id quote must 404, got ${bare.status}`);
-    const keyed = await fetch(`${BASE_A}/docs/quote/${job_id}?key=${encodeURIComponent(booking_token)}`,
-      { headers: { "x-forwarded-for": "198.51.100.31" } });
-    assert(keyed.status === 200, `keyed quote must 200, got ${keyed.status}`);
-    assert(/no-store/.test(keyed.headers.get("cache-control") || ""), "quote missing Cache-Control: no-store");
-    assert(/noindex/.test(keyed.headers.get("x-robots-tag") || ""), "quote missing X-Robots-Tag: noindex");
-    assert((keyed.headers.get("referrer-policy") || "") === "no-referrer", "quote missing Referrer-Policy: no-referrer");
-    // A wrong key is indistinguishable from a missing one (404, no oracle).
-    const wrong = await fetch(`${BASE_A}/docs/quote/${job_id}?key=deadbeef`, { headers: { "x-forwarded-for": "198.51.100.32" } });
-    assert(wrong.status === 404, `wrong key must 404, got ${wrong.status}`);
-  });
-
-  // ---------- second review round: client_app is not a security boundary ----
-
-  // S19) With booking lanes ON, scheduled protection must be CANONICAL â€” keyed
-  // off booking_mode, not client_app. A forged/omitted client_app with no
-  // request key is rejected with zero mutation, and the same request key
-  // replays to a single job regardless of client_app.
-  await record("S19 scheduled: canonical request-key/idempotency cannot be bypassed by forging client_app", async () => {
-    const before = await jobCountWhere("TRUE");
-    // No request key + omitted client_app -> reject, no job.
-    const omitted = await apiBook(BASE_A, scheduledPayload(r2Day, "10:00", { client_app: undefined, scheduled_request_key: undefined }));
-    assert(omitted.status === 400 && omitted.body?.code === "MISSING_REQUEST_KEY",
-      `omitted client_app + no key must 400 MISSING_REQUEST_KEY, got ${omitted.status}`);
-    // No request key + forged client_app -> still reject.
-    const forged = await apiBook(BASE_A, scheduledPayload(r2Day, "10:00", { client_app: "admin_console", scheduled_request_key: undefined }));
-    assert(forged.status === 400 && forged.body?.code === "MISSING_REQUEST_KEY",
-      `forged client_app + no key must 400 MISSING_REQUEST_KEY, got ${forged.status}`);
-    assert((await jobCountWhere("TRUE")) === before, "keyless scheduled attempts must create 0 jobs");
-    // Same request key + SAME payload, first omitted then forged client_app ->
-    // replays the SAME job (idempotent, independent of client_app). The replay
-    // runs before the availability gate, so it succeeds even though the job now
-    // occupies that slot â€” exactly the committed-but-response-lost retry case.
-    const key = crypto.randomBytes(16).toString("hex");
-    const first = await apiBook(BASE_A, scheduledPayload(r2Day, "10:30", { client_app: undefined, scheduled_request_key: key }));
-    assert(first.status === 200 && first.body?.job_id, `first canonical scheduled booking failed: HTTP ${first.status} ${JSON.stringify(first.body)}`);
-    const replay = await apiBook(BASE_A, scheduledPayload(r2Day, "10:30", { client_app: "totally_forged", scheduled_request_key: key }));
-    assert(replay.status === 200 && replay.body?.replayed === true, `same-payload replay must succeed, got ${replay.status} ${JSON.stringify(replay.body)}`);
-    assert(replay.body?.job_id === first.body.job_id, "same request key + same payload must replay the SAME job");
-    const detToken = require("node:crypto").createHash("sha256").update(`scheduled_v1:${key}`).digest("hex").slice(0, 24);
-    const dupCount = await pool.query(`SELECT COUNT(*)::int AS n FROM public.jobs WHERE booking_token=$1`, [detToken]);
-    assert(dupCount.rows[0].n === 1, `request key must map to exactly one job, got ${dupCount.rows[0].n}`);
-  });
-
-  // S23) Idempotency key is bound to its payload. Reusing the key with a
-  // materially different payload (time, phone) must be rejected with
-  // 409 IDEMPOTENCY_KEY_REUSED â€” never a silent return of the first job's data,
-  // and never a second job.
-  await record("S23 scheduled: reusing a request key with a different payload is 409 IDEMPOTENCY_KEY_REUSED", async () => {
-    const key = crypto.randomBytes(16).toString("hex");
-    const first = await apiBook(BASE_A, scheduledPayload(r2Day, "13:00", { scheduled_request_key: key, customer_phone: "0855550000" }));
-    assert(first.status === 200 && first.body?.job_id, `seed booking failed: HTTP ${first.status} ${JSON.stringify(first.body)}`);
-    const detToken = require("node:crypto").createHash("sha256").update(`scheduled_v1:${key}`).digest("hex").slice(0, 24);
-    const before = await pool.query(`SELECT COUNT(*)::int AS n FROM public.jobs WHERE booking_token=$1`, [detToken]);
-    // Different appointment time, same key -> reject (before any availability check).
-    const diffTime = await apiBook(BASE_A, scheduledPayload(r2Day, "14:30", { scheduled_request_key: key, customer_phone: "0855550000" }));
-    assert(diffTime.status === 409 && diffTime.body?.code === "IDEMPOTENCY_KEY_REUSED",
-      `different time must 409 IDEMPOTENCY_KEY_REUSED, got ${diffTime.status} ${JSON.stringify(diffTime.body)}`);
-    assert(!diffTime.body?.job_id && !diffTime.body?.booking_code, "409 must not leak the first job's identifiers");
-    // Different phone, same key + same time -> reject.
-    const diffPhone = await apiBook(BASE_A, scheduledPayload(r2Day, "13:00", { scheduled_request_key: key, customer_phone: "0866660000" }));
-    assert(diffPhone.status === 409 && diffPhone.body?.code === "IDEMPOTENCY_KEY_REUSED",
-      `different phone must 409 IDEMPOTENCY_KEY_REUSED, got ${diffPhone.status}`);
-    // Different service composition (BTU / AC type / qty) at the SAME time -> reject,
-    // even though the computed duration could match. These are caught by the
-    // canonical job_items signature, not by duration.
-    const diffBtu = await apiBook(BASE_A, scheduledPayload(r2Day, "13:00", { scheduled_request_key: key, customer_phone: "0855550000", btu: 18000 }));
-    assert(diffBtu.status === 409 && diffBtu.body?.code === "IDEMPOTENCY_KEY_REUSED",
-      `different BTU must 409 IDEMPOTENCY_KEY_REUSED, got ${diffBtu.status} ${JSON.stringify(diffBtu.body)}`);
-    const diffQty = await apiBook(BASE_A, scheduledPayload(r2Day, "13:00", { scheduled_request_key: key, customer_phone: "0855550000", machine_count: 2 }));
-    assert(diffQty.status === 409 && diffQty.body?.code === "IDEMPOTENCY_KEY_REUSED",
-      `different machine_count must 409 IDEMPOTENCY_KEY_REUSED, got ${diffQty.status} ${JSON.stringify(diffQty.body)}`);
-    // Different place (address) -> reject.
-    const diffAddr = await apiBook(BASE_A, scheduledPayload(r2Day, "13:00", { scheduled_request_key: key, customer_phone: "0855550000", address_text: "99/99 à¸—à¸µà¹ˆà¸­à¸¢à¸¹à¹ˆà¹ƒà¸«à¸¡à¹ˆ à¸à¸—à¸¡" }));
-    assert(diffAddr.status === 409 && diffAddr.body?.code === "IDEMPOTENCY_KEY_REUSED",
-      `different address must 409 IDEMPOTENCY_KEY_REUSED, got ${diffAddr.status}`);
-    // None of the 409s leaked identifiers, and none created a job.
-    for (const r of [diffTime, diffPhone, diffBtu, diffQty, diffAddr]) {
-      assert(!r.body?.job_id && !r.body?.booking_code && !r.body?.token, "409 must not leak the first job's identifiers");
-    }
-    // The EXACT same canonical payload still replays the same job.
-    const exact = await apiBook(BASE_A, scheduledPayload(r2Day, "13:00", { scheduled_request_key: key, customer_phone: "0855550000" }));
-    assert(exact.status === 200 && exact.body?.replayed === true && exact.body?.job_id === first.body.job_id,
-      `exact same payload must replay the same job, got ${exact.status} ${JSON.stringify(exact.body)}`);
-    const after = await pool.query(`SELECT COUNT(*)::int AS n FROM public.jobs WHERE booking_token=$1`, [detToken]);
-    assert(after.rows[0].n === before.rows[0].n && after.rows[0].n === 1, "key reuse must not create additional jobs");
-  });
-
-  // S24) Committed-but-response-lost retry: the first submit commits, its
-  // response is discarded, then the SAME request (same key + same payload) is
-  // replayed â€” the server returns the existing job and the DB holds exactly one.
-  await record("S24 committed-then-lost response: replaying the same request yields exactly one job", async () => {
-    const key = crypto.randomBytes(16).toString("hex");
-    const payload = scheduledPayload(r2Day, "16:00", { scheduled_request_key: key, customer_phone: "0877770000" });
-    const committed = await apiBook(BASE_A, payload); // commit; pretend the client never saw this response
-    assert(committed.status === 200 && committed.body?.job_id, `initial commit failed: HTTP ${committed.status} ${JSON.stringify(committed.body)}`);
-    const retry = await apiBook(BASE_A, payload); // identical resubmit after "reload"
-    assert(retry.status === 200 && retry.body?.replayed === true, `retry must replay, got ${retry.status} ${JSON.stringify(retry.body)}`);
-    assert(retry.body?.job_id === committed.body.job_id, "retry must resolve to the same job");
-    const detToken = require("node:crypto").createHash("sha256").update(`scheduled_v1:${key}`).digest("hex").slice(0, 24);
-    const n = await pool.query(`SELECT COUNT(*)::int AS n FROM public.jobs WHERE booking_token=$1`, [detToken]);
-    assert(n.rows[0].n === 1, `exactly one job must exist after the lost-response retry, got ${n.rows[0].n}`);
-  });
-
-  // S20) Urgent routing is CANONICAL â€” every public urgent request goes through
-  // the customer-safe adapter on booking_mode alone. A forged/omitted client_app
-  // (with attacker-chosen technician/assign fields) must be sanitised, not
-  // reach the raw urgent engine, and must dedupe on the request key.
-  await record("S20 urgent: forged/omitted client_app is still sanitised through the safe adapter", async () => {
-    const urgentKey = crypto.randomBytes(16).toString("hex");
-    const attack = {
-      customer_name: "à¸”à¹ˆà¸§à¸™à¸›à¸¥à¸­à¸¡", customer_phone: "0844444444",
-      job_type: "à¸¥à¹‰à¸²à¸‡", appointment_datetime: new Date().toISOString(),
-      address_text: "88/8 à¹€à¸‚à¸•à¸ªà¸§à¸™à¸«à¸¥à¸§à¸‡ à¸à¸£à¸¸à¸‡à¹€à¸—à¸à¸¯", booking_mode: "urgent",
-      // NO client_app â€” the sanitiser must still engage on the canonical mode.
-      urgent_request_key: urgentKey,
-      ac_type: "à¸œà¸™à¸±à¸‡", btu: 12000, machine_count: 1, wash_variant: "à¸¥à¹‰à¸²à¸‡à¸˜à¸£à¸£à¸¡à¸”à¸²",
-      // Attacker-chosen fields that the customer allowlist must strip:
-      technician_username: "tech_partner", assign_mode: "manual",
-      dispatch_mode: "normal", tech_type: "company", team_members: ["tech_partner2"],
-    };
-    const res = await apiBook(BASE_A, attack);
-    assert(res.status === 200 && res.body?.job_id, `urgent with no client_app must still book via adapter, got ${res.status}`);
-    const jobId = res.body.job_id;
-    const row = await pool.query(
-      `SELECT booking_mode, dispatch_mode, technician_username FROM public.jobs WHERE job_id=$1`, [jobId]);
-    assert(row.rows[0].booking_mode === "urgent", "must persist as urgent");
-    assert(row.rows[0].dispatch_mode === "offer", "attacker dispatch_mode must be overridden to offer");
-    assert(!row.rows[0].technician_username, "attacker-supplied technician must be stripped (offer engine assigns)");
-    const offers = await pool.query(`SELECT technician_username FROM public.job_offers WHERE job_id=$1`, [jobId]);
-    assert(offers.rows.every((o) => ["tech_partner", "tech_partner2"].includes(o.technician_username)),
-      "offers must target zoned partners via the engine, not an attacker choice");
-    // Dedup on the request key: replaying the same forged request makes no 2nd job.
-    await apiBook(BASE_A, attack);
-    const cnt = await pool.query(
-      `SELECT COUNT(*)::int AS n FROM public.jobs WHERE booking_mode='urgent' AND customer_phone='0844444444'`);
-    assert(cnt.rows[0].n === 1, `urgent request key must dedupe, got ${cnt.rows[0].n} jobs`);
-  });
-
-  // S21) A LEGACY customer (job with no booking_token) must be able to review
-  // through the real tracking UI: a booking_code lookup shows a phone-entry
-  // form, a wrong phone is rejected, the right phone succeeds â€” and a tokened
-  // job opened by code must NOT offer the legacy form (no downgrade).
-  await record("S21 legacy customer reviews via the tracking UI (phone form); tokened job shows no legacy form", async () => {
-    const spare = await pool.query(
-      `SELECT job_id, booking_code FROM public.jobs
-        WHERE booking_token IS NOT NULL AND booking_code IS NOT NULL AND booking_code <> $1
-        ORDER BY job_id ASC LIMIT 1`, [bookingCode1]);
-    assert(spare.rows.length, "no spare job to convert to a legacy (tokenless) job");
-    const legacyId = spare.rows[0].job_id;
-    const legacyCode = spare.rows[0].booking_code;
-    const legacyPhone = "0876543210";
-    await pool.query(
-      `UPDATE public.jobs SET booking_token=NULL, job_status='à¹€à¸ªà¸£à¹‡à¸ˆà¹à¸¥à¹‰à¸§', finished_at=NOW(),
-              technician_username='tech_a', customer_phone=$2, customer_rating=NULL, reviewed_at=NULL
-       WHERE job_id=$1`, [legacyId, legacyPhone]);
-    await pool.query(`DELETE FROM public.technician_reviews WHERE job_id=$1`, [legacyId]);
-
-    const p = await ctx.newPage();
-    const openLookup = async () => {
-      await p.goto(`${APP_URL_A}#tracking`, { waitUntil: "domcontentloaded" });
-      await p.locator("#tracking-code").fill(legacyCode);
-      await tap(p.locator('[data-action="track-read"]'));
-      // The review form lives in the "aftercare" tab panel â€” activate it first.
-      await p.waitForSelector('[data-tracking-view="aftercare"]', { timeout: 15000 });
-      await tap(p.locator('[data-tracking-view="aftercare"]').first());
-      await p.waitForSelector('[data-review-form] input[name="customer_phone"]', { timeout: 15000 });
-    };
-    await openLookup();
-    // Wrong phone -> rejected, nothing written.
-    await p.locator('[data-review-form] input[name="customer_phone"]').fill("0800000000");
-    await tap(p.locator('[data-review-form] button[type="submit"]'));
-    await p.waitForTimeout(2500);
-    let rating = await pool.query(`SELECT customer_rating FROM public.jobs WHERE job_id=$1`, [legacyId]);
-    assert(rating.rows[0].customer_rating === null, "legacy review with wrong phone must not persist");
-    // Correct phone -> success.
-    if (!(await p.locator('[data-review-form] input[name="customer_phone"]').count())) await openLookup();
-    await p.locator('[data-review-form] input[name="customer_phone"]').fill(legacyPhone);
-    await tap(p.locator('[data-review-form] button[type="submit"]'));
-    await p.waitForTimeout(3000);
-    rating = await pool.query(`SELECT customer_rating FROM public.jobs WHERE job_id=$1`, [legacyId]);
-    assert(Number(rating.rows[0].customer_rating) >= 1, "legacy review with the correct phone must persist");
-    await p.close();
-
-    // A tokened job opened by its short code is never legacy-eligible.
-    const red = await (await fetch(`${BASE_A}/public/track?q=${encodeURIComponent(bookingCode1)}`,
-      { headers: { "x-forwarded-for": "198.51.100.40" } })).json();
-    assert(red.legacy_review_eligible === false, "a tokened job must never be legacy-review-eligible via code");
-  });
-
-  // S22) Rate-limit buckets are per VERIFIED client, proving the app resolves
-  // req.ip under trust proxy (not a shared socket IP). Exhaust client A; a
-  // different verified client B must still get through. If trust proxy were off,
-  // both would share the 127.0.0.1 socket bucket and B would already be 429.
-  await record("S22 rate-limit buckets are per verified client IP (trust proxy resolves req.ip)", async () => {
-    const clientA = "203.0.113.240";
-    const clientB = "203.0.113.241";
-    let aLimited = false;
-    for (let i = 0; i < 45 && !aLimited; i += 1) {
-      const res = await fetch(`${BASE_A}/public/track?q=CWFA${i}`, {
-        headers: { "x-forwarded-for": `10.0.0.9, ${clientA}` } });
-      if (res.status === 429) aLimited = true;
-    }
-    assert(aLimited, "client A never hit its own rate limit");
-    const bRes = await fetch(`${BASE_A}/public/track?q=CWFB1`, {
-      headers: { "x-forwarded-for": `10.0.0.9, ${clientB}` } });
-    assert(bRes.status !== 429, `client B must have its own bucket (trust proxy off would 429), got ${bRes.status}`);
-  });
-
-  await browser.close();
-}
-
-// ------------------------------------------------------------------ run ----
-
-main()
-  .catch((error) => {
-    log(`FATAL: ${error.stack || error.message}`);
-    results.push({ name: "harness", ok: false, error: error.message });
-  })
-  .finally(async () => {
-    for (const child of children) { try { child.kill("SIGKILL"); } catch (_) {} }
-    try { if (pool) await pool.end(); } catch (_) {}
-    try { await dropDatabase(); } catch (_) {}
-    const pass = results.filter((r) => r.ok).length;
-    const fail = results.length - pass;
-    log("\n===== E2E SUMMARY =====");
-    for (const r of results) log(`${r.ok ? "PASS" : "FAIL"}  ${r.name}${r.ok ? "" : ` â€” ${r.error}`}`);
-    log(`total=${results.length} pass=${pass} fail=${fail}`);
-    process.exitCode = fail === 0 ? 0 : 1;
-  });
+async function fillContactStep(page, { name = "à¸¥à¸¹à¸à¸„à¹‰à¸² à¸—à¸”à¸ªà¸­à¸š", phone = "0812345678", address = "99/1 à¸«à¸¡à¸¹à¹ˆà¸šà¹‰à¸²à¸™à¸—à¸”à¸ªà¸­à¸š à¸–à¸™à¸™à¸­à¹ˆà¸­à¸™à¸™à¸¸à×ÎtîÚ$z{-®éÜj×2"“°Ğ¢òò6ÖR&WVW7B¶W’²4ÔR–ÆöBÂf—'7BöÖ—GFVBF†Vâf÷&vVB6Æ–VçEöÓàĞ¢òò&WÆ—2F†R4ÔR¦ö"†–FV×÷FVçBÂ–æFWVæFVçBöb6Æ–VçEö’âF†R&WÆĞ¢òò'Vç2&Vf÷&RF†Rf–Æ&–Æ—G’vFRÂ6ò—B7V66VVG2WfVâF†÷Vv‚F†R¦ö"æ÷pĞ¢òòö67W–W2F†B6Æ÷B(	BW†7FÇ’F†R6öÖÖ—GFVBÖ'WB×&W7öç6RÖÆ÷7B&WG'’66RàĞ¢6öç7B¶W’Ò7'—Fòç&æFöÔ'—FW2ƒb’çFõ7G&–ær‚&†W‚"“°Ğ¢6öç7Bf—'7BÒv—B”&öö²„$4UôÂ66†VGVÆVE–ÆöB‡#$F’Â#£3"Â²6Æ–VçEö¢VæFVf–æVBÂ66†VGVÆVE÷&WVW7Eö¶W“¢¶W’Ò’“°Ğ¢76W'B†f—'7Bç7FGW2ÓÓÒ#bbf—'7Bæ&öG“òæ¦ö%ö–BÂf—'7B6æöæ–6Â66†VGVÆVB&öö¶–ærf–ÆVC¢…EEG¶f—'7Bç7FGW7ÒG´¥4ôâç7G&–æv–g’†f—'7Bæ&öG’—Ö“°Ğ¢6öç7B&WÆ’Òv—B”&öö²„$4UôÂ66†VGVÆVE–ÆöB‡#$F’Â#£3"Â²6Æ–VçEö¢'F÷FÆÇ•öf÷&vVB"Â66†VGVÆVE÷&WVW7Eö¶W“¢¶W’Ò’“°Ğ¢76W'B‡&WÆ’ç7FGW2ÓÓÒ#bb&WÆ’æ&öG“òç&WÆ–VBÓÓÒG'VRÂ6ÖR×–ÆöB&WÆ’×W7B7V66VVBÂv÷BG·&WÆ’ç7FGW7ÒG´¥4ôâç7G&–æv–g’‡&WÆ’æ&öG’—Ö“°Ğ¢76W'B‡&WÆ’æ&öG“òæ¦ö%ö–BÓÓÒf—'7Bæ&öG’æ¦ö%ö–BÂ'6ÖR&WVW7B¶W’²6ÖR–ÆöB×W7B&WÆ’F†R4ÔR¦ö""“°Ğ¢6öç7BFWEFö¶VâÒ&WV—&R‚&æöFS¦7'—Fò"’æ7&VFT†6‚‚'6†#Sb"’çWFFR†66†VGVÆVE÷c¢G¶¶W—Ö’æF–vW7B‚&†W‚"’ç6Æ–6RƒÂ#B“°Ğ¢6öç7BGW6÷VçBÒv—BööÂçVW'’†4TÄT5B4õTåB‚¢“£¦–çB2âe$ôÒV&Æ–2æ¦ö'2t„U$R&öö¶–æu÷Fö¶VãÒCÂ¶FWEFö¶VåÒ“°Ğ¢76W'B†GW6÷VçBç&÷w5³ÒæâÓÓÒÂ&WVW7B¶W’×W7BÖFòW†7FÇ’öæR¦ö"Âv÷BG¶GW6÷VçBç&÷w5³ÒæçÖ“°Ğ¢Ò“°Ğ Ğ¢òò3#2’–FV×÷FVæ7’¶W’—2&÷VæBFò—G2–ÆöBâ&WW6–ærF†R¶W’v—F‚Ğ¢òòÖFW&–ÆÇ’F–ffW&VçB–ÆöB‡F–ÖRÂ†öæR’×W7B&R&V¦V7FVBv—F€Ğ¢òòC’”DTÕõDTä5•ô´U•õ$UU4TB(	BæWfW"6–ÆVçB&WGW&âöbF†Rf—'7B¦ö"w2FFÀĞ¢òòæBæWfW"6V6öæB¦ö"àĞ¢v—B&V6÷&B‚%3#266†VGVÆVC¢&WW6–ær&WVW7B¶W’v—F‚F–ffW&VçB–ÆöB—2C’”DTÕõDTä5•ô´U•õ$UU4TB"Â7–æ2‚’Óâ°Ğ¢6öç7B¶W’Ò7'—Fòç&æFöÔ'—FW2ƒb’çFõ7G&–ær‚&†W‚"“°Ğ¢6öç7Bf—'7BÒv—B”&öö²„$4UôÂ66†VGVÆVE–ÆöB‡#$F’Â#3£"Â²66†VGVÆVE÷&WVW7Eö¶W“¢¶W’Â7W7FöÖW%÷†öæS¢#ƒSSSS"Ò’“°Ğ¢76W'B†f—'7Bç7FGW2ÓÓÒ#bbf—'7Bæ&öG“òæ¦ö%ö–BÂ6VVB&öö¶–ærf–ÆVC¢…EEG¶f—'7Bç7FGW7ÒG´¥4ôâç7G&–æv–g’†f—'7Bæ&öG’—Ö“°Ğ¢6öç7BFWEFö¶VâÒ&WV—&R‚&æöFS¦7'—Fò"’æ7&VFT†6‚‚'6†#Sb"’çWFFR†66†VGVÆVE÷c¢G¶¶W—Ö’æF–vW7B‚&†W‚"’ç6Æ–6RƒÂ#B“°Ğ¢6öç7B&Vf÷&RÒv—BööÂçVW'’†4TÄT5B4õTåB‚¢“£¦–çB2âe$ôÒV&Æ–2æ¦ö'2t„U$R&öö¶–æu÷Fö¶VãÒCÂ¶FWEFö¶VåÒ“°Ğ¢òòF–ffW&VçBö–çFÖVçBF–ÖRÂ6ÖR¶W’Óâ&V¦V7B†&Vf÷&Rç’f–Æ&–Æ—G’6†V6²’àĞ¢6öç7BF–feF–ÖRÒv—B”&öö²„$4UôÂ66†VGVÆVE–ÆöB‡#$F’Â#C£3"Â²66†VGVÆVE÷&WVW7Eö¶W“¢¶W’Â7W7FöÖW%÷†öæS¢#ƒSSSS"Ò’“°Ğ¢76W'B†F–feF–ÖRç7FGW2ÓÓÒC’bbF–feF–ÖRæ&öG“òæ6öFRÓÓÒ$”DTÕõDTä5•ô´U•õ$UU4TB"ÀĞ¢F–ffW&VçBF–ÖR×W7BC’”DTÕõDTä5•ô´U•õ$UU4TBÂv÷BG¶F–feF–ÖRç7FGW7ÒG´¥4ôâç7G&–æv–g’†F–feF–ÖRæ&öG’—Ö“°Ğ¢76W'B‚F–feF–ÖRæ&öG“òæ¦ö%ö–BbbF–feF–ÖRæ&öG“òæ&öö¶–æuö6öFRÂ#C’×W7Bæ÷BÆV²F†Rf—'7B¦ö"w2–FVçF–f–W'2"“°Ğ¢òòF–ffW&VçB†öæRÂ6ÖR¶W’²6ÖRF–ÖRÓâ&V¦V7BàĞ¢6öç7BF–fe†öæRÒv—B”&öö²„$4UôÂ66†VGVÆVE–ÆöB‡#$F’Â#3£"Â²66†VGVÆVE÷&WVW7Eö¶W“¢¶W’Â7W7FöÖW%÷†öæS¢#ƒcccc"Ò’“°Ğ¢76W'B†F–fe†öæRç7FGW2ÓÓÒC’bbF–fe†öæRæ&öG“òæ6öFRÓÓÒ$”DTÕõDTä5•ô´U•õ$UU4TB"ÀĞ¢F–ffW&VçB†öæR×W7BC’”DTÕõDTä5•ô´U•õ$UU4TBÂv÷BG¶F–fe†öæRç7FGW7Ö“°Ğ¢òòF–ffW&VçB6W'f–6R6ö×÷6—F–öâ„%ERò2G—RòG’’BF†R4ÔRF–ÖRÓâ&V¦V7BÀĞ¢òòWfVâF†÷Vv‚F†R6ö×WFVBGW&F–öâ6÷VÆBÖF6‚âF†W6R&R6Vv‡B'’F†PĞ¢òò6æöæ–6Â¦ö%ö—FV×26–væGW&RÂæ÷B'’GW&F–öâàĞ¢6öç7BF–fd'GRÒv—B”&öö²„$4UôÂ66†VGVÆVE–ÆöB‡#$F’Â#3£"Â²66†VGVÆVE÷&WVW7Eö¶W“¢¶W’Â7W7FöÖW%÷†öæS¢#ƒSSSS"Â'GS¢ƒÒ’“°Ğ¢76W'B†F–fd'GRç7FGW2ÓÓÒC’bbF–fd'GRæ&öG“òæ6öFRÓÓÒ$”DTÕõDTä5•ô´U•õ$UU4TB"ÀĞ¢F–ffW&VçB%ER×W7BC’”DTÕõDTä5•ô´U•õ$UU4TBÂv÷BG¶F–fd'GRç7FGW7ÒG´¥4ôâç7G&–æv–g’†F–fd'GRæ&öG’—Ö“°Ğ¢6öç7BF–feG’Òv—B”&öö²„$4UôÂ66†VGVÆVE–ÆöB‡#$F’Â#3£"Â²66†VGVÆVE÷&WVW7Eö¶W“¢¶W’Â7W7FöÖW%÷†öæS¢#ƒSSSS"ÂÖ6†–æUö6÷VçC¢"Ò’“°Ğ¢76W'B†F–feG’ç7FGW2ÓÓÒC’bbF–feG’æ&öG“òæ6öFRÓÓÒ$”DTÕõDTä5•ô´U•õ$UU4TB"ÀĞ¢F–ffW&VçBÖ6†–æUö6÷VçB×W7BC’”DTÕõDTä5•ô´U•õ$UU4TBÂv÷BG¶F–feG’ç7FGW7ÒG´¥4ôâç7G&–æv–g’†F–feG’æ&öG’—Ö“°Ğ¢òòF–ffW&VçBÆ6R†FG&W72’Óâ&V¦V7BàĞ¢6öç7BF–fdFG"Òv—B”&öö²„$4UôÂ66†VGVÆVE–ÆöB‡#$F’Â#3£"Â²66†VGVÆVE÷&WVW7Eö¶W“¢¶W’Â7W7FöÖW%÷†öæS¢#ƒSSSS"ÂFG&W75÷FW‡C¢#“’ó“’‰~‹^˜ŠŞŠ.‹˜˜>Š¾Š˜‚ˆ‰~Š"Ò’“°Ğ¢76W'B†F–fdFG"ç7FGW2ÓÓÒC’bbF–fdFG"æ&öG“òæ6öFRÓÓÒ$”DTÕõDTä5•ô´U•õ$UU4TB"ÀĞ¢F–ffW&VçBFG&W72×W7BC’”DTÕõDTä5•ô´U•õ$UU4TBÂv÷BG¶F–fdFG"ç7FGW7Ö“°Ğ¢òòæöæRöbF†RC—2ÆV¶VB–FVçF–f–W'2ÂæBæöæR7&VFVB¦ö"àĞ¢f÷"†6öç7B"öb¶F–feF–ÖRÂF–fe†öæRÂF–fd'GRÂF–feG’ÂF–fdFG%Ò’°Ğ¢76W'B‚"æ&öG“òæ¦ö%ö–Bbb"æ&öG“òæ&öö¶–æuö6öFRbb"æ&öG“òçFö¶VâÂ#C’×W7Bæ÷BÆV²F†Rf—'7B¦ö"w2–FVçF–f–W'2"“°Ğ¢ĞĞ¢òòF†RU„5B6ÖR6æöæ–6Â–ÆöB7F–ÆÂ&WÆ—2F†R6ÖR¦ö"àĞ¢6öç7BW†7BÒv—B”&öö²„$4UôÂ66†VGVÆVE–ÆöB‡#$F’Â#3£"Â²66†VGVÆVE÷&WVW7Eö¶W“¢¶W’Â7W7FöÖW%÷†öæS¢#ƒSSSS"Ò’“°Ğ¢76W'B†W†7Bç7FGW2ÓÓÒ#bbW†7Bæ&öG“òç&WÆ–VBÓÓÒG'VRbbW†7Bæ&öG“òæ¦ö%ö–BÓÓÒf—'7Bæ&öG’æ¦ö%ö–BÀĞ¢W†7B6ÖR–ÆöB×W7B&WÆ’F†R6ÖR¦ö"Âv÷BG¶W†7Bç7FGW7ÒG´¥4ôâç7G&–æv–g’†W†7Bæ&öG’—Ö“°Ğ¢6öç7BgFW"Òv—BööÂçVW'’†4TÄT5B4õTåB‚¢“£¦–çB2âe$ôÒV&Æ–2æ¦ö'2t„U$R&öö¶–æu÷Fö¶VãÒCÂ¶FWEFö¶VåÒ“°Ğ¢76W'B†gFW"ç&÷w5³ÒæâÓÓÒ&Vf÷&Rç&÷w5³ÒæâbbgFW"ç&÷w5³ÒæâÓÓÒÂ&¶W’&WW6R×W7Bæ÷B7&VFRFF—F–öæÂ¦ö'2"“°Ğ¢Ò“°Ğ Ğ¢òò3#B’6öÖÖ—GFVBÖ'WB×&W7öç6RÖÆ÷7B&WG'“¢F†Rf—'7B7V&Ö—B6öÖÖ—G2Â—G0Ğ¢òò&W7öç6R—2F—66&FVBÂF†VâF†R4ÔR&WVW7B‡6ÖR¶W’²6ÖR–ÆöB’—0Ğ¢òò&WÆ–VB(	BF†R6W'fW"&WGW&ç2F†RW†—7F–ær¦ö"æBF†RD"†öÆG2W†7FÇ’öæRàĞ¢v—B&V6÷&B‚%3#B6öÖÖ—GFVB×F†VâÖÆ÷7B&W7öç6S¢&WÆ––ærF†R6ÖR&WVW7B––VÆG2W†7FÇ’öæR¦ö""Â7–æ2‚’Óâ°Ğ¢6öç7B¶W’Ò7'—Fòç&æFöÔ'—FW2ƒb’çFõ7G&–ær‚&†W‚"“°Ğ¢6öç7B–ÆöBÒ66†VGVÆVE–ÆöB‡#$F’Â#c£"Â²66†VGVÆVE÷&WVW7Eö¶W“¢¶W’Â7W7FöÖW%÷†öæS¢#ƒssss"Ò“°Ğ¢6öç7B6öÖÖ—GFVBÒv—B”&öö²„$4UôÂ–ÆöB“²òò6öÖÖ—C²&WFVæBF†R6Æ–VçBæWfW"6rF†—2&W7öç6PĞ¢76W'B†6öÖÖ—GFVBç7FGW2ÓÓÒ#bb6öÖÖ—GFVBæ&öG“òæ¦ö%ö–BÂ–æ—F–Â6öÖÖ—Bf–ÆVC¢…EEG¶6öÖÖ—GFVBç7FGW7ÒG´¥4ôâç7G&–æv–g’†6öÖÖ—GFVBæ&öG’—Ö“°Ğ¢6öç7B&WG'’Òv—B”&öö²„$4UôÂ–ÆöB“²òò–FVçF–6Â&W7V&Ö—BgFW"'&VÆöB Ğ¢76W'B‡&WG'’ç7FGW2ÓÓÒ#bb&WG'’æ&öG“òç&WÆ–VBÓÓÒG'VRÂ&WG'’×W7B&WÆ’Âv÷BG·&WG'’ç7FGW7ÒG´¥4ôâç7G&–æv–g’‡&WG'’æ&öG’—Ö“°Ğ¢76W'B‡&WG'’æ&öG“òæ¦ö%ö–BÓÓÒ6öÖÖ—GFVBæ&öG’æ¦ö%ö–BÂ'&WG'’×W7B&W6öÇfRFòF†R6ÖR¦ö""“°Ğ¢6öç7BFWEFö¶VâÒ&WV—&R‚&æöFS¦7'—Fò"’æ7&VFT†6‚‚'6†#Sb"’çWFFR†66†VGVÆVE÷c¢G¶¶W—Ö’æF–vW7B‚&†W‚"’ç6Æ–6RƒÂ#B“°Ğ¢6öç7BâÒv—BööÂçVW'’†4TÄT5B4õTåB‚¢“£¦–çB2âe$ôÒV&Æ–2æ¦ö'2t„U$R&öö¶–æu÷Fö¶VãÒCÂ¶FWEFö¶VåÒ“°Ğ¢76W'B†âç&÷w5³ÒæâÓÓÒÂW†7FÇ’öæR¦ö"×W7BW†—7BgFW"F†RÆ÷7B×&W7öç6R&WG'’Âv÷BG¶âç&÷w5³ÒæçÖ“°Ğ¢Ò“°Ğ Ğ¢òò3#’W&vVçB&÷WF–ær—24äôä”4Â(	BWfW'’V&Æ–2W&vVçB&WVW7BvöW2F‡&÷Vv€Ğ¢òòF†R7W7FöÖW"×6fRFFW"öâ&öö¶–æuöÖöFRÆöæRâf÷&vVBööÖ—GFVB6Æ–VçEö Ğ¢òò‡v—F‚GF6¶W"Ö6†÷6VâFV6†æ–6–âö76–vâf–VÆG2’×W7B&R6æ—F—6VBÂæ÷@Ğ¢òò&V6‚F†R&rW&vVçBVæv–æRÂæB×W7BFVGWRöâF†R&WVW7B¶W’àĞ¢v—B&V6÷&B‚%3#W&vVçC¢f÷&vVBööÖ—GFVB6Æ–VçEö—27F–ÆÂ6æ—F—6VBF‡&÷Vv‚F†R6fRFFW""Â7–æ2‚’Óâ°Ğ¢6öç7BW&vVçD¶W’Ò7'—Fòç&æFöÔ'—FW2ƒb’çFõ7G&–ær‚&†W‚"“°Ğ¢6öç7BGF6²Ò°Ğ¢7W7FöÖW%öæÖS¢.‰N˜Š~‰‰¾Š^ŠŞŠ"Â7W7FöÖW%÷†öæS¢#ƒCCCCCCCB"ÀĞ¢¦ö%÷G—S¢.Š^˜‹.ˆr"Âö–çFÖVçEöFFWF–ÖS¢æWrFFR‚’çFô•4õ7G&–ær‚’ÀĞ¢FG&W75÷FW‡C¢#ƒ‚ó‚˜ˆ.‰^Š®Š~‰Š¾Š^Š~ˆrˆŠ>‹ˆ~˜‰~‰îŠò"Â&öö¶–æuöÖöFS¢'W&vVçB"ÀĞ¢òòäò6Æ–VçEö(	BF†R6æ—F—6W"×W7B7F–ÆÂVævvRöâF†R6æöæ–6ÂÖöFRàĞ¢W&vVçE÷&WVW7Eö¶W“¢W&vVçD¶W’ÀĞ¢5÷G—S¢.‰Î‰‹ˆr"Â'GS¢#ÂÖ6†–æUö6÷VçC¢Âv6…÷f&–çC¢.Š^˜‹.ˆ~‰Š>Š>Š‰N‹""ÀĞ¢òòGF6¶W"Ö6†÷6Vâf–VÆG2F†BF†R7W7FöÖW"ÆÆ÷vÆ—7B×W7B7G&— Ğ¢FV6†æ–6–å÷W6W&æÖS¢'FV6…÷'FæW""Â76–våöÖöFS¢&ÖçVÂ"ÀĞ¢F—7F6…öÖöFS¢&æ÷&ÖÂ"ÂFV6…÷G—S¢&6ö×ç’"ÂFVÕöÖVÖ&W'3¢²'FV6…÷'FæW#"%ÒÀĞ¢Ó°Ğ¢6öç7B&W2Òv—B”&öö²„$4UôÂGF6²“°Ğ¢76W'B‡&W2ç7FGW2ÓÓÒ#bb&W2æ&öG“òæ¦ö%ö–BÂW&vVçBv—F‚æò6Æ–VçEö×W7B7F–ÆÂ&öö²f–FFW"Âv÷BG·&W2ç7FGW7Ö“°Ğ¢6öç7B¦ö$–BÒ&W2æ&öG’æ¦ö%ö–C°Ğ¢6öç7B&÷rÒv—BööÂçVW'’€Ğ¢4TÄT5B&öö¶–æuöÖöFRÂF—7F6…öÖöFRÂFV6†æ–6–å÷W6W&æÖRe$ôÒV&Æ–2æ¦ö'2t„U$R¦ö%ö–CÒCÂ¶¦ö$–EÒ“°Ğ¢76W'B‡&÷rç&÷w5³Òæ&öö¶–æuöÖöFRÓÓÒ'W&vVçB"Â&×W7BW'6—7B2W&vVçB"“°Ğ¢76W'B‡&÷rç&÷w5³ÒæF—7F6…öÖöFRÓÓÒ&öffW""Â&GF6¶W"F—7F6…öÖöFR×W7B&R÷fW'&–FFVâFòöffW""“°Ğ¢76W'B‚&÷rç&÷w5³ÒçFV6†æ–6–å÷W6W&æÖRÂ&GF6¶W"×7WÆ–VBFV6†æ–6–â×W7B&R7G&—VB†öffW"Væv–æR76–vç2’"“°Ğ¢6öç7BöffW'2Òv—BööÂçVW'’†4TÄT5BFV6†æ–6–å÷W6W&æÖRe$ôÒV&Æ–2æ¦ö%ööffW'2t„U$R¦ö%ö–CÒCÂ¶¦ö$–EÒ“°Ğ¢76W'B†öffW'2ç&÷w2æWfW'’‚†ò’Óâ²'FV6…÷'FæW""Â'FV6…÷'FæW#"%Òæ–æ6ÇVFW2†òçFV6†æ–6–å÷W6W&æÖR’’ÀĞ¢&öffW'2×W7BF&vWB¦öæVB'FæW'2f–F†RVæv–æRÂæ÷BâGF6¶W"6†ö–6R"“°Ğ¢òòFVGWöâF†R&WVW7B¶W“¢&WÆ––ærF†R6ÖRf÷&vVB&WVW7BÖ¶W2æò&æB¦ö"àĞ¢v—B”&öö²„$4UôÂGF6²“°Ğ¢6öç7B6çBÒv—BööÂçVW'’€Ğ¢4TÄT5B4õTåB‚¢“£¦–çB2âe$ôÒV&Æ–2æ¦ö'2t„U$R&öö¶–æuöÖöFSÒwW&vVçBräB7W7FöÖW%÷†öæSÒsƒCCCCCCCBv“°Ğ¢76W'B†6çBç&÷w5³ÒæâÓÓÒÂW&vVçB&WVW7B¶W’×W7BFVGWRÂv÷BG¶6çBç&÷w5³ÒæçÒ¦ö'6“°Ğ¢Ò“°Ğ Ğ¢òò3#’ÄTt5’7W7FöÖW"†¦ö"v—F‚æò&öö¶–æu÷Fö¶Vâ’×W7B&R&ÆRFò&Wf–WpĞ¢òòF‡&÷Vv‚F†R&VÂG&6¶–ærT“¢&öö¶–æuö6öFRÆöö·W6†÷w2†öæRÖVçG'Ğ¢òòf÷&ÒÂw&öær†öæR—2&V¦V7FVBÂF†R&–v‡B†öæR7V66VVG2(	BæBFö¶VæV@Ğ¢òò¦ö"÷VæVB'’6öFR×W7BäõBöffW"F†RÆVv7’f÷&Ò†æòF÷væw&FR’àĞ¢v—B&V6÷&B‚%3#ÆVv7’7W7FöÖW"&Wf–Ww2f–F†RG&6¶–ærT’‡†öæRf÷&Ò“²Fö¶VæVB¦ö"6†÷w2æòÆVv7’f÷&Ò"Â7–æ2‚’Óâ°Ğ¢6öç7B7&RÒv—BööÂçVW'’€Ğ¢4TÄT5B¦ö%ö–BÂ&öö¶–æuö6öFRe$ôÒV&Æ–2æ¦ö'0Ğ¢t„U$R&öö¶–æu÷Fö¶Vâ•2äõBåTÄÂäB&öö¶–æuö6öFR•2äõBåTÄÂäB&öö¶–æuö6öFRÃâCĞ¢õ$DU"%’¦ö%ö–B42Ä”Ô•BÂ¶&öö¶–æt6öFSÒ“°Ğ¢76W'B‡7&Rç&÷w2æÆVæwF‚Â&æò7&R¦ö"Fò6öçfW'BFòÆVv7’‡Fö¶VæÆW72’¦ö""“°Ğ¢6öç7BÆVv7”–BÒ7&Rç&÷w5³Òæ¦ö%ö–C°Ğ¢6öç7BÆVv7”6öFRÒ7&Rç&÷w5³Òæ&öö¶–æuö6öFS°Ğ¢6öç7BÆVv7•†öæRÒ#ƒscSC3##°Ğ¢v—BööÂçVW'’€Ğ¢UDDRV&Æ–2æ¦ö'24UB&öö¶–æu÷Fö¶VãÔåTÄÂÂ¦ö%÷7FGW3Ò~˜Š®Š>˜~ˆ˜Š^˜ŠrrÂf–æ—6†VEöCÔäõr‚’ÀĞ¢FV6†æ–6–å÷W6W&æÖSÒwFV6…örÂ7W7FöÖW%÷†öæSÒC"Â7W7FöÖW%÷&F–æsÔåTÄÂÂ&Wf–WvVEöCÔåTÄÀĞ¢t„U$R¦ö%ö–CÒCÂ¶ÆVv7”–BÂÆVv7•†öæUÒ“°Ğ¢v—BööÂçVW'’†DTÄUDRe$ôÒV&Æ–2çFV6†æ–6–å÷&Wf–Ww2t„U$R¦ö%ö–CÒCÂ¶ÆVv7”–EÒ“°Ğ Ğ¢6öç7BÒv—B7G‚ææWuvR‚“°Ğ¢6öç7B÷VäÆöö·WÒ7–æ2‚’Óâ°Ğ¢v—Bæv÷Fò†G´õU$ÅôÒ7G&6¶–ævÂ²v—EVçF–Ã¢&FöÖ6öçFVçFÆöFVB"Ò“°Ğ¢v—BæÆö6F÷"‚"7G&6¶–ærÖ6öFR"’æf–ÆÂ†ÆVv7”6öFR“°Ğ¢v—BF‡æÆö6F÷"‚u¶FFÖ7F–öãÒ'G&6²×&VB%Òr’“°Ğ¢òòF†R&Wf–Wrf÷&ÒÆ—fW2–âF†R&gFW&6&R"F"æVÂ(	B7F—fFR—Bf—'7BàĞ¢v—Bçv—Df÷%6VÆV7F÷"‚u¶FF×G&6¶–ær×f–WsÒ&gFW&6&R%ÒrÂ²F–ÖV÷WC¢SÒ“°Ğ¢v—BF‡æÆö6F÷"‚u¶FF×G&6¶–ær×f–WsÒ&gFW&6&R%Òr’æf—'7B‚’“°Ğ¢v—Bçv—Df÷%6VÆV7F÷"‚u¶FF×&Wf–WrÖf÷&ÕÒ–çWE¶æÖSÒ&7W7FöÖW%÷†öæR%ÒrÂ²F–ÖV÷WC¢SÒ“°Ğ¢Ó°Ğ¢v—B÷VäÆöö·W‚“°Ğ¢òòw&öær†öæRÓâ&V¦V7FVBÂæ÷F†–ærw&—GFVâàĞ¢v—BæÆö6F÷"‚u¶FF×&Wf–WrÖf÷&ÕÒ–çWE¶æÖSÒ&7W7FöÖW%÷†öæR%Òr’æf–ÆÂ‚#ƒ"“°Ğ¢v—BF‡æÆö6F÷"‚u¶FF×&Wf–WrÖf÷&ÕÒ'WGFöå·G—SÒ'7V&Ö—B%Òr’“°Ğ¢v—Bçv—Df÷%F–ÖV÷WBƒ#S“°Ğ¢ÆWB&F–ærÒv—BööÂçVW'’†4TÄT5B7W7FöÖW%÷&F–ære$ôÒV&Æ–2æ¦ö'2t„U$R¦ö%ö–CÒCÂ¶ÆVv7”–EÒ“°Ğ¢76W'B‡&F–ærç&÷w5³Òæ7W7FöÖW%÷&F–ærÓÓÒçVÆÂÂ&ÆVv7’&Wf–Wrv—F‚w&öær†öæR×W7Bæ÷BW'6—7B"“°Ğ¢òò6÷'&V7B†öæRÓâ7V66W72àĞ¢–b‚†v—BæÆö6F÷"‚u¶FF×&Wf–WrÖf÷&ÕÒ–çWE¶æÖSÒ&7W7FöÖW%÷†öæR%Òr’æ6÷VçB‚’’’v—B÷VäÆöö·W‚“°Ğ¢v—BæÆö6F÷"‚u¶FF×&Wf–WrÖf÷&ÕÒ–çWE¶æÖSÒ&7W7FöÖW%÷†öæR%Òr’æf–ÆÂ†ÆVv7•†öæR“°Ğ¢v—BF‡æÆö6F÷"‚u¶FF×&Wf–WrÖf÷&ÕÒ'WGFöå·G—SÒ'7V&Ö—B%Òr’“°Ğ¢v—Bçv—Df÷%F–ÖV÷WBƒ3“°Ğ¢&F–ærÒv—BööÂçVW'’†4TÄT5B7W7FöÖW%÷&F–ære$ôÒV&Æ–2æ¦ö'2t„U$R¦ö%ö–CÒCÂ¶ÆVv7”–EÒ“°Ğ¢76W'B„çVÖ&W"‡&F–ærç&÷w5³Òæ7W7FöÖW%÷&F–ær’ãÒÂ&ÆVv7’&Wf–Wrv—F‚F†R6÷'&V7B†öæR×W7BW'6—7B"“°Ğ¢v—Bæ6Æ÷6R‚“°Ğ Ğ¢òòFö¶VæVB¦ö"÷VæVB'’—G26†÷'B6öFR—2æWfW"ÆVv7’ÖVÆ–v–&ÆRàĞ¢6öç7B&VBÒv—B†v—BfWF6‚†G´$4UôÒ÷V&Æ–2÷G&6³÷ÒG¶Væ6öFUU$”6ö×öæVçB†&öö¶–æt6öFS—ÖÀĞ¢²†VFW'3¢²'‚Öf÷'v&FVBÖf÷"#¢#“‚ãSããC"ÒÒ’’æ§6öâ‚“°Ğ¢76W'B‡&VBæÆVv7•÷&Wf–WuöVÆ–v–&ÆRÓÓÒfÇ6RÂ&Fö¶VæVB¦ö"×W7BæWfW"&RÆVv7’×&Wf–WrÖVÆ–v–&ÆRf–6öFR"“°Ğ¢Ò“°Ğ Ğ¢òò3#"’&FRÖÆ–Ö—B'V6¶WG2&RW"dU$”d”TB6Æ–VçBÂ&÷f–ærF†R&W6öÇfW0Ğ¢òò&Wæ—VæFW"G'W7B&÷‡’†æ÷B6†&VB6ö6¶WB•’âW††W7B6Æ–VçB²Ğ¢òòF–ffW&VçBfW&–f–VB6Æ–VçB"×W7B7F–ÆÂvWBF‡&÷Vv‚â–bG'W7B&÷‡’vW&RöfbÀĞ¢òò&÷F‚v÷VÆB6†&RF†R#rããã6ö6¶WB'V6¶WBæB"v÷VÆBÇ&VG’&RC#’àĞ¢v—B&V6÷&B‚%3#"&FRÖÆ–Ö—B'V6¶WG2&RW"fW&–f–VB6Æ–VçB•‡G'W7B&÷‡’&W6öÇfW2&Wæ—’"Â7–æ2‚’Óâ°Ğ¢6öç7B6Æ–VçDÒ##2ãã2ã#C#°Ğ¢6öç7B6Æ–VçD"Ò##2ãã2ã#C#°Ğ¢ÆWBÆ–Ö—FVBÒfÇ6S°Ğ¢f÷"†ÆWB’Ò²’ÂCRbbÆ–Ö—FVC²’³Ò’°Ğ¢6öç7B&W2Òv—BfWF6‚†G´$4UôÒ÷V&Æ–2÷G&6³÷Ô5tdG¶—ÖÂ°Ğ¢†VFW'3¢²'‚Öf÷'v&FVBÖf÷"#¢ããã’ÂG¶6Æ–VçDÖÒÒ“°Ğ¢–b‡&W2ç7FGW2ÓÓÒC#’’Æ–Ö—FVBÒG'VS°Ğ¢ĞĞ¢76W'B†Æ–Ö—FVBÂ&6Æ–VçBæWfW"†—B—G2÷vâ&FRÆ–Ö—B"“°Ğ¢6öç7B%&W2Òv—BfWF6‚†G´$4UôÒ÷V&Æ–2÷G&6³÷Ô5td#Â°Ğ¢†VFW'3¢²'‚Öf÷'v&FVBÖf÷"#¢ããã’ÂG¶6Æ–VçD'ÖÒÒ“°Ğ¢76W'B†%&W2ç7FGW2ÓÒC#’Â6Æ–VçB"×W7B†fR—G2÷vâ'V6¶WB‡G'W7B&÷‡’öfbv÷VÆBC#’’Âv÷BG¶%&W2ç7FGW7Ö“°Ğ¢Ò“°Ğ Ğ¢v—B'&÷w6W"æ6Æ÷6R‚“°Ğ§ĞĞ Ğ¢òòÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒ'VâÒÒÒĞĞ Ğ¦Ö–â‚Ğ¢æ6F6‚‚†W'&÷"’Óâ°Ğ¢Æör†dDÃ¢G¶W'&÷"ç7F6²ÇÂW'&÷"æÖW76vWÖ“°Ğ¢&W7VÇG2çW6‚‡²æÖS¢&†&æW72"Âö³¢fÇ6RÂW'&÷#¢W'&÷"æÖW76vRÒ“°Ğ¢ÒĞ¢æf–æÆÇ’†7–æ2‚’Óâ°Ğ¢f÷"†6öç7B6†–ÆBöb6†–ÆG&Vâ’²G'’²6†–ÆBæ¶–ÆÂ‚%4”t´”ÄÂ"“²Ò6F6‚…ò’·ÒĞĞ¢G'’²–b‡ööÂ’v—BööÂæVæB‚“²Ò6F6‚…ò’·ĞĞ¢G'’²v—BG&÷FF&6R‚“²Ò6F6‚…ò’·ĞĞ¢6öç7B72Ò&W7VÇG2æf–ÇFW"‚‡"’Óâ"æö²’æÆVæwFƒ°Ğ¢6öç7Bf–ÂÒ&W7VÇG2æÆVæwF‚Ò73°Ğ¢Æör‚%ÆãÓÓÓÓÒS$R5TÔÔ%’ÓÓÓÓÒ"“°Ğ¢f÷"†6öç7B"öb&W7VÇG2’Æör†G·"æö²ò%52"¢$d”Â'ÒG·"ææÖWÒG·"æö²ò""¢(	BG·"æW'&÷'ÖÖ“°Ğ¢Æör†F÷FÃÒG·&W7VÇG2æÆVæwF‡Ò73ÒG·77Òf–ÃÒG¶f–ÇÖ“°Ğ¢&ö6W72æW†—D6öFRÒf–ÂÓÓÒò¢°Ğ¢Ò“°Ğ 

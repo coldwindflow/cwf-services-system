@@ -331,529 +331,4 @@ test("claim schema readiness query exceptions roll back and return safe 503 with
   const bookingCode = "CWFABC123";
   const logs = [];
   const schemaReadyError = Object.assign(new Error(`catalog failed for ${phone} ${bookingCode}`), { code: "42501" });
-  const pool = makePool({ jobs: [LEGACY_JOB], schemaReadyError });
-
-  await withServer({ pool, logger: { warn: (...args) => logs.push(args) } }, async (base) => {
-    const res = await fetch(`${base}/public/customer-history/claim`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ identifier: phone }),
-    });
-    assert.equal(res.status, 503);
-    assert.deepEqual(await json(res), { error: "CUSTOMER_HISTORY_SCHEMA_NOT_READY" });
-  });
-
-  assert.ok(pool.state.queries.some(({ sql }) => /ROLLBACK/.test(sql)));
-  const output = JSON.stringify(logs);
-  assert.match(output, /CUSTOMER_HISTORY_SCHEMA_NOT_READY/);
-  assert.match(output, /42501/);
-  assert.doesNotMatch(output, new RegExp(`${phone}|${bookingCode}`));
-});
-
-test("wrong phone/code cases use generic CLAIM_FAILED and never fallback to partial phone sources", async () => {
-  const pool = makePool({ jobs: [{ ...LEGACY_JOB, customer_note: "0812345678", address_text: "phone 0812345678 but not customer_phone", customer_phone: "0899999999" }] });
-  await withServer({ pool }, async (base) => {
-    for (const body of [
-      { identifier: "0812345678" },
-      { identifier: "812345678" },
-      { identifier: "NOPE" },
-    ]) {
-      const res = await fetch(`${base}/public/customer-history/claim`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      assert.equal(res.status, 400);
-      assert.equal((await json(res)).error, "CLAIM_FAILED");
-    }
-  });
-});
-
-test("claim succeeds, retries by same account are idempotent, and other accounts cannot claim same phone", async () => {
-  const pool = makePool({ jobs: [LEGACY_JOB] });
-  await withServer({ pool, sub: "line:u1" }, async (base) => {
-    const first = await fetch(`${base}/public/customer-history/claim`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ identifier: "+66812345678" }),
-    });
-    assert.equal(first.status, 200);
-    assert.equal(first.headers.get("cache-control"), "private, no-store");
-    assert.equal(pool.state.claims.length, 1);
-    assert.equal(pool.state.claims[0].phone_norm, "0812345678");
-    assert.equal(pool.state.claims[0].claim_method, "phone");
-    const second = await fetch(`${base}/public/customer-history/claim`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ identifier: "081-234-5678" }),
-    });
-    assert.equal(second.status, 200);
-    assert.equal((await json(second)).replayed, true);
-    assert.equal(pool.state.claims.length, 1);
-  });
-  await withServer({ pool, sub: "google:u2" }, async (base) => {
-    const res = await fetch(`${base}/public/customer-history/claim`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ identifier: "0812345678" }),
-    });
-    assert.equal(res.status, 400);
-    assert.equal((await json(res)).error, "CLAIM_FAILED");
-  });
-});
-
-test("Booking Code claim stores its truthful method on widened schema", async () => {
-  const methodDefinition = "CHECK ((claim_method = ANY (ARRAY['phone'::text, 'booking_code'::text, 'booking_code_phone'::text])))";
-  const pool = makePool({ jobs: [LEGACY_JOB], methodDefinition });
-  await withServer({ pool }, async (base) => {
-    const response = await fetch(`${base}/public/customer-history/claim`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ identifier: "CWFABC123" }),
-    });
-    assert.equal(response.status, 200);
-    assert.equal((await json(response)).claimed, true);
-  });
-  assert.equal(pool.state.claims.length, 1);
-  assert.equal(pool.state.claims[0].claim_method, "booking_code");
-});
-
-test("ambiguous Booking Code and a job without a usable phone fail closed before insert", async () => {
-  for (const jobs of [
-    [LEGACY_JOB, { ...LEGACY_JOB, job_id: 102 }],
-    [{ ...LEGACY_JOB, customer_phone: "" }],
-  ]) {
-    const pool = makePool({ jobs });
-    await withServer({ pool }, async (base) => {
-      const response = await fetch(`${base}/public/customer-history/claim`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ identifier: "CWFABC123" }),
-      });
-      assert.equal(response.status, 400);
-      assert.equal((await json(response)).error, "CLAIM_FAILED");
-    });
-    assert.equal(pool.state.claims.length, 0);
-    assert.ok(pool.state.queries.some(({ sql }) => /ROLLBACK/.test(sql)));
-    assert.equal(pool.state.queries.some(({ sql }) => /INSERT INTO public\.customer_history_claims/.test(sql)), false);
-  }
-});
-
-test("successful claim immediately authorizes history and location prefill data", async () => {
-  const pool = makePool({ jobs: [LEGACY_JOB] });
-  await withServer({ pool, sub: "line:u1" }, async (base) => {
-    const claim = await fetch(`${base}/public/customer-history/claim`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ identifier: "0812345678" }),
-    });
-    assert.equal(claim.status, 200);
-
-    const [historyRes, locationsRes] = await Promise.all([
-      fetch(`${base}/public/customer-history`),
-      fetch(`${base}/public/customer-history/locations`),
-    ]);
-    assert.equal(historyRes.status, 200);
-    assert.equal(locationsRes.status, 200);
-    const historyBody = await json(historyRes);
-    const locationsBody = await json(locationsRes);
-    assert.equal(historyBody.claimed, true);
-    assert.equal(historyBody.items.length, 1);
-    assert.equal(locationsBody.claimed, true);
-    assert.equal(locationsBody.locations[0].address_text, LEGACY_JOB.address_text);
-
-    const stateContext = makeBrowserContext();
-    const stateRoot = loadModule(stateContext, "customer-app/modules/state.js");
-    assert.equal(stateRoot.state.applyHistoryLocation("scheduled", locationsBody.locations[0]), true);
-    assert.equal(stateRoot.state.draft.scheduled.address_text, LEGACY_JOB.address_text);
-  });
-});
-
-test("concurrent claim requests return replay for same account and generic failure for a different account", async () => {
-  const samePool = makePool({ jobs: [LEGACY_JOB] });
-  await withServer({ pool: samePool, sub: "line:u1" }, async (base) => {
-    const body = JSON.stringify({ identifier: "0812345678" });
-    const responses = await Promise.all([
-      fetch(`${base}/public/customer-history/claim`, { method: "POST", headers: { "content-type": "application/json" }, body }),
-      fetch(`${base}/public/customer-history/claim`, { method: "POST", headers: { "content-type": "application/json" }, body }),
-    ]);
-    assert.deepEqual(responses.map((res) => res.status).sort(), [200, 200]);
-    const payloads = await Promise.all(responses.map(json));
-    assert.equal(payloads.filter((x) => x.replayed).length, 1);
-    assert.equal(samePool.state.claims.length, 1);
-  });
-
-  const differentPool = makePool({ jobs: [LEGACY_JOB] });
-  const app = express();
-  app.use(express.json());
-  app.use("/u1", createCustomerHistoryRoutes({
-    pool: differentPool,
-    requireCustomerJwt: requireCustomerJwtFor("line:u1"),
-    getSecret: () => "test-secret",
-    logger: { warn() {} },
-  }));
-  app.use("/u2", createCustomerHistoryRoutes({
-    pool: differentPool,
-    requireCustomerJwt: requireCustomerJwtFor("google:u2"),
-    getSecret: () => "test-secret",
-    logger: { warn() {} },
-  }));
-  const server = http.createServer(app);
-  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-  try {
-    const base = `http://127.0.0.1:${server.address().port}`;
-    const body = JSON.stringify({ identifier: "0812345678" });
-    const responses = await Promise.all([
-      fetch(`${base}/u1/public/customer-history/claim`, { method: "POST", headers: { "content-type": "application/json" }, body }),
-      fetch(`${base}/u2/public/customer-history/claim`, { method: "POST", headers: { "content-type": "application/json" }, body }),
-    ]);
-    const statuses = responses.map((res) => res.status).sort();
-    assert.deepEqual(statuses, [200, 400]);
-    const payloads = await Promise.all(responses.map(json));
-    assert.ok(payloads.some((x) => x.error === "CLAIM_FAILED"));
-    assert.equal(differentPool.state.claims.length, 1);
-  } finally {
-    await new Promise((resolve) => server.close(resolve));
-  }
-});
-
-test("unique races resolve to replay for same account or generic failure for another account", async () => {
-  const sameAccountPool = makePool({
-    jobs: [LEGACY_JOB],
-    uniqueConflictClaim: {
-      claim_id: 1,
-      customer_sub: "line:u1",
-      phone_norm: "0812345678",
-      phone_last4: "5678",
-      proof_job_id: 101,
-    },
-  });
-  await withServer({ pool: sameAccountPool, sub: "line:u1" }, async (base) => {
-    const res = await fetch(`${base}/public/customer-history/claim`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ identifier: "0812345678" }),
-    });
-    assert.equal(res.status, 200);
-    assert.equal((await json(res)).replayed, true);
-    assert.equal(sameAccountPool.state.claims.length, 1);
-  });
-
-  const otherAccountPool = makePool({
-    jobs: [LEGACY_JOB],
-    uniqueConflictClaim: {
-      claim_id: 1,
-      customer_sub: "line:other",
-      phone_norm: "0812345678",
-      phone_last4: "5678",
-      proof_job_id: 101,
-    },
-  });
-  await withServer({ pool: otherAccountPool, sub: "line:u1" }, async (base) => {
-    const res = await fetch(`${base}/public/customer-history/claim`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ identifier: "0812345678" }),
-    });
-    assert.equal(res.status, 400);
-    assert.equal((await json(res)).error, "CLAIM_FAILED");
-  });
-});
-
-test("revoked claim does not authorize history and history rejects phone query", async () => {
-  const pool = makePool({
-    jobs: [LEGACY_JOB],
-    claims: [{ claim_id: 1, customer_sub: "line:u1", phone_norm: "0812345678", phone_last4: "5678", proof_job_id: 101, revoked_at: "2026-01-01" }],
-  });
-  await withServer({ pool }, async (base) => {
-    const phoneQuery = await fetch(`${base}/public/customer-history?phone=0812345678`);
-    assert.equal(phoneQuery.status, 400);
-    const res = await fetch(`${base}/public/customer-history`);
-    assert.equal(res.status, 200);
-    assert.equal(res.headers.get("cache-control"), "private, no-store");
-    const body = await json(res);
-    assert.equal(body.claimed, false);
-    assert.deepEqual(body.items, []);
-  });
-});
-
-test("history and detail use opaque refs and do not return token, raw job_id, or internal fields", async () => {
-  const pool = makePool({
-    jobs: [LEGACY_JOB],
-    claims: [{ claim_id: 1, customer_sub: "line:u1", phone_norm: "0812345678", phone_last4: "5678", proof_job_id: 101 }],
-  });
-  await withServer({ pool }, async (base) => {
-    const res = await fetch(`${base}/public/customer-history`);
-    assert.equal(res.status, 200);
-    const body = await json(res);
-    assert.equal(body.claimed, true);
-    assert.equal(body.items.length, 1);
-    const item = body.items[0];
-    assert.ok(item.job_ref && !String(item.job_ref).includes("101"));
-    for (const forbidden of ["booking_token", "job_id", "technician_note", "customer_note", "claim_id", "proof_job_id"]) {
-      assert.equal(item[forbidden], undefined);
-    }
-    const detail = await fetch(`${base}/public/customer-history/${encodeURIComponent(item.job_ref)}`);
-    assert.equal(detail.status, 200);
-    assert.equal(detail.headers.get("cache-control"), "private, no-store");
-    const detailBody = await json(detail);
-    for (const forbidden of ["booking_token", "job_id", "technician_note", "customer_note", "claim_id", "proof_job_id"]) {
-      assert.equal(detailBody.item[forbidden], undefined);
-    }
-  });
-});
-
-test("wrong-account job_ref is rejected", async () => {
-  const ref = history.makeJobRef({ secret: "test-secret", customerSub: "line:u1", jobId: 101 });
-  const pool = makePool({
-    jobs: [LEGACY_JOB],
-    claims: [{ claim_id: 1, customer_sub: "google:u2", phone_norm: "0812345678", phone_last4: "5678", proof_job_id: 101 }],
-  });
-  await withServer({ pool, sub: "google:u2" }, async (base) => {
-    const res = await fetch(`${base}/public/customer-history/${encodeURIComponent(ref)}`);
-    assert.equal(res.status, 404);
-  });
-});
-
-test("claim rate limit is split by proof hash and does not log raw phone or code", async () => {
-  const logs = [];
-  const pool = makePool({ jobs: [LEGACY_JOB], failInsert: true });
-  await withServer({ pool, logger: { warn: (...args) => logs.push(args) } }, async (base) => {
-    const res = await fetch(`${base}/public/customer-history/claim`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ identifier: "0812345678" }),
-    });
-    assert.equal(res.status, 500);
-    assert.doesNotMatch(JSON.stringify(logs), /0812345678|CWFABC123/);
-  });
-});
-
-test("locations group exact duplicates but keep ambiguous locations separate", async () => {
-  const pool = makePool({
-    jobs: [
-      LEGACY_JOB,
-      { ...LEGACY_JOB, job_id: 102, booking_code: "CWF2" },
-      { ...LEGACY_JOB, job_id: 103, booking_code: "CWF3", maps_url: "https://maps.google.com/?q=13.1,100.1" },
-    ],
-    claims: [{ claim_id: 1, customer_sub: "line:u1", phone_norm: "0812345678", phone_last4: "5678", proof_job_id: 101 }],
-  });
-  await withServer({ pool }, async (base) => {
-    const res = await fetch(`${base}/public/customer-history/locations`);
-    assert.equal(res.status, 200);
-    assert.equal(res.headers.get("cache-control"), "private, no-store");
-    const body = await json(res);
-    assert.equal(body.auto_select, false);
-    assert.equal(body.has_multiple_locations, true);
-    assert.equal(body.locations.length, 2);
-    assert.ok(body.locations.some((x) => x.job_count === 2));
-    for (const loc of body.locations) {
-      assert.equal(loc.sample_booking_code, undefined);
-      assert.equal(loc.location_ref, undefined);
-    }
-  });
-});
-
-test("migration stores no raw booking code and uses BIGINT-compatible proof_job_id", () => {
-  const sql = fs.readFileSync(path.join(REPO_ROOT, "migrations", "20260710_customer_history_claims.sql"), "utf8");
-  assert.match(sql, /proof_job_id BIGINT NOT NULL REFERENCES public\.jobs\(job_id\)/);
-  assert.doesNotMatch(sql, /proof_booking_code/i);
-  assert.match(sql, /phone_norm ~ '\^0\[0-9\]\{8,9\}\$'/);
-  assert.match(sql, /phone_last4 ~ '\^\[0-9\]\{4\}\$' AND phone_last4 = right\(phone_norm, 4\)/);
-});
-
-function makeBrowserContext({ fetchImpl } = {}) {
-  const storage = new Map();
-  const window = {
-    CWFCustomerAppV2: {},
-    location: { protocol: "https:", origin: "https://app.example.test", hostname: "app.example.test", search: "", hash: "" },
-    sessionStorage: {
-      getItem(key) { return storage.get(key) || null; },
-      setItem(key, value) { storage.set(key, String(value)); },
-      removeItem(key) { storage.delete(key); },
-    },
-  };
-  const context = { window, fetch: fetchImpl || (async () => ({ ok: true, text: async () => "{}" })), URL, URLSearchParams, console, Intl, Date, setTimeout, clearTimeout };
-  context.globalThis = context;
-  return vm.createContext(context);
-}
-
-function loadModule(context, relativePath) {
-  const src = fs.readFileSync(path.join(REPO_ROOT, relativePath), "utf8");
-  vm.runInContext(src, context, { filename: relativePath });
-  return context.window.CWFCustomerAppV2;
-}
-
-test("Customer App API and state support one-identifier search/link without URL leakage", async () => {
-  const calls = [];
-  const context = makeBrowserContext({
-    fetchImpl: async (url, options = {}) => {
-      calls.push({ url, options });
-      return { ok: true, text: async () => JSON.stringify({ ok: true, items: [], locations: [] }) };
-    },
-  });
-  const root = loadModule(context, "customer-app/modules/api.js");
-  await root.api.searchCustomerHistory("081");
-  await root.api.claimCustomerHistory("081");
-  await root.api.loadCustomerHistory();
-  await root.api.loadCustomerHistoryDetail("opaque.ref");
-  await root.api.loadCustomerHistoryLocations();
-  assert.equal(calls[0].url, "https://app.example.test/public/customer-history/search");
-  assert.deepEqual(JSON.parse(calls[0].options.body), { identifier: "081" });
-  assert.equal(calls[1].url, "https://app.example.test/public/customer-history/claim");
-  assert.deepEqual(JSON.parse(calls[1].options.body), { identifier: "081" });
-  assert.equal(calls[2].url, "https://app.example.test/public/customer-history");
-  assert.equal(calls[3].url, "https://app.example.test/public/customer-history/opaque.ref");
-  assert.equal(calls[4].url, "https://app.example.test/public/customer-history/locations");
-  assert.doesNotMatch(calls.map((x) => x.url).join("\n"), /phone=/);
-
-  const stateContext = makeBrowserContext();
-  const stateRoot = loadModule(stateContext, "customer-app/modules/state.js");
-  assert.equal(stateRoot.state.applyHistoryLocation("scheduled", { address_text: "Old condo", maps_url: "https://maps.example/a", job_zone: "Zone A" }), true);
-  assert.equal(stateRoot.state.draft.scheduled.address_text, "Old condo");
-  assert.equal(stateRoot.state.draft.scheduled.maps_url, "https://maps.example/a");
-  assert.equal(stateRoot.state.draft.scheduled.job_zone, "Zone A");
-});
-
-test("Customer App profile opens history detail with opaque job_ref and clears search state after link", async () => {
-  const context = makeBrowserContext();
-  const root = context.window.CWFCustomerAppV2;
-  root.utils = {
-    escapeHtml(value) {
-      return String(value == null ? "" : value).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
-    },
-    icon() { return ""; },
-    routeTo() {},
-  };
-  const detailCalls = [];
-  root.api = {
-    async claimCustomerHistory() { return { ok: true }; },
-    async loadCustomerHistory() { return { claimed: true, items: root.state.customerHistory.items }; },
-    async loadCustomerHistoryLocations() { return { claimed: true, locations: [] }; },
-    async loadCustomerHistoryDetail(jobRef) {
-      detailCalls.push(jobRef);
-      return { item: { booking_code: "CWFABC123", job_status: "done", job_price: 1200, customer_phone_masked: "**** 5678" } };
-    },
-  };
-  root.auth = {
-    renderLoginPanel() { return ""; },
-    displayName() { return "Customer"; },
-    loadCustomer() { return Promise.resolve(); },
-  };
-  root.ui = { supportButtons() { return ""; } };
-  root.router = { refresh() {} };
-  root.state = {
-    authStatus: "success",
-    currentRoute: "profile",
-    customer: { logged_in: true, profile: {} },
-    profileAddressForm: {},
-    customerHistory: {
-      claimed: true,
-      items: [{ job_ref: "opaque.ref", booking_code: "CWFABC123", appointment_datetime: "2026-07-01", job_status: "done" }],
-      locations: [],
-      searchIdentifier: "CWFABC123",
-      previewItems: [{ booking_code: "CWFABC123" }],
-    },
-    setCustomerHistory(patch) { this.customerHistory = { ...this.customerHistory, ...patch }; },
-  };
-
-  const listeners = [];
-  const container = {
-    _html: "",
-    set innerHTML(value) { this._html = String(value); },
-    get innerHTML() { return this._html; },
-    querySelector(selector) {
-      if (selector === "[data-profile-history]") {
-        return {
-          set innerHTML(value) { container._html = String(value); },
-          get innerHTML() { return container._html; },
-        };
-      }
-      return null;
-    },
-    querySelectorAll(selector) {
-      if (selector !== "[data-history-detail-index]") return [];
-      const matches = [...this._html.matchAll(/data-history-detail-index="([0-9]+)"/g)];
-      return matches.map((m) => ({
-        dataset: {},
-        getAttribute(name) { return name === "data-history-detail-index" ? m[1] : null; },
-        addEventListener(_event, handler) { listeners.push(handler); },
-      }));
-    },
-  };
-
-  loadModule(context, "customer-app/modules/profile.js");
-  root.profile.render(container);
-  assert.equal(listeners.length, 1);
-  await listeners[0]();
-  assert.deepEqual(detailCalls, ["opaque.ref"]);
-  assert.equal(root.state.customerHistory.detail.booking_code, "CWFABC123");
-  assert.equal(root.state.customerHistory.detail.job_id, undefined);
-
-  const submitState = { claimStatus: "saving", searchIdentifier: "CWFABC123", previewItems: [{}] };
-  root.state.setCustomerHistory = (patch) => Object.assign(submitState, patch);
-  root.state.setCustomerHistory({ claimStatus: "success", searchIdentifier: "", previewItems: [], claimed: true });
-  assert.equal(submitState.searchIdentifier, "");
-  assert.deepEqual(submitState.previewItems, []);
-});
-
-test("Customer App schema-not-ready state offers retry and admin contact without weakening generic proof failure", () => {
-  const src = fs.readFileSync(path.join(REPO_ROOT, "customer-app/modules/profile.js"), "utf8");
-  const css = fs.readFileSync(path.join(REPO_ROOT, "customer-app/assets/customer-app.css"), "utf8");
-  assert.match(src, /data-history-refresh[\s\S]*?>à¸¥à¸­à¸‡à¹ƒà¸«à¸¡à¹ˆ<\/button>/);
-  assert.match(src, /<a class="secondary-btn" href="https:\/\/lin\.ee\/x0touXY" target="_blank" rel="noopener noreferrer">à¸•à¸´à¸”à¸•à¹ˆà¸­à¹à¸­à¸”à¸¡à¸´à¸™<\/a>/);
-  assert.doesNotMatch(src, /https:\/\/lin\.ee\/fG1Oq7y/);
-  assert.match(css, /\.button-row \{ display: flex; flex-direction: column; gap: 10px;/);
-  assert.match(css, /\.secondary-btn \{[\s\S]*?min-height: 50px;/);
-  assert.match(src, /error\?\.status === 503/);
-  assert.match(src, /à¹„à¸¡à¹ˆà¸žà¸šà¸›à¸£à¸°à¸§à¸±à¸•à¸´à¸‡à¸²à¸™ à¸à¸£à¸¸à¸“à¸²à¸•à¸£à¸§à¸ˆà¸ªà¸­à¸šà¸‚à¹‰à¸­à¸¡à¸¹à¸¥à¸­à¸µà¸à¸„à¸£à¸±à¹‰à¸‡/);
-  assert.doesNotMatch(src, /à¹€à¸šà¸­à¸£à¹Œà¹‚à¸—à¸£à¹„à¸¡à¹ˆà¸–à¸¹à¸|Booking Code à¹„à¸¡à¹ˆà¸–à¸¹à¸/);
-});
-
-test("Customer App renders one responsive search input, preview, and explicit link action", () => {
-  const src = fs.readFileSync(path.join(REPO_ROOT, "customer-app/modules/profile.js"), "utf8");
-  const css = fs.readFileSync(path.join(REPO_ROOT, "customer-app/assets/customer-app.css"), "utf8");
-  assert.match(src, /<label for="history-identifier">à¹€à¸šà¸­à¸£à¹Œà¹‚à¸—à¸£ à¸«à¸£à¸·à¸­à¸£à¸«à¸±à¸ªà¸à¸²à¸£à¸ˆà¸­à¸‡<\/label>/);
-  assert.match(src, /name="identifier"[\s\S]*?placeholder="à¸à¸£à¸­à¸à¹€à¸šà¸­à¸£à¹Œà¹‚à¸—à¸£à¸«à¸£à¸·à¸­à¸£à¸«à¸±à¸ªà¸à¸²à¸£à¸ˆà¸­à¸‡"/);
-  assert.match(src, /"à¸„à¹‰à¸™à¸«à¸²à¸‡à¸²à¸™"/);
-  assert.match(src, /"à¸œà¸¹à¸à¸›à¸£à¸°à¸§à¸±à¸•à¸´à¸à¸±à¸šà¸šà¸±à¸à¸Šà¸µà¸™à¸µà¹‰"/);
-  assert.match(src, /profile-history-preview-card/);
-  assert.match(src, /await root\.api\.claimCustomerHistory\(identifier\);[\s\S]*?await loadHistoryData\(container\);/);
-  assert.match(src, /function renderLoggedIn\(container\)[\s\S]*?loadHistoryData\(container\);/);
-  assert.doesNotMatch(src, /name="phone"|name="booking_code"|id="history-phone"|id="history-booking-code"/);
-  assert.doesNotMatch(src, /à¸£à¸°à¸šà¸šà¹ƒà¸Šà¹‰à¹€à¸šà¸­à¸£à¹Œà¹‚à¸—à¸£à¹€à¸•à¹‡à¸¡à¹à¸¥à¸° Booking Code|à¸•à¹‰à¸­à¸‡à¹ƒà¸Šà¹‰à¹€à¸šà¸­à¸£à¹Œ.*Booking Code|à¹‚à¸«à¸¥à¸”à¸›à¸£à¸°à¸§à¸±à¸•à¸´<\/button>/);
-  assert.doesNotMatch(src, /type="hidden"|localStorage/);
-  assert.match(css, /\.profile-history-card,[\s\S]*?\.profile-history-preview-card \{ min-width: 0; \}/);
-  assert.match(css, /grid-template-columns: minmax\(0, 1fr\)/);
-  assert.match(css, /overflow-wrap: anywhere/);
-  assert.match(css, /\.primary-btn \{[\s\S]*?min-height: 54px/);
-});
-
-test("Customer History search and preview keep 360px and 390px width contracts", () => {
-  const css = fs.readFileSync(path.join(REPO_ROOT, "customer-app/assets/customer-app.css"), "utf8");
-  const start = css.indexOf(".profile-history-card,");
-  const end = css.indexOf("/* ===================== Buttons", start);
-  const historyCss = css.slice(start, end);
-  assert.ok(start >= 0 && end > start);
-  assert.match(css, /\* \{ box-sizing: border-box; \}/);
-  assert.match(css, /\.card \{[\s\S]*?width: 100%;/);
-  assert.match(css, /\.input, \.select, \.textarea \{[\s\S]*?width: 100%;/);
-  assert.match(historyCss, /min-width: 0/);
-  assert.match(historyCss, /grid-template-columns: minmax\(0, 1fr\)/);
-  assert.doesNotMatch(historyCss, /(?:min-)?width:\s*(?:[4-9]\d{2}|[1-9]\d{3,})px/);
-  for (const viewport of [360, 390]) assert.ok(viewport > (18 * 2) + 44);
-});
-
-test("Customer App cache version is bumped consistently", () => {
-  const expected = "20260726_urgent_preferred_time_gps_v2";
-  for (const file of [
-    "customer-app/index.html",
-    "customer-app/sw.js",
-    "customer-app/assets/customer-app.js",
-    "customer-app/manifest.webmanifest",
-  ]) {
-    const src = fs.readFileSync(path.join(REPO_ROOT, file), "utf8");
-    assert.match(src, new RegExp(expected));
-    assert.doesNotMatch(src, /20260709_review_legacy_v1/);
-  }
-});
+  const pooßŽ´¶‰žËkºwµçl4(€…Ý…¥ÐÝ¥Ñ¡M•ÉÙ•È¡ìÁ½½°ô°…Íå¹Œ€¡‰…Í”¤€ôøì4(€€€½¹ÍÐÁ¡½¹•EÕ•Éä€ô…Ý…¥Ð™•Ñ ¡€‘í‰…Í•ô½ÁÕ‰±¥Œ½ÕÍÑ½µ•Èµ¡¥ÍÑ½ÉäýÁ¡½¹”ôÀàÄÈÌÐÔØÜá€¤ì4(€€€…ÍÍ•ÉÐ¹•ÅÕ…°¡Á¡½¹•EÕ•Éä¹ÍÑ…ÑÕÌ°€ÐÀÀ¤ì4(€€€½¹ÍÐÉ•Ì€ô…Ý…¥Ð™•Ñ ¡€‘í‰…Í•ô½ÁÕ‰±¥Œ½ÕÍÑ½µ•Èµ¡¥ÍÑ½Éå€¤ì4(€€€…ÍÍ•ÉÐ¹•ÅÕ…°¡É•Ì¹ÍÑ…ÑÕÌ°€ÈÀÀ¤ì4(€€€…ÍÍ•ÉÐ¹•ÅÕ…°¡É•Ì¹¡•…‘•ÉÌ¹•Ð ‰…¡”µ½¹ÑÉ½°ˆ¤°€‰ÁÉ¥Ù…Ñ”°¹¼µÍÑ½É”ˆ¤ì4(€€€½¹ÍÐ‰½‘ä€ô…Ý…¥Ð©Í½¸¡É•Ì¤ì4(€€€…ÍÍ•ÉÐ¹•ÅÕ…°¡‰½‘ä¹±…¥µ•°™…±Í”¤ì4(€€€…ÍÍ•ÉÐ¹‘••ÁÅÕ…°¡‰½‘ä¹¥Ñ•µÌ°mt¤ì4(€ô¤ì4)ô¤ì4(4)Ñ•ÍÐ ‰¡¥ÍÑ½Éä…¹‘•Ñ…¥°ÕÍ”½Á…ÅÕ”É•™Ì…¹‘¼¹½ÐÉ•ÑÕÉ¸Ñ½­•¸°É…Ü©½‰}¥°½È¥¹Ñ•É¹…°™¥•±‘Ìˆ°…Íå¹Œ€ ¤€ôøì4(€½¹ÍÐÁ½½°€ôµ…­•A½½°¡ì4(€€€©½‰Ìèm1e})=	t°4(€€€±…¥µÌèmì±…¥µ}¥è€Ä°ÕÍÑ½µ•É}ÍÕˆè€‰±¥¹”éÔÄˆ°Á¡½¹•}¹½É´è€ˆÀàÄÈÌÐÔØÜàˆ°Á¡½¹•}±…ÍÐÐè€ˆÔØÜàˆ°ÁÉ½½™}©½‰}¥è€ÄÀÄõt°4(€ô¤ì4(€…Ý…¥ÐÝ¥Ñ¡M•ÉÙ•È¡ìÁ½½°ô°…Íå¹Œ€¡‰…Í”¤€ôøì4(€€€½¹ÍÐÉ•Ì€ô…Ý…¥Ð™•Ñ ¡€‘í‰…Í•ô½ÁÕ‰±¥Œ½ÕÍÑ½µ•Èµ¡¥ÍÑ½Éå€¤ì4(€€€…ÍÍ•ÉÐ¹•ÅÕ…°¡É•Ì¹ÍÑ…ÑÕÌ°€ÈÀÀ¤ì4(€€€½¹ÍÐ‰½‘ä€ô…Ý…¥Ð©Í½¸¡É•Ì¤ì4(€€€…ÍÍ•ÉÐ¹•ÅÕ…°¡‰½‘ä¹±…¥µ•°ÑÉÕ”¤ì4(€€€…ÍÍ•ÉÐ¹•ÅÕ…°¡‰½‘ä¹¥Ñ•µÌ¹±•¹Ñ °€Ä¤ì4(€€€½¹ÍÐ¥Ñ•´€ô‰½‘ä¹¥Ñ•µÍlÁtì4(€€€…ÍÍ•ÉÐ¹½¬¡¥Ñ•´¹©½‰}É•˜€˜˜€…MÑÉ¥¹œ¡¥Ñ•´¹©½‰}É•˜¤¹¥¹±Õ‘•Ì ˆÄÀÄˆ¤¤ì4(€€€™½È€¡½¹ÍÐ™½É‰¥‘‘•¸½˜l‰‰½½­¥¹}Ñ½­•¸ˆ°€‰©½‰}¥ˆ°€‰Ñ•¡¹¥¥…¹}¹½Ñ”ˆ°€‰ÕÍÑ½µ•É}¹½Ñ”ˆ°€‰±…¥µ}¥ˆ°€‰ÁÉ½½™}©½‰}¥‰t¤ì4(€€€€€…ÍÍ•ÉÐ¹•ÅÕ…°¡¥Ñ•µm™½É‰¥‘‘•¹t°Õ¹‘•™¥¹•¤ì4(€€€ô4(€€€½¹ÍÐ‘•Ñ…¥°€ô…Ý…¥Ð™•Ñ ¡€‘í‰…Í•ô½ÁÕ‰±¥Œ½ÕÍÑ½µ•Èµ¡¥ÍÑ½Éä¼‘í•¹½‘•UI%½µÁ½¹•¹Ð¡¥Ñ•´¹©½‰}É•˜¥õ€¤ì4(€€€…ÍÍ•ÉÐ¹•ÅÕ…°¡‘•Ñ…¥°¹ÍÑ…ÑÕÌ°€ÈÀÀ¤ì4(€€€…ÍÍ•ÉÐ¹•ÅÕ…°¡‘•Ñ…¥°¹¡•…‘•ÉÌ¹•Ð ‰…¡”µ½¹ÑÉ½°ˆ¤°€‰ÁÉ¥Ù…Ñ”°¹¼µÍÑ½É”ˆ¤ì4(€€€½¹ÍÐ‘•Ñ…¥±	½‘ä€ô…Ý…¥Ð©Í½¸¡‘•Ñ…¥°¤ì4(€€€™½È€¡½¹ÍÐ™½É‰¥‘‘•¸½˜l‰‰½½­¥¹}Ñ½­•¸ˆ°€‰©½‰}¥ˆ°€‰Ñ•¡¹¥¥…¹}¹½Ñ”ˆ°€‰ÕÍÑ½µ•É}¹½Ñ”ˆ°€‰±…¥µ}¥ˆ°€‰ÁÉ½½™}©½‰}¥‰t¤ì4(€€€€€…ÍÍ•ÉÐ¹•ÅÕ…°¡‘•Ñ…¥±	½‘ä¹¥Ñ•µm™½É‰¥‘‘•¹t°Õ¹‘•™¥¹•¤ì4(€€€ô4(€ô¤ì4)ô¤ì4(4)Ñ•ÍÐ ‰ÝÉ½¹œµ…½Õ¹Ð©½‰}É•˜¥ÌÉ•©•Ñ•ˆ°…Íå¹Œ€ ¤€ôøì4(€½¹ÍÐÉ•˜€ô¡¥ÍÑ½Éä¹µ…­•)½‰I•˜¡ìÍ•É•Ðè€‰Ñ•ÍÐµÍ•É•Ðˆ°ÕÍÑ½µ•ÉMÕˆè€‰±¥¹”éÔÄˆ°©½‰%è€ÄÀÄô¤ì4(€½¹ÍÐÁ½½°€ôµ…­•A½½°¡ì4(€€€©½‰Ìèm1e})=	t°4(€€€±…¥µÌèmì±…¥µ}¥è€Ä°ÕÍÑ½µ•É}ÍÕˆè€‰½½±”éÔÈˆ°Á¡½¹•}¹½É´è€ˆÀàÄÈÌÐÔØÜàˆ°Á¡½¹•}±…ÍÐÐè€ˆÔØÜàˆ°ÁÉ½½™}©½‰}¥è€ÄÀÄõt°4(€ô¤ì4(€…Ý…¥ÐÝ¥Ñ¡M•ÉÙ•È¡ìÁ½½°°ÍÕˆè€‰½½±”éÔÈˆô°…Íå¹Œ€¡‰…Í”¤€ôøì4(€€€½¹ÍÐÉ•Ì€ô…Ý…¥Ð™•Ñ ¡€‘í‰…Í•ô½ÁÕ‰±¥Œ½ÕÍÑ½µ•Èµ¡¥ÍÑ½Éä¼‘í•¹½‘•UI%½µÁ½¹•¹Ð¡É•˜¥õ€¤ì4(€€€…ÍÍ•ÉÐ¹•ÅÕ…°¡É•Ì¹ÍÑ…ÑÕÌ°€ÐÀÐ¤ì4(€ô¤ì4)ô¤ì4(4)Ñ•ÍÐ ‰±…¥´É…Ñ”±¥µ¥Ð¥ÌÍÁ±¥Ð‰äÁÉ½½˜¡…Í …¹‘½•Ì¹½Ð±½œÉ…ÜÁ¡½¹”½È½‘”ˆ°…Íå¹Œ€ ¤€ôøì4(€½¹ÍÐ±½Ì€ômtì4(€½¹ÍÐÁ½½°€ôµ…­•A½½°¡ì©½‰Ìèm1e})=	t°™…¥±%¹Í•ÉÐèÑÉÕ”ô¤ì4(€…Ý…¥ÐÝ¥Ñ¡M•ÉÙ•È¡ìÁ½½°°±½•ÈèìÝ…É¸è€ ¸¸¹…ÉÌ¤€ôø±½Ì¹ÁÕÍ ¡…ÉÌ¤ôô°…Íå¹Œ€¡‰…Í”¤€ôøì4(€€€½¹ÍÐÉ•Ì€ô…Ý…¥Ð™•Ñ ¡€‘í‰…Í•ô½ÁÕ‰±¥Œ½ÕÍÑ½µ•Èµ¡¥ÍÑ½Éä½±…¥µ€°ì4(€€€€€µ•Ñ¡½è€‰A=MPˆ°4(€€€€€¡•…‘•ÉÌèì€‰½¹Ñ•¹ÐµÑåÁ”ˆè€‰…ÁÁ±¥…Ñ¥½¸½©Í½¸ˆô°4(€€€€€‰½‘äè)M=8¹ÍÑÉ¥¹¥™ä¡ì¥‘•¹Ñ¥™¥•Èè€ˆÀàÄÈÌÐÔØÜàˆô¤°4(€€€ô¤ì4(€€€…ÍÍ•ÉÐ¹•ÅÕ…°¡É•Ì¹ÍÑ…ÑÕÌ°€ÔÀÀ¤ì4(€€€…ÍÍ•ÉÐ¹‘½•Í9½Ñ5…Ñ ¡)M=8¹ÍÑÉ¥¹¥™ä¡±½Ì¤°€¼ÀàÄÈÌÐÔØÜáñ]	ÄÈÌ¼¤ì4(€ô¤ì4)ô¤ì4(4)Ñ•ÍÐ ‰±½…Ñ¥½¹ÌÉ½ÕÀ•á…Ð‘ÕÁ±¥…Ñ•Ì‰ÕÐ­••À…µ‰¥Õ½ÕÌ±½…Ñ¥½¹ÌÍ•Á…É…Ñ”ˆ°…Íå¹Œ€ ¤€ôøì4(€½¹ÍÐÁ½½°€ôµ…­•A½½°¡ì4(€€€©½‰Ìèl4(€€€€€1e})=°4(€€€€€ì€¸¸¹1e})=°©½‰}¥è€ÄÀÈ°‰½½­¥¹}½‘”è€‰]Èˆô°4(€€€€€ì€¸¸¹1e})=°©½‰}¥è€ÄÀÌ°‰½½­¥¹}½‘”è€‰]Ìˆ°µ…ÁÍ}ÕÉ°è€‰¡ÑÑÁÌè¼½µ…ÁÌ¹½½±”¹½´¼ýÄôÄÌ¸Ä°ÄÀÀ¸Äˆô°4(€€€t°4(€€€±…¥µÌèmì±…¥µ}¥è€Ä°ÕÍÑ½µ•É}ÍÕˆè€‰±¥¹”éÔÄˆ°Á¡½¹•}¹½É´è€ˆÀàÄÈÌÐÔØÜàˆ°Á¡½¹•}±…ÍÐÐè€ˆÔØÜàˆ°ÁÉ½½™}©½‰}¥è€ÄÀÄõt°4(€ô¤ì4(€…Ý…¥ÐÝ¥Ñ¡M•ÉÙ•È¡ìÁ½½°ô°…Íå¹Œ€¡‰…Í”¤€ôøì4(€€€½¹ÍÐÉ•Ì€ô…Ý…¥Ð™•Ñ ¡€‘í‰…Í•ô½ÁÕ‰±¥Œ½ÕÍÑ½µ•Èµ¡¥ÍÑ½Éä½±½…Ñ¥½¹Í€¤ì4(€€€…ÍÍ•ÉÐ¹•ÅÕ…°¡É•Ì¹ÍÑ…ÑÕÌ°€ÈÀÀ¤ì4(€€€…ÍÍ•ÉÐ¹•ÅÕ…°¡É•Ì¹¡•…‘•ÉÌ¹•Ð ‰…¡”µ½¹ÑÉ½°ˆ¤°€‰ÁÉ¥Ù…Ñ”°¹¼µÍÑ½É”ˆ¤ì4(€€€½¹ÍÐ‰½‘ä€ô…Ý…¥Ð©Í½¸¡É•Ì¤ì4(€€€…ÍÍ•ÉÐ¹•ÅÕ…°¡‰½‘ä¹…ÕÑ½}Í•±•Ð°™…±Í”¤ì4(€€€…ÍÍ•ÉÐ¹•ÅÕ…°¡‰½‘ä¹¡…Í}µÕ±Ñ¥Á±•}±½…Ñ¥½¹Ì°ÑÉÕ”¤ì4(€€€…ÍÍ•ÉÐ¹•ÅÕ…°¡‰½‘ä¹±½…Ñ¥½¹Ì¹±•¹Ñ °€È¤ì4(€€€…ÍÍ•ÉÐ¹½¬¡‰½‘ä¹±½…Ñ¥½¹Ì¹Í½µ” ¡à¤€ôøà¹©½‰}½Õ¹Ð€ôôô€È¤¤ì4(€€€™½È€¡½¹ÍÐ±½Œ½˜‰½‘ä¹±½…Ñ¥½¹Ì¤ì4(€€€€€…ÍÍ•ÉÐ¹•ÅÕ…°¡±½Œ¹Í…µÁ±•}‰½½­¥¹}½‘”°Õ¹‘•™¥¹•¤ì4(€€€€€…ÍÍ•ÉÐ¹•ÅÕ…°¡±½Œ¹±½…Ñ¥½¹}É•˜°Õ¹‘•™¥¹•¤ì4(€€€ô4(€ô¤ì4)ô¤ì4(4)Ñ•ÍÐ ‰µ¥É…Ñ¥½¸ÍÑ½É•Ì¹¼É…Ü‰½½­¥¹œ½‘”…¹ÕÍ•Ì	%%9Pµ½µÁ…Ñ¥‰±”ÁÉ½½™}©½‰}¥ˆ°€ ¤€ôøì4(€½¹ÍÐÍÅ°€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡IA=}I==P°€‰µ¥É…Ñ¥½¹Ìˆ°€ˆÈÀÈØÀÜÄÁ}ÕÍÑ½µ•É}¡¥ÍÑ½Éå}±…¥µÌ¹ÍÅ°ˆ¤°€‰ÕÑ˜àˆ¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡ÍÅ°°€½ÁÉ½½™}©½‰}¥	%%9P9=P9U10II9LÁÕ‰±¥p¹©½‰Íp¡©½‰}¥‘p¤¼¤ì4(€…ÍÍ•ÉÐ¹‘½•Í9½Ñ5…Ñ ¡ÍÅ°°€½ÁÉ½½™}‰½½­¥¹}½‘”½¤¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡ÍÅ°°€½Á¡½¹•}¹½É´ø€qxÁqlÀ´åquqìà°åqõpœ¼¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡ÍÅ°°€½Á¡½¹•}±…ÍÐÐø€qyqlÀ´åquqìÑqõpœ9Á¡½¹•}±…ÍÐÐ€ôÉ¥¡Ñp¡Á¡½¹•}¹½É´°€Ñp¤¼¤ì4)ô¤ì4(4)™Õ¹Ñ¥½¸µ…­•	É½ÝÍ•É½¹Ñ•áÐ¡ì™•Ñ¡%µÁ°ô€ôíô¤ì4(€½¹ÍÐÍÑ½É…”€ô¹•Ü5…À ¤ì4(€½¹ÍÐÝ¥¹‘½Ü€ôì4(€€€]ÕÍÑ½µ•ÉÁÁXÈèíô°4(€€€±½…Ñ¥½¸èìÁÉ½Ñ½½°è€‰¡ÑÑÁÌèˆ°½É¥¥¸è€‰¡ÑÑÁÌè¼½…ÁÀ¹•á…µÁ±”¹Ñ•ÍÐˆ°¡½ÍÑ¹…µ”è€‰…ÁÀ¹•á…µÁ±”¹Ñ•ÍÐˆ°Í•…É è€ˆˆ°¡…Í è€ˆˆô°4(€€€Í•ÍÍ¥½¹MÑ½É…”èì4(€€€€€•Ñ%Ñ•´¡­•ä¤ìÉ•ÑÕÉ¸ÍÑ½É…”¹•Ð¡­•ä¤ñð¹Õ±°ìô°4(€€€€€Í•Ñ%Ñ•´¡­•ä°Ù…±Õ”¤ìÍÑ½É…”¹Í•Ð¡­•ä°MÑÉ¥¹œ¡Ù…±Õ”¤¤ìô°4(€€€€€É•µ½Ù•%Ñ•´¡­•ä¤ìÍÑ½É…”¹‘•±•Ñ”¡­•ä¤ìô°4(€€€ô°4(€ôì4(€½¹ÍÐ½¹Ñ•áÐ€ôìÝ¥¹‘½Ü°™•Ñ è™•Ñ¡%µÁ°ñð€¡…Íå¹Œ€ ¤€ôø€¡ì½¬èÑÉÕ”°Ñ•áÐè…Íå¹Œ€ ¤€ôø€‰íôˆô¤¤°UI0°UI1M•…É¡A…É…µÌ°½¹Í½±”°%¹Ñ°°…Ñ”°Í•ÑQ¥µ•½ÕÐ°±•…ÉQ¥µ•½ÕÐôì4(€½¹Ñ•áÐ¹±½‰…±Q¡¥Ì€ô½¹Ñ•áÐì4(€É•ÑÕÉ¸Ù´¹É•…Ñ•½¹Ñ•áÐ¡½¹Ñ•áÐ¤ì4)ô4(4)™Õ¹Ñ¥½¸±½…‘5½‘Õ±”¡½¹Ñ•áÐ°É•±…Ñ¥Ù•A…Ñ ¤ì4(€½¹ÍÐÍÉŒ€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡IA=}I==P°É•±…Ñ¥Ù•A…Ñ ¤°€‰ÕÑ˜àˆ¤ì4(€Ù´¹ÉÕ¹%¹½¹Ñ•áÐ¡ÍÉŒ°½¹Ñ•áÐ°ì™¥±•¹…µ”èÉ•±…Ñ¥Ù•A…Ñ ô¤ì4(€É•ÑÕÉ¸½¹Ñ•áÐ¹Ý¥¹‘½Ü¹]ÕÍÑ½µ•ÉÁÁXÈì4)ô4(4)Ñ•ÍÐ ‰ÕÍÑ½µ•ÈÁÀA$…¹ÍÑ…Ñ”ÍÕÁÁ½ÉÐ½¹”µ¥‘•¹Ñ¥™¥•ÈÍ•…É ½±¥¹¬Ý¥Ñ¡½ÕÐUI0±•…­…”ˆ°…Íå¹Œ€ ¤€ôøì4(€½¹ÍÐ…±±Ì€ômtì4(€½¹ÍÐ½¹Ñ•áÐ€ôµ…­•	É½ÝÍ•É½¹Ñ•áÐ¡ì4(€€€™•Ñ¡%µÁ°è…Íå¹Œ€¡ÕÉ°°½ÁÑ¥½¹Ì€ôíô¤€ôøì4(€€€€€…±±Ì¹ÁÕÍ ¡ìÕÉ°°½ÁÑ¥½¹Ìô¤ì4(€€€€€É•ÑÕÉ¸ì½¬èÑÉÕ”°Ñ•áÐè…Íå¹Œ€ ¤€ôø)M=8¹ÍÑÉ¥¹¥™ä¡ì½¬èÑÉÕ”°¥Ñ•µÌèmt°±½…Ñ¥½¹Ìèmtô¤ôì4(€€€ô°4(€ô¤ì4(€½¹ÍÐÉ½½Ð€ô±½…‘5½‘Õ±”¡½¹Ñ•áÐ°€‰ÕÍÑ½µ•Èµ…ÁÀ½µ½‘Õ±•Ì½…Á¤¹©Ìˆ¤ì4(€…Ý…¥ÐÉ½½Ð¹…Á¤¹Í•…É¡ÕÍÑ½µ•É!¥ÍÑ½Éä ˆÀàÄˆ¤ì4(€…Ý…¥ÐÉ½½Ð¹…Á¤¹±…¥µÕÍÑ½µ•É!¥ÍÑ½Éä ˆÀàÄˆ¤ì4(€…Ý…¥ÐÉ½½Ð¹…Á¤¹±½…‘ÕÍÑ½µ•É!¥ÍÑ½Éä ¤ì4(€…Ý…¥ÐÉ½½Ð¹…Á¤¹±½…‘ÕÍÑ½µ•É!¥ÍÑ½Éå•Ñ…¥° ‰½Á…ÅÕ”¹É•˜ˆ¤ì4(€…Ý…¥ÐÉ½½Ð¹…Á¤¹±½…‘ÕÍÑ½µ•É!¥ÍÑ½Éå1½…Ñ¥½¹Ì ¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡…±±ÍlÁt¹ÕÉ°°€‰¡ÑÑÁÌè¼½…ÁÀ¹•á…µÁ±”¹Ñ•ÍÐ½ÁÕ‰±¥Œ½ÕÍÑ½µ•Èµ¡¥ÍÑ½Éä½Í•…É ˆ¤ì4(€…ÍÍ•ÉÐ¹‘••ÁÅÕ…°¡)M=8¹Á…ÉÍ”¡…±±ÍlÁt¹½ÁÑ¥½¹Ì¹‰½‘ä¤°ì¥‘•¹Ñ¥™¥•Èè€ˆÀàÄˆô¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡…±±ÍlÅt¹ÕÉ°°€‰¡ÑÑÁÌè¼½…ÁÀ¹•á…µÁ±”¹Ñ•ÍÐ½ÁÕ‰±¥Œ½ÕÍÑ½µ•Èµ¡¥ÍÑ½Éä½±…¥´ˆ¤ì4(€…ÍÍ•ÉÐ¹‘••ÁÅÕ…°¡)M=8¹Á…ÉÍ”¡…±±ÍlÅt¹½ÁÑ¥½¹Ì¹‰½‘ä¤°ì¥‘•¹Ñ¥™¥•Èè€ˆÀàÄˆô¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡…±±ÍlÉt¹ÕÉ°°€‰¡ÑÑÁÌè¼½…ÁÀ¹•á…µÁ±”¹Ñ•ÍÐ½ÁÕ‰±¥Œ½ÕÍÑ½µ•Èµ¡¥ÍÑ½Éäˆ¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡…±±ÍlÍt¹ÕÉ°°€‰¡ÑÑÁÌè¼½…ÁÀ¹•á…µÁ±”¹Ñ•ÍÐ½ÁÕ‰±¥Œ½ÕÍÑ½µ•Èµ¡¥ÍÑ½Éä½½Á…ÅÕ”¹É•˜ˆ¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡…±±ÍlÑt¹ÕÉ°°€‰¡ÑÑÁÌè¼½…ÁÀ¹•á…µÁ±”¹Ñ•ÍÐ½ÁÕ‰±¥Œ½ÕÍÑ½µ•Èµ¡¥ÍÑ½Éä½±½…Ñ¥½¹Ìˆ¤ì4(€…ÍÍ•ÉÐ¹‘½•Í9½Ñ5…Ñ ¡…±±Ì¹µ…À ¡à¤€ôøà¹ÕÉ°¤¹©½¥¸ ‰q¸ˆ¤°€½Á¡½¹”ô¼¤ì4(4(€½¹ÍÐÍÑ…Ñ•½¹Ñ•áÐ€ôµ…­•	É½ÝÍ•É½¹Ñ•áÐ ¤ì4(€½¹ÍÐÍÑ…Ñ•I½½Ð€ô±½…‘5½‘Õ±”¡ÍÑ…Ñ•½¹Ñ•áÐ°€‰ÕÍÑ½µ•Èµ…ÁÀ½µ½‘Õ±•Ì½ÍÑ…Ñ”¹©Ìˆ¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ÍÑ…Ñ•I½½Ð¹ÍÑ…Ñ”¹…ÁÁ±å!¥ÍÑ½Éå1½…Ñ¥½¸ ‰Í¡•‘Õ±•ˆ°ì…‘‘É•ÍÍ}Ñ•áÐè€‰=±½¹‘¼ˆ°µ…ÁÍ}ÕÉ°è€‰¡ÑÑÁÌè¼½µ…ÁÌ¹•á…µÁ±”½„ˆ°©½‰}é½¹”è€‰i½¹”ˆô¤°ÑÉÕ”¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ÍÑ…Ñ•I½½Ð¹ÍÑ…Ñ”¹‘É…™Ð¹Í¡•‘Õ±•¹…‘‘É•ÍÍ}Ñ•áÐ°€‰=±½¹‘¼ˆ¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ÍÑ…Ñ•I½½Ð¹ÍÑ…Ñ”¹‘É…™Ð¹Í¡•‘Õ±•¹µ…ÁÍ}ÕÉ°°€‰¡ÑÑÁÌè¼½µ…ÁÌ¹•á…µÁ±”½„ˆ¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ÍÑ…Ñ•I½½Ð¹ÍÑ…Ñ”¹‘É…™Ð¹Í¡•‘Õ±•¹©½‰}é½¹”°€‰i½¹”ˆ¤ì4)ô¤ì4(4)Ñ•ÍÐ ‰ÕÍÑ½µ•ÈÁÀÁÉ½™¥±”½Á•¹Ì¡¥ÍÑ½Éä‘•Ñ…¥°Ý¥Ñ ½Á…ÅÕ”©½‰}É•˜…¹±•…ÉÌÍ•…É ÍÑ…Ñ”…™Ñ•È±¥¹¬ˆ°…Íå¹Œ€ ¤€ôøì4(€½¹ÍÐ½¹Ñ•áÐ€ôµ…­•	É½ÝÍ•É½¹Ñ•áÐ ¤ì4(€½¹ÍÐÉ½½Ð€ô½¹Ñ•áÐ¹Ý¥¹‘½Ü¹]ÕÍÑ½µ•ÉÁÁXÈì4(€É½½Ð¹ÕÑ¥±Ì€ôì4(€€€•Í…Á•!Ñµ°¡Ù…±Õ”¤ì4(€€€€€É•ÑÕÉ¸MÑÉ¥¹œ¡Ù…±Õ”€ôô¹Õ±°€ü€ˆˆ€èÙ…±Õ”¤¹É•Á±…” ½l˜ðøˆt½œ°€¡ ¤€ôø€¡ì€ˆ˜ˆè€ˆ™…µÀìˆ°€ˆðˆè€ˆ™±Ðìˆ°€ˆøˆè€ˆ™Ðìˆ°€œˆœè€ˆ™ÅÕ½Ðìˆ°€ˆœˆè€ˆ˜ŒÌäìˆô¥m¡t¤ì4(€€€ô°4(€€€¥½¸ ¤ìÉ•ÑÕÉ¸€ˆˆìô°4(€€€É½ÕÑ•Q¼ ¤íô°4(€ôì4(€½¹ÍÐ‘•Ñ…¥±…±±Ì€ômtì4(€É½½Ð¹…Á¤€ôì4(€€€…Íå¹Œ±…¥µÕÍÑ½µ•É!¥ÍÑ½Éä ¤ìÉ•ÑÕÉ¸ì½¬èÑÉÕ”ôìô°4(€€€…Íå¹Œ±½…‘ÕÍÑ½µ•É!¥ÍÑ½Éä ¤ìÉ•ÑÕÉ¸ì±…¥µ•èÑÉÕ”°¥Ñ•µÌèÉ½½Ð¹ÍÑ…Ñ”¹ÕÍÑ½µ•É!¥ÍÑ½Éä¹¥Ñ•µÌôìô°4(€€€…Íå¹Œ±½…‘ÕÍÑ½µ•É!¥ÍÑ½Éå1½…Ñ¥½¹Ì ¤ìÉ•ÑÕÉ¸ì±…¥µ•èÑÉÕ”°±½…Ñ¥½¹Ìèmtôìô°4(€€€…Íå¹Œ±½…‘ÕÍÑ½µ•É!¥ÍÑ½Éå•Ñ…¥°¡©½‰I•˜¤ì4(€€€€€‘•Ñ…¥±…±±Ì¹ÁÕÍ ¡©½‰I•˜¤ì4(€€€€€É•ÑÕÉ¸ì¥Ñ•´èì‰½½­¥¹}½‘”è€‰]	ÄÈÌˆ°©½‰}ÍÑ…ÑÕÌè€‰‘½¹”ˆ°©½‰}ÁÉ¥”è€ÄÈÀÀ°ÕÍÑ½µ•É}Á¡½¹•}µ…Í­•è€ˆ¨¨¨¨€ÔØÜàˆôôì4(€€€ô°4(€ôì4(€É½½Ð¹…ÕÑ €ôì4(€€€É•¹‘•É1½¥¹A…¹•° ¤ìÉ•ÑÕÉ¸€ˆˆìô°4(€€€‘¥ÍÁ±…å9…µ” ¤ìÉ•ÑÕÉ¸€‰ÕÍÑ½µ•Èˆìô°4(€€€±½…‘ÕÍÑ½µ•È ¤ìÉ•ÑÕÉ¸AÉ½µ¥Í”¹É•Í½±Ù” ¤ìô°4(€ôì4(€É½½Ð¹Õ¤€ôìÍÕÁÁ½ÉÑ	ÕÑÑ½¹Ì ¤ìÉ•ÑÕÉ¸€ˆˆìôôì4(€É½½Ð¹É½ÕÑ•È€ôìÉ•™É•Í  ¤íôôì4(€É½½Ð¹ÍÑ…Ñ”€ôì4(€€€…ÕÑ¡MÑ…ÑÕÌè€‰ÍÕ•ÍÌˆ°4(€€€ÕÉÉ•¹ÑI½ÕÑ”è€‰ÁÉ½™¥±”ˆ°4(€€€ÕÍÑ½µ•Èèì±½•‘}¥¸èÑÉÕ”°ÁÉ½™¥±”èíôô°4(€€€ÁÉ½™¥±•‘‘É•ÍÍ½É´èíô°4(€€€ÕÍÑ½µ•É!¥ÍÑ½Éäèì4(€€€€€±…¥µ•èÑÉÕ”°4(€€€€€¥Ñ•µÌèmì©½‰}É•˜è€‰½Á…ÅÕ”¹É•˜ˆ°‰½½­¥¹}½‘”è€‰]	ÄÈÌˆ°…ÁÁ½¥¹Ñµ•¹Ñ}‘…Ñ•Ñ¥µ”è€ˆÈÀÈØ´ÀÜ´ÀÄˆ°©½‰}ÍÑ…ÑÕÌè€‰‘½¹”ˆõt°4(€€€€€±½…Ñ¥½¹Ìèmt°4(€€€€€Í•…É¡%‘•¹Ñ¥™¥•Èè€‰]	ÄÈÌˆ°4(€€€€€ÁÉ•Ù¥•Ý%Ñ•µÌèmì‰½½­¥¹}½‘”è€‰]	ÄÈÌˆõt°4(€€€ô°4(€€€Í•ÑÕÍÑ½µ•É!¥ÍÑ½Éä¡Á…Ñ ¤ìÑ¡¥Ì¹ÕÍÑ½µ•É!¥ÍÑ½Éä€ôì€¸¸¹Ñ¡¥Ì¹ÕÍÑ½µ•É!¥ÍÑ½Éä°€¸¸¹Á…Ñ ôìô°4(€ôì4(4(€½¹ÍÐ±¥ÍÑ•¹•ÉÌ€ômtì4(€½¹ÍÐ½¹Ñ…¥¹•È€ôì4(€€€}¡Ñµ°è€ˆˆ°4(€€€Í•Ð¥¹¹•É!Q50¡Ù…±Õ”¤ìÑ¡¥Ì¹}¡Ñµ°€ôMÑÉ¥¹œ¡Ù…±Õ”¤ìô°4(€€€•Ð¥¹¹•É!Q50 ¤ìÉ•ÑÕÉ¸Ñ¡¥Ì¹}¡Ñµ°ìô°4(€€€ÅÕ•ÉåM•±•Ñ½È¡Í•±•Ñ½È¤ì4(€€€€€¥˜€¡Í•±•Ñ½È€ôôô€‰m‘…Ñ„µÁÉ½™¥±”µ¡¥ÍÑ½Éåtˆ¤ì4(€€€€€€€É•ÑÕÉ¸ì4(€€€€€€€€€Í•Ð¥¹¹•É!Q50¡Ù…±Õ”¤ì½¹Ñ…¥¹•È¹}¡Ñµ°€ôMÑÉ¥¹œ¡Ù…±Õ”¤ìô°4(€€€€€€€€€•Ð¥¹¹•É!Q50 ¤ìÉ•ÑÕÉ¸½¹Ñ…¥¹•È¹}¡Ñµ°ìô°4(€€€€€€€ôì4(€€€€€ô4(€€€€€É•ÑÕÉ¸¹Õ±°ì4(€€€ô°4(€€€ÅÕ•ÉåM•±•Ñ½É±°¡Í•±•Ñ½È¤ì4(€€€€€¥˜€¡Í•±•Ñ½È€„ôô€‰m‘…Ñ„µ¡¥ÍÑ½Éäµ‘•Ñ…¥°µ¥¹‘•átˆ¤É•ÑÕÉ¸mtì4(€€€€€½¹ÍÐµ…Ñ¡•Ì€ôl¸¸¹Ñ¡¥Ì¹}¡Ñµ°¹µ…Ñ¡±° ½‘…Ñ„µ¡¥ÍÑ½Éäµ‘•Ñ…¥°µ¥¹‘•àôˆ¡lÀ´åt¬¤ˆ½œ¥tì4(€€€€€É•ÑÕÉ¸µ…Ñ¡•Ì¹µ…À ¡´¤€ôø€¡ì4(€€€€€€€‘…Ñ…Í•Ðèíô°4(€€€€€€€•ÑÑÑÉ¥‰ÕÑ”¡¹…µ”¤ìÉ•ÑÕÉ¸¹…µ”€ôôô€‰‘…Ñ„µ¡¥ÍÑ½Éäµ‘•Ñ…¥°µ¥¹‘•àˆ€üµlÅt€è¹Õ±°ìô°4(€€€€€€€…‘‘Ù•¹Ñ1¥ÍÑ•¹•È¡}•Ù•¹Ð°¡…¹‘±•È¤ì±¥ÍÑ•¹•ÉÌ¹ÁÕÍ ¡¡…¹‘±•È¤ìô°4(€€€€€ô¤¤ì4(€€€ô°4(€ôì4(4(€±½…‘5½‘Õ±”¡½¹Ñ•áÐ°€‰ÕÍÑ½µ•Èµ…ÁÀ½µ½‘Õ±•Ì½ÁÉ½™¥±”¹©Ìˆ¤ì4(€É½½Ð¹ÁÉ½™¥±”¹É•¹‘•È¡½¹Ñ…¥¹•È¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡±¥ÍÑ•¹•ÉÌ¹±•¹Ñ °€Ä¤ì4(€…Ý…¥Ð±¥ÍÑ•¹•ÉÍlÁt ¤ì4(€…ÍÍ•ÉÐ¹‘••ÁÅÕ…°¡‘•Ñ…¥±…±±Ì°l‰½Á…ÅÕ”¹É•˜‰t¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡É½½Ð¹ÍÑ…Ñ”¹ÕÍÑ½µ•É!¥ÍÑ½Éä¹‘•Ñ…¥°¹‰½½­¥¹}½‘”°€‰]	ÄÈÌˆ¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡É½½Ð¹ÍÑ…Ñ”¹ÕÍÑ½µ•É!¥ÍÑ½Éä¹‘•Ñ…¥°¹©½‰}¥°Õ¹‘•™¥¹•¤ì4(4(€½¹ÍÐÍÕ‰µ¥ÑMÑ…Ñ”€ôì±…¥µMÑ…ÑÕÌè€‰Í…Ù¥¹œˆ°Í•…É¡%‘•¹Ñ¥™¥•Èè€‰]	ÄÈÌˆ°ÁÉ•Ù¥•Ý%Ñ•µÌèmíõtôì4(€É½½Ð¹ÍÑ…Ñ”¹Í•ÑÕÍÑ½µ•É!¥ÍÑ½Éä€ô€¡Á…Ñ ¤€ôø=‰©•Ð¹…ÍÍ¥¸¡ÍÕ‰µ¥ÑMÑ…Ñ”°Á…Ñ ¤ì4(€É½½Ð¹ÍÑ…Ñ”¹Í•ÑÕÍÑ½µ•É!¥ÍÑ½Éä¡ì±…¥µMÑ…ÑÕÌè€‰ÍÕ•ÍÌˆ°Í•…É¡%‘•¹Ñ¥™¥•Èè€ˆˆ°ÁÉ•Ù¥•Ý%Ñ•µÌèmt°±…¥µ•èÑÉÕ”ô¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ÍÕ‰µ¥ÑMÑ…Ñ”¹Í•…É¡%‘•¹Ñ¥™¥•È°€ˆˆ¤ì4(€…ÍÍ•ÉÐ¹‘••ÁÅÕ…°¡ÍÕ‰µ¥ÑMÑ…Ñ”¹ÁÉ•Ù¥•Ý%Ñ•µÌ°mt¤ì4)ô¤ì4(4)Ñ•ÍÐ ‰ÕÍÑ½µ•ÈÁÀÍ¡•µ„µ¹½ÐµÉ•…‘äÍÑ…Ñ”½™™•ÉÌÉ•ÑÉä…¹…‘µ¥¸½¹Ñ…ÐÝ¥Ñ¡½ÕÐÝ•…­•¹¥¹œ•¹•É¥ŒÁÉ½½˜™…¥±ÕÉ”ˆ°€ ¤€ôøì4(€½¹ÍÐÍÉŒ€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡IA=}I==P°€‰ÕÍÑ½µ•Èµ…ÁÀ½µ½‘Õ±•Ì½ÁÉ½™¥±”¹©Ìˆ¤°€‰ÕÑ˜àˆ¤ì4(€½¹ÍÐÍÌ€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡IA=}I==P°€‰ÕÍÑ½µ•Èµ…ÁÀ½…ÍÍ•ÑÌ½ÕÍÑ½µ•Èµ…ÁÀ¹ÍÌˆ¤°€‰ÕÑ˜àˆ¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡ÍÉŒ°€½‘…Ñ„µ¡¥ÍÑ½ÉäµÉ•™É•Í¡mqÍqMt¨üû‚â—‚â·‚â‚æ‚â¯‚â‡‚æ ñp½‰ÕÑÑ½¸ø¼¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡ÍÉŒ°€¼ñ„±…ÍÌô‰Í•½¹‘…Éäµ‰Ñ¸ˆ¡É•˜ô‰¡ÑÑÁÌép½p½±¥¹p¹••p½àÁÑ½ÕadˆÑ…É•Ðô‰}‰±…¹¬ˆÉ•°ô‰¹½½Á•¹•È¹½É•™•ÉÉ•Èˆû‚âW‚âÓ‚âS‚âW‚æ#‚â·‚æ‚â·‚âS‚â‡‚âÓ‚âdñp½„ø¼¤ì4(€…ÍÍ•ÉÐ¹‘½•Í9½Ñ5…Ñ ¡ÍÉŒ°€½¡ÑÑÁÌép½p½±¥¹p¹••p½™Å=ÄÝä¼¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡ÍÌ°€½p¹‰ÕÑÑ½¸µÉ½Üqì‘¥ÍÁ±…äè™±•àì™±•àµ‘¥É•Ñ¥½¸è½±Õµ¸ì…Àè€ÄÁÁàì¼¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡ÍÌ°€½p¹Í•½¹‘…Éäµ‰Ñ¸qímqÍqMt¨ýµ¥¸µ¡•¥¡Ðè€ÔÁÁàì¼¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡ÍÉŒ°€½•ÉÉ½Épýp¹ÍÑ…ÑÕÌ€ôôô€ÔÀÌ¼¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡ÍÉŒ°€¿‚æ‚â‡‚æ#‚â{‚âk‚âo‚â‚âÃ‚âŸ‚âÇ‚âW‚âÓ‚â‚âË‚âdƒ‚â‚â‚âã‚âO‚âË‚âW‚â‚âŸ‚â#‚â«‚â·‚âk‚â‚æ'‚â·‚â‡‚âç‚â—‚â·‚â×‚â‚â‚â‚âÇ‚æ'‚â¼¤ì4(€…ÍÍ•ÉÐ¹‘½•Í9½Ñ5…Ñ ¡ÍÉŒ°€¿‚æ‚âk‚â·‚â‚æ3‚æ‚â_‚â‚æ‚â‡‚æ#‚â[‚âç‚âñ	½½­¥¹œ½‘”ƒ‚æ‚â‡‚æ#‚â[‚âç‚â¼¤ì4)ô¤ì4(4)Ñ•ÍÐ ‰ÕÍÑ½µ•ÈÁÀÉ•¹‘•ÉÌ½¹”É•ÍÁ½¹Í¥Ù”Í•…É ¥¹ÁÕÐ°ÁÉ•Ù¥•Ü°…¹•áÁ±¥¥Ð±¥¹¬…Ñ¥½¸ˆ°€ ¤€ôøì4(€½¹ÍÐÍÉŒ€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡IA=}I==P°€‰ÕÍÑ½µ•Èµ…ÁÀ½µ½‘Õ±•Ì½ÁÉ½™¥±”¹©Ìˆ¤°€‰ÕÑ˜àˆ¤ì4(€½¹ÍÐÍÌ€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡IA=}I==P°€‰ÕÍÑ½µ•Èµ…ÁÀ½…ÍÍ•ÑÌ½ÕÍÑ½µ•Èµ…ÁÀ¹ÍÌˆ¤°€‰ÕÑ˜àˆ¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡ÍÉŒ°€¼ñ±…‰•°™½Èô‰¡¥ÍÑ½Éäµ¥‘•¹Ñ¥™¥•Èˆû‚æ‚âk‚â·‚â‚æ3‚æ‚â_‚âŒƒ‚â¯‚â‚âß‚â·‚â‚â¯‚âÇ‚â«‚â‚âË‚â‚â#‚â·‚âñp½±…‰•°ø¼¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡ÍÉŒ°€½¹…µ”ô‰¥‘•¹Ñ¥™¥•È‰mqÍqMt¨ýÁ±…•¡½±‘•Èô‹‚â‚â‚â·‚â‚æ‚âk‚â·‚â‚æ3‚æ‚â_‚â‚â¯‚â‚âß‚â·‚â‚â¯‚âÇ‚â«‚â‚âË‚â‚â#‚â·‚âˆ¼¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡ÍÉŒ°€¼‹‚â‚æ'‚âg‚â¯‚âË‚â‚âË‚âdˆ¼¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡ÍÉŒ°€¼‹‚âs‚âç‚â‚âo‚â‚âÃ‚âŸ‚âÇ‚âW‚âÓ‚â‚âÇ‚âk‚âk‚âÇ‚â7‚â+‚â×‚âg‚â×‚æ$ˆ¼¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡ÍÉŒ°€½ÁÉ½™¥±”µ¡¥ÍÑ½ÉäµÁÉ•Ù¥•Üµ…É¼¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡ÍÉŒ°€½…Ý…¥ÐÉ½½Ñp¹…Á¥p¹±…¥µÕÍÑ½µ•É!¥ÍÑ½Éåp¡¥‘•¹Ñ¥™¥•Ép¤ímqÍqMt¨ý…Ý…¥Ð±½…‘!¥ÍÑ½Éå…Ñ…p¡½¹Ñ…¥¹•Ép¤ì¼¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡ÍÉŒ°€½™Õ¹Ñ¥½¸É•¹‘•É1½•‘%¹p¡½¹Ñ…¥¹•Ép¥mqÍqMt¨ý±½…‘!¥ÍÑ½Éå…Ñ…p¡½¹Ñ…¥¹•Ép¤ì¼¤ì4(€…ÍÍ•ÉÐ¹‘½•Í9½Ñ5…Ñ ¡ÍÉŒ°€½¹…µ”ô‰Á¡½¹”‰ñ¹…µ”ô‰‰½½­¥¹}½‘”‰ñ¥ô‰¡¥ÍÑ½ÉäµÁ¡½¹”‰ñ¥ô‰¡¥ÍÑ½Éäµ‰½½­¥¹œµ½‘”ˆ¼¤ì4(€…ÍÍ•ÉÐ¹‘½•Í9½Ñ5…Ñ ¡ÍÉŒ°€¿‚â‚âÃ‚âk‚âk‚æ‚â+‚æ'‚æ‚âk‚â·‚â‚æ3‚æ‚â_‚â‚æ‚âW‚æ‚â‡‚æ‚â—‚âÀ	½½­¥¹œ½‘•ó‚âW‚æ'‚â·‚â‚æ‚â+‚æ'‚æ‚âk‚â·‚â‚æ0¸©	½½­¥¹œ½‘•ó‚æ‚â¯‚â—‚âS‚âo‚â‚âÃ‚âŸ‚âÇ‚âW‚âÐñp½‰ÕÑÑ½¸ø¼¤ì4(€…ÍÍ•ÉÐ¹‘½•Í9½Ñ5…Ñ ¡ÍÉŒ°€½ÑåÁ”ô‰¡¥‘‘•¸‰ñ±½…±MÑ½É…”¼¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡ÍÌ°€½p¹ÁÉ½™¥±”µ¡¥ÍÑ½Éäµ…É±mqÍqMt¨ýp¹ÁÉ½™¥±”µ¡¥ÍÑ½ÉäµÁÉ•Ù¥•Üµ…Éqìµ¥¸µÝ¥‘Ñ è€Àìqô¼¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡ÍÌ°€½É¥µÑ•µÁ±…Ñ”µ½±Õµ¹Ìèµ¥¹µ…áp À°€Å™Ép¤¼¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡ÍÌ°€½½Ù•É™±½ÜµÝÉ…Àè…¹åÝ¡•É”¼¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡ÍÌ°€½p¹ÁÉ¥µ…Éäµ‰Ñ¸qímqÍqMt¨ýµ¥¸µ¡•¥¡Ðè€ÔÑÁà¼¤ì4)ô¤ì4(4)Ñ•ÍÐ ‰ÕÍÑ½µ•È!¥ÍÑ½ÉäÍ•…É …¹ÁÉ•Ù¥•Ü­••À€ÌØÁÁà…¹€ÌäÁÁàÝ¥‘Ñ ½¹ÑÉ…ÑÌˆ°€ ¤€ôøì4(€½¹ÍÐÍÌ€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡IA=}I==P°€‰ÕÍÑ½µ•Èµ…ÁÀ½…ÍÍ•ÑÌ½ÕÍÑ½µ•Èµ…ÁÀ¹ÍÌˆ¤°€‰ÕÑ˜àˆ¤ì4(€½¹ÍÐÍÑ…ÉÐ€ôÍÌ¹¥¹‘•á=˜ ˆ¹ÁÉ½™¥±”µ¡¥ÍÑ½Éäµ…É°ˆ¤ì4(€½¹ÍÐ•¹€ôÍÌ¹¥¹‘•á=˜ ˆ¼¨€ôôôôôôôôôôôôôôôôôôôôô	ÕÑÑ½¹Ìˆ°ÍÑ…ÉÐ¤ì4(€½¹ÍÐ¡¥ÍÑ½ÉåÍÌ€ôÍÌ¹Í±¥”¡ÍÑ…ÉÐ°•¹¤ì4(€…ÍÍ•ÉÐ¹½¬¡ÍÑ…ÉÐ€øô€À€˜˜•¹€øÍÑ…ÉÐ¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡ÍÌ°€½p¨qì‰½àµÍ¥é¥¹œè‰½É‘•Èµ‰½àìqô¼¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡ÍÌ°€½p¹…ÉqímqÍqMt¨ýÝ¥‘Ñ è€ÄÀÀ”ì¼¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡ÍÌ°€½p¹¥¹ÁÕÐ°p¹Í•±•Ð°p¹Ñ•áÑ…É•„qímqÍqMt¨ýÝ¥‘Ñ è€ÄÀÀ”ì¼¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡¡¥ÍÑ½ÉåÍÌ°€½µ¥¸µÝ¥‘Ñ è€À¼¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡¡¥ÍÑ½ÉåÍÌ°€½É¥µÑ•µÁ±…Ñ”µ½±Õµ¹Ìèµ¥¹µ…áp À°€Å™Ép¤¼¤ì4(€…ÍÍ•ÉÐ¹‘½•Í9½Ñ5…Ñ ¡¡¥ÍÑ½ÉåÍÌ°€¼ üéµ¥¸´¤ýÝ¥‘Ñ éqÌ¨ üélÐ´åuq‘ìÉõñlÄ´åuq‘ìÌ±ô¥Áà¼¤ì4(€™½È€¡½¹ÍÐÙ¥•ÝÁ½ÉÐ½˜lÌØÀ°€ÌäÁt¤…ÍÍ•ÉÐ¹½¬¡Ù¥•ÝÁ½ÉÐ€ø€ Äà€¨€È¤€¬€ÐÐ¤ì4)ô¤ì4(4)Ñ•ÍÐ ‰ÕÍÑ½µ•ÈÁÀ…¡”Ù•ÉÍ¥½¸¥Ì‰ÕµÁ•½¹Í¥ÍÑ•¹Ñ±äˆ°€ ¤€ôøì4(€½¹ÍÐ•áÁ•Ñ•€ô€ˆÈÀÈØÀÜÈÙ}ÕÉ•¹Ñ}‘¥É•Ñ}…ÕÑ½}½™™•É}ØÄˆì(€™½È€¡½¹ÍÐ™¥±”½˜l4(€€€€‰ÕÍÑ½µ•Èµ…ÁÀ½¥¹‘•à¹¡Ñµ°ˆ°4(€€€€‰ÕÍÑ½µ•Èµ…ÁÀ½ÍÜ¹©Ìˆ°4(€€€€‰ÕÍÑ½µ•Èµ…ÁÀ½…ÍÍ•ÑÌ½ÕÍÑ½µ•Èµ…ÁÀ¹©Ìˆ°4(€€€€‰ÕÍÑ½µ•Èµ…ÁÀ½µ…¹¥™•ÍÐ¹Ý•‰µ…¹¥™•ÍÐˆ°4(€t¤ì4(€€€½¹ÍÐÍÉŒ€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡IA=}I==P°™¥±”¤°€‰ÕÑ˜àˆ¤ì4(€€€…ÍÍ•ÉÐ¹µ…Ñ ¡ÍÉŒ°¹•ÜI•áÀ¡•áÁ•Ñ•¤¤ì4(€€€…ÍÍ•ÉÐ¹‘½•Í9½Ñ5…Ñ ¡ÍÉŒ°€¼ÈÀÈØÀÜÀå}É•Ù¥•Ý}±•…å}ØÄ¼¤ì4(€ô4)ô¤ì4(

@@ -9,8 +9,9 @@
     disabled: "ขณะนี้ยังไม่เปิดรับจองออนไลน์ กรุณาติดต่อแอดมิน",
     network: "เชื่อมต่อระบบไม่สำเร็จ กรุณาลองอีกครั้ง",
     unknown: "ระบบขัดข้องชั่วคราว กรุณาลองใหม่หรือติดต่อแอดมิน",
-    urgentPending: "แอดมินกำลังตรวจสอบรายละเอียดคำขอ",
-    urgentApproved: "แอดมินยืนยันคำขอแล้ว และกำลังจัดทีมช่างให้คุณ",
+    urgentPending: "กำลังค้นหาช่างที่พร้อมรับงาน",
+    urgentApproved: "ช่างรับงานแล้ว",
+    urgentFallback: "ขณะนี้ยังไม่มีช่างรับงาน คุณสามารถติดตามสถานะหรือติดต่อแอดมินได้",
     urgentClosed: "คำขอนี้สิ้นสุดแล้ว กรุณาติดต่อแอดมินหากต้องการความช่วยเหลือ",
     otherServices: "งานซ่อม ติดตั้ง ย้ายแอร์ หรือตรวจอาการ กรุณาติดต่อแอดมินเพื่อประเมินรายละเอียด ราคา และจัดคิวให้เหมาะสม",
   });
@@ -40,12 +41,14 @@
   const PENDING_STATUSES = new Set(["pending", "pending_review", "admin_review", "รอตรวจสอบ"]);
   const ACTIONABLE_STATUSES = new Set([
     "approved", "accepted", "assigned", "in_progress",
-    "รอดำเนินการ", "รอช่างยืนยัน", "กำลังทำ", "กำลังดำเนินการ",
+    "รอดำเนินการ", "กำลังทำ", "กำลังดำเนินการ",
   ]);
   const TERMINAL_STATUSES = new Set(["rejected", "cancelled", "canceled", "closed", "ยกเลิก", "ปฏิเสธ"]);
   const COMPLETED_STATUSES = new Set(["done", "completed", "เสร็จแล้ว", "ปิดงาน"]);
   const STARTED_STATUSES = new Set(["started", "in_progress", "กำลังทำ", "กำลังดำเนินการ", "กำลังให้บริการ"]);
-  const ASSIGNED_STATUSES = new Set(["assigned", "accepted", "รอดำเนินการ", "รอช่างยืนยัน"]);
+  const ASSIGNED_STATUSES = new Set(["assigned", "accepted", "รอดำเนินการ"]);
+  const URGENT_SEARCHING_STATUSES = new Set(["searching", "pending_accept", "รอช่างยืนยัน"]);
+  const URGENT_FALLBACK_STATUSES = new Set(["fallback", "no_technician", "ไม่พบช่างรับงาน", "ตีกลับ"]);
   const urgentSubmittedViews = Object.freeze({
     pending: Object.freeze({
       state: "pending",
@@ -53,12 +56,25 @@
       kicker: "ส่งคำขอแล้ว",
       title: "ส่งคำขอแล้ว",
       message: messages.urgentPending,
-      detail: "ระบบรับคำขอของคุณแล้ว และจะแจ้งสถานะเมื่อแอดมินตรวจสอบเสร็จ",
-      statusLabel: "รอแอดมินตรวจสอบ",
-      railLabel: "รอแอดมิน",
+      detail: "รับคำขอแล้ว กำลังส่งงานให้ช่างที่พร้อมรับงาน",
+      statusLabel: "กำลังค้นหาช่าง",
+      railLabel: "กำลังค้นหาช่าง",
       boxClass: "is-warning",
       cardClass: "success-card",
       showAdminContact: false,
+    }),
+    fallback: Object.freeze({
+      state: "fallback",
+      mark: "!",
+      kicker: "ยังไม่มีช่างรับงาน",
+      title: "ยังไม่มีช่างรับงาน",
+      message: messages.urgentFallback,
+      detail: "รหัสการจองยังใช้ติดตามงานได้ตามปกติ",
+      statusLabel: "รอแอดมินช่วยจัดงาน",
+      railLabel: "ติดต่อแอดมิน",
+      boxClass: "is-warning",
+      cardClass: "",
+      showAdminContact: true,
     }),
     actionable: Object.freeze({
       state: "actionable",
@@ -101,6 +117,7 @@
   function bookingError(error, hint) {
     if (hint === "stale_slot") return messages.staleSlot;
     if (hint === "no_slots") return messages.noSlots;
+    if (hint === "disabled") return messages.disabled;
     const code = errorCode(error);
     if (DISABLED_CODES.has(code)) return messages.disabled;
     if (STALE_SLOT_CODES.has(code)) return messages.staleSlot;
@@ -127,11 +144,28 @@
       || jobStatus.includes("ยกเลิก")
       || jobStatus.includes("ปฏิเสธ");
     if (terminal) return urgentSubmittedViews.terminal;
+    if (mode === "urgent" && (
+      URGENT_FALLBACK_STATUSES.has(phase)
+      || URGENT_FALLBACK_STATUSES.has(jobStatus)
+      || jobStatus.includes("ไม่พบช่าง")
+      || jobStatus.includes("ตีกลับ")
+    )) return urgentSubmittedViews.fallback;
 
     const explicitlyPending = PENDING_STATUSES.has(phase) || PENDING_STATUSES.has(jobStatus);
-    const actionable = !explicitlyPending && (source.confirmed === true
-      || ACTIONABLE_PHASES.has(phase)
-      || ACTIONABLE_STATUSES.has(jobStatus));
+    const assignedEvidence = Boolean(
+      source.assigned_at
+      || source.accepted_at
+      || source.technician
+      || (Array.isArray(source.technician_team) && source.technician_team.length)
+      || ["assigned", "accepted", "in_progress"].includes(phase)
+      || ASSIGNED_STATUSES.has(jobStatus)
+      || STARTED_STATUSES.has(jobStatus),
+    );
+    const actionable = !explicitlyPending && (mode === "urgent"
+      ? assignedEvidence
+      : (source.confirmed === true
+        || ACTIONABLE_PHASES.has(phase)
+        || ACTIONABLE_STATUSES.has(jobStatus)));
     if (actionable) return urgentSubmittedViews.actionable;
     if (mode === "scheduled") {
       return Object.freeze({
@@ -141,6 +175,9 @@
         statusLabel: "รอแอดมินยืนยัน",
         railLabel: "รอแอดมินยืนยัน",
       });
+    }
+    if (URGENT_SEARCHING_STATUSES.has(phase) || URGENT_SEARCHING_STATUSES.has(jobStatus)) {
+      return urgentSubmittedViews.pending;
     }
     return urgentSubmittedViews.pending;
   }
@@ -205,8 +242,12 @@
       return Object.freeze({
         ...urgentSubmittedViews.actionable,
         state: "assigned",
-        statusLabel: "ยืนยันคิวแล้ว",
-        railLabel: "ยืนยันคิวแล้ว",
+        statusLabel: String(source.booking_mode || source.mode || "").trim().toLowerCase() === "urgent"
+          ? "ช่างรับงานแล้ว"
+          : "ยืนยันคิวแล้ว",
+        railLabel: String(source.booking_mode || source.mode || "").trim().toLowerCase() === "urgent"
+          ? "ช่างรับงานแล้ว"
+          : "ยืนยันคิวแล้ว",
       });
     }
     return approval;

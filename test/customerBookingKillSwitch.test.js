@@ -10,13 +10,17 @@ const indexSrc = fs.readFileSync(path.join(REPO_ROOT, "index.js"), "utf8");
 const bookingServiceSrc = fs.readFileSync(path.join(REPO_ROOT, "server", "services", "booking", "createBookingJob.js"), "utf8");
 const scheduledSrc = fs.readFileSync(path.join(REPO_ROOT, "customer-app", "modules", "bookingScheduled.js"), "utf8");
 const urgentSrc = fs.readFileSync(path.join(REPO_ROOT, "customer-app", "modules", "bookingUrgent.js"), "utf8");
+const urgentCapabilitySrc = fs.readFileSync(path.join(REPO_ROOT, "server", "services", "urgent", "capability.js"), "utf8");
 
 // The /public/book source (handler body only) for gate-ordering assertions.
 const bookHandler = bookingServiceSrc.slice(bookingServiceSrc.indexOf("async function handlePublicBook"));
 
-test("both kill switches exist and default to OFF (fail closed)", () => {
+test("scheduled keeps its existing ENV switch while urgent uses the persisted CMS runtime switch", () => {
   assert.match(indexSrc, /const ENABLE_CUSTOMER_SCHEDULED_BOOKING = envBool\("ENABLE_CUSTOMER_SCHEDULED_BOOKING", false\);/);
-  assert.match(indexSrc, /const ENABLE_CUSTOMER_URGENT_BOOKING = envBool\("ENABLE_CUSTOMER_URGENT_BOOKING", false\);/);
+  assert.match(urgentCapabilitySrc, /published_config[\s\S]*page_availability/);
+  assert.match(urgentCapabilitySrc, /raw\.urgent === true/);
+  assert.doesNotMatch(bookingServiceSrc, /ENABLE_CUSTOMER_URGENT_BOOKING|ENABLE_URGENT_FLOW/);
+  assert.doesNotMatch(indexSrc.slice(indexSrc.indexOf("createBookingJobService({"), indexSrc.indexOf("registerAdminBookingRoutes")), /isCustomerUrgentBookingEnabled|isUrgentFlowEnabled/);
 });
 
 test("the kill-switch gate keys off the canonical booking_mode, NOT the attacker-controlled client_app", () => {
@@ -26,7 +30,8 @@ test("the kill-switch gate keys off the canonical booking_mode, NOT the attacker
   assert.ok(gateStart >= 0 && gateEnd > gateStart, "canonical kill-switch gate not found");
   // The whole gate block must not mention client_app — it is not a boundary.
   assert.doesNotMatch(gate, /client_app|clientApp/);
-  assert.match(gate, /canonicalBookingMode === "urgent" && !ENABLE_CUSTOMER_URGENT_BOOKING/);
+  assert.match(gate, /await resolveCustomerUrgentCapability\(\)/);
+  assert.match(gate, /canonicalBookingMode === "urgent" && urgentCapability\?\.enabled !== true/);
   assert.match(gate, /canonicalBookingMode === "scheduled" && !ENABLE_CUSTOMER_SCHEDULED_BOOKING/);
   assert.match(gate, /status\(503\)/);
   assert.match(gate, /line_url: CWF_LINE_CONTACT_URL/);
@@ -116,10 +121,10 @@ test("legacy customer.html is redirect-only and contains no booking implementati
   assert.doesNotMatch(customerHtml, /scheduled_request_key|\/public\/book|sessionStorage|booking form/i);
 });
 
-test("each customer flag is referenced only at its declaration and the single gate (admin booking untouched)", () => {
-  // Declaration line mentions the name twice (const + env string) + one gate use.
+test("scheduled keeps its existing single gate and urgent ENV is not wired into customer booking", () => {
   assert.equal((indexSrc.match(/ENABLE_CUSTOMER_SCHEDULED_BOOKING/g) || []).length, 3);
-  assert.equal((indexSrc.match(/ENABLE_CUSTOMER_URGENT_BOOKING/g) || []).length, 3);
+  const bookingWiring = indexSrc.slice(indexSrc.indexOf("createBookingJobService({"), indexSrc.indexOf("registerAdminBookingRoutes"));
+  assert.doesNotMatch(bookingWiring, /ENABLE_CUSTOMER_URGENT_BOOKING|ENABLE_URGENT_FLOW/);
 });
 
 test("the LINE contact URL is configurable with a safe default", () => {

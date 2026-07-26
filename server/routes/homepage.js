@@ -5,6 +5,7 @@ const express = require("express");
 const { ALLOWED_MIME_TYPES, detectImageSignature } = require("../lib/cloudinaryImageUpload");
 const articleSync = require("../services/articleSync");
 const iconRegistry = require("../../customer-app/modules/iconRegistry");
+const { resolveUrgentCapability } = require("../services/urgent/capability");
 
 const CONFIG_KEY = "customer_homepage_v1";
 const MAX_JSON_BYTES = 120 * 1024;
@@ -29,10 +30,11 @@ const INTERNAL_ROUTES = new Set(["home", "booking", "scheduled", "urgent", "trac
 const PAGE_HEADER_KEYS = ["store", "booking", "tracking"];
 const FOCAL_POSITIONS = new Set(["top", "center", "bottom"]);
 
-// ---- Customer App page availability (rollout control, NOT a kill switch) -----
+// ---- Customer App page availability ------------------------------------------
 // Which Customer App V2 top-level pages are enabled. Stored inside the same
 // Homepage CMS config (published_config) â€” no new table/migration. Legacy
-// configs without this field are interpreted as all-enabled.
+// configs without this field are interpreted as all-enabled. The urgent field is
+// also the authoritative runtime kill switch for public urgent booking.
 const PAGE_AVAILABILITY_KEYS = ["home", "store", "booking", "scheduled", "urgent", "tracking", "profile"];
 const DEFAULT_PAGE_AVAILABILITY = Object.freeze({
   home: true, store: true, booking: true, scheduled: true, urgent: true, tracking: true, profile: true,
@@ -341,747 +343,4 @@ function normalizeItem(raw, sectionType, index, errors) {
     const rating = Number(item.rating);
     out.rating = Number.isFinite(rating) ? Math.max(1, Math.min(5, Math.round(rating))) : 5;
   }
-  if (!out.title && sectionType !== "quick" && sectionType !== "promo_banner") errors.push(`${pathName}.title required`);
-  validateUrlOrRoute(out, errors, pathName, {
-    // updates = activity photos/posts: an image + caption is enough, no link required.
-    // articles/social inherently link out, so those still require a URL.
-    externalRequired: sectionType === "articles" || sectionType === "social",
-    noImage: sectionType === "trust",
-  });
-  if (sectionType === "social" && out.url) {
-    try {
-      const host = new URL(out.url).hostname.toLowerCase();
-      if (!SOCIAL_HOST_PATTERNS[out.platform].test(host)) errors.push(`${pathName}.url must be a ${out.platform} link`);
-    } catch (_) {
-      // already flagged by validateUrlOrRoute
-    }
-  }
-  validateImageUrl(out.image_url, errors, `${pathName}.image_url`);
-  validateDateRange(out, errors, pathName);
-  return out;
-}
-
-function normalizeSection(raw, index, errors) {
-  const section = raw && typeof raw === "object" ? raw : {};
-  const type = cleanText(section.type || section.id, 40);
-  if (!SECTION_TYPES.has(type)) errors.push(`sections.${index}.type invalid`);
-  const id = cleanText(section.id || type, 60) || type;
-  const items = Array.isArray(section.items) ? section.items : [];
-  const maxItems = type === "quick" ? 4 : type === "hero" ? MAX_HERO_SLIDES : type === "promo_banner" ? MAX_PROMO_BANNERS : type === "social" ? MAX_SOCIAL_ITEMS : 12;
-  if (items.length > maxItems) errors.push(`${id}.items too many`);
-  const out = {
-    id,
-    type,
-    enabled: section.enabled !== false,
-    sort_order: Number.isFinite(Number(section.sort_order)) ? Number(section.sort_order) : (index + 1) * 10,
-    title: cleanText(section.title, 140),
-    kicker: cleanText(section.kicker, 60),
-    body: cleanText(section.body || section.subtitle, 360),
-    cta_primary: normalizeCta(section.cta_primary, errors, `${id}.cta_primary`),
-    cta_secondary: normalizeCta(section.cta_secondary, errors, `${id}.cta_secondary`),
-    items: items.slice(0, maxItems).map((item, itemIndex) => normalizeItem(item, type, itemIndex, errors)),
-  };
-  if (cleanText(section.image_url, 700)) out.image_url = cleanText(section.image_url, 700);
-  if (cleanText(section.image_public_id, 300)) out.image_public_id = cleanText(section.image_public_id, 300);
-  if (cleanText(section.view_all_label, 60)) out.view_all_label = cleanText(section.view_all_label, 60);
-  const _viewAllRoute = cleanText(section.view_all_route, 40);
-  if (_viewAllRoute && INTERNAL_ROUTES.has(_viewAllRoute)) out.view_all_route = _viewAllRoute;
-  // Section-level scheduling: an admin can set a date window so a whole section
-  // (e.g. a seasonal promo block) shows only between active_from and active_to.
-  // stripPublicConfig already gates sections through activeNow(); persisting the
-  // dates here is what makes that window take effect.
-  if (cleanText(section.active_from, 32)) out.active_from = cleanText(section.active_from, 32);
-  if (cleanText(section.active_to, 32)) out.active_to = cleanText(section.active_to, 32);
-  validateImageUrl(out.image_url, errors, `${id}.image_url`);
-  validateDateRange(out, errors, id);
-  if (type === "hero") {
-    out.focal_position = FOCAL_POSITIONS.has(cleanText(section.focal_position, 10)) ? cleanText(section.focal_position, 10) : "center";
-    if (!out.title) errors.push("hero.title required");
-  }
-  if (type === "featured_services") {
-    const mode = cleanText(section.featured_mode, 10) === "manual" ? "manual" : "auto";
-    const limit = Number(section.featured_limit);
-    out.featured_mode = mode;
-    out.featured_limit = Number.isFinite(limit) ? Math.max(1, Math.min(6, Math.round(limit))) : 6;
-    out.show_price = section.show_price !== false;
-    out.show_badge = section.show_badge !== false;
-    const itemIds = Array.isArray(section.item_ids) ? section.item_ids : [];
-    out.item_ids = [...new Set(itemIds.map((value) => cleanText(value, 80)).filter(Boolean))].slice(0, 12);
-    if (mode === "manual" && !out.item_ids.length) errors.push(`${id}.item_ids required for manual mode`);
-  }
-  if (type === "articles") {
-    out.auto_sync = section.auto_sync === true;
-    const sourceUrl = cleanText(section.source_url, 300);
-    if (sourceUrl) {
-      try {
-        const parsed = new URL(sourceUrl);
-        if (!["http:", "https:"].includes(parsed.protocol)) errors.push(`${id}.source_url must be http/https`);
-      } catch (_) {
-        errors.push(`${id}.source_url invalid`);
-      }
-    }
-    out.source_url = sourceUrl;
-    const seedUrls = Array.isArray(section.seed_urls) ? section.seed_urls : [];
-    out.seed_urls = seedUrls.slice(0, MAX_SEED_URLS).map((value, seedIndex) => {
-      const url = cleanText(value, 500);
-      if (!url) return "";
-      try {
-        const parsed = new URL(url);
-        if (!["http:", "https:"].includes(parsed.protocol)) errors.push(`${id}.seed_urls.${seedIndex} must be http/https`);
-      } catch (_) {
-        errors.push(`${id}.seed_urls.${seedIndex} invalid`);
-      }
-      return url;
-    }).filter(Boolean);
-    if (out.auto_sync && !out.source_url) errors.push(`${id}.source_url required when auto_sync is enabled`);
-  }
-  return out;
-}
-
-// Per-page header banners (store/booking/tracking) reuse the hero slide shape:
-// each is an auto-sliding, optionally-clickable image banner the admin manages
-// in the CMS, independent of the homepage hero.
-function normalizePageHeaders(raw, errors) {
-  const src = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
-  const out = {};
-  for (const key of PAGE_HEADER_KEYS) {
-    const header = src[key];
-    if (!header || typeof header !== "object") continue;
-    const rawItems = Array.isArray(header.items) ? header.items : [];
-    if (rawItems.length > MAX_HERO_SLIDES) errors.push(`page_headers.${key}.items too many`);
-    const items = rawItems.slice(0, MAX_HERO_SLIDES).map((item, index) =>
-      normalizeItem(item, "hero", index, errors));
-    out[key] = {
-      enabled: header.enabled !== false,
-      kicker: cleanText(header.kicker, 60),
-      title: cleanText(header.title, 120),
-      body: cleanText(header.body, 260),
-      focal_position: FOCAL_POSITIONS.has(cleanText(header.focal_position, 10)) ? cleanText(header.focal_position, 10) : "center",
-      items,
-    };
-  }
-  return out;
-}
-
-// Admin-configurable brand theme: up to three hex colors the customer app maps
-// onto its CSS variables (primary/accent/highlight). Invalid values are flagged
-// and dropped; an absent theme means "use the app's default palette".
-const THEME_KEYS = ["primary", "accent", "highlight"];
-const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
-function normalizeTheme(raw, errors) {
-  const src = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
-  const out = {};
-  for (const key of THEME_KEYS) {
-    const value = cleanText(src[key], 7);
-    if (!value) continue;
-    if (!HEX_COLOR.test(value)) { errors.push(`theme.${key} must be a 6-digit hex color`); continue; }
-    out[key] = value.toLowerCase();
-  }
-  return out;
-}
-
-function validateConfig(input) {
-  const errors = [];
-  if (!input || typeof input !== "object" || Array.isArray(input)) errors.push("payload must be object");
-  if (jsonSize(input) > MAX_JSON_BYTES) errors.push("payload too large");
-  const sections = Array.isArray(input?.sections) ? input.sections : [];
-  if (!sections.length) errors.push("sections required");
-  // Admins can add/duplicate sections, so allow more than the original fixed
-  // set while still bounding payload growth.
-  if (sections.length > MAX_SECTIONS) errors.push("sections too many");
-  const normalizedSections = sections.map((section, index) => normalizeSection(section, index, errors));
-  validateIconInput(input?.navigation, input?.icon_overrides, errors);
-  // Defensive id uniqueness: duplicated sections must not share an id, or the
-  // customer/admin lookups (sectionByType, move/toggle/edit by id) would target
-  // the wrong instance. Suffix any collision in input order before sorting.
-  const seenIds = new Set();
-  for (const section of normalizedSections) {
-    let uid = section.id;
-    let n = 2;
-    while (seenIds.has(uid)) uid = `${section.id}-${n++}`;
-    section.id = uid;
-    seenIds.add(uid);
-  }
-  const normalized = {
-    version: 1,
-    sections: normalizedSections.sort((a, b) => a.sort_order - b.sort_order),
-    page_headers: normalizePageHeaders(input?.page_headers, errors),
-    theme: normalizeTheme(input?.theme, errors),
-    page_availability: normalizePageAvailability(input?.page_availability, errors),
-    ...iconRegistry.normalizeConfig(input, "stored"),
-  };
-  return { ok: errors.length === 0, errors, config: normalized };
-}
-
-function validateIconInput(navigation, overrides, errors) {
-  const candidates = [];
-  const nav = navigation && typeof navigation === "object" ? navigation : {};
-  for (const key of Object.keys(iconRegistry.NAVIGATION)) {
-    candidates.push(["navigation." + key + ".icon", nav[key]?.icon]);
-  }
-  const slots = overrides && typeof overrides === "object" ? overrides : {};
-  for (const slot of iconRegistry.SLOT_DEFINITIONS) {
-    candidates.push(["icon_overrides." + slot.key, slots[slot.key]]);
-  }
-  for (const [pathName, raw] of candidates) {
-    if (raw == null) continue;
-    if (typeof raw === "string") {
-      if (!iconRegistry.isLibraryIcon(raw)) errors.push(pathName + " library invalid");
-      continue;
-    }
-    if (typeof raw !== "object" || Array.isArray(raw)) {
-      errors.push(pathName + " invalid");
-      continue;
-    }
-    if (raw.type === "library" || raw.type == null) {
-      if (!iconRegistry.isLibraryIcon(raw.value)) errors.push(pathName + " library invalid");
-      continue;
-    }
-    if (raw.type !== "image" || !iconRegistry.isSafeMediaPublicId(raw.value)) {
-      errors.push(pathName + " image invalid");
-    }
-  }
-}
-
-function iconObjects(config) {
-  const icons = [];
-  for (const key of Object.keys(iconRegistry.NAVIGATION)) {
-    icons.push(config?.navigation?.[key]?.icon);
-  }
-  for (const slot of iconRegistry.SLOT_DEFINITIONS) {
-    icons.push(config?.icon_overrides?.[slot.key]);
-  }
-  return icons.filter((icon) => icon && icon.type === "image");
-}
-
-async function resolveIconMedia(pool, validation) {
-  if (!validation?.ok) return validation;
-  const icons = iconObjects(validation.config);
-  const publicIds = [...new Set(icons.map((icon) => icon.value))];
-  if (!publicIds.length) return validation;
-  const result = await pool.query(
-    `SELECT image_public_id, image_url
-       FROM public.homepage_cms_media
-      WHERE image_public_id = ANY($1::text[])
-        AND deleted_at IS NULL`,
-    [publicIds]
-  );
-  const media = new Map((result.rows || []).map((row) => [String(row.image_public_id), String(row.image_url || "")]));
-  for (const icon of icons) {
-    const url = media.get(icon.value);
-    if (!url || !iconRegistry.isSafePublicImageUrl(url)) {
-      validation.errors.push("icon image media not found");
-      continue;
-    }
-    icon.url = url;
-  }
-  validation.ok = validation.errors.length === 0;
-  return validation;
-}
-
-const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-const BANGKOK_OFFSET = "+07:00";
-
-// Date-only active_from/active_to are CMS scheduling dates, not timestamps â€”
-// resolve them to the start/end of that calendar day in Asia/Bangkok so a
-// banner stays live through the full selected end date rather than expiring
-// at 00:00 UTC (07:00 Bangkok) on that date. Explicit date-times keep
-// whatever offset/local semantics they already carry.
-function resolveDateBoundary(raw, edge) {
-  if (!raw) return null;
-  if (DATE_ONLY_PATTERN.test(raw)) {
-    const suffix = edge === "end" ? "T23:59:59.999" : "T00:00:00.000";
-    const ts = new Date(`${raw}${suffix}${BANGKOK_OFFSET}`).getTime();
-    return Number.isNaN(ts) ? NaN : ts;
-  }
-  const ts = new Date(raw).getTime();
-  return Number.isNaN(ts) ? NaN : ts;
-}
-
-function activeNow(item, now = new Date()) {
-  const from = cleanText(item.active_from || "", 32);
-  const to = cleanText(item.active_to || "", 32);
-  const ts = now.getTime();
-  if (from) {
-    const fromTs = resolveDateBoundary(from, "start");
-    if (Number.isNaN(fromTs) || fromTs > ts) return false;
-  }
-  if (to) {
-    const toTs = resolveDateBoundary(to, "end");
-    if (Number.isNaN(toTs) || toTs < ts) return false;
-  }
-  return true;
-}
-
-function stripPublicConfig(config) {
-  const now = new Date();
-  const sections = (config?.sections || [])
-    .filter((section) => section.enabled !== false && activeNow(section, now))
-    .sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0))
-    .map((section) => {
-      const cleanSection = { ...section };
-      delete cleanSection.updated_by;
-      delete cleanSection.image_public_id;
-      cleanSection.items = (section.items || [])
-        .filter((item) => item.enabled !== false && activeNow(item, now))
-        .sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0))
-        .map((item) => {
-          const cleanItem = { ...item };
-          delete cleanItem.image_public_id;
-          delete cleanItem.updated_by;
-          return cleanItem;
-        });
-      return cleanSection;
-    });
-  // Carry per-page headers to the public config, stripping admin metadata and
-  // dropping disabled/expired slides (and headers with no live slide).
-  const rawHeaders = config?.page_headers && typeof config.page_headers === "object" ? config.page_headers : {};
-  const page_headers = {};
-  for (const key of Object.keys(rawHeaders)) {
-    const header = rawHeaders[key];
-    if (!header || typeof header !== "object" || header.enabled === false) continue;
-    const items = (header.items || [])
-      .filter((item) => item.enabled !== false && activeNow(item, now))
-      .sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0))
-      .map((item) => {
-        const cleanItem = { ...item };
-        delete cleanItem.image_public_id;
-        delete cleanItem.updated_by;
-        return cleanItem;
-      });
-    if (!items.length) continue;
-    const cleanHeader = { ...header, items };
-    delete cleanHeader.image_public_id;
-    delete cleanHeader.updated_by;
-    page_headers[key] = cleanHeader;
-  }
-  const theme = config?.theme && typeof config.theme === "object" && !Array.isArray(config.theme) ? config.theme : {};
-  // Page availability travels to the public config as a normalized 7-key boolean
-  // map (legacy configs â†’ all-enabled). No admin metadata is included.
-  return {
-    version: 1,
-    sections,
-    page_headers,
-    theme,
-    page_availability: readPageAvailability(config),
-    ...iconRegistry.normalizeConfig(config, "public"),
-  };
-}
-
-async function hydrateAutoSyncArticles(pool, publicConfig) {
-  const sections = publicConfig?.sections || [];
-  for (const section of sections) {
-    if (section.type !== "articles" || !section.auto_sync || !section.source_url) continue;
-    try {
-      const synced = await articleSync.getSyncedArticles(pool, section.source_url, 8);
-      if (synced.articles.length) section.items = synced.articles;
-    } catch (error) {
-      if (!isSchemaError(error)) console.error("[homepage/public/sync-hydrate] failed", error);
-      // sync cache unavailable â€” keep whatever items were already on the section
-    }
-  }
-}
-
-function safeHomepageActiveJob(row) {
-  if (!row) return null;
-  return {
-    booking_code: cleanText(row.booking_code, 40),
-    job_type: cleanText(row.job_type, 80),
-    job_status: cleanText(row.job_status, 80),
-    appointment_datetime: row.appointment_datetime || null,
-  };
-}
-
-async function loadActiveJobForCustomer(pool, customerSub) {
-  const sub = cleanText(customerSub, 160);
-  if (!sub) return null;
-  const result = await pool.query(
-    `SELECT booking_code, job_type, job_status, appointment_datetime
-       FROM public.jobs
-      WHERE customer_sub=$1
-        AND COALESCE(job_status,'') NOT IN ('à¹€à¸ªà¸£à¹‡à¸ˆà¸ªà¸´à¹‰à¸™', 'à¸¢à¸à¹€à¸¥à¸´à¸', 'à¸¢à¸à¹€à¸¥à¸´à¸à¸‡à¸²à¸™', 'à¸›à¸´à¸”à¸‡à¸²à¸™à¹à¸¥à¹‰à¸§')
-      ORDER BY appointment_datetime NULLS LAST, job_id DESC
-      LIMIT 1`,
-    [sub]
-  );
-  return safeHomepageActiveJob(result.rows?.[0]);
-}
-
-async function ensureDraftRow(pool) {
-  const existing = await pool.query(
-    `SELECT config_key, draft_config, published_config, version, updated_by, updated_at, published_at
-     FROM public.homepage_cms_configs
-     WHERE config_key=$1`,
-    [CONFIG_KEY]
-  );
-  if (existing.rows.length) return existing.rows[0];
-  const inserted = await pool.query(
-    `INSERT INTO public.homepage_cms_configs (config_key, draft_config, published_config, version)
-     VALUES ($1, $2::jsonb, NULL, 1)
-     ON CONFLICT (config_key) DO UPDATE SET config_key=EXCLUDED.config_key
-     RETURNING config_key, draft_config, published_config, version, updated_by, updated_at, published_at`,
-    [CONFIG_KEY, JSON.stringify(DEFAULT_CONFIG)]
-  );
-  return inserted.rows[0];
-}
-
-function hydrateDraftConfig(rawConfig) {
-  const base = rawConfig && typeof rawConfig === "object" && Array.isArray(rawConfig.sections) ? rawConfig : DEFAULT_CONFIG;
-  const existingTypes = new Set(base.sections.map((section) => section && (section.type || section.id)));
-  const missing = DEFAULT_CONFIG.sections.filter((defaultSection) => !existingTypes.has(defaultSection.type));
-  // Preserve EVERY existing top-level field (page_headers, theme,
-  // page_availability, version, â€¦). Only append missing default sections and
-  // backfill page_availability for a legacy draft that predates it. Never reduce
-  // the config to just { version, sections } (that dropped page_headers/theme).
-  const hydrated = {
-    ...base,
-    version: base.version || 1,
-    sections: missing.length
-      ? [...base.sections, ...missing.map((section) => JSON.parse(JSON.stringify(section)))]
-      : base.sections,
-  };
-  if (!hydrated.page_availability || typeof hydrated.page_availability !== "object" || Array.isArray(hydrated.page_availability)) {
-    hydrated.page_availability = { ...DEFAULT_PAGE_AVAILABILITY };
-  }
-  Object.assign(hydrated, iconRegistry.normalizeConfig(hydrated, "stored"));
-  return hydrated;
-}
-
-async function loadPublished(pool) {
-  const result = await pool.query(
-    `SELECT published_config, version, updated_at, published_at
-     FROM public.homepage_cms_configs
-     WHERE config_key=$1`,
-    [CONFIG_KEY]
-  );
-  const row = result.rows[0];
-  if (!row || !row.published_config) return null;
-  return row;
-}
-
-function createHomepageRoutes(deps = {}) {
-  const router = express.Router();
-  const pool = deps.pool;
-  const requireAdminSession = deps.requireAdminSession;
-  const upload = deps.upload;
-  const cloudinaryUploadBuffer = deps.cloudinaryUploadBuffer;
-  const cloudinaryDestroyPublicId = deps.cloudinaryDestroyPublicId;
-  const requireCustomerJwt = deps.requireCustomerJwt;
-  if (!pool) throw new Error("createHomepageRoutes requires pool");
-  if (!requireAdminSession) throw new Error("createHomepageRoutes requires requireAdminSession");
-  if (requireCustomerJwt && typeof requireCustomerJwt !== "function") throw new Error("createHomepageRoutes requires requireCustomerJwt to be a function");
-
-  function optionalCustomerSession(req, res, next) {
-    if (!requireCustomerJwt) return next();
-    let finished = false;
-    const passthrough = () => {
-      if (finished) return;
-      finished = true;
-      next();
-    };
-    const failClosedRes = {
-      status() { return this; },
-      json() {
-        req.customer = null;
-        passthrough();
-        return this;
-      },
-    };
-    try {
-      return requireCustomerJwt(req, failClosedRes, passthrough);
-    } catch (_) {
-      req.customer = null;
-      return passthrough();
-    }
-  }
-
-  router.get("/public/homepage", async (_req, res) => {
-    res.set("Cache-Control", "no-store");
-    try {
-      const row = await loadPublished(pool);
-      const config = row?.published_config || DEFAULT_CONFIG;
-      const publicConfig = stripPublicConfig(config);
-      await hydrateAutoSyncArticles(pool, publicConfig);
-      res.json({
-        ok: true,
-        config: publicConfig,
-        featured_services: [],
-        fallback: !row?.published_config,
-      });
-    } catch (error) {
-      if (isSchemaError(error)) {
-        return res.json({ ok: true, config: stripPublicConfig(DEFAULT_CONFIG), featured_services: [], fallback: true, schema_ready: false });
-      }
-      console.error("[homepage/public] failed", error);
-      res.status(500).json({ error: "à¹‚à¸«à¸¥à¸”à¸«à¸™à¹‰à¸²à¹à¸£à¸à¹„à¸¡à¹ˆà¸ªà¸³à¹€à¸£à¹‡à¸ˆ" });
-    }
-  });
-
-  // Lightweight public read of the Customer App page-availability flags. Reads
-  // the SAME published Homepage CMS config; returns only the page flags + safe
-  // metadata (no Draft, no updated_by, no admin/customer data). Never 500s â€” on
-  // any DB/schema/unexpected error it returns the degraded fail-safe with HTTP
-  // 200 so the app can still boot into Home + Tracking.
-  router.get("/public/customer-app-config", async (_req, res) => {
-    res.set("Cache-Control", "no-store");
-    try {
-      const row = await loadPublished(pool);
-      if (!row || !row.published_config) {
-        // No published config yet â†’ default all-enabled (fallback, not degraded).
-        return res.json({
-          ok: true,
-          page_availability: { ...DEFAULT_PAGE_AVAILABILITY },
-          ...iconRegistry.normalizeConfig(DEFAULT_CONFIG, "public"),
-          config_version: null,
-          published_at: null,
-          fallback: true,
-          degraded: false,
-        });
-      }
-      // Legacy published config with no page_availability â†’ all-enabled, not a fallback.
-      return res.json({
-        ok: true,
-        page_availability: readPageAvailability(row.published_config),
-        ...iconRegistry.normalizeConfig(row.published_config, "public"),
-        config_version: row.version ?? null,
-        published_at: row.published_at ?? null,
-        fallback: false,
-        degraded: false,
-      });
-    } catch (error) {
-      // Never crash the app: DB/schema/unexpected â†’ degraded fail-safe, HTTP 200.
-      console.warn("[customer-app-config] degraded fallback", { message: error && error.message });
-      return res.json({
-        ok: true,
-        page_availability: { ...DEGRADED_PAGE_AVAILABILITY },
-        ...iconRegistry.normalizeConfig(DEFAULT_CONFIG, "public"),
-        config_version: null,
-        published_at: null,
-        fallback: true,
-        degraded: true,
-      });
-    }
-  });
-
-  router.get("/public/homepage/active-job", optionalCustomerSession, async (req, res) => {
-    res.set("Cache-Control", "no-store");
-    try {
-      const activeJob = await loadActiveJobForCustomer(pool, req.customer?.sub || "");
-      return res.json({ ok: true, active_job: activeJob });
-    } catch (error) {
-      if (isSchemaError(error)) return res.json({ ok: true, active_job: null, schema_ready: false });
-      console.error("[homepage/active-job] failed", { code: error?.code || "ERR" });
-      return res.json({ ok: true, active_job: null });
-    }
-  });
-
-  router.get("/admin/homepage-cms/config", requireAdminSession, async (_req, res) => {
-    try {
-      const row = await ensureDraftRow(pool);
-      res.json({
-        ok: true,
-        draft_config: hydrateDraftConfig(row.draft_config),
-        published_config: row.published_config || null,
-        version: row.version,
-        updated_by: row.updated_by,
-        updated_at: row.updated_at,
-        published_at: row.published_at,
-      });
-    } catch (error) {
-      if (isSchemaError(error)) return res.status(503).json({ error: "HOMEPAGE_CMS_SCHEMA_NOT_READY" });
-      console.error("[homepage/admin/get] failed", error);
-      res.status(500).json({ error: "à¹‚à¸«à¸¥à¸”à¸‚à¹‰à¸­à¸¡à¸¹à¸¥ CMS à¹„à¸¡à¹ˆà¸ªà¸³à¹€à¸£à¹‡à¸ˆ" });
-    }
-  });
-
-  router.put("/admin/homepage-cms/draft", requireAdminSession, async (req, res) => {
-    try {
-      const validation = validateConfig(req.body?.config || req.body);
-      await resolveIconMedia(pool, validation);
-      if (!validation.ok) return res.status(400).json({ error: "VALIDATION_FAILED", details: validation.errors });
-      const actor = actorName(req);
-      const result = await pool.query(
-        `INSERT INTO public.homepage_cms_configs (config_key, draft_config, version, updated_by, updated_at)
-         VALUES ($1, $2::jsonb, 1, $3, NOW())
-         ON CONFLICT (config_key) DO UPDATE
-           SET draft_config=EXCLUDED.draft_config,
-               version=public.homepage_cms_configs.version + 1,
-               updated_by=EXCLUDED.updated_by,
-               updated_at=NOW()
-         RETURNING draft_config, version, updated_by, updated_at, published_at`,
-        [CONFIG_KEY, JSON.stringify(validation.config), actor]
-      );
-      res.json({ ok: true, ...result.rows[0] });
-    } catch (error) {
-      if (isSchemaError(error)) return res.status(503).json({ error: "HOMEPAGE_CMS_SCHEMA_NOT_READY" });
-      console.error("[homepage/admin/draft] failed", error);
-      res.status(500).json({ error: "à¸šà¸±à¸™à¸—à¸¶à¸ Draft à¹„à¸¡à¹ˆà¸ªà¸³à¹€à¸£à¹‡à¸ˆ" });
-    }
-  });
-
-  router.post("/admin/homepage-cms/publish", requireAdminSession, async (req, res) => {
-    try {
-      const row = await ensureDraftRow(pool);
-      const validation = validateConfig(req.body?.config || row.draft_config);
-      await resolveIconMedia(pool, validation);
-      if (!validation.ok) return res.status(400).json({ error: "VALIDATION_FAILED", details: validation.errors });
-      const actor = actorName(req);
-      const result = await pool.query(
-        `UPDATE public.homepage_cms_configs
-         SET draft_config=$2::jsonb,
-             published_config=$2::jsonb,
-             version=version + 1,
-             updated_by=$3,
-             updated_at=NOW(),
-             published_at=NOW()
-         WHERE config_key=$1
-         RETURNING draft_config, published_config, version, updated_by, updated_at, published_at`,
-        [CONFIG_KEY, JSON.stringify(validation.config), actor]
-      );
-      res.json({ ok: true, ...result.rows[0] });
-    } catch (error) {
-      if (isSchemaError(error)) return res.status(503).json({ error: "HOMEPAGE_CMS_SCHEMA_NOT_READY" });
-      console.error("[homepage/admin/publish] failed", error);
-      res.status(500).json({ error: "Publish à¹„à¸¡à¹ˆà¸ªà¸³à¹€à¸£à¹‡à¸ˆ" });
-    }
-  });
-
-  const uploadMiddleware = upload && typeof upload.single === "function" ? upload.single("image") : null;
-  router.post("/admin/homepage-cms/images", requireAdminSession, (req, res, next) => {
-    if (!uploadMiddleware) return res.status(500).json({ error: "UPLOAD_NOT_CONFIGURED" });
-    uploadMiddleware(req, res, next);
-  }, async (req, res) => {
-    try {
-      const file = req.file;
-      if (!file) return res.status(400).json({ error: "à¸à¸£à¸¸à¸“à¸²à¹€à¸¥à¸·à¸­à¸à¹„à¸Ÿà¸¥à¹Œà¸ à¸²à¸ž" });
-      if (!file.buffer || !file.buffer.length) return res.status(400).json({ error: "à¹„à¸¡à¹ˆà¸žà¸šà¹„à¸Ÿà¸¥à¹Œà¸£à¸¹à¸›à¸ à¸²à¸ž" });
-      if ((file.size || file.buffer.length) > MAX_IMAGE_BYTES) return res.status(400).json({ error: "à¹„à¸Ÿà¸¥à¹Œà¸£à¸¹à¸›à¸ à¸²à¸žà¹ƒà¸«à¸à¹ˆà¹€à¸à¸´à¸™ 10MB" });
-      const declaredMime = String(file.mimetype || "").toLowerCase();
-      if (!ALLOWED_MIME_TYPES.has(declaredMime)) return res.status(400).json({ error: "à¸£à¸­à¸‡à¸£à¸±à¸šà¹€à¸‰à¸žà¸²à¸°à¹„à¸Ÿà¸¥à¹Œ JPEG, PNG à¸«à¸£à¸·à¸­ WEBP" });
-      const actualMime = detectImageSignature(file.buffer);
-      if (!actualMime || actualMime !== declaredMime) return res.status(400).json({ error: "à¹„à¸Ÿà¸¥à¹Œà¸£à¸¹à¸›à¸ à¸²à¸žà¹„à¸¡à¹ˆà¸–à¸¹à¸à¸•à¹‰à¸­à¸‡à¸«à¸£à¸·à¸­à¹€à¸ªà¸µà¸¢à¸«à¸²à¸¢" });
-      if (!cloudinaryUploadBuffer) return res.status(503).json({ error: "CLOUDINARY_NOT_CONFIGURED" });
-      const publicId = `homepage_${Date.now()}_${crypto.randomUUID().slice(0, 8)}`;
-      const uploaded = await cloudinaryUploadBuffer({
-        buffer: file.buffer,
-        mimetype: file.mimetype,
-        folder: "cwf/homepage",
-        publicId,
-        transformation: "c_limit,w_1400/q_auto/f_auto",
-      });
-      const actor = actorName(req);
-      await pool.query(
-        `INSERT INTO public.homepage_cms_media (image_public_id, image_url, original_name, mime_type, file_size, uploaded_by)
-         VALUES ($1, $2, $3, $4, $5, $6)
-         ON CONFLICT (image_public_id) DO NOTHING`,
-        [uploaded.public_id || publicId, uploaded.secure_url, file.originalname || "", file.mimetype, file.size || null, actor]
-      );
-      res.json({ ok: true, image_url: uploaded.secure_url, image_public_id: uploaded.public_id || publicId });
-    } catch (error) {
-      if (isSchemaError(error)) return res.status(503).json({ error: "HOMEPAGE_CMS_SCHEMA_NOT_READY" });
-      console.error("[homepage/admin/upload] failed", error);
-      res.status(500).json({ error: error.message || "à¸­à¸±à¸›à¹‚à¸«à¸¥à¸”à¸£à¸¹à¸›à¹„à¸¡à¹ˆà¸ªà¸³à¹€à¸£à¹‡à¸ˆ" });
-    }
-  });
-
-  router.delete("/admin/homepage-cms/images/:publicId", requireAdminSession, async (req, res) => {
-    try {
-      const publicId = cleanText(req.params.publicId, 300);
-      if (!publicId) return res.status(400).json({ error: "INVALID_PUBLIC_ID" });
-      const row = await ensureDraftRow(pool);
-      const publishedText = JSON.stringify(row.published_config || {});
-      if (publishedText.includes(publicId)) return res.status(409).json({ error: "IMAGE_USED_BY_PUBLISHED_CONFIG" });
-      if (cloudinaryDestroyPublicId) await cloudinaryDestroyPublicId(publicId);
-      await pool.query(
-        `UPDATE public.homepage_cms_media
-         SET deleted_at=NOW(), deleted_by=$2
-         WHERE image_public_id=$1 AND deleted_at IS NULL`,
-        [publicId, actorName(req)]
-      );
-      res.json({ ok: true });
-    } catch (error) {
-      if (isSchemaError(error)) return res.status(503).json({ error: "HOMEPAGE_CMS_SCHEMA_NOT_READY" });
-      console.error("[homepage/admin/delete-image] failed", error);
-      res.status(500).json({ error: "à¸¥à¸šà¸£à¸¹à¸›à¹„à¸¡à¹ˆà¸ªà¸³à¹€à¸£à¹‡à¸ˆ" });
-    }
-  });
-
-  router.delete("/admin/homepage-cms/images", requireAdminSession, async (req, res) => {
-    try {
-      const publicId = cleanText(req.body?.public_id || req.body?.image_public_id, 300);
-      if (!publicId) return res.status(400).json({ error: "INVALID_PUBLIC_ID" });
-      const row = await ensureDraftRow(pool);
-      const publishedText = JSON.stringify(row.published_config || {});
-      if (publishedText.includes(publicId)) return res.status(409).json({ error: "IMAGE_USED_BY_PUBLISHED_CONFIG" });
-      if (cloudinaryDestroyPublicId) await cloudinaryDestroyPublicId(publicId);
-      await pool.query(
-        `UPDATE public.homepage_cms_media
-         SET deleted_at=NOW(), deleted_by=$2
-         WHERE image_public_id=$1 AND deleted_at IS NULL`,
-        [publicId, actorName(req)]
-      );
-      res.json({ ok: true });
-    } catch (error) {
-      if (isSchemaError(error)) return res.status(503).json({ error: "HOMEPAGE_CMS_SCHEMA_NOT_READY" });
-      console.error("[homepage/admin/delete-image] failed", error);
-      res.status(500).json({ error: "à¸¥à¸šà¸£à¸¹à¸›à¹„à¸¡à¹ˆà¸ªà¸³à¹€à¸£à¹‡à¸ˆ" });
-    }
-  });
-
-  router.post("/admin/homepage-cms/sync-articles", requireAdminSession, async (req, res) => {
-    try {
-      const sourceUrl = cleanText(req.body?.source_url, 300);
-      if (!sourceUrl) return res.status(400).json({ error: "source_url required" });
-      const seedUrls = Array.isArray(req.body?.seed_urls)
-        ? req.body.seed_urls.map((value) => cleanText(value, 500)).filter(Boolean).slice(0, MAX_SEED_URLS)
-        : [];
-      const result = await articleSync.syncArticles(pool, sourceUrl, { seedUrls, limit: 12 });
-      if (!result.ok) return res.status(400).json({ error: result.error || "SYNC_FAILED" });
-      const synced = await articleSync.getSyncedArticles(pool, sourceUrl, 12);
-      res.json({
-        ok: true,
-        synced_count: result.synced,
-        fetched_count: result.fetched,
-        articles: synced.articles,
-        last_synced_at: synced.last_synced_at,
-      });
-    } catch (error) {
-      if (isSchemaError(error)) return res.status(503).json({ error: "HOMEPAGE_CMS_SCHEMA_NOT_READY" });
-      console.error("[homepage/admin/sync-articles] failed", error);
-      res.status(500).json({ error: error.message || "à¸‹à¸´à¸‡à¸„à¹Œà¸šà¸—à¸„à¸§à¸²à¸¡à¹„à¸¡à¹ˆà¸ªà¸³à¹€à¸£à¹‡à¸ˆ" });
-    }
-  });
-
-  router.get("/admin/homepage-cms/synced-articles", requireAdminSession, async (req, res) => {
-    try {
-      const sourceUrl = cleanText(req.query?.source_url, 300);
-      if (!sourceUrl) return res.json({ ok: true, articles: [], last_synced_at: null });
-      const synced = await articleSync.getSyncedArticles(pool, sourceUrl, 12);
-      res.json({ ok: true, ...synced });
-    } catch (error) {
-      if (isSchemaError(error)) return res.status(503).json({ error: "HOMEPAGE_CMS_SCHEMA_NOT_READY" });
-      console.error("[homepage/admin/synced-articles] failed", error);
-      res.status(500).json({ error: "à¹‚à¸«à¸¥à¸”à¸‚à¹‰à¸­à¸¡à¸¹à¸¥à¸—à¸µà¹ˆà¸‹à¸´à¸‡à¸„à¹Œà¹„à¸¡à¹ˆà¸ªà¸³à¹€à¸£à¹‡à¸ˆ" });
-    }
-  });
-
-  return router;
-}
-
-module.exports = {
-  CONFIG_KEY,
-  DEFAULT_CONFIG,
-  MAX_IMAGE_BYTES,
-  SECTION_TYPES,
-  PAGE_AVAILABILITY_KEYS,
-  DEFAULT_PAGE_AVAILABILITY,
-  DEGRADED_PAGE_AVAILABILITY,
-  activeNow,
-  createHomepageRoutes,
-  hydrateDraftConfig,
-  normalizePageAvailability,
-  readPageAvailability,
-  resolveIconMedia,
-  stripPublicConfig,
-  validateConfig,
-};
+  if (!out.title && sectionType !== "quick" && sectionType !== "promo_banner") errë·¶‰žËkºwµçI•ÅÕ¥É•ÌÉ•ÅÕ¥É•‘µ¥¹M•ÍÍ¥½¸ˆ¤ì4(€¥˜€¡É•ÅÕ¥É•ÕÍÑ½µ•É)ÝÐ€˜˜ÑåÁ•½˜É•ÅÕ¥É•ÕÍÑ½µ•É)ÝÐ€„ôô€‰™Õ¹Ñ¥½¸ˆ¤Ñ¡É½Ü¹•ÜÉÉ½È ‰É•…Ñ•!½µ•Á…•I½ÕÑ•ÌÉ•ÅÕ¥É•ÌÉ•ÅÕ¥É•ÕÍÑ½µ•É)ÝÐÑ¼‰”„™Õ¹Ñ¥½¸ˆ¤ì4(4(€™Õ¹Ñ¥½¸½ÁÑ¥½¹…±ÕÍÑ½µ•ÉM•ÍÍ¥½¸¡É•Ä°É•Ì°¹•áÐ¤ì4(€€€¥˜€ …É•ÅÕ¥É•ÕÍÑ½µ•É)ÝÐ¤É•ÑÕÉ¸¹•áÐ ¤ì4(€€€±•Ð™¥¹¥Í¡•€ô™…±Í”ì4(€€€½¹ÍÐÁ…ÍÍÑ¡É½Õ €ô€ ¤€ôøì4(€€€€€¥˜€¡™¥¹¥Í¡•¤É•ÑÕÉ¸ì4(€€€€€™¥¹¥Í¡•€ôÑÉÕ”ì4(€€€€€¹•áÐ ¤ì4(€€€ôì4(€€€½¹ÍÐ™…¥±±½Í•‘I•Ì€ôì4(€€€€€ÍÑ…ÑÕÌ ¤ìÉ•ÑÕÉ¸Ñ¡¥Ììô°4(€€€€€©Í½¸ ¤ì4(€€€€€€€É•Ä¹ÕÍÑ½µ•È€ô¹Õ±°ì4(€€€€€€€Á…ÍÍÑ¡É½Õ  ¤ì4(€€€€€€€É•ÑÕÉ¸Ñ¡¥Ìì4(€€€€€ô°4(€€€ôì4(€€€ÑÉäì4(€€€€€É•ÑÕÉ¸É•ÅÕ¥É•ÕÍÑ½µ•É)ÝÐ¡É•Ä°™…¥±±½Í•‘I•Ì°Á…ÍÍÑ¡É½Õ ¤ì4(€€€ô…Ñ €¡|¤ì4(€€€€€É•Ä¹ÕÍÑ½µ•È€ô¹Õ±°ì4(€€€€€É•ÑÕÉ¸Á…ÍÍÑ¡É½Õ  ¤ì4(€€€ô4(€ô4(4(€É½ÕÑ•È¹•Ð ˆ½ÁÕ‰±¥Œ½¡½µ•Á…”ˆ°…Íå¹Œ€¡}É•Ä°É•Ì¤€ôøì4(€€€É•Ì¹Í•Ð ‰…¡”µ½¹ÑÉ½°ˆ°€‰¹¼µÍÑ½É”ˆ¤ì4(€€€ÑÉäì4(€€€€€½¹ÍÐÉ½Ü€ô…Ý…¥Ð±½…‘AÕ‰±¥Í¡•¡Á½½°¤ì(€€€€€½¹ÍÐ½¹™¥œ€ôÉ½Üü¹ÁÕ‰±¥Í¡•‘}½¹™¥œñðU1Q}=9%ì4(€€€€€½¹ÍÐÁÕ‰±¥½¹™¥œ€ôÍÑÉ¥ÁAÕ‰±¥½¹™¥œ¡½¹™¥œ¤ì4(€€€€€…Ý…¥Ð¡å‘É…Ñ•ÕÑ½Må¹ÉÑ¥±•Ì¡Á½½°°ÁÕ‰±¥½¹™¥œ¤ì4(€€€€€É•Ì¹©Í½¸¡ì4(€€€€€€€½¬èÑÉÕ”°4(€€€€€€€½¹™¥œèÁÕ‰±¥½¹™¥œ°4(€€€€€€€™•…ÑÕÉ•‘}Í•ÉÙ¥•Ìèmt°4(€€€€€€€™…±±‰…¬è€…É½Üü¹ÁÕ‰±¥Í¡•‘}½¹™¥œ°4(€€€€€ô¤ì4(€€€ô…Ñ €¡•ÉÉ½È¤ì4(€€€€€¥˜€¡¥ÍM¡•µ…ÉÉ½È¡•ÉÉ½È¤¤ì4(€€€€€€€É•ÑÕÉ¸É•Ì¹©Í½¸¡ì½¬èÑÉÕ”°½¹™¥œèÍÑÉ¥ÁAÕ‰±¥½¹™¥œ¡U1Q}=9%¤°™•…ÑÕÉ•‘}Í•ÉÙ¥•Ìèmt°™…±±‰…¬èÑÉÕ”°Í¡•µ…}É•…‘äè™…±Í”ô¤ì4(€€€€€ô4(€€€€€½¹Í½±”¹•ÉÉ½È ‰m¡½µ•Á…”½ÁÕ‰±¥t™…¥±•ˆ°•ÉÉ½È¤ì4(€€€€€É•Ì¹ÍÑ…ÑÕÌ ÔÀÀ¤¹©Í½¸¡ì•ÉÉ½Èè€‹‚æ‚â¯‚â—‚âS‚â¯‚âg‚æ'‚âË‚æ‚â‚â‚æ‚â‡‚æ#‚â«‚âÏ‚æ‚â‚æ‚â ˆô¤ì4(€€€ô4(€ô¤ì4(4(€€¼¼1¥¡ÑÝ•¥¡ÐÁÕ‰±¥ŒÉ•…½˜Ñ¡”ÕÍÑ½µ•ÈÁÀÁ…”µ…Ù…¥±…‰¥±¥Ñä™±…Ì¸I•…‘Ì4(€€¼¼Ñ¡”M5ÁÕ‰±¥Í¡•!½µ•Á…”5L½¹™¥œìÉ•ÑÕÉ¹Ì½¹±äÑ¡”Á…”™±…Ì€¬Í…™”4(€€¼¼µ•Ñ…‘…Ñ„€¡¹¼É…™Ð°¹¼ÕÁ‘…Ñ•‘}‰ä°¹¼…‘µ¥¸½ÕÍÑ½µ•È‘…Ñ„¤¸9•Ù•È€ÔÀÁÌƒŠP½¸4(€€¼¼…¹ä½Í¡•µ„½Õ¹•áÁ•Ñ••ÉÉ½È¥ÐÉ•ÑÕÉ¹ÌÑ¡”‘•É…‘•™…¥°µÍ…™”Ý¥Ñ !QQ@4(€€¼¼€ÈÀÀÍ¼Ñ¡”…ÁÀ…¸ÍÑ¥±°‰½½Ð¥¹Ñ¼!½µ”€¬QÉ…­¥¹œ¸4(€É½ÕÑ•È¹•Ð ˆ½ÁÕ‰±¥Œ½ÕÍÑ½µ•Èµ…ÁÀµ½¹™¥œˆ°…Íå¹Œ€¡}É•Ä°É•Ì¤€ôøì4(€€€É•Ì¹Í•Ð ‰…¡”µ½¹ÑÉ½°ˆ°€‰¹¼µÍÑ½É”ˆ¤ì4(€€€ÑÉäì4(€€€€€½¹ÍÐmÉ½Ü°ÕÉ•¹Ñ…Á…‰¥±¥Ñåt€ô…Ý…¥ÐAÉ½µ¥Í”¹…±°¡l(€€€€€€€±½…‘AÕ‰±¥Í¡•¡Á½½°¤°(€€€€€€€É•Í½±Ù•UÉ•¹Ñ…Á…‰¥±¥Ñä¡Á½½°¤°(€€€€€t¤ì(€€€€€¥˜€ …É½Üñð€…É½Ü¹ÁÕ‰±¥Í¡•‘}½¹™¥œ¤ì4(€€€€€€€€¼¼9¼ÁÕ‰±¥Í¡•½¹™¥œå•ÐƒŠH‘•™…Õ±Ð…±°µ•¹…‰±•€¡™…±±‰…¬°¹½Ð‘•É…‘•¤¸4(€€€€€€€É•ÑÕÉ¸É•Ì¹©Í½¸¡ì4(€€€€€€€€€½¬èÑÉÕ”°4(€€€€€€€€€Á…•}…Ù…¥±…‰¥±¥Ñäèì(€€€€€€€€€€€€¸¸¹U1Q}A}Y%1	%1%Qd°(€€€€€€€€€€€ÕÉ•¹ÐèÕÉ•¹Ñ…Á…‰¥±¥Ñä¹•¹…‰±•°(€€€€€€€€€ô°(€€€€€€€€€€¸¸¹¥½¹I•¥ÍÑÉä¹¹½Éµ…±¥é•½¹™¥œ¡U1Q}=9%°€‰ÁÕ‰±¥Œˆ¤°4(€€€€€€€€€½¹™¥}Ù•ÉÍ¥½¸è¹Õ±°°4(€€€€€€€€€ÁÕ‰±¥Í¡•‘}…Ðè¹Õ±°°4(€€€€€€€€€™…±±‰…¬èÑÉÕ”°4(€€€€€€€€€‘•É…‘•è™…±Í”°4(€€€€€€€ô¤ì4(€€€€€ô4(€€€€€€¼¼1•…äÁÕ‰±¥Í¡•½¹™¥œÝ¥Ñ ¹¼Á…•}…Ù…¥±…‰¥±¥ÑäƒŠH…±°µ•¹…‰±•°¹½Ð„™…±±‰…¬¸4(€€€€€É•ÑÕÉ¸É•Ì¹©Í½¸¡ì4(€€€€€€€½¬èÑÉÕ”°4(€€€€€€€Á…•}…Ù…¥±…‰¥±¥Ñäèì(€€€€€€€€€€¸¸¹É•…‘A…•Ù…¥±…‰¥±¥Ñä¡É½Ü¹ÁÕ‰±¥Í¡•‘}½¹™¥œ¤°(€€€€€€€€€ÕÉ•¹ÐèÕÉ•¹Ñ…Á…‰¥±¥Ñä¹•¹…‰±•°(€€€€€€€ô°(€€€€€€€€¸¸¹¥½¹I•¥ÍÑÉä¹¹½Éµ…±¥é•½¹™¥œ¡É½Ü¹ÁÕ‰±¥Í¡•‘}½¹™¥œ°€‰ÁÕ‰±¥Œˆ¤°4(€€€€€€€½¹™¥}Ù•ÉÍ¥½¸èÉ½Ü¹Ù•ÉÍ¥½¸€üü¹Õ±°°4(€€€€€€€ÁÕ‰±¥Í¡•‘}…ÐèÉ½Ü¹ÁÕ‰±¥Í¡•‘}…Ð€üü¹Õ±°°4(€€€€€€€™…±±‰…¬è™…±Í”°4(€€€€€€€‘•É…‘•è™…±Í”°4(€€€€€ô¤ì4(€€€ô…Ñ €¡•ÉÉ½È¤ì4(€€€€€€¼¼9•Ù•ÈÉ…Í Ñ¡”…ÁÀè½Í¡•µ„½Õ¹•áÁ•Ñ•ƒŠH‘•É…‘•™…¥°µÍ…™”°!QQ@€ÈÀÀ¸4(€€€€€½¹Í½±”¹Ý…É¸ ‰mÕÍÑ½µ•Èµ…ÁÀµ½¹™¥t‘•É…‘•™…±±‰…¬ˆ°ìµ•ÍÍ…”è•ÉÉ½È€˜˜•ÉÉ½È¹µ•ÍÍ…”ô¤ì4(€€€€€É•ÑÕÉ¸É•Ì¹©Í½¸¡ì4(€€€€€€€½¬èÑÉÕ”°4(€€€€€€€Á…•}…Ù…¥±…‰¥±¥Ñäèì€¸¸¹I}A}Y%1	%1%Qdô°4(€€€€€€€€¸¸¹¥½¹I•¥ÍÑÉä¹¹½Éµ…±¥é•½¹™¥œ¡U1Q}=9%°€‰ÁÕ‰±¥Œˆ¤°4(€€€€€€€½¹™¥}Ù•ÉÍ¥½¸è¹Õ±°°4(€€€€€€€ÁÕ‰±¥Í¡•‘}…Ðè¹Õ±°°4(€€€€€€€™…±±‰…¬èÑÉÕ”°4(€€€€€€€‘•É…‘•èÑÉÕ”°4(€€€€€ô¤ì4(€€€ô4(€ô¤ì4(4(€É½ÕÑ•È¹•Ð ˆ½ÁÕ‰±¥Œ½¡½µ•Á…”½…Ñ¥Ù”µ©½ˆˆ°½ÁÑ¥½¹…±ÕÍÑ½µ•ÉM•ÍÍ¥½¸°…Íå¹Œ€¡É•Ä°É•Ì¤€ôøì4(€€€É•Ì¹Í•Ð ‰…¡”µ½¹ÑÉ½°ˆ°€‰¹¼µÍÑ½É”ˆ¤ì4(€€€ÑÉäì4(€€€€€½¹ÍÐ…Ñ¥Ù•)½ˆ€ô…Ý…¥Ð±½…‘Ñ¥Ù•)½‰½ÉÕÍÑ½µ•È¡Á½½°°É•Ä¹ÕÍÑ½µ•Èü¹ÍÕˆñð€ˆˆ¤ì4(€€€€€É•ÑÕÉ¸É•Ì¹©Í½¸¡ì½¬èÑÉÕ”°…Ñ¥Ù•}©½ˆè…Ñ¥Ù•)½ˆô¤ì4(€€€ô…Ñ €¡•ÉÉ½È¤ì4(€€€€€¥˜€¡¥ÍM¡•µ…ÉÉ½È¡•ÉÉ½È¤¤É•ÑÕÉ¸É•Ì¹©Í½¸¡ì½¬èÑÉÕ”°…Ñ¥Ù•}©½ˆè¹Õ±°°Í¡•µ…}É•…‘äè™…±Í”ô¤ì4(€€€€€½¹Í½±”¹•ÉÉ½È ‰m¡½µ•Á…”½…Ñ¥Ù”µ©½‰t™…¥±•ˆ°ì½‘”è•ÉÉ½Èü¹½‘”ñð€‰IHˆô¤ì4(€€€€€É•ÑÕÉ¸É•Ì¹©Í½¸¡ì½¬èÑÉÕ”°…Ñ¥Ù•}©½ˆè¹Õ±°ô¤ì4(€€€ô4(€ô¤ì4(4(€É½ÕÑ•È¹•Ð ˆ½…‘µ¥¸½¡½µ•Á…”µµÌ½½¹™¥œˆ°É•ÅÕ¥É•‘µ¥¹M•ÍÍ¥½¸°…Íå¹Œ€¡}É•Ä°É•Ì¤€ôøì4(€€€ÑÉäì4(€€€€€½¹ÍÐÉ½Ü€ô…Ý…¥Ð•¹ÍÕÉ•É…™ÑI½Ü¡Á½½°¤ì4(€€€€€É•Ì¹©Í½¸¡ì4(€€€€€€€½¬èÑÉÕ”°4(€€€€€€€‘É…™Ñ}½¹™¥œè¡å‘É…Ñ•É…™Ñ½¹™¥œ¡É½Ü¹‘É…™Ñ}½¹™¥œ¤°4(€€€€€€€ÁÕ‰±¥Í¡•‘}½¹™¥œèÉ½Ü¹ÁÕ‰±¥Í¡•‘}½¹™¥œñð¹Õ±°°4(€€€€€€€Ù•ÉÍ¥½¸èÉ½Ü¹Ù•ÉÍ¥½¸°4(€€€€€€€ÕÁ‘…Ñ•‘}‰äèÉ½Ü¹ÕÁ‘…Ñ•‘}‰ä°4(€€€€€€€ÕÁ‘…Ñ•‘}…ÐèÉ½Ü¹ÕÁ‘…Ñ•‘}…Ð°4(€€€€€€€ÁÕ‰±¥Í¡•‘}…ÐèÉ½Ü¹ÁÕ‰±¥Í¡•‘}…Ð°4(€€€€€ô¤ì4(€€€ô…Ñ €¡•ÉÉ½È¤ì4(€€€€€¥˜€¡¥ÍM¡•µ…ÉÉ½È¡•ÉÉ½È¤¤É•ÑÕÉ¸É•Ì¹ÍÑ…ÑÕÌ ÔÀÌ¤¹©Í½¸¡ì•ÉÉ½Èè€‰!=5A}5M}M!5}9=Q}Idˆô¤ì4(€€€€€½¹Í½±”¹•ÉÉ½È ‰m¡½µ•Á…”½…‘µ¥¸½•Ñt™…¥±•ˆ°•ÉÉ½È¤ì4(€€€€€É•Ì¹ÍÑ…ÑÕÌ ÔÀÀ¤¹©Í½¸¡ì•ÉÉ½Èè€‹‚æ‚â¯‚â—‚âS‚â‚æ'‚â·‚â‡‚âç‚â”5Lƒ‚æ‚â‡‚æ#‚â«‚âÏ‚æ‚â‚æ‚â ˆô¤ì4(€€€ô4(€ô¤ì4(4(€É½ÕÑ•È¹ÁÕÐ ˆ½…‘µ¥¸½¡½µ•Á…”µµÌ½‘É…™Ðˆ°É•ÅÕ¥É•‘µ¥¹M•ÍÍ¥½¸°…Íå¹Œ€¡É•Ä°É•Ì¤€ôøì4(€€€ÑÉäì4(€€€€€½¹ÍÐÙ…±¥‘…Ñ¥½¸€ôÙ…±¥‘…Ñ•½¹™¥œ¡É•Ä¹‰½‘äü¹½¹™¥œñðÉ•Ä¹‰½‘ä¤ì4(€€€€€…Ý…¥ÐÉ•Í½±Ù•%½¹5•‘¥„¡Á½½°°Ù…±¥‘…Ñ¥½¸¤ì4(€€€€€¥˜€ …Ù…±¥‘…Ñ¥½¸¹½¬¤É•ÑÕÉ¸É•Ì¹ÍÑ…ÑÕÌ ÐÀÀ¤¹©Í½¸¡ì•ÉÉ½Èè€‰Y1%Q%=9}%1ˆ°‘•Ñ…¥±ÌèÙ…±¥‘…Ñ¥½¸¹•ÉÉ½ÉÌô¤ì4(€€€€€½¹ÍÐ…Ñ½È€ô…Ñ½É9…µ”¡É•Ä¤ì4(€€€€€½¹ÍÐÉ•ÍÕ±Ð€ô…Ý…¥ÐÁ½½°¹ÅÕ•Éä 4(€€€€€€€%9MIP%9Q<ÁÕ‰±¥Œ¹¡½µ•Á…•}µÍ}½¹™¥Ì€¡½¹™¥}­•ä°‘É…™Ñ}½¹™¥œ°Ù•ÉÍ¥½¸°ÕÁ‘…Ñ•‘}‰ä°ÕÁ‘…Ñ•‘}…Ð¤4(€€€€€€€€Y1UL€ Ä°€Èèé©Í½¹ˆ°€Ä°€Ì°9=\ ¤¤4(€€€€€€€€=8=91%P€¡½¹™¥}­•ä¤<UAQ4(€€€€€€€€€€MP‘É…™Ñ}½¹™¥œõa1U¹‘É…™Ñ}½¹™¥œ°4(€€€€€€€€€€€€€€Ù•ÉÍ¥½¸õÁÕ‰±¥Œ¹¡½µ•Á…•}µÍ}½¹™¥Ì¹Ù•ÉÍ¥½¸€¬€Ä°4(€€€€€€€€€€€€€€ÕÁ‘…Ñ•‘}‰äõa1U¹ÕÁ‘…Ñ•‘}‰ä°4(€€€€€€€€€€€€€€ÕÁ‘…Ñ•‘}…Ðõ9=\ ¤4(€€€€€€€€IQUI9%9‘É…™Ñ}½¹™¥œ°Ù•ÉÍ¥½¸°ÕÁ‘…Ñ•‘}‰ä°ÕÁ‘…Ñ•‘}…Ð°ÁÕ‰±¥Í¡•‘}…Ñ€°4(€€€€€€€m=9%}-d°)M=8¹ÍÑÉ¥¹¥™ä¡Ù…±¥‘…Ñ¥½¸¹½¹™¥œ¤°…Ñ½Ét4(€€€€€€¤ì4(€€€€€É•Ì¹©Í½¸¡ì½¬èÑÉÕ”°€¸¸¹É•ÍÕ±Ð¹É½ÝÍlÁtô¤ì4(€€€ô…Ñ €¡•ÉÉ½È¤ì4(€€€€€¥˜€¡¥ÍM¡•µ…ÉÉ½È¡•ÉÉ½È¤¤É•ÑÕÉ¸É•Ì¹ÍÑ…ÑÕÌ ÔÀÌ¤¹©Í½¸¡ì•ÉÉ½Èè€‰!=5A}5M}M!5}9=Q}Idˆô¤ì4(€€€€€½¹Í½±”¹•ÉÉ½È ‰m¡½µ•Á…”½…‘µ¥¸½‘É…™Ñt™…¥±•ˆ°•ÉÉ½È¤ì4(€€€€€É•Ì¹ÍÑ…ÑÕÌ ÔÀÀ¤¹©Í½¸¡ì•ÉÉ½Èè€‹‚âk‚âÇ‚âg‚â_‚âÛ‚âÉ…™Ðƒ‚æ‚â‡‚æ#‚â«‚âÏ‚æ‚â‚æ‚â ˆô¤ì4(€€€ô4(€ô¤ì4(4(€É½ÕÑ•È¹Á½ÍÐ ˆ½…‘µ¥¸½¡½µ•Á…”µµÌ½ÁÕ‰±¥Í ˆ°É•ÅÕ¥É•‘µ¥¹M•ÍÍ¥½¸°…Íå¹Œ€¡É•Ä°É•Ì¤€ôøì4(€€€ÑÉäì4(€€€€€½¹ÍÐÉ½Ü€ô…Ý…¥Ð•¹ÍÕÉ•É…™ÑI½Ü¡Á½½°¤ì4(€€€€€½¹ÍÐÙ…±¥‘…Ñ¥½¸€ôÙ…±¥‘…Ñ•½¹™¥œ¡É•Ä¹‰½‘äü¹½¹™¥œñðÉ½Ü¹‘É…™Ñ}½¹™¥œ¤ì4(€€€€€…Ý…¥ÐÉ•Í½±Ù•%½¹5•‘¥„¡Á½½°°Ù…±¥‘…Ñ¥½¸¤ì4(€€€€€¥˜€ …Ù…±¥‘…Ñ¥½¸¹½¬¤É•ÑÕÉ¸É•Ì¹ÍÑ…ÑÕÌ ÐÀÀ¤¹©Í½¸¡ì•ÉÉ½Èè€‰Y1%Q%=9}%1ˆ°‘•Ñ…¥±ÌèÙ…±¥‘…Ñ¥½¸¹•ÉÉ½ÉÌô¤ì4(€€€€€½¹ÍÐ…Ñ½È€ô…Ñ½É9…µ”¡É•Ä¤ì4(€€€€€½¹ÍÐÉ•ÍÕ±Ð€ô…Ý…¥ÐÁ½½°¹ÅÕ•Éä 4(€€€€€€€UAQÁÕ‰±¥Œ¹¡½µ•Á…•}µÍ}½¹™¥Ì4(€€€€€€€€MP‘É…™Ñ}½¹™¥œôÈèé©Í½¹ˆ°4(€€€€€€€€€€€€ÁÕ‰±¥Í¡•‘}½¹™¥œôÈèé©Í½¹ˆ°4(€€€€€€€€€€€€Ù•ÉÍ¥½¸õÙ•ÉÍ¥½¸€¬€Ä°4(€€€€€€€€€€€€ÕÁ‘…Ñ•‘}‰äôÌ°4(€€€€€€€€€€€€ÕÁ‘…Ñ•‘}…Ðõ9=\ ¤°4(€€€€€€€€€€€€ÁÕ‰±¥Í¡•‘}…Ðõ9=\ ¤4(€€€€€€€€]!I½¹™¥}­•äôÄ4(€€€€€€€€IQUI9%9‘É…™Ñ}½¹™¥œ°ÁÕ‰±¥Í¡•‘}½¹™¥œ°Ù•ÉÍ¥½¸°ÕÁ‘…Ñ•‘}‰ä°ÕÁ‘…Ñ•‘}…Ð°ÁÕ‰±¥Í¡•‘}…Ñ€°4(€€€€€€€m=9%}-d°)M=8¹ÍÑÉ¥¹¥™ä¡Ù…±¥‘…Ñ¥½¸¹½¹™¥œ¤°…Ñ½Ét4(€€€€€€¤ì4(€€€€€É•Ì¹©Í½¸¡ì½¬èÑÉÕ”°€¸¸¹É•ÍÕ±Ð¹É½ÝÍlÁtô¤ì4(€€€ô…Ñ €¡•ÉÉ½È¤ì4(€€€€€¥˜€¡¥ÍM¡•µ…ÉÉ½È¡•ÉÉ½È¤¤É•ÑÕÉ¸É•Ì¹ÍÑ…ÑÕÌ ÔÀÌ¤¹©Í½¸¡ì•ÉÉ½Èè€‰!=5A}5M}M!5}9=Q}Idˆô¤ì4(€€€€€½¹Í½±”¹•ÉÉ½È ‰m¡½µ•Á…”½…‘µ¥¸½ÁÕ‰±¥Í¡t™…¥±•ˆ°•ÉÉ½È¤ì4(€€€€€É•Ì¹ÍÑ…ÑÕÌ ÔÀÀ¤¹©Í½¸¡ì•ÉÉ½Èè€‰AÕ‰±¥Í ƒ‚æ‚â‡‚æ#‚â«‚âÏ‚æ‚â‚æ‚â ˆô¤ì4(€€€ô4(€ô¤ì4(4(€½¹ÍÐÕÁ±½…‘5¥‘‘±•Ý…É”€ôÕÁ±½…€˜˜ÑåÁ•½˜ÕÁ±½…¹Í¥¹±”€ôôô€‰™Õ¹Ñ¥½¸ˆ€üÕÁ±½…¹Í¥¹±” ‰¥µ…”ˆ¤€è¹Õ±°ì4(€É½ÕÑ•È¹Á½ÍÐ ˆ½…‘µ¥¸½¡½µ•Á…”µµÌ½¥µ…•Ìˆ°É•ÅÕ¥É•‘µ¥¹M•ÍÍ¥½¸°€¡É•Ä°É•Ì°¹•áÐ¤€ôøì4(€€€¥˜€ …ÕÁ±½…‘5¥‘‘±•Ý…É”¤É•ÑÕÉ¸É•Ì¹ÍÑ…ÑÕÌ ÔÀÀ¤¹©Í½¸¡ì•ÉÉ½Èè€‰UA1=}9=Q}=9%UIˆô¤ì4(€€€ÕÁ±½…‘5¥‘‘±•Ý…É”¡É•Ä°É•Ì°¹•áÐ¤ì4(€ô°…Íå¹Œ€¡É•Ä°É•Ì¤€ôøì4(€€€ÑÉäì4(€€€€€½¹ÍÐ™¥±”€ôÉ•Ä¹™¥±”ì4(€€€€€¥˜€ …™¥±”¤É•ÑÕÉ¸É•Ì¹ÍÑ…ÑÕÌ ÐÀÀ¤¹©Í½¸¡ì•ÉÉ½Èè€‹‚â‚â‚âã‚âO‚âË‚æ‚â—‚âß‚â·‚â‚æ‚â‚â—‚æ3‚âƒ‚âË‚âxˆô¤ì4(€€€€€¥˜€ …™¥±”¹‰Õ™™•Èñð€…™¥±”¹‰Õ™™•È¹±•¹Ñ ¤É•ÑÕÉ¸É•Ì¹ÍÑ…ÑÕÌ ÐÀÀ¤¹©Í½¸¡ì•ÉÉ½Èè€‹‚æ‚â‡‚æ#‚â{‚âk‚æ‚â‚â—‚æ3‚â‚âç‚âo‚âƒ‚âË‚âxˆô¤ì4(€€€€€¥˜€ ¡™¥±”¹Í¥é”ñð™¥±”¹‰Õ™™•È¹±•¹Ñ ¤€ø5a}%5}	eQL¤É•ÑÕÉ¸É•Ì¹ÍÑ…ÑÕÌ ÐÀÀ¤¹©Í½¸¡ì•ÉÉ½Èè€‹‚æ‚â‚â—‚æ3‚â‚âç‚âo‚âƒ‚âË‚â{‚æ‚â¯‚â7‚æ#‚æ‚â‚âÓ‚âd€ÄÁ5ˆô¤ì4(€€€€€½¹ÍÐ‘•±…É•‘5¥µ”€ôMÑÉ¥¹œ¡™¥±”¹µ¥µ•ÑåÁ”ñð€ˆˆ¤¹Ñ½1½Ý•É…Í” ¤ì4(€€€€€¥˜€ …11=]}5%5}QeAL¹¡…Ì¡‘•±…É•‘5¥µ”¤¤É•ÑÕÉ¸É•Ì¹ÍÑ…ÑÕÌ ÐÀÀ¤¹©Í½¸¡ì•ÉÉ½Èè€‹‚â‚â·‚â‚â‚âÇ‚âk‚æ‚â'‚â{‚âË‚âÃ‚æ‚â‚â—‚æ0)A°A9ƒ‚â¯‚â‚âß‚â´]	@ˆô¤ì4(€€€€€½¹ÍÐ…ÑÕ…±5¥µ”€ô‘•Ñ•Ñ%µ…•M¥¹…ÑÕÉ”¡™¥±”¹‰Õ™™•È¤ì4(€€€€€¥˜€ ……ÑÕ…±5¥µ”ñð…ÑÕ…±5¥µ”€„ôô‘•±…É•‘5¥µ”¤É•ÑÕÉ¸É•Ì¹ÍÑ…ÑÕÌ ÐÀÀ¤¹©Í½¸¡ì•ÉÉ½Èè€‹‚æ‚â‚â—‚æ3‚â‚âç‚âo‚âƒ‚âË‚â{‚æ‚â‡‚æ#‚â[‚âç‚â‚âW‚æ'‚â·‚â‚â¯‚â‚âß‚â·‚æ‚â«‚â×‚â‹‚â¯‚âË‚âˆˆô¤ì4(€€€€€¥˜€ …±½Õ‘¥¹…ÉåUÁ±½…‘	Õ™™•È¤É•ÑÕÉ¸É•Ì¹ÍÑ…ÑÕÌ ÔÀÌ¤¹©Í½¸¡ì•ÉÉ½Èè€‰1=U%9Ie}9=Q}=9%UIˆô¤ì4(€€€€€½¹ÍÐÁÕ‰±¥%€ô¡½µ•Á…•|‘í…Ñ”¹¹½Ü ¥õ|‘íÉåÁÑ¼¹É…¹‘½µUU% ¤¹Í±¥” À°€à¥õ€ì4(€€€€€½¹ÍÐÕÁ±½…‘•€ô…Ý…¥Ð±½Õ‘¥¹…ÉåUÁ±½…‘	Õ™™•È¡ì4(€€€€€€€‰Õ™™•Èè™¥±”¹‰Õ™™•È°4(€€€€€€€µ¥µ•ÑåÁ”è™¥±”¹µ¥µ•ÑåÁ”°4(€€€€€€€™½±‘•Èè€‰Ý˜½¡½µ•Á…”ˆ°4(€€€€€€€ÁÕ‰±¥%°4(€€€€€€€ÑÉ…¹Í™½Éµ…Ñ¥½¸è€‰}±¥µ¥Ð±Ý|ÄÐÀÀ½Å}…ÕÑ¼½™}…ÕÑ¼ˆ°4(€€€€€ô¤ì4(€€€€€½¹ÍÐ…Ñ½È€ô…Ñ½É9…µ”¡É•Ä¤ì4(€€€€€…Ý…¥ÐÁ½½°¹ÅÕ•Éä 4(€€€€€€€%9MIP%9Q<ÁÕ‰±¥Œ¹¡½µ•Á…•}µÍ}µ•‘¥„€¡¥µ…•}ÁÕ‰±¥}¥°¥µ…•}ÕÉ°°½É¥¥¹…±}¹…µ”°µ¥µ•}ÑåÁ”°™¥±•}Í¥é”°ÕÁ±½…‘•‘}‰ä¤4(€€€€€€€€Y1UL€ Ä°€È°€Ì°€Ð°€Ô°€Ø¤4(€€€€€€€€=8=91%P€¡¥µ…•}ÁÕ‰±¥}¥¤<9=Q!%9€°4(€€€€€€€mÕÁ±½…‘•¹ÁÕ‰±¥}¥ñðÁÕ‰±¥%°ÕÁ±½…‘•¹Í•ÕÉ•}ÕÉ°°™¥±”¹½É¥¥¹…±¹…µ”ñð€ˆˆ°™¥±”¹µ¥µ•ÑåÁ”°™¥±”¹Í¥é”ñð¹Õ±°°…Ñ½Ét4(€€€€€€¤ì4(€€€€€É•Ì¹©Í½¸¡ì½¬èÑÉÕ”°¥µ…•}ÕÉ°èÕÁ±½…‘•¹Í•ÕÉ•}ÕÉ°°¥µ…•}ÁÕ‰±¥}¥èÕÁ±½…‘•¹ÁÕ‰±¥}¥ñðÁÕ‰±¥%ô¤ì4(€€€ô…Ñ €¡•ÉÉ½È¤ì4(€€€€€¥˜€¡¥ÍM¡•µ…ÉÉ½È¡•ÉÉ½È¤¤É•ÑÕÉ¸É•Ì¹ÍÑ…ÑÕÌ ÔÀÌ¤¹©Í½¸¡ì•ÉÉ½Èè€‰!=5A}5M}M!5}9=Q}Idˆô¤ì4(€€€€€½¹Í½±”¹•ÉÉ½È ‰m¡½µ•Á…”½…‘µ¥¸½ÕÁ±½…‘t™…¥±•ˆ°•ÉÉ½È¤ì4(€€€€€É•Ì¹ÍÑ…ÑÕÌ ÔÀÀ¤¹©Í½¸¡ì•ÉÉ½Èè•ÉÉ½È¹µ•ÍÍ…”ñð€‹‚â·‚âÇ‚âo‚æ‚â¯‚â—‚âS‚â‚âç‚âo‚æ‚â‡‚æ#‚â«‚âÏ‚æ‚â‚æ‚â ˆô¤ì4(€€€ô4(€ô¤ì4(4(€É½ÕÑ•È¹‘•±•Ñ” ˆ½…‘µ¥¸½¡½µ•Á…”µµÌ½¥µ…•Ì¼éÁÕ‰±¥%ˆ°É•ÅÕ¥É•‘µ¥¹M•ÍÍ¥½¸°…Íå¹Œ€¡É•Ä°É•Ì¤€ôøì4(€€€ÑÉäì4(€€€€€½¹ÍÐÁÕ‰±¥%€ô±•…¹Q•áÐ¡É•Ä¹Á…É…µÌ¹ÁÕ‰±¥%°€ÌÀÀ¤ì4(€€€€€¥˜€ …ÁÕ‰±¥%¤É•ÑÕÉ¸É•Ì¹ÍÑ…ÑÕÌ ÐÀÀ¤¹©Í½¸¡ì•ÉÉ½Èè€‰%9Y1%}AU	1%}%ˆô¤ì4(€€€€€½¹ÍÐÉ½Ü€ô…Ý…¥Ð•¹ÍÕÉ•É…™ÑI½Ü¡Á½½°¤ì4(€€€€€½¹ÍÐÁÕ‰±¥Í¡•‘Q•áÐ€ô)M=8¹ÍÑÉ¥¹¥™ä¡É½Ü¹ÁÕ‰±¥Í¡•‘}½¹™¥œñðíô¤ì4(€€€€€¥˜€¡ÁÕ‰±¥Í¡•‘Q•áÐ¹¥¹±Õ‘•Ì¡ÁÕ‰±¥%¤¤É•ÑÕÉ¸É•Ì¹ÍÑ…ÑÕÌ ÐÀä¤¹©Í½¸¡ì•ÉÉ½Èè€‰%5}UM}	e}AU	1%M!}=9%ˆô¤ì4(€€€€€¥˜€¡±½Õ‘¥¹…Éå•ÍÑÉ½åAÕ‰±¥%¤…Ý…¥Ð±½Õ‘¥¹…Éå•ÍÑÉ½åAÕ‰±¥%¡ÁÕ‰±¥%¤ì4(€€€€€…Ý…¥ÐÁ½½°¹ÅÕ•Éä 4(€€€€€€€UAQÁÕ‰±¥Œ¹¡½µ•Á…•}µÍ}µ•‘¥„4(€€€€€€€€MP‘•±•Ñ•‘}…Ðõ9=\ ¤°‘•±•Ñ•‘}‰äôÈ4(€€€€€€€€]!I¥µ…•}ÁÕ‰±¥}¥ôÄ9‘•±•Ñ•‘}…Ð%L9U11€°4(€€€€€€€mÁÕ‰±¥%°…Ñ½É9…µ”¡É•Ä¥t4(€€€€€€¤ì4(€€€€€É•Ì¹©Í½¸¡ì½¬èÑÉÕ”ô¤ì4(€€€ô…Ñ €¡•ÉÉ½È¤ì4(€€€€€¥˜€¡¥ÍM¡•µ…ÉÉ½È¡•ÉÉ½È¤¤É•ÑÕÉ¸É•Ì¹ÍÑ…ÑÕÌ ÔÀÌ¤¹©Í½¸¡ì•ÉÉ½Èè€‰!=5A}5M}M!5}9=Q}Idˆô¤ì4(€€€€€½¹Í½±”¹•ÉÉ½È ‰m¡½µ•Á…”½…‘µ¥¸½‘•±•Ñ”µ¥µ…•t™…¥±•ˆ°•ÉÉ½È¤ì4(€€€€€É•Ì¹ÍÑ…ÑÕÌ ÔÀÀ¤¹©Í½¸¡ì•ÉÉ½Èè€‹‚â—‚âk‚â‚âç‚âo‚æ‚â‡‚æ#‚â«‚âÏ‚æ‚â‚æ‚â ˆô¤ì4(€€€ô4(€ô¤ì4(4(€É½ÕÑ•È¹‘•±•Ñ” ˆ½…‘µ¥¸½¡½µ•Á…”µµÌ½¥µ…•Ìˆ°É•ÅÕ¥É•‘µ¥¹M•ÍÍ¥½¸°…Íå¹Œ€¡É•Ä°É•Ì¤€ôøì4(€€€ÑÉäì4(€€€€€½¹ÍÐÁÕ‰±¥%€ô±•…¹Q•áÐ¡É•Ä¹‰½‘äü¹ÁÕ‰±¥}¥ñðÉ•Ä¹‰½‘äü¹¥µ…•}ÁÕ‰±¥}¥°€ÌÀÀ¤ì4(€€€€€¥˜€ …ÁÕ‰±¥%¤É•ÑÕÉ¸É•Ì¹ÍÑ…ÑÕÌ ÐÀÀ¤¹©Í½¸¡ì•ÉÉ½Èè€‰%9Y1%}AU	1%}%ˆô¤ì4(€€€€€½¹ÍÐÉ½Ü€ô…Ý…¥Ð•¹ÍÕÉ•É…™ÑI½Ü¡Á½½°¤ì4(€€€€€½¹ÍÐÁÕ‰±¥Í¡•‘Q•áÐ€ô)M=8¹ÍÑÉ¥¹¥™ä¡É½Ü¹ÁÕ‰±¥Í¡•‘}½¹™¥œñðíô¤ì4(€€€€€¥˜€¡ÁÕ‰±¥Í¡•‘Q•áÐ¹¥¹±Õ‘•Ì¡ÁÕ‰±¥%¤¤É•ÑÕÉ¸É•Ì¹ÍÑ…ÑÕÌ ÐÀä¤¹©Í½¸¡ì•ÉÉ½Èè€‰%5}UM}	e}AU	1%M!}=9%ˆô¤ì4(€€€€€¥˜€¡±½Õ‘¥¹…Éå•ÍÑÉ½åAÕ‰±¥%¤…Ý…¥Ð±½Õ‘¥¹…Éå•ÍÑÉ½åAÕ‰±¥%¡ÁÕ‰±¥%¤ì4(€€€€€…Ý…¥ÐÁ½½°¹ÅÕ•Éä 4(€€€€€€€UAQÁÕ‰±¥Œ¹¡½µ•Á…•}µÍ}µ•‘¥„4(€€€€€€€€MP‘•±•Ñ•‘}…Ðõ9=\ ¤°‘•±•Ñ•‘}‰äôÈ4(€€€€€€€€]!I¥µ…•}ÁÕ‰±¥}¥ôÄ9‘•±•Ñ•‘}…Ð%L9U11€°4(€€€€€€€mÁÕ‰±¥%°…Ñ½É9…µ”¡É•Ä¥t4(€€€€€€¤ì4(€€€€€É•Ì¹©Í½¸¡ì½¬èÑÉÕ”ô¤ì4(€€€ô…Ñ €¡•ÉÉ½È¤ì4(€€€€€¥˜€¡¥ÍM¡•µ…ÉÉ½È¡•ÉÉ½È¤¤É•ÑÕÉ¸É•Ì¹ÍÑ…ÑÕÌ ÔÀÌ¤¹©Í½¸¡ì•ÉÉ½Èè€‰!=5A}5M}M!5}9=Q}Idˆô¤ì4(€€€€€½¹Í½±”¹•ÉÉ½È ‰m¡½µ•Á…”½…‘µ¥¸½‘•±•Ñ”µ¥µ…•t™…¥±•ˆ°•ÉÉ½È¤ì4(€€€€€É•Ì¹ÍÑ…ÑÕÌ ÔÀÀ¤¹©Í½¸¡ì•ÉÉ½Èè€‹‚â—‚âk‚â‚âç‚âo‚æ‚â‡‚æ#‚â«‚âÏ‚æ‚â‚æ‚â ˆô¤ì4(€€€ô4(€ô¤ì4(4(€É½ÕÑ•È¹Á½ÍÐ ˆ½…‘µ¥¸½¡½µ•Á…”µµÌ½Íå¹Œµ…ÉÑ¥±•Ìˆ°É•ÅÕ¥É•‘µ¥¹M•ÍÍ¥½¸°…Íå¹Œ€¡É•Ä°É•Ì¤€ôøì4(€€€ÑÉäì4(€€€€€½¹ÍÐÍ½ÕÉ•UÉ°€ô±•…¹Q•áÐ¡É•Ä¹‰½‘äü¹Í½ÕÉ•}ÕÉ°°€ÌÀÀ¤ì4(€€€€€¥˜€ …Í½ÕÉ•UÉ°¤É•ÑÕÉ¸É•Ì¹ÍÑ…ÑÕÌ ÐÀÀ¤¹©Í½¸¡ì•ÉÉ½Èè€‰Í½ÕÉ•}ÕÉ°É•ÅÕ¥É•ˆô¤ì4(€€€€€½¹ÍÐÍ••‘UÉ±Ì€ôÉÉ…ä¹¥ÍÉÉ…ä¡É•Ä¹‰½‘äü¹Í••‘}ÕÉ±Ì¤4(€€€€€€€€üÉ•Ä¹‰½‘ä¹Í••‘}ÕÉ±Ì¹µ…À ¡Ù…±Õ”¤€ôø±•…¹Q•áÐ¡Ù…±Õ”°€ÔÀÀ¤¤¹™¥±Ñ•È¡	½½±•…¸¤¹Í±¥” À°5a}M}UI1L¤4(€€€€€€€€èmtì4(€€€€€½¹ÍÐÉ•ÍÕ±Ð€ô…Ý…¥Ð…ÉÑ¥±•Må¹Œ¹Íå¹ÉÑ¥±•Ì¡Á½½°°Í½ÕÉ•UÉ°°ìÍ••‘UÉ±Ì°±¥µ¥Ðè€ÄÈô¤ì4(€€€€€¥˜€ …É•ÍÕ±Ð¹½¬¤É•ÑÕÉ¸É•Ì¹ÍÑ…ÑÕÌ ÐÀÀ¤¹©Í½¸¡ì•ÉÉ½ÈèÉ•ÍÕ±Ð¹•ÉÉ½Èñð€‰Me9}%1ˆô¤ì4(€€€€€½¹ÍÐÍå¹•€ô…Ý…¥Ð…ÉÑ¥±•Må¹Œ¹•ÑMå¹•‘ÉÑ¥±•Ì¡Á½½°°Í½ÕÉ•UÉ°°€ÄÈ¤ì4(€€€€€É•Ì¹©Í½¸¡ì4(€€€€€€€½¬èÑÉÕ”°4(€€€€€€€Íå¹•‘}½Õ¹ÐèÉ•ÍÕ±Ð¹Íå¹•°4(€€€€€€€™•Ñ¡•‘}½Õ¹ÐèÉ•ÍÕ±Ð¹™•Ñ¡•°4(€€€€€€€…ÉÑ¥±•ÌèÍå¹•¹…ÉÑ¥±•Ì°4(€€€€€€€±…ÍÑ}Íå¹•‘}…ÐèÍå¹•¹±…ÍÑ}Íå¹•‘}…Ð°4(€€€€€ô¤ì4(€€€ô…Ñ €¡•ÉÉ½È¤ì4(€€€€€¥˜€¡¥ÍM¡•µ…ÉÉ½È¡•ÉÉ½È¤¤É•ÑÕÉ¸É•Ì¹ÍÑ…ÑÕÌ ÔÀÌ¤¹©Í½¸¡ì•ÉÉ½Èè€‰!=5A}5M}M!5}9=Q}Idˆô¤ì4(€€€€€½¹Í½±”¹•ÉÉ½È ‰m¡½µ•Á…”½…‘µ¥¸½Íå¹Œµ…ÉÑ¥±•Ít™…¥±•ˆ°•ÉÉ½È¤ì4(€€€€€É•Ì¹ÍÑ…ÑÕÌ ÔÀÀ¤¹©Í½¸¡ì•ÉÉ½Èè•ÉÉ½È¹µ•ÍÍ…”ñð€‹‚â/‚âÓ‚â‚â‚æ3‚âk‚â_‚â‚âŸ‚âË‚â‡‚æ‚â‡‚æ#‚â«‚âÏ‚æ‚â‚æ‚â ˆô¤ì4(€€€ô4(€ô¤ì4(4(€É½ÕÑ•È¹•Ð ˆ½…‘µ¥¸½¡½µ•Á…”µµÌ½Íå¹•µ…ÉÑ¥±•Ìˆ°É•ÅÕ¥É•‘µ¥¹M•ÍÍ¥½¸°…Íå¹Œ€¡É•Ä°É•Ì¤€ôøì4(€€€ÑÉäì4(€€€€€½¹ÍÐÍ½ÕÉ•UÉ°€ô±•…¹Q•áÐ¡É•Ä¹ÅÕ•Éäü¹Í½ÕÉ•}ÕÉ°°€ÌÀÀ¤ì4(€€€€€¥˜€ …Í½ÕÉ•UÉ°¤É•ÑÕÉ¸É•Ì¹©Í½¸¡ì½¬èÑÉÕ”°…ÉÑ¥±•Ìèmt°±…ÍÑ}Íå¹•‘}…Ðè¹Õ±°ô¤ì4(€€€€€½¹ÍÐÍå¹•€ô…Ý…¥Ð…ÉÑ¥±•Må¹Œ¹•ÑMå¹•‘ÉÑ¥±•Ì¡Á½½°°Í½ÕÉ•UÉ°°€ÄÈ¤ì4(€€€€€É•Ì¹©Í½¸¡ì½¬èÑÉÕ”°€¸¸¹Íå¹•ô¤ì4(€€€ô…Ñ €¡•ÉÉ½È¤ì4(€€€€€¥˜€¡¥ÍM¡•µ…ÉÉ½È¡•ÉÉ½È¤¤É•ÑÕÉ¸É•Ì¹ÍÑ…ÑÕÌ ÔÀÌ¤¹©Í½¸¡ì•ÉÉ½Èè€‰!=5A}5M}M!5}9=Q}Idˆô¤ì4(€€€€€½¹Í½±”¹•ÉÉ½È ‰m¡½µ•Á…”½…‘µ¥¸½Íå¹•µ…ÉÑ¥±•Ít™…¥±•ˆ°•ÉÉ½È¤ì4(€€€€€É•Ì¹ÍÑ…ÑÕÌ ÔÀÀ¤¹©Í½¸¡ì•ÉÉ½Èè€‹‚æ‚â¯‚â—‚âS‚â‚æ'‚â·‚â‡‚âç‚â—‚â_‚â×‚æ#‚â/‚âÓ‚â‚â‚æ3‚æ‚â‡‚æ#‚â«‚âÏ‚æ‚â‚æ‚â ˆô¤ì4(€€€ô4(€ô¤ì4(4(€É•ÑÕÉ¸É½ÕÑ•Èì4)ô4(4)µ½‘Õ±”¹•áÁ½ÉÑÌ€ôì4(€=9%}-d°4(€U1Q}=9%°4(€5a}%5}	eQL°4(€MQ%=9}QeAL°4(€A}Y%1	%1%Qe}-eL°4(€U1Q}A}Y%1	%1%Qd°4(€I}A}Y%1	%1%Qd°4(€…Ñ¥Ù•9½Ü°4(€É•…Ñ•!½µ•Á…•I½ÕÑ•Ì°4(€¡å‘É…Ñ•É…™Ñ½¹™¥œ°4(€¹½Éµ…±¥é•A…•Ù…¥±…‰¥±¥Ñä°4(€É•…‘A…•Ù…¥±…‰¥±¥Ñä°4(€É•Í½±Ù•%½¹5•‘¥„°4(€ÍÑÉ¥ÁAÕ‰±¥½¹™¥œ°4(€Ù…±¥‘…Ñ•½¹™¥œ°4)ôì4

@@ -305,7 +305,7 @@ test("customer homepage has no admin control, bottom nav is fixed five-tab, and 
   const sw = read("customer-app/sw.js");
   const app = read("customer-app/assets/customer-app.js");
   const manifest = read("customer-app/manifest.webmanifest");
-  const build = "20260726_urgent_preferred_time_gps_v2";
+  const build = "20260726_urgent_direct_auto_offer_v1";
 
   assert.doesNotMatch(index + ui, /à¹‚à¸«à¸¡à¸”à¹à¸­à¸”à¸¡à¸´à¸™|openCms|localStorage\.getItem\('cwfHomeCmsDemo'/);
   assert.match(index, /data-route="store"[\s\S]*à¸£à¹‰à¸²à¸™à¸„à¹‰à¸²/);
@@ -328,1388 +328,4 @@ test("customer homepage has no admin control, bottom nav is fixed five-tab, and 
   assert.match(css, /background:\s*var\(--ico-book\) center \/ 24px 24px no-repeat, linear-gradient\(145deg, #ffd43b, #ffbd17\)/);
   assert.match(index, new RegExp(`customer-app\\.css\\?v=${build}`));
   assert.match(sw, new RegExp(`BUILD_ID = "${build}"`));
-  assert.match(app, new RegExp(`BUILD_ID = "${build}"`));
-  assert.match(manifest, new RegExp(`index\\.html\\?v=${build}#home`));
-  assert.match(read("customer-app/modules/api.js"), /loadHomepage\(\)/);
-});
-
-test("homepage image upload validates byte signature and uses Cloudinary homepage folder", async () => {
-  const pool = createPool();
-  let uploadedArgs = null;
-  const app = express();
-  app.use(express.json({ limit: "200kb" }));
-  app.use(createHomepageRoutes({
-    pool,
-    requireAdminSession: (req, _res, next) => { req.actor = { username: "admin" }; next(); },
-    upload: {
-      single: () => (req, _res, next) => {
-        req.file = req.headers["x-bad-image"] ? jpegFile(Buffer.from("not really an image")) : jpegFile();
-        next();
-      },
-    },
-    cloudinaryUploadBuffer: async (args) => {
-      uploadedArgs = args;
-      return { secure_url: "https://res.cloudinary.com/demo/home.jpg", public_id: "cwf/homepage/home" };
-    },
-  }));
-  const server = await new Promise((resolve) => {
-    const s = app.listen(0, "127.0.0.1", () => resolve(s));
-  });
-  const base = `http://127.0.0.1:${server.address().port}`;
-  try {
-    const bad = await fetch(`${base}/admin/homepage-cms/images`, { method: "POST", headers: { "x-bad-image": "1" } });
-    assert.equal(bad.status, 400);
-    assert.equal(uploadedArgs, null);
-
-    const good = await fetch(`${base}/admin/homepage-cms/images`, { method: "POST" });
-    const data = await good.json();
-    assert.equal(good.status, 200);
-    assert.equal(data.image_url, "https://res.cloudinary.com/demo/home.jpg");
-    assert.equal(uploadedArgs.folder, "cwf/homepage");
-  } finally {
-    await new Promise((resolve) => server.close(resolve));
-  }
-});
-
-test("forbidden booking pricing and tracking endpoints are not edited by homepage work", () => {
-  const diffTargets = [
-    "/public/book",
-    "/public/availability_v2",
-    "/public/pricing_preview",
-    "/public/track",
-  ];
-  const homepageRoute = read("server/routes/homepage.js");
-  for (const target of diffTargets) {
-    assert.doesNotMatch(homepageRoute, new RegExp(target.replace(/\//g, "\\/")));
-  }
-});
-
-test("backend defaults contain exactly the standard homepage section types in order", () => {
-  assert.deepEqual(DEFAULT_CONFIG.sections.map((section) => section.type), [
-    "hero",
-    "quick",
-    "promo_banner",
-    "active_job",
-    "announcements",
-    "featured_services",
-    "updates",
-    "articles",
-    "social",
-    "trust",
-  ]);
-  assert.deepEqual(DEFAULT_CONFIG.sections.map((section) => section.sort_order), [10, 20, 25, 30, 40, 50, 60, 70, 75, 80]);
-});
-
-test("homepage validation preserves hero image metadata and rejects quick sections over four items", () => {
-  const valid = validateConfig({
-    sections: [{
-      id: "hero",
-      type: "hero",
-      enabled: true,
-      sort_order: 10,
-      title: "Hero",
-      image_url: "https://res.cloudinary.com/demo/hero.jpg",
-      image_public_id: "cwf/homepage/hero",
-      items: [{
-        title: "Slide",
-        image_url: "https://res.cloudinary.com/demo/slide.jpg",
-        cta_primary: { label: "Book", route: "scheduled" },
-        cta_secondary: { label: "Line", url: "https://example.com/line" },
-      }],
-    }],
-  });
-  assert.equal(valid.ok, true);
-  assert.equal(valid.config.sections[0].image_url, "https://res.cloudinary.com/demo/hero.jpg");
-  assert.equal(valid.config.sections[0].image_public_id, "cwf/homepage/hero");
-  assert.equal(valid.config.sections[0].items[0].cta_primary.route, "scheduled");
-  assert.equal(valid.config.sections[0].items[0].cta_secondary.url, "https://example.com/line");
-
-  const invalid = validateConfig({
-    sections: [{
-      id: "quick",
-      type: "quick",
-      enabled: true,
-      sort_order: 20,
-      title: "Quick",
-      items: [{ title: "1" }, { title: "2" }, { title: "3" }, { title: "4" }, { title: "5" }],
-    }],
-  });
-  assert.equal(invalid.ok, false);
-  assert.ok(invalid.errors.includes("quick.items too many"));
-
-  const tooManySlides = validateConfig({
-    sections: [{
-      id: "hero",
-      type: "hero",
-      enabled: true,
-      sort_order: 10,
-      title: "Hero",
-      items: [1, 2, 3, 4, 5, 6].map((i) => ({ title: `Slide ${i}` })),
-    }],
-  });
-  assert.equal(tooManySlides.ok, false);
-  assert.ok(tooManySlides.errors.includes("hero.items too many"));
-
-  const ctaConflict = validateConfig({
-    sections: [{
-      id: "hero",
-      type: "hero",
-      enabled: true,
-      sort_order: 10,
-      title: "Hero",
-      items: [{ title: "Slide", cta_primary: { label: "Go", route: "store", url: "https://example.com" } }],
-    }],
-  });
-  assert.equal(ctaConflict.ok, false);
-  assert.ok(ctaConflict.errors.some((error) => error.includes("cta_primary.target conflict")));
-});
-
-test("public homepage strips section and item image_public_id while keeping image_url", async () => {
-  const pool = createPool();
-  pool.state.row.published_config = {
-    version: 1,
-    sections: [{
-      id: "hero",
-      type: "hero",
-      enabled: true,
-      sort_order: 10,
-      title: "Published",
-      image_url: "https://res.cloudinary.com/demo/hero.jpg",
-      image_public_id: "cwf/homepage/hero",
-      items: [{ title: "Post", url: "https://example.com", image_public_id: "secret_item_id" }],
-    }],
-  };
-  const server = await withServer(pool, (_req, _res, next) => next());
-  try {
-    const res = await fetch(`${server.base}/public/homepage`);
-    const data = await res.json();
-    assert.equal(res.status, 200);
-    assert.equal(data.config.sections[0].image_url, "https://res.cloudinary.com/demo/hero.jpg");
-    assert.doesNotMatch(JSON.stringify(data), /image_public_id|cwf\/homepage\/hero|secret_item_id/);
-  } finally {
-    await server.close();
-  }
-});
-
-test("public active job endpoint is session scoped and returns safe fields only", async () => {
-  const pool = createPool();
-  pool.state.activeJob = {
-    booking_code: "CWF-102",
-    job_type: "à¸¥à¹‰à¸²à¸‡à¹à¸­à¸£à¹Œ",
-    job_status: "à¸™à¸±à¸”à¸«à¸¡à¸²à¸¢à¹à¸¥à¹‰à¸§",
-    appointment_datetime: "2026-06-30T03:00:00.000Z",
-    job_id: 99,
-    customer_name: "Private",
-    customer_phone: "0999999999",
-  };
-  const customerSession = (req, res, next) => {
-    if (String(req.headers.cookie || "").includes("cwf_token=customer-1")) {
-      req.customer = { sub: "customer-1" };
-      return next();
-    }
-    return res.status(401).json({ error: "NOT_LOGGED_IN" });
-  };
-  const noSession = await withServer(pool, (_req, _res, next) => next(), customerSession);
-  try {
-    const res = await fetch(`${noSession.base}/public/homepage/active-job`);
-    const data = await res.json();
-    assert.equal(res.status, 200);
-    assert.equal(data.active_job, null);
-  } finally {
-    await noSession.close();
-  }
-
-  const session = await withServer(pool, (_req, _res, next) => next(), customerSession);
-  try {
-    const noJob = await fetch(`${session.base}/public/homepage/active-job`, { headers: { cookie: "cwf_token=customer-2" } });
-    assert.equal((await noJob.json()).active_job, null);
-
-    const res = await fetch(`${session.base}/public/homepage/active-job`, { headers: { cookie: "cwf_token=customer-1" } });
-    const data = await res.json();
-    assert.equal(res.status, 200);
-    assert.equal(data.active_job.booking_code, "CWF-102");
-    assert.equal(data.active_job.job_type, "à¸¥à¹‰à¸²à¸‡à¹à¸­à¸£à¹Œ");
-    assert.equal(data.active_job.job_status, "à¸™à¸±à¸”à¸«à¸¡à¸²à¸¢à¹à¸¥à¹‰à¸§");
-    assert.deepEqual(Object.keys(data.active_job).sort(), ["appointment_datetime", "booking_code", "job_status", "job_type"]);
-    assert.doesNotMatch(JSON.stringify(data), /job_id|customer_name|customer_phone|0999999999|Private/);
-    assert.equal(pool.state.queries.some((query) => query.params[0] === "customer-1"), true);
-  } finally {
-    await session.close();
-  }
-});
-
-test("production homepage mount passes the customer JWT middleware and active job does not accept client identity", () => {
-  const index = read("index.js");
-  const homepage = read("server/routes/homepage.js");
-  assert.match(index, /createHomepageRoutes\(\{[^}]*requireCustomerJwt[^}]*\}\)/s);
-  assert.match(homepage, /router\.get\("\/public\/homepage\/active-job", optionalCustomerSession/);
-  assert.match(homepage, /loadActiveJobForCustomer\(pool, req\.customer\?\.sub \|\| ""\)/);
-  assert.doesNotMatch(homepage, /req\.(query|body)\?\.(customer_sub|customerSub|customer_id|booking_code|phone)/);
-});
-
-test("admin save and publish preserve hero image fields", async () => {
-  const pool = createPool();
-  const allow = await withServer(pool, (req, _res, next) => { req.actor = { username: "admin", role: "admin" }; next(); });
-  try {
-    const config = {
-      version: 1,
-      sections: [{
-        id: "hero",
-        type: "hero",
-        enabled: true,
-        sort_order: 10,
-        title: "Hero image",
-        image_url: "https://res.cloudinary.com/demo/hero.jpg",
-        image_public_id: "cwf/homepage/hero",
-        items: [],
-      }],
-    };
-    const saved = await fetch(`${allow.base}/admin/homepage-cms/draft`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ config }),
-    });
-    assert.equal(saved.status, 200);
-    assert.equal(pool.state.row.draft_config.sections[0].image_url, "https://res.cloudinary.com/demo/hero.jpg");
-    const published = await fetch(`${allow.base}/admin/homepage-cms/publish`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ config }),
-    });
-    assert.equal(published.status, 200);
-    assert.equal(pool.state.row.published_config.sections[0].image_url, "https://res.cloudinary.com/demo/hero.jpg");
-  } finally {
-    await allow.close();
-  }
-});
-
-test("backend admin customer defaults and homepage migration stay in allowed scope", () => {
-  const admin = read("admin-homepage-cms.js");
-  const customer = read("customer-app/modules/ui.js");
-  const migration = read("migrations/20260629_homepage_cms.sql");
-  for (const type of ["hero", "quick", "promo_banner", "active_job", "announcements", "featured_services", "updates", "articles", "social", "trust"]) {
-    assert.match(admin, new RegExp(`type:\\s*"${type}"`));
-    assert.match(customer, new RegExp(`type:\\s*"${type}"`));
-  }
-  assert.doesNotMatch(migration, /ALTER TABLE\s+public\.catalog_items/i);
-  assert.doesNotMatch(migration, /idx_catalog_items_customer_featured/i);
-  assert.match(customer, /items:\s*\[\{ title: "à¸•à¸´à¸”à¸•à¹ˆà¸­à¸—à¸µà¸¡ CWF", action: "contact"/);
-  assert.match(admin, /items:\s*\[\{ title: "à¸•à¸´à¸”à¸•à¹ˆà¸­à¸—à¸µà¸¡ CWF", action: "contact"/);
-  assert.doesNotMatch(customer, /à¹€à¸Šà¸·à¹ˆà¸­à¸¡à¸•à¹ˆà¸­à¹„à¸›à¸¢à¸±à¸‡ Facebook|à¸­à¹ˆà¸²à¸™à¸•à¹ˆà¸­à¸šà¸™ cwf-air\.com/);
-  assert.doesNotMatch(admin, /à¹€à¸Šà¸·à¹ˆà¸­à¸¡à¸•à¹ˆà¸­à¹„à¸›à¸¢à¸±à¸‡ Facebook|à¸­à¹ˆà¸²à¸™à¸•à¹ˆà¸­à¸šà¸™ cwf-air\.com/);
-});
-
-test("bottom navigation border and padding match the fixed-nav reference", () => {
-  const css = read("customer-app/assets/customer-app.css");
-  assert.match(css, /border-top:\s*1px solid var\(--line\)/);
-  assert.match(css, /padding:\s*7px 6px calc\(7px \+ var\(--safe-b\)\)/);
-  // Booking tile is .nav-item-primary::before's own background, in the same flex flow as
-  // the label â€” not a ::after overlay, which could float free of the icon/label baseline.
-  assert.doesNotMatch(css, /\.nav-item-primary::after/);
-  assert.match(css, /\.nav-item-primary::before\s*\{[\s\S]*width:\s*52px[\s\S]*height:\s*52px/);
-});
-
-test("homepage service grid constrains two-column card and image geometry on mobile", () => {
-  const css = read("customer-app/assets/customer-app.css");
-  const gridBlock = css.slice(css.indexOf(".homepage-featured-grid {"), css.indexOf(".homepage-featured-grid {") + 260);
-  assert.match(gridBlock, /grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/);
-  assert.match(gridBlock, /width:\s*100%/);
-  assert.match(css, /\.homepage-featured-grid \.homepage-service-card\s*\{[^}]*min-width:\s*0/s);
-  const imageBlock = css.slice(css.lastIndexOf(".homepage-card-image {"), css.lastIndexOf(".homepage-card-image {") + 180);
-  assert.match(imageBlock, /overflow:\s*hidden/);
-  const imageImgBlock = css.slice(css.lastIndexOf(".homepage-card-image img"), css.lastIndexOf(".homepage-card-image img") + 180);
-  assert.match(imageImgBlock, /display:\s*block/);
-  assert.match(imageImgBlock, /width:\s*100%/);
-  assert.match(imageImgBlock, /height:\s*100%/);
-  assert.match(imageImgBlock, /object-fit:\s*cover/);
-});
-
-test("customer homepage renderer supports hero slider, active job placeholder, and real empty states", () => {
-  const ui = read("customer-app/modules/ui.js");
-  assert.match(ui, /const slides = Array\.isArray\(section\.items\) && section\.items\.length \? section\.items : \[section\]/);
-  assert.match(ui, /homepage-hero-slider/);
-  assert.match(ui, /homepage-hero-dots/);
-  assert.match(ui, /data-home-hero-dot/);
-  assert.match(ui, /addEventListener\("scroll", onScroll, \{ passive: true \}\)/);
-  assert.match(ui, /requestAnimationFrame/);
-  assert.match(ui, /slider\.scrollTo/);
-  assert.match(ui, /aria-selected/);
-  assert.match(ui, /slide\.cta_primary \|\| section\.cta_primary/);
-  assert.match(ui, /function renderHomepageActiveJob\(section\)/);
-  assert.match(ui, /data-home-active-job/);
-  assert.match(ui, /loadHomeActiveJobData/);
-  assert.match(ui, /if \(!items\.length\) return "";/);
-  assert.doesNotMatch(ui, /à¸¢à¸±à¸‡à¹„à¸¡à¹ˆà¸¡à¸µà¸£à¸²à¸¢à¸à¸²à¸£à¹€à¸œà¸¢à¹à¸žà¸£à¹ˆ/);
-});
-
-test("homepage target validation stores exactly one quick or announcement target", () => {
-  const valid = validateConfig({
-    version: 1,
-    sections: [
-      {
-        id: "quick",
-        type: "quick",
-        enabled: true,
-        sort_order: 10,
-        items: [
-          { title: "External quick", url: "https://example.com/quick", icon: "chat" },
-          { title: "Contact quick", action: "contact", icon: "wrench" },
-        ],
-      },
-      {
-        id: "announcements",
-        type: "announcements",
-        enabled: true,
-        sort_order: 20,
-        title: "Announcements",
-        items: [{ title: "External announcement", url: "https://example.com/news" }],
-      },
-    ],
-  });
-  assert.equal(valid.ok, true);
-  assert.equal(valid.config.sections[0].items[0].url, "https://example.com/quick");
-  assert.equal(valid.config.sections[0].items[1].action, "contact");
-  assert.equal(valid.config.sections[0].items[1].route, undefined);
-  assert.equal(valid.config.sections[0].items[1].url, undefined);
-  assert.equal(valid.config.sections[1].items[0].url, "https://example.com/news");
-
-  const conflict = validateConfig({
-    version: 1,
-    sections: [{
-      id: "quick",
-      type: "quick",
-      enabled: true,
-      sort_order: 10,
-      items: [{ title: "Bad target", route: "store", url: "https://example.com" }],
-    }],
-  });
-  assert.equal(conflict.ok, false);
-  assert.ok(conflict.errors.some((error) => error.includes("target conflict")));
-});
-
-test("homepage image URLs allow http/https and reject unsafe protocols", () => {
-  const valid = validateConfig({
-    version: 1,
-    sections: [{
-      id: "hero",
-      type: "hero",
-      enabled: true,
-      sort_order: 10,
-      title: "Hero",
-      image_url: "https://res.cloudinary.com/demo/image/upload/cwf/homepage/hero.webp",
-      items: [{ title: "Card", image_url: "http://res.cloudinary.com/demo/card.png", route: "store" }],
-    }],
-  });
-  assert.equal(valid.ok, true);
-
-  for (const image_url of ["javascript:alert(1)", "data:image/png;base64,AAAA", "file:///tmp/image.png", "not a url"]) {
-    const invalid = validateConfig({
-      version: 1,
-      sections: [{
-        id: "hero",
-        type: "hero",
-        enabled: true,
-        sort_order: 10,
-        title: "Hero",
-        image_url,
-        items: [],
-      }],
-    });
-    assert.equal(invalid.ok, false, image_url);
-  }
-});
-
-test("admin target editor renders mode-specific fields and no stale target field", () => {
-  const admin = read("admin-homepage-cms.js");
-  assert.match(admin, /data-item-target/);
-  assert.match(admin, /data-prop="url"/);
-  assert.match(admin, /data-prop="route"/);
-  assert.match(admin, /delete item\.route;\s*delete item\.url;\s*delete item\.action;/);
-  assert.match(admin, /if \(targetMode === "contact"\) return "";/);
-  const renderPreviewSource = admin.slice(
-    admin.indexOf("function renderPreview()"),
-    admin.indexOf("function render()"),
-  );
-  assert.equal((renderPreviewSource.match(/\$\("preview"\)\.innerHTML/g) || []).length, 1);
-});
-
-test("admin hero slide editor supports add edit remove reorder upload and CTA targets", () => {
-  const admin = read("admin-homepage-cms.js");
-  assert.match(admin, /id="addHeroSlide"/);
-  assert.match(admin, /function heroSlideEditor/);
-  assert.match(admin, /data-move-item/);
-  assert.match(admin, /data-upload="\$\{index\}"/);
-  assert.match(admin, /data-hero-cta/);
-  assert.match(admin, /data-hero-cta-target/);
-  assert.match(admin, /if \(current\(\)\.items\.length >= 5\)/);
-  assert.match(admin, /delete item\[ctaName\]\.route;\s*delete item\[ctaName\]\.url;\s*delete item\[ctaName\]\.action;/);
-  const previewSource = admin.slice(admin.indexOf("function renderPreview()"), admin.indexOf("function render()"));
-  assert.match(previewSource, /const slides = enabledSlides\.length \? enabledSlides : \[section\]/);
-});
-
-test("admin catalog loader accepts the real direct-array /admin/catalog/items response shape", () => {
-  const admin = read("admin-homepage-cms.js");
-  assert.match(admin, /catalogItems = Array\.isArray\(data\) \? data : Array\.isArray\(data\?\.items\) \? data\.items : \[\];/);
-});
-
-test("per-item enabled toggle is normalized, persisted, and stripped from public config when disabled", () => {
-  const disabled = validateConfig({
-    sections: [{
-      id: "trust", type: "trust", enabled: true, sort_order: 80, title: "Trust",
-      items: [{ title: "Visible", enabled: true }, { title: "Hidden", enabled: false }],
-    }],
-  });
-  assert.equal(disabled.ok, true);
-  assert.equal(disabled.config.sections[0].items[0].enabled, true);
-  assert.equal(disabled.config.sections[0].items[1].enabled, false);
-
-  const legacyNoFlag = validateConfig({
-    sections: [{ id: "trust", type: "trust", enabled: true, sort_order: 80, title: "Trust", items: [{ title: "Legacy item" }] }],
-  });
-  assert.equal(legacyNoFlag.config.sections[0].items[0].enabled, true);
-});
-
-test("public homepage hides disabled items but keeps enabled ones", async () => {
-  const pool = createPool();
-  pool.state.row.published_config = {
-    version: 1,
-    sections: [{
-      id: "trust", type: "trust", enabled: true, sort_order: 80, title: "Trust",
-      items: [{ title: "Visible item", enabled: true }, { title: "Disabled item", enabled: false }],
-    }],
-  };
-  const server = await withServer(pool, (_req, _res, next) => next());
-  try {
-    const res = await fetch(`${server.base}/public/homepage`);
-    const data = await res.json();
-    const items = data.config.sections[0].items;
-    assert.deepEqual(items.map((item) => item.title), ["Visible item"]);
-  } finally {
-    await server.close();
-  }
-});
-
-test("admin per-item enable/disable toggle is wired to editor, change handler, and live preview filtering", () => {
-  const admin = read("admin-homepage-cms.js");
-  assert.match(admin, /data-item-enabled="\$\{index\}"/);
-  assert.match(admin, /target\.matches\("\[data-item-enabled\]"\)/);
-  assert.match(admin, /item\.enabled = target\.checked;/);
-  const previewSource = admin.slice(admin.indexOf("function renderPreview()"), admin.indexOf("function render()"));
-  assert.match(previewSource, /filter\(\(slide\) => slide\.enabled !== false\)/);
-  assert.match(previewSource, /filter\(\(i\) => i\.enabled !== false\)/);
-});
-
-test("promo_banner validation requires image_url, normalizes alt_text and aspect_mode, and allows a blank title", () => {
-  const missingImage = validateConfig({
-    sections: [{ id: "promo_banner", type: "promo_banner", enabled: true, sort_order: 25, items: [{ alt_text: "No image" }] }],
-  });
-  assert.equal(missingImage.ok, false);
-  assert.ok(missingImage.errors.some((error) => error.includes("image_url required")));
-
-  const valid = validateConfig({
-    sections: [{
-      id: "promo_banner",
-      type: "promo_banner",
-      enabled: true,
-      sort_order: 25,
-      items: [{
-        image_url: "https://res.cloudinary.com/demo/image/upload/cwf/homepage/daikin.png",
-        image_public_id: "cwf/homepage/daikin",
-        alt_text: "CWF x DAIKIN training banner",
-      }],
-    }],
-  });
-  assert.equal(valid.ok, true);
-  const item = valid.config.sections[0].items[0];
-  assert.equal(item.title, "");
-  assert.equal(item.alt_text, "CWF x DAIKIN training banner");
-  assert.equal(item.aspect_mode, "contain");
-  assert.equal(item.image_url, "https://res.cloudinary.com/demo/image/upload/cwf/homepage/daikin.png");
-
-  const cover = validateConfig({
-    sections: [{
-      id: "promo_banner",
-      type: "promo_banner",
-      enabled: true,
-      sort_order: 25,
-      items: [{ image_url: "https://res.cloudinary.com/demo/banner.png", aspect_mode: "cover" }],
-    }],
-  });
-  assert.equal(cover.ok, true);
-  assert.equal(cover.config.sections[0].items[0].aspect_mode, "cover");
-
-  const badAspect = validateConfig({
-    sections: [{
-      id: "promo_banner",
-      type: "promo_banner",
-      enabled: true,
-      sort_order: 25,
-      items: [{ image_url: "https://res.cloudinary.com/demo/banner.png", aspect_mode: "stretch" }],
-    }],
-  });
-  assert.equal(badAspect.ok, true);
-  assert.equal(badAspect.config.sections[0].items[0].aspect_mode, "contain");
-
-  const tooMany = validateConfig({
-    sections: [{
-      id: "promo_banner",
-      type: "promo_banner",
-      enabled: true,
-      sort_order: 25,
-      items: Array.from({ length: 9 }, (_, i) => ({ image_url: `https://res.cloudinary.com/demo/b${i}.png` })),
-    }],
-  });
-  assert.equal(tooMany.ok, false);
-  assert.ok(tooMany.errors.includes("promo_banner.items too many"));
-});
-
-test("social validation defaults platform, requires a matching-host url, and enforces an 8-item cap", () => {
-  const missingUrl = validateConfig({
-    sections: [{ id: "social", type: "social", enabled: true, sort_order: 75, items: [{ title: "No link" }] }],
-  });
-  assert.equal(missingUrl.ok, false);
-  assert.ok(missingUrl.errors.some((error) => error.includes("social.items.0.url required")));
-
-  const validYoutube = validateConfig({
-    sections: [{
-      id: "social",
-      type: "social",
-      enabled: true,
-      sort_order: 75,
-      items: [{ title: "New install demo", url: "https://youtu.be/dQw4w9WgXcQ" }],
-    }],
-  });
-  assert.equal(validYoutube.ok, true);
-  const ytItem = validYoutube.config.sections[0].items[0];
-  assert.equal(ytItem.platform, "youtube");
-  assert.equal(ytItem.url, "https://youtu.be/dQw4w9WgXcQ");
-
-  const validFacebook = validateConfig({
-    sections: [{
-      id: "social",
-      type: "social",
-      enabled: true,
-      sort_order: 75,
-      items: [{ title: "Fan page post", url: "https://www.facebook.com/share/14daV9SNRXg/", platform: "facebook" }],
-    }],
-  });
-  assert.equal(validFacebook.ok, true);
-  assert.equal(validFacebook.config.sections[0].items[0].platform, "facebook");
-
-  const mismatchedHost = validateConfig({
-    sections: [{
-      id: "social",
-      type: "social",
-      enabled: true,
-      sort_order: 75,
-      items: [{ title: "Wrong host", url: "https://www.facebook.com/share/14daV9SNRXg/", platform: "youtube" }],
-    }],
-  });
-  assert.equal(mismatchedHost.ok, false);
-  assert.ok(mismatchedHost.errors.includes("social.items.0.url must be a youtube link"));
-
-  const badPlatform = validateConfig({
-    sections: [{
-      id: "social",
-      type: "social",
-      enabled: true,
-      sort_order: 75,
-      items: [{ title: "Unknown platform falls back", url: "https://youtu.be/dQw4w9WgXcQ", platform: "tiktok" }],
-    }],
-  });
-  assert.equal(badPlatform.ok, true);
-  assert.equal(badPlatform.config.sections[0].items[0].platform, "youtube");
-
-  const tooMany = validateConfig({
-    sections: [{
-      id: "social",
-      type: "social",
-      enabled: true,
-      sort_order: 75,
-      items: Array.from({ length: 9 }, (_, i) => ({ title: `Video ${i}`, url: `https://youtu.be/abc${i}defghij` })),
-    }],
-  });
-  assert.equal(tooMany.ok, false);
-  assert.ok(tooMany.errors.includes("social.items too many"));
-});
-
-test("per-page headers (store/booking/tracking) normalize as hero-like banners and are stripped/filtered for the public config", () => {
-  const result = validateConfig({
-    sections: [{ id: "hero", type: "hero", enabled: true, sort_order: 10, title: "Hero", items: [] }],
-    page_headers: {
-      store: {
-        enabled: true, kicker: "à¸£à¹‰à¸²à¸™à¸„à¹‰à¸²", title: "à¹‚à¸›à¸£à¸£à¹‰à¸²à¸™à¸„à¹‰à¸²", body: "à¸¥à¸”à¸£à¸²à¸„à¸²", focal_position: "bottom",
-        items: [
-          { title: "à¸ªà¹„à¸¥à¸”à¹Œ 1", image_url: "https://res.cloudinary.com/demo/a.jpg", image_public_id: "cwf/a", route: "store", enabled: true },
-          { title: "à¸ªà¹„à¸¥à¸”à¹Œ 2", image_url: "https://res.cloudinary.com/demo/b.jpg", enabled: false },
-        ],
-      },
-      tracking: { enabled: false, title: "à¸›à¸´à¸”à¸­à¸¢à¸¹à¹ˆ", items: [{ title: "x", image_url: "https://res.cloudinary.com/demo/t.jpg" }] },
-      bogus: { enabled: true, items: [] },
-    },
-  });
-  assert.equal(result.ok, true, JSON.stringify(result.errors));
-  const ph = result.config.page_headers;
-  // Only the three known page keys are kept; unknown keys are dropped.
-  assert.deepEqual(Object.keys(ph).sort(), ["store", "tracking"].sort());
-  assert.equal(ph.store.focal_position, "bottom");
-  assert.equal(ph.store.items.length, 2);
-  assert.equal(ph.store.items[0].image_public_id, "cwf/a");
-
-  // Public config: admin image_public_id stripped, disabled slide and disabled
-  // header dropped, so tracking (enabled:false) disappears entirely.
-  const pub = stripPublicConfig(result.config);
-  assert.ok(pub.page_headers, "public config must carry page_headers");
-  assert.deepEqual(Object.keys(pub.page_headers), ["store"]);
-  assert.equal(pub.page_headers.store.items.length, 1);
-  assert.equal(pub.page_headers.store.items[0].image_public_id, undefined);
-  assert.equal(pub.page_headers.store.items[0].route, "store");
-});
-
-test("section-level active_from/active_to are persisted and gate the whole section in the public config", () => {
-  const result = validateConfig({
-    sections: [
-      { id: "hero", type: "hero", title: "à¸«à¸™à¹‰à¸²à¸«à¸¥à¸±à¸", items: [] },
-      // A seasonal promo block scheduled for a past window â€” should be dropped.
-      { id: "promo_banner", type: "promo_banner", title: "à¹‚à¸›à¸£à¸ªà¸‡à¸à¸£à¸²à¸™à¸•à¹Œ", active_from: "2026-04-01", active_to: "2026-04-30", items: [{ image_url: "https://res.cloudinary.com/demo/songkran.jpg", alt_text: "à¹‚à¸›à¸£" }] },
-      // A trust block scheduled to start in the future â€” should also be dropped now.
-      { id: "trust", type: "trust", title: "à¹€à¸£à¹‡à¸§à¹† à¸™à¸µà¹‰", active_from: "2026-12-01", items: [{ title: "x", body: "y" }] },
-    ],
-  });
-  assert.equal(result.ok, true, JSON.stringify(result.errors));
-  // Dates survive normalization (draft/admin config keeps them).
-  const promo = result.config.sections.find((s) => s.id === "promo_banner");
-  assert.equal(promo.active_from, "2026-04-01");
-  assert.equal(promo.active_to, "2026-04-30");
-
-  // Public config in July 2026: the expired promo and the not-yet-started trust
-  // block are both gated out; only the always-on hero remains.
-  const pub = stripPublicConfig(result.config);
-  assert.ok(activeNow(result.config.sections[0], new Date("2026-07-02T05:00:00Z")));
-  const ids = pub.sections.map((s) => s.id);
-  assert.deepEqual(ids, ["hero"]);
-
-  // An invalid range (from after to) is rejected at validation time.
-  const bad = validateConfig({
-    sections: [{ id: "trust", type: "trust", title: "x", active_from: "2026-05-10", active_to: "2026-05-01", items: [{ title: "a", body: "b" }] }],
-  });
-  assert.equal(bad.ok, false);
-  assert.ok(bad.errors.some((e) => e.includes("active range invalid")));
-});
-
-test("admins can add/duplicate sections: extra sections of a type are kept with unique ids, and the total is capped", () => {
-  // Two promo_banner sections (a duplicate) â€” both survive, ids de-duplicated.
-  const dup = validateConfig({
-    sections: [
-      { id: "hero", type: "hero", title: "H", sort_order: 10, items: [] },
-      { id: "promo_banner", type: "promo_banner", title: "à¹‚à¸›à¸£ A", sort_order: 20, items: [{ image_url: "https://res.cloudinary.com/demo/a.jpg", alt_text: "a" }] },
-      { id: "promo_banner", type: "promo_banner", title: "à¹‚à¸›à¸£ B", sort_order: 30, items: [{ image_url: "https://res.cloudinary.com/demo/b.jpg", alt_text: "b" }] },
-    ],
-  });
-  assert.equal(dup.ok, true, JSON.stringify(dup.errors));
-  const promos = dup.config.sections.filter((s) => s.type === "promo_banner");
-  assert.equal(promos.length, 2);
-  assert.equal(new Set(promos.map((s) => s.id)).size, 2, "duplicate section ids must be made unique");
-  assert.ok(promos.some((s) => s.id === "promo_banner") && promos.some((s) => s.id === "promo_banner-2"));
-  // Both survive stripPublicConfig and render order follows sort_order.
-  const pub = stripPublicConfig(dup.config);
-  assert.deepEqual(pub.sections.map((s) => s.id), ["hero", "promo_banner", "promo_banner-2"]);
-
-  // More than the section cap is rejected.
-  const many = validateConfig({
-    sections: Array.from({ length: 25 }, (_, i) => ({ id: `trust-${i}`, type: "trust", title: "x", items: [{ title: "a", body: "b" }] })),
-  });
-  assert.equal(many.ok, false);
-  assert.ok(many.errors.some((e) => e.includes("sections too many")));
-});
-
-test("testimonials and faq are valid section types: star rating is clamped 1-5, faq Q/A persist and gate publicly", () => {
-  const result = validateConfig({
-    sections: [
-      { id: "hero", type: "hero", title: "H", sort_order: 10, items: [] },
-      { id: "testimonials", type: "testimonials", title: "à¸£à¸µà¸§à¸´à¸§à¸¥à¸¹à¸à¸„à¹‰à¸²", sort_order: 20, items: [
-        { title: "à¸„à¸¸à¸“à¹€à¸­", tag: "à¸„à¸­à¸™à¹‚à¸”", rating: 9, body: "à¸”à¸µà¸¡à¸²à¸" }, // over max â†’ 5
-        { title: "à¸„à¸¸à¸“à¸šà¸µ", rating: 0, body: "à¹‚à¸­à¹€à¸„" },                 // under min â†’ 1
-        { title: "à¸„à¸¸à¸“à¸‹à¸µ", body: "à¹„à¸¡à¹ˆà¹„à¸”à¹‰à¹ƒà¸«à¹‰à¸”à¸²à¸§" },                    // missing â†’ default 5
-      ] },
-      { id: "faq", type: "faq", title: "à¸„à¸³à¸–à¸²à¸¡à¸—à¸µà¹ˆà¸žà¸šà¸šà¹ˆà¸­à¸¢", sort_order: 30, items: [
-        { title: "à¸¥à¹‰à¸²à¸‡à¹à¸­à¸£à¹Œà¸™à¸²à¸™à¹„à¸«à¸¡?", body: "à¸›à¸£à¸°à¸¡à¸²à¸“ 45â€“90 à¸™à¸²à¸—à¸µà¸•à¹ˆà¸­à¹€à¸„à¸£à¸·à¹ˆà¸­à¸‡" },
-      ] },
-    ],
-  });
-  assert.equal(result.ok, true, JSON.stringify(result.errors));
-  const testimonials = result.config.sections.find((s) => s.type === "testimonials");
-  assert.deepEqual(testimonials.items.map((i) => i.rating), [5, 1, 5]);
-  const faq = result.config.sections.find((s) => s.type === "faq");
-  assert.equal(faq.items[0].title, "à¸¥à¹‰à¸²à¸‡à¹à¸­à¸£à¹Œà¸™à¸²à¸™à¹„à¸«à¸¡?");
-  assert.equal(faq.items[0].body, "à¸›à¸£à¸°à¸¡à¸²à¸“ 45â€“90 à¸™à¸²à¸—à¸µà¸•à¹ˆà¸­à¹€à¸„à¸£à¸·à¹ˆà¸­à¸‡");
-  // Both new section types survive into the public config.
-  const pub = stripPublicConfig(result.config);
-  assert.deepEqual(pub.sections.map((s) => s.type), ["hero", "testimonials", "faq"]);
-  assert.equal(pub.sections.find((s) => s.type === "testimonials").items[0].rating, 5);
-
-  // A testimonial without a reviewer name (title) is rejected like other items.
-  const noName = validateConfig({ sections: [{ id: "t", type: "testimonials", title: "x", items: [{ rating: 5, body: "no name" }] }] });
-  assert.equal(noName.ok, false);
-});
-
-test("brand theme colors validate as hex, drop invalid/empty, and carry to the public config", () => {
-  const ok = validateConfig({
-    sections: [{ id: "hero", type: "hero", title: "H", items: [] }],
-    theme: { primary: "#0F9D76", accent: "#33c39a", highlight: "", bogus: "#fff" },
-  });
-  assert.equal(ok.ok, true, JSON.stringify(ok.errors));
-  // Valid colors are lower-cased; empty highlight and unknown keys are dropped.
-  assert.deepEqual(ok.config.theme, { primary: "#0f9d76", accent: "#33c39a" });
-  const pub = stripPublicConfig(ok.config);
-  assert.deepEqual(pub.theme, { primary: "#0f9d76", accent: "#33c39a" });
-
-  // A malformed hex is rejected.
-  const bad = validateConfig({
-    sections: [{ id: "hero", type: "hero", title: "H", items: [] }],
-    theme: { primary: "blue" },
-  });
-  assert.equal(bad.ok, false);
-  assert.ok(bad.errors.some((e) => e.includes("theme.primary")));
-
-  // No theme = empty object (app uses default palette), still present in public config.
-  const none = validateConfig({ sections: [{ id: "hero", type: "hero", title: "H", items: [] }] });
-  assert.deepEqual(none.config.theme, {});
-  assert.deepEqual(stripPublicConfig(none.config).theme, {});
-});
-
-test("updates items are savable with only an image/caption (no URL required); articles still require a URL", () => {
-  // Activity-photo post: image + caption, no link. Must validate OK so admins
-  // can publish work photos without inventing a URL.
-  const updatesPhotoOnly = validateConfig({
-    sections: [{
-      id: "updates",
-      type: "updates",
-      enabled: true,
-      sort_order: 60,
-      title: "à¸ à¸²à¸žà¸à¸´à¸ˆà¸à¸£à¸£à¸¡à¹à¸¥à¸°à¹‚à¸žà¸ªà¸•à¹Œ",
-      items: [{ title: "à¸¥à¹‰à¸²à¸‡à¹à¸­à¸£à¹Œà¸„à¸­à¸™à¹‚à¸” 3 à¹€à¸„à¸£à¸·à¹ˆà¸­à¸‡", body: "à¸‡à¸²à¸™à¹€à¸ªà¸£à¹‡à¸ˆà¹„à¸§", image_url: "https://res.cloudinary.com/demo/work.jpg" }],
-    }],
-  });
-  assert.equal(updatesPhotoOnly.ok, true, JSON.stringify(updatesPhotoOnly.errors));
-  assert.equal(updatesPhotoOnly.config.sections[0].items[0].url, undefined);
-
-  // Articles inherently link out â€” an item without a URL must still be rejected.
-  const articleNoUrl = validateConfig({
-    sections: [{
-      id: "articles",
-      type: "articles",
-      enabled: true,
-      sort_order: 65,
-      title: "à¸šà¸—à¸„à¸§à¸²à¸¡à¹à¸™à¸°à¸™à¸³",
-      items: [{ title: "à¸§à¸´à¸˜à¸µà¸”à¸¹à¹à¸¥à¹à¸­à¸£à¹Œ" }],
-    }],
-  });
-  assert.equal(articleNoUrl.ok, false);
-  assert.ok(articleNoUrl.errors.some((error) => error.includes("articles.items.0.url required")));
-});
-
-test("hero focal_position normalizes per-slide and per-section, defaulting to center for invalid values", () => {
-  const valid = validateConfig({
-    sections: [{
-      id: "hero",
-      type: "hero",
-      enabled: true,
-      sort_order: 10,
-      title: "Hero",
-      focal_position: "top",
-      items: [{ title: "Slide", focal_position: "bottom" }],
-    }],
-  });
-  assert.equal(valid.ok, true);
-  assert.equal(valid.config.sections[0].focal_position, "top");
-  assert.equal(valid.config.sections[0].items[0].focal_position, "bottom");
-
-  const invalid = validateConfig({
-    sections: [{
-      id: "hero",
-      type: "hero",
-      enabled: true,
-      sort_order: 10,
-      title: "Hero",
-      focal_position: "diagonal",
-      items: [{ title: "Slide", focal_position: "sideways" }],
-    }],
-  });
-  assert.equal(invalid.ok, true);
-  assert.equal(invalid.config.sections[0].focal_position, "center");
-  assert.equal(invalid.config.sections[0].items[0].focal_position, "center");
-});
-
-test("public homepage strips promo_banner image_public_id while keeping image_url and alt_text", async () => {
-  const pool = createPool();
-  pool.state.row.published_config = {
-    version: 1,
-    sections: [{
-      id: "promo_banner",
-      type: "promo_banner",
-      enabled: true,
-      sort_order: 25,
-      items: [{
-        image_url: "https://res.cloudinary.com/demo/daikin.png",
-        image_public_id: "cwf/homepage/daikin_secret",
-        alt_text: "CWF x DAIKIN",
-        aspect_mode: "contain",
-        enabled: true,
-      }],
-    }],
-  };
-  const server = await withServer(pool, (_req, _res, next) => next());
-  try {
-    const res = await fetch(`${server.base}/public/homepage`);
-    const data = await res.json();
-    const banner = data.config.sections.find((section) => section.type === "promo_banner");
-    assert.ok(banner);
-    assert.equal(banner.items[0].image_url, "https://res.cloudinary.com/demo/daikin.png");
-    assert.equal(banner.items[0].alt_text, "CWF x DAIKIN");
-    assert.doesNotMatch(JSON.stringify(data), /daikin_secret/);
-  } finally {
-    await server.close();
-  }
-});
-
-test("promo_banner draft save, reload, and publish round-trip preserves banner order and fields", async () => {
-  const pool = createPool();
-  const allow = await withServer(pool, (req, _res, next) => { req.actor = { username: "admin", role: "admin" }; next(); });
-  try {
-    const config = {
-      version: 1,
-      sections: [{
-        id: "promo_banner",
-        type: "promo_banner",
-        enabled: true,
-        sort_order: 25,
-        items: [
-          { image_url: "https://res.cloudinary.com/demo/second.png", alt_text: "Second", sort_order: 2 },
-          { image_url: "https://res.cloudinary.com/demo/first.png", alt_text: "First", sort_order: 1 },
-        ],
-      }],
-    };
-    const saved = await fetch(`${allow.base}/admin/homepage-cms/draft`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ config }),
-    });
-    assert.equal(saved.status, 200);
-    const draftBanner = pool.state.row.draft_config.sections.find((section) => section.type === "promo_banner");
-    assert.equal(draftBanner.items[0].alt_text, "Second");
-    assert.equal(draftBanner.items[1].alt_text, "First");
-
-    const publicBefore = await fetch(`${allow.base}/public/homepage`);
-    const publicBeforeData = await publicBefore.json();
-    assert.doesNotMatch(JSON.stringify(publicBeforeData), /First|Second/);
-
-    const published = await fetch(`${allow.base}/admin/homepage-cms/publish`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ config }),
-    });
-    assert.equal(published.status, 200);
-
-    const publicAfter = await fetch(`${allow.base}/public/homepage`);
-    const publicAfterData = await publicAfter.json();
-    const publishedBanner = publicAfterData.config.sections.find((section) => section.type === "promo_banner");
-    assert.equal(publishedBanner.items[0].alt_text, "First");
-    assert.equal(publishedBanner.items[1].alt_text, "Second");
-  } finally {
-    await allow.close();
-  }
-});
-
-test("promo_banner items respect active_from/active_to date gating on the public endpoint", async () => {
-  const pool = createPool();
-  pool.state.row.published_config = {
-    version: 1,
-    sections: [{
-      id: "promo_banner",
-      type: "promo_banner",
-      enabled: true,
-      sort_order: 25,
-      items: [
-        { image_url: "https://res.cloudinary.com/demo/past.png", alt_text: "Expired", active_to: "2000-01-01" },
-        { image_url: "https://res.cloudinary.com/demo/future.png", alt_text: "Not yet", active_from: "2099-01-01" },
-        { image_url: "https://res.cloudinary.com/demo/now.png", alt_text: "Live now" },
-      ],
-    }],
-  };
-  const server = await withServer(pool, (_req, _res, next) => next());
-  try {
-    const res = await fetch(`${server.base}/public/homepage`);
-    const data = await res.json();
-    const banner = data.config.sections.find((section) => section.type === "promo_banner");
-    assert.deepEqual(banner.items.map((item) => item.alt_text), ["Live now"]);
-  } finally {
-    await server.close();
-  }
-});
-
-test("customer ui.js renders promo_banner section with image-only markup, hides when empty, and supports slider for multiple banners", () => {
-  const ui = read("customer-app/modules/ui.js");
-  assert.match(ui, /function renderHomepagePromoBanner\(section\)/);
-  assert.match(ui, /homepage-promo-banner/);
-  assert.match(ui, /if \(!banners\.length\) return "";/);
-  assert.match(ui, /homepage-promo-banner-dots/);
-  assert.match(ui, /data-home-promo-dot/);
-  assert.match(ui, /is-contain|is-cover/);
-});
-
-test("admin draft GET hydrates a legacy row missing promo_banner without touching existing content or published config", async () => {
-  const pool = createPool();
-  const legacySections = [
-    { id: "hero", type: "hero", enabled: true, sort_order: 10, title: "Legacy hero title", body: "Legacy body", focal_position: "center", items: [] },
-    { id: "quick", type: "quick", enabled: true, sort_order: 20, title: "à¹€à¸¡à¸™à¸¹à¸”à¹ˆà¸§à¸™", body: "", items: [{ title: "à¸ˆà¸­à¸‡à¸¥à¹‰à¸²à¸‡à¹à¸­à¸£à¹Œ", route: "scheduled", icon: "sparkle" }] },
-    { id: "trust", type: "trust", enabled: false, sort_order: 80, title: "à¸¡à¸²à¸•à¸£à¸à¸²à¸™à¸—à¸µà¹ˆà¸¥à¸¹à¸à¸„à¹‰à¸²à¸§à¸²à¸‡à¹ƒà¸ˆ", body: "", items: [{ title: "à¹à¸ˆà¹‰à¸‡à¸£à¸²à¸„à¸²à¸à¹ˆà¸­à¸™à¸—à¸³", body: "à¸£à¸°à¸šà¸šà¸„à¸³à¸™à¸§à¸“à¸ˆà¸²à¸à¸‚à¹‰à¸­à¸¡à¸¹à¸¥à¸šà¸£à¸´à¸à¸²à¸£à¸ˆà¸£à¸´à¸‡" }] },
-  ];
-  pool.state.row.draft_config = { version: 1, sections: legacySections };
-  pool.state.row.published_config = { version: 1, sections: legacySections };
-  const server = await withServer(pool, (_req, _res, next) => next());
-  try {
-    const res = await fetch(`${server.base}/admin/homepage-cms/config`);
-    const data = await res.json();
-    assert.equal(res.status, 200);
-
-    const banner = data.draft_config.sections.find((section) => section.type === "promo_banner");
-    assert.ok(banner, "hydrated draft should include an empty promo_banner section");
-    assert.deepEqual(banner.items, []);
-
-    const hero = data.draft_config.sections.find((section) => section.type === "hero");
-    assert.equal(hero.title, "Legacy hero title");
-    assert.equal(hero.body, "Legacy body");
-    const quick = data.draft_config.sections.find((section) => section.type === "quick");
-    assert.equal(quick.items.length, 1);
-    const trust = data.draft_config.sections.find((section) => section.type === "trust");
-    assert.equal(trust.enabled, false);
-    assert.equal(trust.items[0].title, "à¹à¸ˆà¹‰à¸‡à¸£à¸²à¸„à¸²à¸à¹ˆà¸­à¸™à¸—à¸³");
-
-    assert.deepEqual(data.published_config.sections.map((section) => section.type), ["hero", "quick", "trust"]);
-
-    const pubRes = await fetch(`${server.base}/public/homepage`);
-    const pubData = await pubRes.json();
-    assert.ok(!pubData.config.sections.some((section) => section.type === "promo_banner"), "publishing the hydrated section must not happen implicitly");
-  } finally {
-    await server.close();
-  }
-});
-
-test("hero renders a compact no-image variant instead of a tall blue panel when no slide has an image", () => {
-  const ui = read("customer-app/modules/ui.js");
-  assert.match(ui, /const hasImage = slides\.some\(\(slide\) => slide\.image_url\);/);
-  assert.match(ui, /class="homepage-hero\$\{hasImage \? "" : " is-no-image"\}"/);
-
-  const css = read("customer-app/assets/customer-app.css");
-  const noImageBlock = css.match(/\.homepage-hero\.is-no-image\s*\{[^}]*\}/)[0];
-  assert.match(noImageBlock, /height:\s*auto/);
-  assert.doesNotMatch(noImageBlock, /linear-gradient/);
-});
-
-test("activeNow: date-only active_from is not yet active before the start of that day in Asia/Bangkok", () => {
-  // active_from "2026-06-30" should not begin until 2026-06-30T00:00:00+07:00,
-  // i.e. 2026-06-29T17:00:00.000Z. One second before that boundary must be inactive.
-  const justBeforeStart = new Date("2026-06-29T16:59:59.000Z");
-  assert.equal(activeNow({ active_from: "2026-06-30" }, justBeforeStart), false);
-
-  const exactStart = new Date("2026-06-29T17:00:00.000Z");
-  assert.equal(activeNow({ active_from: "2026-06-30" }, exactStart), true);
-});
-
-test("activeNow: date-only active_to stays active through the entire end date in Asia/Bangkok", () => {
-  // active_to "2026-06-30" should remain active through 2026-06-30T23:59:59.999+07:00,
-  // i.e. 2026-06-30T16:59:59.999Z. Mid-afternoon Bangkok time on the end date must
-  // still be active even though it is past 00:00 UTC of that calendar date â€” this is
-  // exactly the case the old UTC-midnight comparison got wrong.
-  const middayBangkokOnEndDate = new Date("2026-06-30T08:00:00.000Z"); // 15:00 Bangkok
-  assert.equal(activeNow({ active_to: "2026-06-30" }, middayBangkokOnEndDate), true);
-
-  const lastInstantOfEndDate = new Date("2026-06-30T16:59:59.999Z");
-  assert.equal(activeNow({ active_to: "2026-06-30" }, lastInstantOfEndDate), true);
-});
-
-test("activeNow: date-only active_to expires immediately after the end of that day in Asia/Bangkok", () => {
-  const oneSecondAfterEndDate = new Date("2026-06-30T17:00:00.000Z"); // 2026-07-01T00:00:00+07:00
-  assert.equal(activeNow({ active_to: "2026-06-30" }, oneSecondAfterEndDate), false);
-});
-
-test("activeNow: explicit date-time active_from/active_to keep their own offset semantics instead of Bangkok day boundaries", () => {
-  // An explicit UTC timestamp must NOT be reinterpreted as a Bangkok day boundary.
-  const item = { active_from: "2026-06-30T10:00:00Z", active_to: "2026-06-30T12:00:00Z" };
-  assert.equal(activeNow(item, new Date("2026-06-30T09:59:59Z")), false);
-  assert.equal(activeNow(item, new Date("2026-06-30T11:00:00Z")), true);
-  assert.equal(activeNow(item, new Date("2026-06-30T12:00:01Z")), false);
-});
-
-test("activeNow: an invalid date boundary fails closed (excludes the item) rather than showing it indefinitely", () => {
-  assert.equal(activeNow({ active_from: "not-a-date" }, new Date("2026-06-30T08:00:00.000Z")), false);
-  assert.equal(activeNow({ active_to: "not-a-date" }, new Date("2026-06-30T08:00:00.000Z")), false);
-});
-
-test("articles section validates auto_sync, source_url, and seed_urls and requires source_url when auto_sync is on", () => {
-  const valid = validateConfig({
-    sections: [{
-      id: "articles", type: "articles", title: "à¸šà¸—à¸„à¸§à¸²à¸¡à¹à¸™à¸°à¸™à¸³",
-      auto_sync: true, source_url: "https://www.cwf-air.com",
-      seed_urls: ["https://www.cwf-air.com/air-conditioner-not-cooling/", "https://www.cwf-air.com/air-conditioner-water-leaking/"],
-      items: [],
-    }],
-  });
-  assert.equal(valid.ok, true);
-  const section = valid.config.sections[0];
-  assert.equal(section.auto_sync, true);
-  assert.equal(section.source_url, "https://www.cwf-air.com");
-  assert.deepEqual(section.seed_urls, ["https://www.cwf-air.com/air-conditioner-not-cooling/", "https://www.cwf-air.com/air-conditioner-water-leaking/"]);
-
-  const badSourceUrl = validateConfig({
-    sections: [{ id: "articles", type: "articles", title: "x", source_url: "javascript:alert(1)", items: [] }],
-  });
-  assert.equal(badSourceUrl.ok, false);
-  assert.ok(badSourceUrl.errors.some((error) => error.includes("source_url must be http/https")));
-
-  const badSeedUrl = validateConfig({
-    sections: [{ id: "articles", type: "articles", title: "x", seed_urls: ["not-a-url"], items: [] }],
-  });
-  assert.equal(badSeedUrl.ok, false);
-  assert.ok(badSeedUrl.errors.some((error) => error.includes("seed_urls.0 invalid")));
-
-  const autoSyncWithoutSource = validateConfig({
-    sections: [{ id: "articles", type: "articles", title: "x", auto_sync: true, items: [] }],
-  });
-  assert.equal(autoSyncWithoutSource.ok, false);
-  assert.ok(autoSyncWithoutSource.errors.some((error) => error.includes("source_url required when auto_sync is enabled")));
-
-  const tooManySeedUrls = validateConfig({
-    sections: [{ id: "articles", type: "articles", title: "x", seed_urls: Array.from({ length: 12 }, (_, i) => `https://www.cwf-air.com/post-${i}/`), items: [] }],
-  });
-  assert.equal(tooManySeedUrls.ok, true);
-  assert.equal(tooManySeedUrls.config.sections[0].seed_urls.length, 8);
-});
-
-test("POST /admin/homepage-cms/sync-articles requires admin auth and a source_url, then upserts and returns synced articles", async () => {
-  const pool = createPool();
-  const deny = await withServer(pool, (_req, res) => res.status(401).json({ error: "UNAUTHORIZED" }));
-  try {
-    const denied = await fetch(`${deny.base}/admin/homepage-cms/sync-articles`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source_url: "https://www.cwf-air.com" }) });
-    assert.equal(denied.status, 401);
-  } finally {
-    await deny.close();
-  }
-
-  const allow = await withServer(pool, (req, _res, next) => { req.actor = { username: "admin", role: "admin" }; next(); });
-  try {
-    const missingUrl = await fetch(`${allow.base}/admin/homepage-cms/sync-articles`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) });
-    assert.equal(missingUrl.status, 400);
-
-    await withMockFetch(async () => jsonFetchResponse([
-      { id: 1, slug: "air-conditioner-not-cooling", link: "https://www.cwf-air.com/air-conditioner-not-cooling/", title: { rendered: "à¹à¸­à¸£à¹Œà¹„à¸¡à¹ˆà¹€à¸¢à¹‡à¸™" }, excerpt: { rendered: "à¸ªà¸²à¹€à¸«à¸•à¸¸à¹à¸¥à¸°à¸§à¸´à¸˜à¸µà¹à¸à¹‰" }, date_gmt: "2026-05-20T08:00:00", _embedded: { "wp:featuredmedia": [{ source_url: "https://www.cwf-air.com/img.jpg" }] } },
-    ]), async () => {
-      const res = await fetch(`${allow.base}/admin/homepage-cms/sync-articles`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ source_url: "https://www.cwf-air.com" }),
-      });
-      assert.equal(res.status, 200);
-      const data = await res.json();
-      assert.equal(data.ok, true);
-      assert.equal(data.synced_count, 1);
-      assert.equal(data.articles.length, 1);
-      assert.equal(data.articles[0].title, "à¹à¸­à¸£à¹Œà¹„à¸¡à¹ˆà¹€à¸¢à¹‡à¸™");
-      assert.ok(data.last_synced_at);
-    });
-
-    const statusRes = await fetch(`${allow.base}/admin/homepage-cms/synced-articles?source_url=${encodeURIComponent("https://www.cwf-air.com")}`);
-    const statusData = await statusRes.json();
-    assert.equal(statusData.ok, true);
-    assert.equal(statusData.articles.length, 1);
-    assert.ok(statusData.last_synced_at);
-  } finally {
-    await allow.close();
-  }
-});
-
-test("GET /admin/homepage-cms/synced-articles returns an empty result without a source_url and requires admin auth", async () => {
-  const pool = createPool();
-  const deny = await withServer(pool, (_req, res) => res.status(401).json({ error: "UNAUTHORIZED" }));
-  try {
-    const denied = await fetch(`${deny.base}/admin/homepage-cms/synced-articles?source_url=https://www.cwf-air.com`);
-    assert.equal(denied.status, 401);
-  } finally {
-    await deny.close();
-  }
-
-  const allow = await withServer(pool, (req, _res, next) => { req.actor = { username: "admin", role: "admin" }; next(); });
-  try {
-    const res = await fetch(`${allow.base}/admin/homepage-cms/synced-articles`);
-    const data = await res.json();
-    assert.equal(data.ok, true);
-    assert.deepEqual(data.articles, []);
-    assert.equal(data.last_synced_at, null);
-  } finally {
-    await allow.close();
-  }
-});
-
-test("public homepage hydrates an auto_sync articles section from the synced-articles cache, replacing manually-curated items", async () => {
-  const pool = createPool();
-  pool.state.syncedArticles = [
-    { source_url: "https://www.cwf-air.com", external_id: "a", title: "à¹à¸­à¸£à¹Œà¹„à¸¡à¹ˆà¹€à¸¢à¹‡à¸™", summary: "à¸ªà¸²à¹€à¸«à¸•à¸¸à¹à¸¥à¸°à¸§à¸´à¸˜à¸µà¹à¸à¹‰", image_url: "https://www.cwf-air.com/a.jpg", link: "https://www.cwf-air.com/a/", published_at: "2026-05-20T08:00:00Z", synced_at: new Date().toISOString() },
-  ];
-  pool.state.row.published_config = {
-    version: 1,
-    sections: [{
-      id: "articles", type: "articles", enabled: true, sort_order: 70, title: "à¸šà¸—à¸„à¸§à¸²à¸¡à¹à¸™à¸°à¸™à¸³",
-      auto_sync: true, source_url: "https://www.cwf-air.com", seed_urls: [],
-      items: [{ title: "à¸šà¸—à¸„à¸§à¸²à¸¡à¹€à¸”à¸´à¸¡à¸—à¸µà¹ˆà¸à¸£à¸­à¸à¸”à¹‰à¸§à¸¢à¸¡à¸·à¸­", url: "https://example.com/manual" }],
-    }],
-  };
-  const server = await withServer(pool, (_req, _res, next) => next());
-  try {
-    const res = await fetch(`${server.base}/public/homepage`);
-    const data = await res.json();
-    const section = data.config.sections.find((s) => s.type === "articles");
-    assert.ok(section);
-    assert.equal(section.items.length, 1);
-    assert.equal(section.items[0].title, "à¹à¸­à¸£à¹Œà¹„à¸¡à¹ˆà¹€à¸¢à¹‡à¸™");
-    assert.equal(section.items[0].url, "https://www.cwf-air.com/a/");
-    assert.ok(!JSON.stringify(section.items).includes("à¸šà¸—à¸„à¸§à¸²à¸¡à¹€à¸”à¸´à¸¡à¸—à¸µà¹ˆà¸à¸£à¸­à¸à¸”à¹‰à¸§à¸¢à¸¡à¸·à¸­"));
-  } finally {
-    await server.close();
-  }
-});
-
-test("public homepage leaves manually-curated articles items untouched when auto_sync is off", async () => {
-  const pool = createPool();
-  pool.state.row.published_config = {
-    version: 1,
-    sections: [{
-      id: "articles", type: "articles", enabled: true, sort_order: 70, title: "à¸šà¸—à¸„à¸§à¸²à¸¡à¹à¸™à¸°à¸™à¸³",
-      auto_sync: false, source_url: "", seed_urls: [],
-      items: [{ title: "à¸šà¸—à¸„à¸§à¸²à¸¡à¸—à¸µà¹ˆà¸à¸£à¸­à¸à¸”à¹‰à¸§à¸¢à¸¡à¸·à¸­", url: "https://example.com/manual" }],
-    }],
-  };
-  const server = await withServer(pool, (_req, _res, next) => next());
-  try {
-    const res = await fetch(`${server.base}/public/homepage`);
-    const data = await res.json();
-    const section = data.config.sections.find((s) => s.type === "articles");
-    assert.equal(section.items[0].title, "à¸šà¸—à¸„à¸§à¸²à¸¡à¸—à¸µà¹ˆà¸à¸£à¸­à¸à¸”à¹‰à¸§à¸¢à¸¡à¸·à¸­");
-  } finally {
-    await server.close();
-  }
-});
-
-test("admin-homepage-cms.js wires the articles auto-sync editor: toggle, source_url, seed_urls, sync-now, and hiding manual items when enabled", () => {
-  const admin = read("admin-homepage-cms.js");
-  assert.match(admin, /data-auto-sync/);
-  assert.match(admin, /\.auto_sync = target\.checked/);
-  assert.match(admin, /data-seed-urls/);
-  assert.match(admin, /id="syncArticlesNow"/);
-  assert.match(admin, /\/admin\/homepage-cms\/sync-articles/);
-  assert.match(admin, /\/admin\/homepage-cms\/synced-articles/);
-  assert.match(admin, /itemTypes\.includes\(section\.type\) && !\(section\.type === "articles" && section\.auto_sync\)/);
-});
-
-/* ==========================================================================
-   Page availability (Customer App V2 rollout control, stored in the SAME
-   Homepage CMS published_config â€” no new table). Locked defaults: legacy /
-   missing â†’ all enabled; degraded fail-safe = Home + Tracking only.
-   ========================================================================== */
-
-test("page_availability: exports have the locked 7 keys and default shapes", () => {
-  assert.deepEqual(PAGE_AVAILABILITY_KEYS, ["home", "store", "booking", "scheduled", "urgent", "tracking", "profile"]);
-  assert.deepEqual({ ...DEFAULT_PAGE_AVAILABILITY }, { home: true, store: true, booking: true, scheduled: true, urgent: true, tracking: true, profile: true });
-  // Degraded fail-safe keeps only the landing page and Tracking reachable.
-  assert.deepEqual({ ...DEGRADED_PAGE_AVAILABILITY }, { home: true, store: false, booking: false, scheduled: false, urgent: false, tracking: true, profile: false });
-});
-
-test("page_availability: DEFAULT_CONFIG ships all-enabled", () => {
-  assert.deepEqual(DEFAULT_CONFIG.page_availability, { home: true, store: true, booking: true, scheduled: true, urgent: true, tracking: true, profile: true });
-});
-
-test("page_availability: absent block validates to all-enabled (legacy safe), not an error", () => {
-  const out = validateConfig({ sections: [{ id: "hero", type: "hero", enabled: true, sort_order: 1, title: "x", items: [] }] });
-  assert.equal(out.ok, true);
-  assert.deepEqual(out.config.page_availability, { home: true, store: true, booking: true, scheduled: true, urgent: true, tracking: true, profile: true });
-});
-
-test("page_availability: a valid explicit block is preserved as booleans", () => {
-  const pa = { home: true, store: false, booking: true, scheduled: false, urgent: true, tracking: true, profile: false };
-  const out = validateConfig({ page_availability: pa, sections: [{ id: "hero", type: "hero", enabled: true, sort_order: 1, title: "x", items: [] }] });
-  assert.equal(out.ok, true);
-  assert.deepEqual(out.config.page_availability, pa);
-});
-
-test("page_availability: rejects missing key, unknown key, non-boolean value, and all-disabled", () => {
-  const base = [{ id: "hero", type: "hero", enabled: true, sort_order: 1, title: "x", items: [] }];
-  const missingKey = validateConfig({ page_availability: { home: true, store: true, booking: true, scheduled: true, urgent: true, tracking: true }, sections: base });
-  assert.equal(missingKey.ok, false);
-
-  const unknownKey = validateConfig({ page_availability: { home: true, store: true, booking: true, scheduled: true, urgent: true, tracking: true, profile: true, extra: true }, sections: base });
-  assert.equal(unknownKey.ok, false);
-
-  const nonBool = validateConfig({ page_availability: { home: "yes", store: true, booking: true, scheduled: true, urgent: true, tracking: true, profile: true }, sections: base });
-  assert.equal(nonBool.ok, false);
-
-  const allDisabled = validateConfig({ page_availability: { home: false, store: false, booking: false, scheduled: false, urgent: false, tracking: false, profile: false }, sections: base });
-  assert.equal(allDisabled.ok, false);
-});
-
-test("page_availability: readPageAvailability never returns all-disabled and legacy â†’ all-enabled", () => {
-  assert.deepEqual(readPageAvailability({}), { ...DEFAULT_PAGE_AVAILABILITY });
-  assert.deepEqual(readPageAvailability({ page_availability: null }), { ...DEFAULT_PAGE_AVAILABILITY });
-  // A corrupt all-disabled map is coerced back to the all-enabled safe default.
-  assert.deepEqual(
-    readPageAvailability({ page_availability: { home: false, store: false, booking: false, scheduled: false, urgent: false, tracking: false, profile: false } }),
-    { ...DEFAULT_PAGE_AVAILABILITY },
-  );
-  // A valid partial-off map is honoured.
-  const partial = { home: true, store: false, booking: false, scheduled: false, urgent: false, tracking: true, profile: false };
-  assert.deepEqual(readPageAvailability({ page_availability: partial }), partial);
-});
-
-test("page_availability: stripPublicConfig includes normalized flags and never admin-only fields", () => {
-  const pub = stripPublicConfig({
-    version: 1,
-    sections: [{ id: "hero", type: "hero", enabled: true, sort_order: 1, title: "x", items: [], image_public_id: "secret" }],
-    page_availability: { home: true, store: false, booking: true, scheduled: true, urgent: true, tracking: true, profile: true },
-  });
-  assert.deepEqual(pub.page_availability, { home: true, store: false, booking: true, scheduled: true, urgent: true, tracking: true, profile: true });
-  assert.doesNotMatch(JSON.stringify(pub), /secret|updated_by/);
-});
-
-test("page_availability: hydrateDraftConfig preserves sections/theme/page_headers and backfills flags", () => {
-  const hydrated = hydrateDraftConfig({
-    version: 3,
-    sections: [{ id: "hero", type: "hero", enabled: true, sort_order: 1, title: "keep me", items: [] }],
-    theme: { primary: "#123456" },
-    page_headers: { tracking: { enabled: true, title: "T" } },
-    // no page_availability â†’ legacy, must backfill all-enabled
-  });
-  assert.match(JSON.stringify(hydrated.sections), /keep me/);
-  assert.deepEqual(hydrated.theme, { primary: "#123456" });
-  assert.equal(hydrated.page_headers.tracking.title, "T");
-  assert.deepEqual(hydrated.page_availability, { ...DEFAULT_PAGE_AVAILABILITY });
-});
-
-test("GET /public/customer-app-config: no published config â†’ all-enabled fallback, no admin leak", async () => {
-  const pool = createPool();
-  pool.state.row.published_config = null;
-  const server = await withServer(pool, (_req, _res, next) => next());
-  try {
-    const res = await fetch(`${server.base}/public/customer-app-config`);
-    const data = await res.json();
-    assert.equal(res.status, 200);
-    assert.equal(res.headers.get("cache-control"), "no-store");
-    assert.equal(data.ok, true);
-    assert.equal(data.fallback, true);
-    assert.equal(data.degraded, false);
-    assert.deepEqual(data.page_availability, { ...DEFAULT_PAGE_AVAILABILITY });
-    assert.doesNotMatch(JSON.stringify(data), /draft_config|updated_by|sections/);
-  } finally {
-    await server.close();
-  }
-});
-
-test("GET /public/customer-app-config: legacy published (no flags) â†’ all-enabled, not fallback", async () => {
-  const pool = createPool();
-  pool.state.row.published_config = { version: 2, sections: [{ id: "hero", type: "hero", enabled: true, sort_order: 1, title: "x", items: [] }] };
-  pool.state.row.version = 2;
-  const server = await withServer(pool, (_req, _res, next) => next());
-  try {
-    const res = await fetch(`${server.base}/public/customer-app-config`);
-    const data = await res.json();
-    assert.equal(res.status, 200);
-    assert.equal(data.fallback, false);
-    assert.equal(data.degraded, false);
-    assert.deepEqual(data.page_availability, { ...DEFAULT_PAGE_AVAILABILITY });
-  } finally {
-    await server.close();
-  }
-});
-
-test("GET /public/customer-app-config: published flags are returned verbatim", async () => {
-  const pool = createPool();
-  const pa = { home: true, store: false, booking: false, scheduled: false, urgent: false, tracking: true, profile: false };
-  pool.state.row.published_config = { version: 5, page_availability: pa, sections: [{ id: "hero", type: "hero", enabled: true, sort_order: 1, title: "x", items: [] }] };
-  pool.state.row.version = 5;
-  const server = await withServer(pool, (_req, _res, next) => next());
-  try {
-    const res = await fetch(`${server.base}/public/customer-app-config`);
-    const data = await res.json();
-    assert.equal(res.status, 200);
-    assert.equal(data.fallback, false);
-    assert.deepEqual(data.page_availability, pa);
-  } finally {
-    await server.close();
-  }
-});
-
-test("GET /public/customer-app-config: DB failure â†’ degraded fail-safe with HTTP 200 (never 500)", async () => {
-  const pool = {
-    async query() {
-      const error = new Error("missing table");
-      error.code = "42P01";
-      throw error;
-    },
-  };
-  const server = await withServer(pool, (_req, _res, next) => next());
-  try {
-    const res = await fetch(`${server.base}/public/customer-app-config`);
-    const data = await res.json();
-    assert.equal(res.status, 200);
-    assert.equal(data.degraded, true);
-    assert.equal(data.fallback, true);
-    assert.deepEqual(data.page_availability, { ...DEGRADED_PAGE_AVAILABILITY });
-  } finally {
-    await server.close();
-  }
-});
-
-test("page_availability: Draft save does not publish flags until Publish is called", async () => {
-  const pool = createPool();
-  const allow = await withServer(pool, (req, _res, next) => { req.actor = { username: "admin", role: "admin" }; next(); });
-  try {
-    const draftConfig = {
-      version: 1,
-      page_availability: { home: true, store: false, booking: false, scheduled: false, urgent: false, tracking: true, profile: false },
-      sections: [{ id: "hero", type: "hero", enabled: true, sort_order: 1, title: "x", items: [] }],
-    };
-    await fetch(`${allow.base}/admin/homepage-cms/draft`, {
-      method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ config: draftConfig }),
-    });
-    // Public config still all-enabled â€” Draft is not published.
-    let res = await fetch(`${allow.base}/public/customer-app-config`);
-    let data = await res.json();
-    assert.deepEqual(data.page_availability, { ...DEFAULT_PAGE_AVAILABILITY });
-
-    await fetch(`${allow.base}/admin/homepage-cms/publish`, {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ config: draftConfig }),
-    });
-    res = await fetch(`${allow.base}/public/customer-app-config`);
-    data = await res.json();
-    assert.deepEqual(data.page_availability, { home: true, store: false, booking: false, scheduled: false, urgent: false, tracking: true, profile: false });
-  } finally {
-    await allow.close();
-  }
-});
-
-test("admin CMS wires the page-availability editor (toggles, publish guard, tracking-off confirm)", () => {
-  const adminJs = read("admin-homepage-cms.js");
-  const adminHtml = read("admin-homepage-cms.html");
-  // Editor + nav entry.
-  assert.match(adminJs, /data-edit="page-availability"/);
-  assert.match(adminJs, /renderPageAvailabilityEditor/);
-  assert.match(adminJs, /data-page-availability="/);
-  // Never auto-toggle: only the toggled key changes.
-  assert.match(adminJs, /config\.page_availability\[key\] = target\.checked/);
-  // Cannot disable the last enabled page (UI guard), and publish guards remain.
-  assert.match(adminJs, /function pageAvailabilityToggleAllowed\(/);
-  assert.match(adminJs, /if \(!pageAvailabilityToggleAllowed\(config\.page_availability, key, target\.checked\)\)/);
-  // Publish guards: all-disabled blocked, tracking-off confirm.
-  assert.match(adminJs, /à¸•à¹‰à¸­à¸‡à¹€à¸›à¸´à¸”à¸­à¸¢à¹ˆà¸²à¸‡à¸™à¹‰à¸­à¸¢ 1 à¸«à¸™à¹‰à¸²/);
-  assert.match(adminJs, /pa\.tracking === false && !window\.confirm/);
-  // CSS present for the editor.
-  assert.match(adminHtml, /\.pa-row/);
-});
+  assert.match(app, new ×½uòÚ$z{-®éÜj×ÃÖ‡GG3¢ò÷wwræ7vbÖ—"æ6öÖ“°Ð¢76W'BæWVÂ†FVæ–VBç7FGW2ÂC“°Ð¢Òf–æÆÇ’°Ð¢v—BFVç’æ6Æ÷6R‚“°Ð¢ÐÐ Ð¢6öç7BÆÆ÷rÒv—Bv—F…6W'fW"‡ööÂÂ‡&WÂ÷&W2ÂæW‡B’Óâ²&Wæ7F÷"Ò²W6W&æÖS¢&FÖ–â"Â&öÆS¢&FÖ–â"Ó²æW‡B‚“²Ò“°Ð¢G'’°Ð¢6öç7B&W2Òv—BfWF6‚†G¶ÆÆ÷ræ&6WÒöFÖ–âö†öÖWvRÖ6×2÷7–æ6VBÖ'F–6ÆW6“°Ð¢6öç7BFFÒv—B&W2æ§6öâ‚“°Ð¢76W'BæWVÂ†FFæö²ÂG'VR“°Ð¢76W'BæFVWWVÂ†FFæ'F–6ÆW2ÂµÒ“°Ð¢76W'BæWVÂ†FFæÆ7E÷7–æ6VEöBÂçVÆÂ“°Ð¢Òf–æÆÇ’°Ð¢v—BÆÆ÷ræ6Æ÷6R‚“°Ð¢ÐÐ§Ò“°Ð Ð§FW7B‚'V&Æ–2†öÖWvR‡–G&FW2âWFõ÷7–æ2'F–6ÆW26V7F–öâg&öÒF†R7–æ6VBÖ'F–6ÆW266†RÂ&WÆ6–ærÖçVÆÇ’Ö7W&FVB—FV×2"Â7–æ2‚’Óâ°Ð¢6öç7BööÂÒ7&VFUööÂ‚“°Ð¢ööÂç7FFRç7–æ6VD'F–6ÆW2Ò°Ð¢²6÷W&6U÷W&Ã¢&‡GG3¢ò÷wwræ7vbÖ—"æ6öÒ"ÂW‡FW&æÅö–C¢&"ÂF—FÆS¢.˜ŠÞŠ>˜Î˜NŠ˜Ž˜Š.˜~‰’"Â7VÖÖ'“¢.Š®‹.˜Š¾‰^‹Ž˜Š^‹Š~‹N‰Ž‹^˜ˆ˜’"Â–ÖvU÷W&Ã¢&‡GG3¢ò÷wwræ7vbÖ—"æ6öÒöæ§r"ÂÆ–æ³¢&‡GG3¢ò÷wwræ7vbÖ—"æ6öÒöò"ÂV&Æ—6†VEöC¢###bÓRÓ#Cƒ££¢"Â7–æ6VEöC¢æWrFFR‚’çFô•4õ7G&–ær‚’ÒÀÐ¢Ó°Ð¢ööÂç7FFRç&÷rçV&Æ—6†VEö6öæf–rÒ°Ð¢fW'6–öã¢ÀÐ¢6V7F–öç3¢·°Ð¢–C¢&'F–6ÆW2"ÂG—S¢&'F–6ÆW2"ÂVæ&ÆVC¢G'VRÂ6÷'Eö÷&FW#¢sÂF—FÆS¢.‰®‰~ˆNŠ~‹.Š˜‰ž‹‰ž‹2"ÀÐ¢WFõ÷7–æ3¢G'VRÂ6÷W&6U÷W&Ã¢&‡GG3¢ò÷wwræ7vbÖ—"æ6öÒ"Â6VVE÷W&Ç3¢µÒÀÐ¢—FV×3¢·²F—FÆS¢.‰®‰~ˆNŠ~‹.Š˜‰N‹NŠ‰~‹^˜ŽˆŠ>ŠÞˆ‰N˜žŠ~Š.Š‹~ŠÒ"ÂW&Ã¢&‡GG3¢òöW†×ÆRæ6öÒöÖçVÂ"ÕÒÀÐ¢ÕÒÀÐ¢Ó°Ð¢6öç7B6W'fW"Òv—Bv—F…6W'fW"‡ööÂÂ…÷&WÂ÷&W2ÂæW‡B’ÓâæW‡B‚’“°Ð¢G'’°Ð¢6öç7B&W2Òv—BfWF6‚†G·6W'fW"æ&6WÒ÷V&Æ–2ö†öÖWvV“°Ð¢6öç7BFFÒv—B&W2æ§6öâ‚“°Ð¢6öç7B6V7F–öâÒFFæ6öæf–rç6V7F–öç2æf–æB‚‡2’Óâ2çG—RÓÓÒ&'F–6ÆW2"“°Ð¢76W'Bæö²‡6V7F–öâ“°Ð¢76W'BæWVÂ‡6V7F–öâæ—FV×2æÆVæwF‚Â“°Ð¢76W'BæWVÂ‡6V7F–öâæ—FV×5³ÒçF—FÆRÂ.˜ŠÞŠ>˜Î˜NŠ˜Ž˜Š.˜~‰’"“°Ð¢76W'BæWVÂ‡6V7F–öâæ—FV×5³ÒçW&ÂÂ&‡GG3¢ò÷wwræ7vbÖ—"æ6öÒöò"“°Ð¢76W'Bæö²‚¥4ôâç7G&–æv–g’‡6V7F–öâæ—FV×2’æ–æ6ÇVFW2‚.‰®‰~ˆNŠ~‹.Š˜‰N‹NŠ‰~‹^˜ŽˆŠ>ŠÞˆ‰N˜žŠ~Š.Š‹~ŠÒ"’“°Ð¢Òf–æÆÇ’°Ð¢v—B6W'fW"æ6Æ÷6R‚“°Ð¢ÐÐ§Ò“°Ð Ð§FW7B‚'V&Æ–2†öÖWvRÆVfW2ÖçVÆÇ’Ö7W&FVB'F–6ÆW2—FV×2VçF÷V6†VBv†VâWFõ÷7–æ2—2öfb"Â7–æ2‚’Óâ°Ð¢6öç7BööÂÒ7&VFUööÂ‚“°Ð¢ööÂç7FFRç&÷rçV&Æ—6†VEö6öæf–rÒ°Ð¢fW'6–öã¢ÀÐ¢6V7F–öç3¢·°Ð¢–C¢&'F–6ÆW2"ÂG—S¢&'F–6ÆW2"ÂVæ&ÆVC¢G'VRÂ6÷'Eö÷&FW#¢sÂF—FÆS¢.‰®‰~ˆNŠ~‹.Š˜‰ž‹‰ž‹2"ÀÐ¢WFõ÷7–æ3¢fÇ6RÂ6÷W&6U÷W&Ã¢""Â6VVE÷W&Ç3¢µÒÀÐ¢—FV×3¢·²F—FÆS¢.‰®‰~ˆNŠ~‹.Š‰~‹^˜ŽˆŠ>ŠÞˆ‰N˜žŠ~Š.Š‹~ŠÒ"ÂW&Ã¢&‡GG3¢òöW†×ÆRæ6öÒöÖçVÂ"ÕÒÀÐ¢ÕÒÀÐ¢Ó°Ð¢6öç7B6W'fW"Òv—Bv—F…6W'fW"‡ööÂÂ…÷&WÂ÷&W2ÂæW‡B’ÓâæW‡B‚’“°Ð¢G'’°Ð¢6öç7B&W2Òv—BfWF6‚†G·6W'fW"æ&6WÒ÷V&Æ–2ö†öÖWvV“°Ð¢6öç7BFFÒv—B&W2æ§6öâ‚“°Ð¢6öç7B6V7F–öâÒFFæ6öæf–rç6V7F–öç2æf–æB‚‡2’Óâ2çG—RÓÓÒ&'F–6ÆW2"“°Ð¢76W'BæWVÂ‡6V7F–öâæ—FV×5³ÒçF—FÆRÂ.‰®‰~ˆNŠ~‹.Š‰~‹^˜ŽˆŠ>ŠÞˆ‰N˜žŠ~Š.Š‹~ŠÒ"“°Ð¢Òf–æÆÇ’°Ð¢v—B6W'fW"æ6Æ÷6R‚“°Ð¢ÐÐ§Ò“°Ð Ð§FW7B‚&FÖ–âÖ†öÖWvRÖ6×2æ§2v—&W2F†R'F–6ÆW2WFò×7–æ2VF—F÷#¢FövvÆRÂ6÷W&6U÷W&ÂÂ6VVE÷W&Ç2Â7–æ2Öæ÷rÂæB†–F–ærÖçVÂ—FV×2v†VâVæ&ÆVB"Â‚’Óâ°Ð¢6öç7BFÖ–âÒ&VB‚&FÖ–âÖ†öÖWvRÖ6×2æ§2"“°Ð¢76W'BæÖF6‚†FÖ–âÂöFFÖWFò×7–æ2ò“°Ð¢76W'BæÖF6‚†FÖ–âÂõÂæWFõ÷7–æ2ÒF&vWEÂæ6†V6¶VBò“°Ð¢76W'BæÖF6‚†FÖ–âÂöFF×6VVB×W&Ç2ò“°Ð¢76W'BæÖF6‚†FÖ–âÂö–CÒ'7–æ4'F–6ÆW4æ÷r"ò“°Ð¢76W'BæÖF6‚†FÖ–âÂõÂöFÖ–åÂö†öÖWvRÖ6×5Â÷7–æ2Ö'F–6ÆW2ò“°Ð¢76W'BæÖF6‚†FÖ–âÂõÂöFÖ–åÂö†öÖWvRÖ6×5Â÷7–æ6VBÖ'F–6ÆW2ò“°Ð¢76W'BæÖF6‚†FÖ–âÂö—FVÕG—W5Âæ–æ6ÇVFW5Â‡6V7F–öåÂçG—UÂ’bbÂ‡6V7F–öåÂçG—RÓÓÒ&'F–6ÆW2"bb6V7F–öåÂæWFõ÷7–æ5Â’ò“°Ð§Ò“°Ð Ð¢ò¢ÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÐÐ¢vRf–Æ&–Æ—G’„7W7FöÖW"c"&öÆÆ÷WB6öçG&öÂÂ7F÷&VB–âF†R4ÔPÐ¢†öÖWvR4Õ2V&Æ—6†VEö6öæf–r(	BæòæWrF&ÆR’âÆö6¶VBFVfVÇG3¢ÆVv7’ðÐ¢Ö—76–ær(i"ÆÂVæ&ÆVC²FVw&FVBf–Â×6fRÒ†öÖR²G&6¶–æröæÇ’àÐ¢ÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÒ¢ðÐ Ð§FW7B‚'vUöf–Æ&–Æ—G“¢W‡÷'G2†fRF†RÆö6¶VBr¶W—2æBFVfVÇB6†W2"Â‚’Óâ°Ð¢76W'BæFVWWVÂ…tUôd”Ä$”Ä•E•ô´U•2Â²&†öÖR"Â'7F÷&R"Â&&öö¶–ær"Â'66†VGVÆVB"Â'W&vVçB"Â'G&6¶–ær"Â'&öf–ÆR%Ò“°Ð¢76W'BæFVWWVÂ‡²ââäDTdTÅEõtUôd”Ä$”Ä•E’ÒÂ²†öÖS¢G'VRÂ7F÷&S¢G'VRÂ&öö¶–æs¢G'VRÂ66†VGVÆVC¢G'VRÂW&vVçC¢G'VRÂG&6¶–æs¢G'VRÂ&öf–ÆS¢G'VRÒ“°Ð¢òòFVw&FVBf–Â×6fR¶VW2öæÇ’F†RÆæF–ærvRæBG&6¶–ær&V6†&ÆRàÐ¢76W'BæFVWWVÂ‡²ââäDTu$DTEõtUôd”Ä$”Ä•E’ÒÂ²†öÖS¢G'VRÂ7F÷&S¢fÇ6RÂ&öö¶–æs¢fÇ6RÂ66†VGVÆVC¢fÇ6RÂW&vVçC¢fÇ6RÂG&6¶–æs¢G'VRÂ&öf–ÆS¢fÇ6RÒ“°Ð§Ò“°Ð Ð§FW7B‚'vUöf–Æ&–Æ—G“¢DTdTÅEô4ôäd”r6†—2ÆÂÖVæ&ÆVB"Â‚’Óâ°Ð¢76W'BæFVWWVÂ„DTdTÅEô4ôäd”rçvUöf–Æ&–Æ—G’Â²†öÖS¢G'VRÂ7F÷&S¢G'VRÂ&öö¶–æs¢G'VRÂ66†VGVÆVC¢G'VRÂW&vVçC¢G'VRÂG&6¶–æs¢G'VRÂ&öf–ÆS¢G'VRÒ“°Ð§Ò“°Ð Ð§FW7B‚'vUöf–Æ&–Æ—G“¢'6VçB&Æö6²fÆ–FFW2FòÆÂÖVæ&ÆVB†ÆVv7’6fR’Âæ÷BâW'&÷""Â‚’Óâ°Ð¢6öç7B÷WBÒfÆ–FFT6öæf–r‡²6V7F–öç3¢·²–C¢&†W&ò"ÂG—S¢&†W&ò"ÂVæ&ÆVC¢G'VRÂ6÷'Eö÷&FW#¢ÂF—FÆS¢'‚"Â—FV×3¢µÒÕÒÒ“°Ð¢76W'BæWVÂ†÷WBæö²ÂG'VR“°Ð¢76W'BæFVWWVÂ†÷WBæ6öæf–rçvUöf–Æ&–Æ—G’Â²†öÖS¢G'VRÂ7F÷&S¢G'VRÂ&öö¶–æs¢G'VRÂ66†VGVÆVC¢G'VRÂW&vVçC¢G'VRÂG&6¶–æs¢G'VRÂ&öf–ÆS¢G'VRÒ“°Ð§Ò“°Ð Ð§FW7B‚'vUöf–Æ&–Æ—G“¢fÆ–BW‡Æ–6—B&Æö6²—2&W6W'fVB2&ööÆVç2"Â‚’Óâ°Ð¢6öç7BÒ²†öÖS¢G'VRÂ7F÷&S¢fÇ6RÂ&öö¶–æs¢G'VRÂ66†VGVÆVC¢fÇ6RÂW&vVçC¢G'VRÂG&6¶–æs¢G'VRÂ&öf–ÆS¢fÇ6RÓ°Ð¢6öç7B÷WBÒfÆ–FFT6öæf–r‡²vUöf–Æ&–Æ—G“¢Â6V7F–öç3¢·²–C¢&†W&ò"ÂG—S¢&†W&ò"ÂVæ&ÆVC¢G'VRÂ6÷'Eö÷&FW#¢ÂF—FÆS¢'‚"Â—FV×3¢µÒÕÒÒ“°Ð¢76W'BæWVÂ†÷WBæö²ÂG'VR“°Ð¢76W'BæFVWWVÂ†÷WBæ6öæf–rçvUöf–Æ&–Æ—G’Â“°Ð§Ò“°Ð Ð§FW7B‚'vUöf–Æ&–Æ—G“¢&V¦V7G2Ö—76–ær¶W’ÂVæ¶æ÷vâ¶W’ÂæöâÖ&ööÆVâfÇVRÂæBÆÂÖF—6&ÆVB"Â‚’Óâ°Ð¢6öç7B&6RÒ·²–C¢&†W&ò"ÂG—S¢&†W&ò"ÂVæ&ÆVC¢G'VRÂ6÷'Eö÷&FW#¢ÂF—FÆS¢'‚"Â—FV×3¢µÒÕÓ°Ð¢6öç7BÖ—76–æt¶W’ÒfÆ–FFT6öæf–r‡²vUöf–Æ&–Æ—G“¢²†öÖS¢G'VRÂ7F÷&S¢G'VRÂ&öö¶–æs¢G'VRÂ66†VGVÆVC¢G'VRÂW&vVçC¢G'VRÂG&6¶–æs¢G'VRÒÂ6V7F–öç3¢&6RÒ“°Ð¢76W'BæWVÂ†Ö—76–æt¶W’æö²ÂfÇ6R“°Ð Ð¢6öç7BVæ¶æ÷vä¶W’ÒfÆ–FFT6öæf–r‡²vUöf–Æ&–Æ—G“¢²†öÖS¢G'VRÂ7F÷&S¢G'VRÂ&öö¶–æs¢G'VRÂ66†VGVÆVC¢G'VRÂW&vVçC¢G'VRÂG&6¶–æs¢G'VRÂ&öf–ÆS¢G'VRÂW‡G&¢G'VRÒÂ6V7F–öç3¢&6RÒ“°Ð¢76W'BæWVÂ‡Væ¶æ÷vä¶W’æö²ÂfÇ6R“°Ð Ð¢6öç7Bæöä&ööÂÒfÆ–FFT6öæf–r‡²vUöf–Æ&–Æ—G“¢²†öÖS¢'–W2"Â7F÷&S¢G'VRÂ&öö¶–æs¢G'VRÂ66†VGVÆVC¢G'VRÂW&vVçC¢G'VRÂG&6¶–æs¢G'VRÂ&öf–ÆS¢G'VRÒÂ6V7F–öç3¢&6RÒ“°Ð¢76W'BæWVÂ†æöä&ööÂæö²ÂfÇ6R“°Ð Ð¢6öç7BÆÄF—6&ÆVBÒfÆ–FFT6öæf–r‡²vUöf–Æ&–Æ—G“¢²†öÖS¢fÇ6RÂ7F÷&S¢fÇ6RÂ&öö¶–æs¢fÇ6RÂ66†VGVÆVC¢fÇ6RÂW&vVçC¢fÇ6RÂG&6¶–æs¢fÇ6RÂ&öf–ÆS¢fÇ6RÒÂ6V7F–öç3¢&6RÒ“°Ð¢76W'BæWVÂ†ÆÄF—6&ÆVBæö²ÂfÇ6R“°Ð§Ò“°Ð Ð§FW7B‚'vUöf–Æ&–Æ—G“¢&VEvTf–Æ&–Æ—G’æWfW"&WGW&ç2ÆÂÖF—6&ÆVBæBÆVv7’(i"ÆÂÖVæ&ÆVB"Â‚’Óâ°Ð¢76W'BæFVWWVÂ‡&VEvTf–Æ&–Æ—G’‡·Ò’Â²ââäDTdTÅEõtUôd”Ä$”Ä•E’Ò“°Ð¢76W'BæFVWWVÂ‡&VEvTf–Æ&–Æ—G’‡²vUöf–Æ&–Æ—G“¢çVÆÂÒ’Â²ââäDTdTÅEõtUôd”Ä$”Ä•E’Ò“°Ð¢òò6÷''WBÆÂÖF—6&ÆVBÖ—26öW&6VB&6²FòF†RÆÂÖVæ&ÆVB6fRFVfVÇBàÐ¢76W'BæFVWWVÂ€Ð¢&VEvTf–Æ&–Æ—G’‡²vUöf–Æ&–Æ—G“¢²†öÖS¢fÇ6RÂ7F÷&S¢fÇ6RÂ&öö¶–æs¢fÇ6RÂ66†VGVÆVC¢fÇ6RÂW&vVçC¢fÇ6RÂG&6¶–æs¢fÇ6RÂ&öf–ÆS¢fÇ6RÒÒ’ÀÐ¢²ââäDTdTÅEõtUôd”Ä$”Ä•E’ÒÀÐ¢“°Ð¢òòfÆ–B'F–ÂÖöfbÖ—2†öæ÷W&VBàÐ¢6öç7B'F–ÂÒ²†öÖS¢G'VRÂ7F÷&S¢fÇ6RÂ&öö¶–æs¢fÇ6RÂ66†VGVÆVC¢fÇ6RÂW&vVçC¢fÇ6RÂG&6¶–æs¢G'VRÂ&öf–ÆS¢fÇ6RÓ°Ð¢76W'BæFVWWVÂ‡&VEvTf–Æ&–Æ—G’‡²vUöf–Æ&–Æ—G“¢'F–ÂÒ’Â'F–Â“°Ð§Ò“°Ð Ð§FW7B‚'vUöf–Æ&–Æ—G“¢7G&—V&Æ–46öæf–r–æ6ÇVFW2æ÷&ÖÆ—¦VBfÆw2æBæWfW"FÖ–âÖöæÇ’f–VÆG2"Â‚’Óâ°Ð¢6öç7BV"Ò7G&—V&Æ–46öæf–r‡°Ð¢fW'6–öã¢ÀÐ¢6V7F–öç3¢·²–C¢&†W&ò"ÂG—S¢&†W&ò"ÂVæ&ÆVC¢G'VRÂ6÷'Eö÷&FW#¢ÂF—FÆS¢'‚"Â—FV×3¢µÒÂ–ÖvU÷V&Æ–5ö–C¢'6V7&WB"ÕÒÀÐ¢vUöf–Æ&–Æ—G“¢²†öÖS¢G'VRÂ7F÷&S¢fÇ6RÂ&öö¶–æs¢G'VRÂ66†VGVÆVC¢G'VRÂW&vVçC¢G'VRÂG&6¶–æs¢G'VRÂ&öf–ÆS¢G'VRÒÀÐ¢Ò“°Ð¢76W'BæFVWWVÂ‡V"çvUöf–Æ&–Æ—G’Â²†öÖS¢G'VRÂ7F÷&S¢fÇ6RÂ&öö¶–æs¢G'VRÂ66†VGVÆVC¢G'VRÂW&vVçC¢G'VRÂG&6¶–æs¢G'VRÂ&öf–ÆS¢G'VRÒ“°Ð¢76W'BæFöW4æ÷DÖF6‚„¥4ôâç7G&–æv–g’‡V"’Â÷6V7&WGÇWFFVEö'’ò“°Ð§Ò“°Ð Ð§FW7B‚'vUöf–Æ&–Æ—G“¢‡–G&FTG&gD6öæf–r&W6W'fW26V7F–öç2÷F†VÖR÷vUö†VFW'2æB&6¶f–ÆÇ2fÆw2"Â‚’Óâ°Ð¢6öç7B‡–G&FVBÒ‡–G&FTG&gD6öæf–r‡°Ð¢fW'6–öã¢2ÀÐ¢6V7F–öç3¢·²–C¢&†W&ò"ÂG—S¢&†W&ò"ÂVæ&ÆVC¢G'VRÂ6÷'Eö÷&FW#¢ÂF—FÆS¢&¶VWÖR"Â—FV×3¢µÒÕÒÀÐ¢F†VÖS¢²&–Ö'“¢"3#3CSb"ÒÀÐ¢vUö†VFW'3¢²G&6¶–æs¢²Væ&ÆVC¢G'VRÂF—FÆS¢%B"ÒÒÀÐ¢òòæòvUöf–Æ&–Æ—G’(i"ÆVv7’Â×W7B&6¶f–ÆÂÆÂÖVæ&ÆV@Ð¢Ò“°Ð¢76W'BæÖF6‚„¥4ôâç7G&–æv–g’†‡–G&FVBç6V7F–öç2’Âö¶VWÖRò“°Ð¢76W'BæFVWWVÂ†‡–G&FVBçF†VÖRÂ²&–Ö'“¢"3#3CSb"Ò“°Ð¢76W'BæWVÂ†‡–G&FVBçvUö†VFW'2çG&6¶–ærçF—FÆRÂ%B"“°Ð¢76W'BæFVWWVÂ†‡–G&FVBçvUöf–Æ&–Æ—G’Â²ââäDTdTÅEõtUôd”Ä$”Ä•E’Ò“°Ð§Ò“°Ð Ð§FW7B‚$tUB÷V&Æ–2ö7W7FöÖW"ÖÖ6öæf–s¢æòV&Æ—6†VB6öæf–r(i"ÆÂÖVæ&ÆVBfÆÆ&6²ÂæòFÖ–âÆV²"Â7–æ2‚’Óâ°Ð¢6öç7BööÂÒ7&VFUööÂ‚“°Ð¢ööÂç7FFRç&÷rçV&Æ—6†VEö6öæf–rÒçVÆÃ°Ð¢6öç7B6W'fW"Òv—Bv—F…6W'fW"‡ööÂÂ…÷&WÂ÷&W2ÂæW‡B’ÓâæW‡B‚’“°Ð¢G'’°Ð¢6öç7B&W2Òv—BfWF6‚†G·6W'fW"æ&6WÒ÷V&Æ–2ö7W7FöÖW"ÖÖ6öæf–v“°Ð¢6öç7BFFÒv—B&W2æ§6öâ‚“°Ð¢76W'BæWVÂ‡&W2ç7FGW2Â#“°Ð¢76W'BæWVÂ‡&W2æ†VFW'2ævWB‚&66†RÖ6öçG&öÂ"’Â&æò×7F÷&R"“°Ð¢76W'BæWVÂ†FFæö²ÂG'VR“°Ð¢76W'BæWVÂ†FFæfÆÆ&6²ÂG'VR“°Ð¢76W'BæWVÂ†FFæFVw&FVBÂfÇ6R“°Ð¢76W'BæFVWWVÂ†FFçvUöf–Æ&–Æ—G’Â²ââäDTdTÅEõtUôd”Ä$”Ä•E’Ò“°Ð¢76W'BæFöW4æ÷DÖF6‚„¥4ôâç7G&–æv–g’†FF’ÂöG&gEö6öæf–wÇWFFVEö'—Ç6V7F–öç2ò“°Ð¢Òf–æÆÇ’°Ð¢v—B6W'fW"æ6Æ÷6R‚“°Ð¢ÐÐ§Ò“°Ð Ð§FW7B‚$tUB÷V&Æ–2ö7W7FöÖW"ÖÖ6öæf–s¢ÆVv7’V&Æ—6†VB†æòfÆw2’(i"ÆÂÖVæ&ÆVBÂæ÷BfÆÆ&6²"Â7–æ2‚’Óâ°Ð¢6öç7BööÂÒ7&VFUööÂ‚“°Ð¢ööÂç7FFRç&÷rçV&Æ—6†VEö6öæf–rÒ²fW'6–öã¢"Â6V7F–öç3¢·²–C¢&†W&ò"ÂG—S¢&†W&ò"ÂVæ&ÆVC¢G'VRÂ6÷'Eö÷&FW#¢ÂF—FÆS¢'‚"Â—FV×3¢µÒÕÒÓ°Ð¢ööÂç7FFRç&÷rçfW'6–öâÒ#°Ð¢6öç7B6W'fW"Òv—Bv—F…6W'fW"‡ööÂÂ…÷&WÂ÷&W2ÂæW‡B’ÓâæW‡B‚’“°Ð¢G'’°Ð¢6öç7B&W2Òv—BfWF6‚†G·6W'fW"æ&6WÒ÷V&Æ–2ö7W7FöÖW"ÖÖ6öæf–v“°Ð¢6öç7BFFÒv—B&W2æ§6öâ‚“°Ð¢76W'BæWVÂ‡&W2ç7FGW2Â#“°Ð¢76W'BæWVÂ†FFæfÆÆ&6²ÂfÇ6R“°Ð¢76W'BæWVÂ†FFæFVw&FVBÂfÇ6R“°Ð¢76W'BæFVWWVÂ†FFçvUöf–Æ&–Æ—G’Â²ââäDTdTÅEõtUôd”Ä$”Ä•E’Ò“°Ð¢Òf–æÆÇ’°Ð¢v—B6W'fW"æ6Æ÷6R‚“°Ð¢ÐÐ§Ò“°Ð Ð§FW7B‚$tUB÷V&Æ–2ö7W7FöÖW"ÖÖ6öæf–s¢V&Æ—6†VBfÆw2&R&WGW&æVBfW&&F–Ò"Â7–æ2‚’Óâ°Ð¢6öç7BööÂÒ7&VFUööÂ‚“°Ð¢6öç7BÒ²†öÖS¢G'VRÂ7F÷&S¢fÇ6RÂ&öö¶–æs¢fÇ6RÂ66†VGVÆVC¢fÇ6RÂW&vVçC¢fÇ6RÂG&6¶–æs¢G'VRÂ&öf–ÆS¢fÇ6RÓ°Ð¢ööÂç7FFRç&÷rçV&Æ—6†VEö6öæf–rÒ²fW'6–öã¢RÂvUöf–Æ&–Æ—G“¢Â6V7F–öç3¢·²–C¢&†W&ò"ÂG—S¢&†W&ò"ÂVæ&ÆVC¢G'VRÂ6÷'Eö÷&FW#¢ÂF—FÆS¢'‚"Â—FV×3¢µÒÕÒÓ°Ð¢ööÂç7FFRç&÷rçfW'6–öâÒS°Ð¢6öç7B6W'fW"Òv—Bv—F…6W'fW"‡ööÂÂ…÷&WÂ÷&W2ÂæW‡B’ÓâæW‡B‚’“°Ð¢G'’°Ð¢6öç7B&W2Òv—BfWF6‚†G·6W'fW"æ&6WÒ÷V&Æ–2ö7W7FöÖW"ÖÖ6öæf–v“°Ð¢6öç7BFFÒv—B&W2æ§6öâ‚“°Ð¢76W'BæWVÂ‡&W2ç7FGW2Â#“°Ð¢76W'BæWVÂ†FFæfÆÆ&6²ÂfÇ6R“°Ð¢76W'BæFVWWVÂ†FFçvUöf–Æ&–Æ—G’Â“°Ð¢Òf–æÆÇ’°Ð¢v—B6W'fW"æ6Æ÷6R‚“°Ð¢ÐÐ§Ò“°Ð Ð§FW7B‚$tUB÷V&Æ–2ö7W7FöÖW"ÖÖ6öæf–s¢D"f–ÇW&R(i"FVw&FVBf–Â×6fRv—F‚…EE#†æWfW"S’"Â7–æ2‚’Óâ°Ð¢6öç7BööÂÒ°Ð¢7–æ2VW'’‚’°Ð¢6öç7BW'&÷"ÒæWrW'&÷"‚&Ö—76–ærF&ÆR"“°Ð¢W'&÷"æ6öFRÒ#C%#°Ð¢F‡&÷rW'&÷#°Ð¢ÒÀÐ¢Ó°Ð¢6öç7B6W'fW"Òv—Bv—F…6W'fW"‡ööÂÂ…÷&WÂ÷&W2ÂæW‡B’ÓâæW‡B‚’“°Ð¢G'’°Ð¢6öç7B&W2Òv—BfWF6‚†G·6W'fW"æ&6WÒ÷V&Æ–2ö7W7FöÖW"ÖÖ6öæf–v“°Ð¢6öç7BFFÒv—B&W2æ§6öâ‚“°Ð¢76W'BæWVÂ‡&W2ç7FGW2Â#“°Ð¢76W'BæWVÂ†FFæFVw&FVBÂG'VR“°Ð¢76W'BæWVÂ†FFæfÆÆ&6²ÂG'VR“°Ð¢76W'BæFVWWVÂ†FFçvUöf–Æ&–Æ—G’Â²ââäDTu$DTEõtUôd”Ä$”Ä•E’Ò“°Ð¢Òf–æÆÇ’°Ð¢v—B6W'fW"æ6Æ÷6R‚“°Ð¢ÐÐ§Ò“°Ð Ð§FW7B‚'vUöf–Æ&–Æ—G“¢G&gB6fRFöW2æ÷BV&Æ—6‚fÆw2VçF–ÂV&Æ—6‚—26ÆÆVB"Â7–æ2‚’Óâ°Ð¢6öç7BööÂÒ7&VFUööÂ‚“°Ð¢6öç7BÆÆ÷rÒv—Bv—F…6W'fW"‡ööÂÂ‡&WÂ÷&W2ÂæW‡B’Óâ²&Wæ7F÷"Ò²W6W&æÖS¢&FÖ–â"Â&öÆS¢&FÖ–â"Ó²æW‡B‚“²Ò“°Ð¢G'’°Ð¢6öç7BG&gD6öæf–rÒ°Ð¢fW'6–öã¢ÀÐ¢vUöf–Æ&–Æ—G“¢²†öÖS¢G'VRÂ7F÷&S¢fÇ6RÂ&öö¶–æs¢fÇ6RÂ66†VGVÆVC¢fÇ6RÂW&vVçC¢fÇ6RÂG&6¶–æs¢G'VRÂ&öf–ÆS¢fÇ6RÒÀÐ¢6V7F–öç3¢·²–C¢&†W&ò"ÂG—S¢&†W&ò"ÂVæ&ÆVC¢G'VRÂ6÷'Eö÷&FW#¢ÂF—FÆS¢'‚"Â—FV×3¢µÒÕÒÀÐ¢Ó°Ð¢v—BfWF6‚†G¶ÆÆ÷ræ&6WÒöFÖ–âö†öÖWvRÖ6×2öG&gFÂ°Ð¢ÖWF†öC¢%UB"Â†VFW'3¢²$6öçFVçBÕG—R#¢&Æ–6F–öâö§6öâ"ÒÂ&öG“¢¥4ôâç7G&–æv–g’‡²6öæf–s¢G&gD6öæf–rÒ’ÀÐ¢Ò“°Ð¢òòV&Æ–26öæf–r7F–ÆÂÆÂÖVæ&ÆVB(	BG&gB—2æ÷BV&Æ—6†VBàÐ¢ÆWB&W2Òv—BfWF6‚†G¶ÆÆ÷ræ&6WÒ÷V&Æ–2ö7W7FöÖW"ÖÖ6öæf–v“°Ð¢ÆWBFFÒv—B&W2æ§6öâ‚“°Ð¢76W'BæFVWWVÂ†FFçvUöf–Æ&–Æ—G’Â²ââäDTdTÅEõtUôd”Ä$”Ä•E’Ò“°Ð Ð¢v—BfWF6‚†G¶ÆÆ÷ræ&6WÒöFÖ–âö†öÖWvRÖ6×2÷V&Æ—6†Â°Ð¢ÖWF†öC¢%õ5B"Â†VFW'3¢²$6öçFVçBÕG—R#¢&Æ–6F–öâö§6öâ"ÒÂ&öG“¢¥4ôâç7G&–æv–g’‡²6öæf–s¢G&gD6öæf–rÒ’ÀÐ¢Ò“°Ð¢&W2Òv—BfWF6‚†G¶ÆÆ÷ræ&6WÒ÷V&Æ–2ö7W7FöÖW"ÖÖ6öæf–v“°Ð¢FFÒv—B&W2æ§6öâ‚“°Ð¢76W'BæFVWWVÂ†FFçvUöf–Æ&–Æ—G’Â²†öÖS¢G'VRÂ7F÷&S¢fÇ6RÂ&öö¶–æs¢fÇ6RÂ66†VGVÆVC¢fÇ6RÂW&vVçC¢fÇ6RÂG&6¶–æs¢G'VRÂ&öf–ÆS¢fÇ6RÒ“°Ð¢Òf–æÆÇ’°Ð¢v—BÆÆ÷ræ6Æ÷6R‚“°Ð¢ÐÐ§Ò“°Ð Ð§FW7B‚&FÖ–â4Õ2v—&W2F†RvRÖf–Æ&–Æ—G’VF—F÷"‡FövvÆW2ÂV&Æ—6‚wV&BÂG&6¶–ærÖöfb6öæf—&Ò’"Â‚’Óâ°Ð¢6öç7BFÖ–ä§2Ò&VB‚&FÖ–âÖ†öÖWvRÖ6×2æ§2"“°Ð¢6öç7BFÖ–ä‡FÖÂÒ&VB‚&FÖ–âÖ†öÖWvRÖ6×2æ‡FÖÂ"“°Ð¢òòVF—F÷"²æbVçG'’àÐ¢76W'BæÖF6‚†FÖ–ä§2ÂöFFÖVF—CÒ'vRÖf–Æ&–Æ—G’"ò“°Ð¢76W'BæÖF6‚†FÖ–ä§2Â÷&VæFW%vTf–Æ&–Æ—G”VF—F÷"ò“°Ð¢76W'BæÖF6‚†FÖ–ä§2ÂöFF×vRÖf–Æ&–Æ—G“Ò"ò“°Ð¢òòæWfW"WFò×FövvÆS¢öæÇ’F†RFövvÆVB¶W’6†ævW2àÐ¢76W'BæÖF6‚†FÖ–ä§2Âö6öæf–uÂçvUöf–Æ&–Æ—G•Å¶¶W•ÅÒÒF&vWEÂæ6†V6¶VBò“°Ð¢òò6ææ÷BF—6&ÆRF†RÆ7BVæ&ÆVBvR…T’wV&B’ÂæBV&Æ—6‚wV&G2&VÖ–âàÐ¢76W'BæÖF6‚†FÖ–ä§2ÂögVæ7F–öâvTf–Æ&–Æ—G•FövvÆTÆÆ÷vVEÂ‚ò“°Ð¢76W'BæÖF6‚†FÖ–ä§2Âö–bÂ‚vTf–Æ&–Æ—G•FövvÆTÆÆ÷vVEÂ†6öæf–uÂçvUöf–Æ&–Æ—G’Â¶W’ÂF&vWEÂæ6†V6¶VEÂ•Â’ò“°Ð¢òòV&Æ—6‚wV&G3¢ÆÂÖF—6&ÆVB&Æö6¶VBÂG&6¶–ærÖöfb6öæf—&ÒàÐ¢76W'BæÖF6‚†FÖ–ä§2Âþ‰^˜žŠÞˆ~˜‰¾‹N‰NŠÞŠ.˜Ž‹.ˆ~‰ž˜žŠÞŠ"Š¾‰ž˜ž‹"ò“°Ð¢76W'BæÖF6‚†FÖ–ä§2Â÷ÂçG&6¶–ærÓÓÒfÇ6Rbbv–æF÷uÂæ6öæf—&Òò“°Ð¢òò552&W6VçBf÷"F†RVF—F÷"àÐ¢76W'BæÖF6‚†FÖ–ä‡FÖÂÂõÂç×&÷rò“°Ð§Ò“°Ð
