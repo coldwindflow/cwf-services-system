@@ -81,6 +81,45 @@ function futureDraft(root) {
   });
 }
 
+function futureNoGpsDraft(root) {
+  root.state.updateDraft("urgent", {
+    services: [
+      root.services.createServiceLine({
+        line_id: "no-gps",
+        ac_type: "ผนัง",
+        btu: 12000,
+        machine_count: 1,
+        wash_variant: "ล้างธรรมดา",
+      }),
+    ],
+    customer_name: "ลูกค้าไม่ใช้ GPS",
+    customer_phone: "0812345678",
+    address_text: "กรุงเทพฯ",
+    date: "2099-08-01",
+    time: "13:45",
+    allow_time_proposal: false,
+    maps_url: "",
+    symptom: "",
+  });
+}
+
+test("default no-GPS urgent draft omits coordinates, hides the GPS review row, and is accepted by backend GPS validation", () => {
+  const { root } = loadUrgent();
+  futureNoGpsDraft(root);
+
+  const payload = root.bookingUrgent._test.buildSubmitPayload();
+  const reviewHtml = root.bookingUrgent._test.renderReview();
+  const backendGps = urgentPublicAdapter.validateCustomerUrgentGps(
+    payload.gps_latitude,
+    payload.gps_longitude
+  );
+
+  assert.equal(Object.hasOwn(payload, "gps_latitude"), false);
+  assert.equal(Object.hasOwn(payload, "gps_longitude"), false);
+  assert.doesNotMatch(reviewHtml, /<strong>GPS<\/strong>|GPS\s*0\s*,\s*0/);
+  assert.deepEqual(backendGps, { ok: true, latitude: null, longitude: null });
+});
+
 test("urgent flow has three customer steps, native date/time, multiple cleaning lines, and shared pricing", () => {
   const { root } = loadUrgent();
   futureDraft(root);

@@ -90,6 +90,20 @@
     return `${d.date}T${d.time}:00+07:00`;
   }
 
+  function validGpsPair(source) {
+    const rawLatitude = source?.gps_latitude;
+    const rawLongitude = source?.gps_longitude;
+    const latitudeProvided = rawLatitude !== null && rawLatitude !== undefined && String(rawLatitude).trim() !== "";
+    const longitudeProvided = rawLongitude !== null && rawLongitude !== undefined && String(rawLongitude).trim() !== "";
+    if (!(latitudeProvided && longitudeProvided)) return null;
+    const latitude = Number(rawLatitude);
+    const longitude = Number(rawLongitude);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+    if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) return null;
+    if (latitude === 0 && longitude === 0) return null;
+    return { latitude, longitude };
+  }
+
   function buildSubmitPayload() {
     const d = sanitizeUrgentDraft();
     const payload = servicePayload() || {};
@@ -98,9 +112,7 @@
       job_type: "ล้าง",
       repair_variant: "",
     }));
-    const latitude = Number(d.gps_latitude);
-    const longitude = Number(d.gps_longitude);
-    const hasGps = Number.isFinite(latitude) && Number.isFinite(longitude);
+    const gps = validGpsPair(d);
     return {
       customer_name: String(d.customer_name || "").trim(),
       customer_phone: String(d.customer_phone || "").trim(),
@@ -113,7 +125,7 @@
       client_app: "customer_app_v2",
       urgent_request_key: ensureRequestKey(),
       allow_time_proposal: d.allow_time_proposal === true,
-      ...(hasGps ? { gps_latitude: latitude, gps_longitude: longitude } : {}),
+      ...(gps ? { gps_latitude: gps.latitude, gps_longitude: gps.longitude } : {}),
       ...payload,
       services: cleaningLines,
     };
@@ -355,7 +367,7 @@
     const d = sanitizeUrgentDraft();
     const flow = root.state.urgentFlow || {};
     const submitting = flow.status === "submitting";
-    const hasGps = Number.isFinite(Number(d.gps_latitude)) && Number.isFinite(Number(d.gps_longitude));
+    const gps = validGpsPair(d);
     return `
       <section class="card review-card urgent-card-fx" data-urgent-step-panel="review">
         <div class="section-head">
@@ -371,7 +383,7 @@
           <div class="data-row"><strong>ที่อยู่</strong><span class="muted">${root.utils.escapeHtml(d.address_text || "-")}</span></div>
           ${d.job_zone ? `<div class="data-row"><strong>พื้นที่</strong><span class="muted">${root.utils.escapeHtml(d.job_zone)}</span></div>` : ""}
           ${d.maps_url ? `<div class="data-row"><strong>แผนที่</strong><span class="muted">${root.utils.escapeHtml(d.maps_url)}</span></div>` : ""}
-          ${hasGps ? `<div class="data-row"><strong>GPS</strong><span class="muted">${root.utils.escapeHtml(`${Number(d.gps_latitude)}, ${Number(d.gps_longitude)}`)}</span></div>` : ""}
+          ${gps ? `<div class="data-row"><strong>GPS</strong><span class="muted">${root.utils.escapeHtml(`${gps.latitude}, ${gps.longitude}`)}</span></div>` : ""}
           ${String(d.symptom || "").trim() ? `<div class="data-row"><strong>หมายเหตุ</strong><span class="muted">${root.utils.escapeHtml(d.symptom)}</span></div>` : ""}
         </div>
         <div class="notice is-urgent">แอดมินจะตรวจสอบรายละเอียดก่อนส่งต่อให้ช่างที่ว่าง</div>
@@ -710,9 +722,8 @@
         const field = element.getAttribute("data-urgent-field");
         const patch = { [field]: element.value };
         if (field === "maps_url") {
-          const currentGpsUrl = Number.isFinite(Number(draft().gps_latitude)) && Number.isFinite(Number(draft().gps_longitude))
-            ? `https://www.google.com/maps?q=${Number(draft().gps_latitude)},${Number(draft().gps_longitude)}`
-            : "";
+          const gps = validGpsPair(draft());
+          const currentGpsUrl = gps ? `https://www.google.com/maps?q=${gps.latitude},${gps.longitude}` : "";
           if (String(element.value || "").trim() !== currentGpsUrl) {
             patch.gps_latitude = null;
             patch.gps_longitude = null;
