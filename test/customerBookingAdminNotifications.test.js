@@ -142,7 +142,7 @@ function createAdminReviewSandbox(options = {}) {
   [
     "approvalAlert", "overlay", "list", "pillCount", "filterStatus", "slotBox",
     "mCustomerName", "mCustomerPhone", "mJobType", "mBookingCode", "mAppt",
-    "mAddress", "mMaps", "mZone", "mLat", "mLng", "mNote", "mTitle", "mSub",
+    "mAddress", "mMaps", "mZone", "mLat", "mLng", "mNote", "mTimePreference", "mTitle", "mSub",
     "mTechType", "mPrimaryTech", "mDispatchMode", "mTeamSearch", "mTeamSuggest",
     "mTeamSelected", "mPricing", "mReadOnlyNotice", "btnLoadSlots", "btnSave",
     "btnDispatch", "btnRebroadcast", "btnCancel", "btnLoadPricing", "btnReload",
@@ -308,14 +308,14 @@ test("admin review new-job notification uses first-load baseline and one sound p
 });
 
 test("admin/customer frontend cache versions are bumped for booking notification changes", () => {
-  assert.match(adminReviewHtml, /admin-review-v2\.js\?v=20260719_customer_booking_pr3_v1/);
+  assert.match(adminReviewHtml, /admin-review-v2\.js\?v=20260726_urgent_preferred_time_gps_v1/);
   assert.doesNotMatch(adminReviewHtml, /admin-review-v2\.js\?v=20260707_customer_booking_notify_v2/);
   assert.match(adminReviewHtml, /admin-review-ai-intake\.js\?v=ai-booking-intake-customer-cards-v11-admin-alert-gate/);
   assert.doesNotMatch(adminReviewHtml, /admin-review-ai-intake\.js\?v=ai-booking-intake-customer-cards-v10/);
-  assert.match(customerIndex, /bookingScheduled\.js\?v=20260720_customer_booking_postdeploy_hardening_v2/);
-  assert.match(customerIndex, /state\.js\?v=20260720_customer_booking_postdeploy_hardening_v2/);
-  assert.match(customerSw, /const BUILD_ID = "20260720_customer_booking_postdeploy_hardening_v2"/);
-  assert.match(customerManifest, /20260720_customer_booking_postdeploy_hardening_v2/);
+  assert.match(customerIndex, /bookingScheduled\.js\?v=20260726_urgent_preferred_time_gps_v1/);
+  assert.match(customerIndex, /state\.js\?v=20260726_urgent_preferred_time_gps_v1/);
+  assert.match(customerSw, /const BUILD_ID = "20260726_urgent_preferred_time_gps_v1"/);
+  assert.match(customerManifest, /20260726_urgent_preferred_time_gps_v1/);
 });
 
 test("behavior: review queue only includes customer urgent waiting rows while preserving review statuses", () => {
@@ -512,6 +512,46 @@ test("behavior: urgent waiting modal is viewable but all mutation paths are read
   await hooks.rebroadcastOffer();
   await hooks.rebroadcastOfferQuick(7);
   await hooks.cancelJob();
+});
+
+test("behavior: Existing Admin Review/Edit renders urgent preferred time, preference, address, map, GPS, and note from job detail", async () => {
+  const detail = {
+    job_id: 17,
+    booking_code: "URG-17",
+    booking_mode: "urgent",
+    job_status: "รอตรวจสอบ",
+    appointment_datetime: "2026-08-01T13:45:00+07:00",
+    allow_time_proposal: true,
+    customer_name: "ลูกค้าด่วน",
+    customer_phone: "0812345678",
+    address_text: "123 ถนนสุขุมวิท",
+    maps_url: "https://www.google.com/maps?q=13.7563,100.5018",
+    gps_latitude: 13.7563,
+    gps_longitude: 100.5018,
+    customer_note: "โทรก่อนถึง",
+    job_type: "ล้าง",
+    duration_min: 120,
+    admin_action_required: true,
+  };
+  const sandbox = createAdminReviewSandbox({
+    apiFetch: async (url, requestOptions = {}) => {
+      if (requestOptions.method) throw new Error(`unexpected mutation ${requestOptions.method} ${url}`);
+      if (/\/admin\/job_v2\/17/.test(url)) return { job: detail };
+      if (/\/team/.test(url)) return { members: [] };
+      if (/\/pricing/.test(url)) return { total: 0, discount: 0 };
+      return {};
+    },
+  });
+  const hooks = sandbox.window.__CWF_ADMIN_REVIEW_TEST__;
+  hooks.setRowMap([{ job_id: 17, booking_code: "URG-17", booking_mode: "urgent", job_status: "รอตรวจสอบ" }]);
+  await hooks.openJob(17);
+  assert.equal(sandbox.__elements.get("mAppt").value, "2026-08-01T13:45");
+  assert.equal(sandbox.__elements.get("mTimePreference").value, "เสนอเวลาใหม่ได้");
+  assert.equal(sandbox.__elements.get("mAddress").value, detail.address_text);
+  assert.equal(sandbox.__elements.get("mMaps").value, detail.maps_url);
+  assert.equal(sandbox.__elements.get("mLat").value, "13.7563");
+  assert.equal(sandbox.__elements.get("mLng").value, "100.5018");
+  assert.equal(sandbox.__elements.get("mNote").value, detail.customer_note);
 });
 
 test("behavior: notification checks all queue rows even when selected display filter hides the new job", () => {

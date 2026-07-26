@@ -92,6 +92,7 @@
 
   function defaultUrgentDraft(current) {
     const source = current || {};
+    const firstLine = defaultServiceLine(1);
     return {
       customer_name: String(source.customer_name || ""),
       customer_phone: String(source.customer_phone || ""),
@@ -99,11 +100,17 @@
       maps_url: String(source.maps_url || ""),
       service_kind: "clean",
       job_type: "ล้าง",
-      ac_type: "ผนัง",
-      wash_variant: "ล้างธรรมดา",
+      ac_type: firstLine.ac_type,
+      wash_variant: firstLine.wash_variant,
       repair_variant: "",
-      btu: "12000",
-      machine_count: 1,
+      btu: String(firstLine.btu),
+      machine_count: firstLine.machine_count,
+      services: [firstLine],
+      date: "",
+      time: "",
+      allow_time_proposal: false,
+      gps_latitude: null,
+      gps_longitude: null,
       symptom: "",
       job_zone: String(source.job_zone || ""),
       urgent_request_key: "",
@@ -184,8 +191,11 @@
       result: null,
     },
     urgentFlow: {
-      step: "form",
+      step: "services",
       error: "",
+      pricing: { status: "idle", data: null, error: "" },
+      locationMessage: "",
+      locationStatus: "idle",
     },
     tracking: { status: "idle", data: null, error: "" },
     draft: {
@@ -422,9 +432,12 @@
     resetUrgentDraft() {
       this.draft.urgent = defaultUrgentDraft(this.draft.urgent);
       this.urgentFlow = {
-        step: "form",
+        step: "services",
         status: "idle",
         error: "",
+        pricing: { status: "idle", data: null, error: "" },
+        locationMessage: "",
+        locationStatus: "idle",
         result: null,
         liveStatus: null,
         liveStatusError: "",

@@ -5,7 +5,7 @@ const path = require("node:path");
 const vm = require("node:vm");
 
 const ROOT = path.resolve(__dirname, "..");
-const BUILD = "20260720_customer_booking_postdeploy_hardening_v2";
+const BUILD = "20260726_urgent_preferred_time_gps_v1";
 
 function read(relativePath) {
   return fs.readFileSync(path.join(ROOT, relativePath), "utf8");
@@ -222,8 +222,8 @@ test("urgent UI is cleaning-only and a stale repair draft cannot alter its paylo
     services: [{ job_type: "ซ่อม", ac_type: "ผนัง", btu: 12000, machine_count: 3 }],
   });
 
-  const html = root.bookingUrgent._test.renderForm();
-  assert.match(html, /จองล้างแอร์|งานล้างแอร์เท่านั้น|ชนิดแอร์|รูปแบบการล้างสำหรับแอร์ผนัง|BTU|จำนวนเครื่อง/);
+  const html = root.bookingUrgent._test.renderServicesStep();
+  assert.match(html, /บริการและราคา|ชนิดแอร์|วิธีล้าง|BTU|จำนวนเครื่อง/);
   assert.doesNotMatch(html, /ซ่อม|ติดตั้ง|ย้ายแอร์|ตรวจอาการ|service_kind/);
 
   const payload = root.bookingUrgent._test.buildSubmitPayload();
@@ -233,7 +233,7 @@ test("urgent UI is cleaning-only and a stale repair draft cannot alter its paylo
   assert.equal(payload.repair_variant, "");
   assert.equal(payload.services[0].repair_variant, "");
   assert.equal(Object.hasOwn(payload, "dispatch_mode"), false);
-  assert.equal(Object.hasOwn(payload, "allow_time_proposal"), false);
+  assert.equal(payload.allow_time_proposal, false);
 });
 
 test("urgent API boundary forces cleaning on every line and preserves structured safe error metadata", async () => {
@@ -258,7 +258,7 @@ test("urgent API boundary forces cleaning on every line and preserves structured
   assert.equal(body.repair_variant, "");
   assert.equal(body.services[0].repair_variant, "");
   assert.equal(Object.hasOwn(body, "dispatch_mode"), false);
-  assert.equal(Object.hasOwn(body, "allow_time_proposal"), false);
+  assert.equal(body.allow_time_proposal, true);
 
   context.fetch = async () => ({
     ok: false,

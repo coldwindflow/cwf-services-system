@@ -211,7 +211,9 @@
         })),
       };
       delete body.dispatch_mode;
-      delete body.allow_time_proposal;
+      delete body.assign_mode;
+      delete body.technician_username;
+      delete body.team_members;
       return requestJson("/public/book", {
         method: "POST",
         body,
