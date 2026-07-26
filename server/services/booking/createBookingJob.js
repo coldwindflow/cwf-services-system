@@ -918,6 +918,11 @@ function createBookingJobService(dependencies = {}) {
     if (normalizedBookingScalar(jobRow.job_type) !== normalizedBookingScalar(incoming.job_type)) return false;
     if (normalizedBookingScalar(jobRow.customer_note) !== normalizedBookingScalar(incoming.customer_note)) return false;
     if (Boolean(jobRow.allow_time_proposal) !== Boolean(incoming.allow_time_proposal)) return false;
+    const storedLat = jobRow.gps_latitude == null || String(jobRow.gps_latitude).trim() === "" ? null : Number(jobRow.gps_latitude);
+    const storedLng = jobRow.gps_longitude == null || String(jobRow.gps_longitude).trim() === "" ? null : Number(jobRow.gps_longitude);
+    const incomingLat = incoming.gps_latitude == null || String(incoming.gps_latitude).trim() === "" ? null : Number(incoming.gps_latitude);
+    const incomingLng = incoming.gps_longitude == null || String(incoming.gps_longitude).trim() === "" ? null : Number(incoming.gps_longitude);
+    if (storedLat !== incomingLat || storedLng !== incomingLng) return false;
     if (Number(jobRow.duration_min || 0) !== Number(incoming.duration_min || 0)) return false;
     return true;
   }
@@ -932,11 +937,11 @@ function createBookingJobService(dependencies = {}) {
   }
 
   // Customer App V2 urgent requests are just another entry point into the
-  // existing admin urgent offer engine (handleAdminBookV2): this adapter only
-  // (a) strips the request down to a customer-safe allowlist and (b) computes
-  // a rounded, business-hours-aware appointment time. Deduplication of
+  // existing public booking workflow: this adapter strips the request down to
+  // a customer-safe allowlist and validates the customer's Bangkok wall-clock
+  // preference before any pricing or database work. Deduplication of
   // retried/duplicate submits sharing the same client-generated
-  // urgent_request_key is handled durably inside handleAdminBookV2's existing
+  // urgent_request_key is handled durably inside handlePublicBook's existing
   // transaction (advisory lock + deterministic booking_token lookup), not
   // here, so it survives process restarts and works across instances.
   function handlePublicCustomerUrgentBook(req, res) {
@@ -948,19 +953,35 @@ function createBookingJobService(dependencies = {}) {
     if (!urgentPublicAdapter.isStrictUrgentCleaningPayload(incoming)) {
       return res.status(400).json({ error: "URGENT_CLEANING_ONLY", code: "URGENT_CLEANING_ONLY" });
     }
+    const appointment = urgentPublicAdapter.normalizeCustomerUrgentAppointment(incoming.appointment_datetime);
+    if (!appointment) {
+      return res.status(400).json({ error: "วันและเวลาที่ต้องการไม่ถูกต้อง", code: "INVALID_APPOINTMENT_DATETIME" });
+    }
+    if (urgentPublicAdapter.isCustomerUrgentAppointmentPast(appointment)) {
+      return res.status(409).json({ error: "วันและเวลาที่เลือกย้อนหลังไม่ได้ กรุณาเลือกเวลาใหม่", code: "APPOINTMENT_IN_PAST" });
+    }
+    if (incoming.allow_time_proposal !== true && incoming.allow_time_proposal !== false) {
+      return res.status(400).json({ error: "กรุณาเลือกเงื่อนไขการเสนอเวลา", code: "INVALID_TIME_PROPOSAL_PREFERENCE" });
+    }
+    const gps = urgentPublicAdapter.validateCustomerUrgentGps(incoming.gps_latitude, incoming.gps_longitude);
+    if (!gps.ok) {
+      return res.status(400).json({ error: "ข้อมูล GPS ไม่ถูกต้อง กรุณาส่งละติจูดและลองจิจูดที่ถูกต้องพร้อมกัน", code: "INVALID_GPS" });
+    }
 
     req.cwfBookSource = "customer";
     req.cwfPublicUrgentPrepared = true;
     req.body = {
       ...incoming,
-      appointment_datetime: urgentPublicAdapter.computeCustomerUrgentAppointmentIso(),
+      appointment_datetime: appointment,
       booking_mode: "urgent",
       dispatch_mode: "offer",
       tech_type: "partner",
       assign_mode: "auto",
       technician_username: "",
       team_members: [],
-      allow_time_proposal: true,
+      allow_time_proposal: incoming.allow_time_proposal,
+      gps_latitude: gps.latitude,
+      gps_longitude: gps.longitude,
     };
 
     return handlePublicBook(req, res);
@@ -997,6 +1018,8 @@ function createBookingJobService(dependencies = {}) {
       address_text,
       customer_note,
       maps_url,
+      gps_latitude,
+      gps_longitude,
       job_zone,
       items, // [{item_id, qty}] (extras)
       booking_mode,
@@ -1124,6 +1147,8 @@ function createBookingJobService(dependencies = {}) {
     if (clientApp === "customer_app_v2" && allowTimeProposal == null) {
       return res.status(400).json({ error: "กรุณาเลือกเงื่อนไขการเสนอเวลา" });
     }
+    const persistedGpsLatitude = bm === "urgent" && gps_latitude != null ? Number(gps_latitude) : null;
+    const persistedGpsLongitude = bm === "urgent" && gps_longitude != null ? Number(gps_longitude) : null;
     const payloadV2 = {
       job_type: String(job_type).trim(),
       ac_type: (ac_type || "").toString().trim(),
@@ -1199,7 +1224,7 @@ function createBookingJobService(dependencies = {}) {
         const r = await idem.query(
           `SELECT job_id, booking_code, booking_token, dispatch_mode, duration_min, job_price,
                   appointment_datetime, customer_phone, customer_name, address_text, maps_url,
-                  job_zone, job_type, customer_note, allow_time_proposal
+                  job_zone, job_type, customer_note, allow_time_proposal, gps_latitude, gps_longitude
              FROM public.jobs
             WHERE booking_token=$1
               AND job_source='customer'
@@ -1220,9 +1245,10 @@ function createBookingJobService(dependencies = {}) {
         const incomingBooking = {
           appointment_datetime, customer_phone, customer_name, address_text, maps_url,
           job_zone, job_type, customer_note, allow_time_proposal: allowTimeProposal,
+          gps_latitude: persistedGpsLatitude, gps_longitude: persistedGpsLongitude,
           duration_min: duration_min_v2, payloadV2, itemIdQty, standardPrice: standard_price,
         };
-        if (!(await scheduledPayloadMatchesExisting(pool, prior, incomingBooking, { serverAppointmentAuthoritative: bm === "urgent" }))) {
+        if (!(await scheduledPayloadMatchesExisting(pool, prior, incomingBooking))) {
           // Same key, materially different booking. No mutation, no identifiers/PII.
           return res.status(409).json({
             error: "คำขอนี้ถูกใช้ไปแล้วกับการจองอื่น กรุณาเริ่มการจองใหม่",
@@ -1287,7 +1313,8 @@ function createBookingJobService(dependencies = {}) {
         const existing = await client.query(
           `SELECT job_id, booking_code, booking_token, booking_mode, dispatch_mode,
                   duration_min, job_price, appointment_datetime, customer_phone, customer_name,
-                  address_text, maps_url, job_zone, job_type, customer_note, allow_time_proposal
+                  address_text, maps_url, job_zone, job_type, customer_note, allow_time_proposal,
+                  gps_latitude, gps_longitude
              FROM public.jobs
             WHERE booking_token=$1
               AND job_source='customer'
@@ -1305,9 +1332,10 @@ function createBookingJobService(dependencies = {}) {
           const incomingBooking = {
             appointment_datetime, customer_phone, customer_name, address_text, maps_url,
             job_zone, job_type, customer_note, allow_time_proposal: allowTimeProposal,
+            gps_latitude: persistedGpsLatitude, gps_longitude: persistedGpsLongitude,
             duration_min: duration_min_v2, payloadV2, itemIdQty, standardPrice: standard_price,
           };
-          if (!(await scheduledPayloadMatchesExisting(pool, row, incomingBooking, { serverAppointmentAuthoritative: bm === "urgent" }))) {
+          if (!(await scheduledPayloadMatchesExisting(pool, row, incomingBooking))) {
             return res.status(409).json({
               error: "คำขอนี้ถูกใช้ไปแล้วกับการจองอื่น กรุณาเริ่มการจองใหม่",
               code: "IDEMPOTENCY_KEY_REUSED",
@@ -1425,8 +1453,9 @@ function createBookingJobService(dependencies = {}) {
         "address_text", "technician_team", "technician_username", "job_status",
         "booking_token", "job_source", "dispatch_mode", "customer_note",
         "maps_url", "job_zone", "duration_min", "booking_mode", "allow_time_proposal",
+        "gps_latitude", "gps_longitude",
       ];
-      const jobInsertValuesSql = ["$1", "$2", "$3", "$4", "$5", "$6", "NULL", "$16", "$11", "$7", "'customer'", "$14", "$8", "$9", "$10", "$12", "$13", "$15"];
+      const jobInsertValuesSql = ["$1", "$2", "$3", "$4", "$5", "$6", "NULL", "$16", "$11", "$7", "'customer'", "$14", "$8", "$9", "$10", "$12", "$13", "$15", "$17", "$18"];
       const jobInsertParams = [
         String(customer_name).trim(),
         (customer_phone || "").toString().trim(),
@@ -1444,6 +1473,8 @@ function createBookingJobService(dependencies = {}) {
         dispatchMode,
         allowTimeProposal,
         draftReservationTech ? draftReservationTech.username : null,
+        persistedGpsLatitude,
+        persistedGpsLongitude,
       ];
       if (catalogLinkReady) {
         jobInsertColumns.push("catalog_item_id", "customer_sub");

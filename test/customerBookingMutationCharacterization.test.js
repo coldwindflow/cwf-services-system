@@ -132,10 +132,12 @@ function publicUrgentBody(overrides = {}) {
     customer_name: "ลูกค้าด่วน",
     customer_phone: "0899999999",
     job_type: "ล้างแอร์",
+    appointment_datetime: "2026-08-01T13:45:00+07:00",
     address_text: "กรุงเทพฯ",
     maps_url: "",
     job_zone: "",
     customer_note: "",
+    allow_time_proposal: false,
     booking_mode: "urgent",
     ac_type: "ผนัง",
     btu: 12000,
@@ -324,10 +326,7 @@ function dbTest(name, fn) {
 
 function makeDependencies(overrides = {}) {
   let bookingCodeSequence = 0;
-  const urgentPublicAdapter = {
-    ...urgentPublicAdapterBase,
-    computeCustomerUrgentAppointmentIso: () => "2026-08-01T09:00:00+07:00",
-  };
+  const urgentPublicAdapter = urgentPublicAdapterBase;
   return {
     pool,
     urgentPublicAdapter,
@@ -603,14 +602,8 @@ dbTest("real PostgreSQL: public urgent waits for admin with zero offers, assignm
   assert.equal(income.length, 0);
 });
 
-dbTest("real PostgreSQL: urgent retry keeps the first server appointment authoritative and rejects material payload reuse", async () => {
-  const appointments = ["2026-08-01T09:00:00+07:00", "2026-08-01T09:30:00+07:00", "2026-08-01T10:00:00+07:00"];
-  let appointmentIndex = 0;
-  const adapter = {
-    ...urgentPublicAdapterBase,
-    computeCustomerUrgentAppointmentIso: () => appointments[Math.min(appointmentIndex++, appointments.length - 1)],
-  };
-  const service = createBookingJobService(makeDependencies({ urgentPublicAdapter: adapter }));
+dbTest("real PostgreSQL: urgent retry preserves customer preferred time/GPS and rejects every material payload reuse", async () => {
+  const service = createBookingJobService(makeDependencies());
   const body = publicUrgentBody({ urgent_request_key: "urgent-pr3-clock-replay-0001" });
   const first = await invoke(service.handlePublicBook, body);
   const replay = await invoke(service.handlePublicBook, body);
@@ -618,14 +611,64 @@ dbTest("real PostgreSQL: urgent retry keeps the first server appointment authori
   assert.equal(replay.statusCode, 200);
   assert.equal(replay.body.replayed, true);
   assert.equal(replay.body.job_id, first.body.job_id);
-  const stored = (await pool.query(`SELECT appointment_datetime FROM public.jobs WHERE job_id=$1`, [first.body.job_id])).rows[0];
-  assert.equal(new Date(stored.appointment_datetime).getTime(), new Date(appointments[0]).getTime());
+  const stored = (await pool.query(
+    `SELECT appointment_datetime, allow_time_proposal, gps_latitude, gps_longitude
+       FROM public.jobs WHERE job_id=$1`,
+    [first.body.job_id]
+  )).rows[0];
+  assert.equal(new Date(stored.appointment_datetime).getTime(), new Date(body.appointment_datetime).getTime());
+  assert.equal(stored.allow_time_proposal, false);
+  assert.equal(stored.gps_latitude, null);
+  assert.equal(stored.gps_longitude, null);
   assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.jobs`)).rows[0].count), 1);
 
-  const changed = await invoke(service.handlePublicBook, { ...body, customer_note: "materially changed" });
-  assert.equal(changed.statusCode, 409);
-  assert.equal(changed.body.code, "IDEMPOTENCY_KEY_REUSED");
+  const mutations = [
+    { appointment_datetime: "2026-08-01T14:00:00+07:00" },
+    { gps_latitude: 13.7563, gps_longitude: 100.5018 },
+    { maps_url: "https://www.google.com/maps?q=13.7563,100.5018" },
+    { allow_time_proposal: true },
+    { customer_note: "materially changed" },
+  ];
+  for (const patch of mutations) {
+    const changed = await invoke(service.handlePublicBook, { ...body, ...patch });
+    assert.equal(changed.statusCode, 409, JSON.stringify(patch));
+    assert.equal(changed.body.code, "IDEMPOTENCY_KEY_REUSED", JSON.stringify(patch));
+  }
   assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.jobs`)).rows[0].count), 1);
+});
+
+dbTest("real PostgreSQL: urgent persists multiple cleaning lines, customer GPS, preference, and no pre-approval technician side effects", async () => {
+  const service = createBookingJobService(makeDependencies());
+  const body = publicUrgentBody({
+    urgent_request_key: "urgent-preferred-gps-multi-0001",
+    maps_url: "https://www.google.com/maps?q=13.7563,100.5018",
+    gps_latitude: 13.7563,
+    gps_longitude: 100.5018,
+    allow_time_proposal: true,
+    services: [
+      { job_type: "ล้าง", ac_type: "ผนัง", btu: 12000, machine_count: 2, wash_variant: "ล้างธรรมดา", repair_variant: "" },
+      { job_type: "ล้าง", ac_type: "สี่ทิศทาง", btu: 24000, machine_count: 1, wash_variant: "", repair_variant: "" },
+    ],
+  });
+  const result = await invoke(service.handlePublicBook, body);
+  assert.equal(result.statusCode, 200);
+  const job = (await pool.query(
+    `SELECT appointment_datetime, maps_url, gps_latitude, gps_longitude, allow_time_proposal,
+            technician_username, job_status
+       FROM public.jobs WHERE job_id=$1`,
+    [result.body.job_id]
+  )).rows[0];
+  assert.equal(new Date(job.appointment_datetime).getTime(), new Date(body.appointment_datetime).getTime());
+  assert.equal(job.maps_url, body.maps_url);
+  assert.equal(Number(job.gps_latitude), body.gps_latitude);
+  assert.equal(Number(job.gps_longitude), body.gps_longitude);
+  assert.equal(job.allow_time_proposal, true);
+  assert.equal(job.technician_username, null);
+  assert.equal(job.job_status, JOB_STATUS.CUSTOMER_SCHEDULED_REVIEW);
+  assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_items WHERE job_id=$1`, [result.body.job_id])).rows[0].count), 2);
+  assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_offers WHERE job_id=$1`, [result.body.job_id])).rows[0].count), 0);
+  assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_assignments WHERE job_id=$1`, [result.body.job_id])).rows[0].count), 0);
+  assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_team_members WHERE job_id=$1`, [result.body.job_id])).rows[0].count), 0);
 });
 
 dbTest("real PostgreSQL: strict urgent cleaning classifier rejects tampering before pricing and DB mutation", async () => {

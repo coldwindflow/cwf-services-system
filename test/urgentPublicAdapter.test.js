@@ -9,6 +9,10 @@ test("sanitizeCustomerUrgentBody drops admin-only fields and keeps customer-safe
     customer_phone: "0812345678",
     address_text: "123 Test Rd",
     maps_url: "https://maps.app.goo.gl/x",
+    appointment_datetime: "2026-08-01T13:45:00+07:00",
+    allow_time_proposal: false,
+    gps_latitude: 13.7563,
+    gps_longitude: 100.5018,
     job_zone: "north",
     customer_note: "leaking",
     job_type: "ล้าง",
@@ -37,8 +41,13 @@ test("sanitizeCustomerUrgentBody drops admin-only fields and keeps customer-safe
   assert.deepEqual(Object.keys(out).sort(), [
     "ac_type", "address_text", "btu", "client_app", "customer_name", "customer_note",
     "customer_phone", "job_type", "job_zone", "machine_count", "maps_url",
+    "appointment_datetime", "allow_time_proposal", "gps_latitude", "gps_longitude",
     "repair_variant", "services", "urgent_request_key", "wash_variant",
   ].sort());
+  assert.equal(out.appointment_datetime, "2026-08-01T13:45:00+07:00");
+  assert.equal(out.allow_time_proposal, false);
+  assert.equal(out.gps_latitude, 13.7563);
+  assert.equal(out.gps_longitude, 100.5018);
   assert.equal(out.service_zone_code, undefined);
   assert.equal(out.override_price, undefined);
   assert.equal(out.override_duration_min, undefined);
@@ -66,26 +75,50 @@ test("sanitizeCustomerUrgentBody caps services list at 10 entries", () => {
   assert.equal(out.services.length, 10);
 });
 
-test("computeCustomerUrgentAppointmentIso rounds up to the next slot step within business hours", () => {
-  const iso = urgentPublicAdapter.computeCustomerUrgentAppointmentIso({ ymd: "2026-06-22", hour: 10, minute: 5 });
-  // 10:05 + 30min lead = 10:35, ceil to 30-step => 11:00
-  assert.equal(iso, "2026-06-22T11:00:00+07:00");
+test("customer urgent appointment is normalized as an explicit Asia/Bangkok wall-clock time", () => {
+  assert.equal(
+    urgentPublicAdapter.normalizeCustomerUrgentAppointment("2026-08-01T13:45"),
+    "2026-08-01T13:45:00+07:00"
+  );
+  assert.equal(
+    urgentPublicAdapter.normalizeCustomerUrgentAppointment("2026-08-01T13:45:00+07:00"),
+    "2026-08-01T13:45:00+07:00"
+  );
+  for (const invalid of [
+    "",
+    "2026-02-30T10:00",
+    "2026-08-01T25:00",
+    "2026-08-01T13:45:00Z",
+    "not-a-date",
+  ]) {
+    assert.equal(urgentPublicAdapter.normalizeCustomerUrgentAppointment(invalid), null, invalid);
+  }
 });
 
-test("computeCustomerUrgentAppointmentIso clamps to opening time when lead time lands before 09:00", () => {
-  const iso = urgentPublicAdapter.computeCustomerUrgentAppointmentIso({ ymd: "2026-06-22", hour: 8, minute: 10 });
-  assert.equal(iso, "2026-06-22T09:00:00+07:00");
+test("customer urgent appointment rejects a past Bangkok time", () => {
+  const now = { ymd: "2026-08-01", hour: 13, minute: 45 };
+  assert.equal(urgentPublicAdapter.isCustomerUrgentAppointmentPast("2026-08-01T13:44:00+07:00", now), true);
+  assert.equal(urgentPublicAdapter.isCustomerUrgentAppointmentPast("2026-08-01T13:45:00+07:00", now), true);
+  assert.equal(urgentPublicAdapter.isCustomerUrgentAppointmentPast("2026-08-01T13:46:00+07:00", now), false);
 });
 
-test("computeCustomerUrgentAppointmentIso rolls over to next day's opening when lead time lands after 18:00", () => {
-  const iso = urgentPublicAdapter.computeCustomerUrgentAppointmentIso({ ymd: "2026-06-22", hour: 17, minute: 45 });
-  // 17:45 + 30min lead = 18:15, past UI_END_MIN(18:00) => roll to next day 09:00
-  assert.equal(iso, "2026-06-23T09:00:00+07:00");
-});
-
-test("computeCustomerUrgentAppointmentIso rolls month/year boundaries correctly", () => {
-  const iso = urgentPublicAdapter.computeCustomerUrgentAppointmentIso({ ymd: "2026-12-31", hour: 17, minute: 50 });
-  assert.equal(iso, "2027-01-01T09:00:00+07:00");
+test("customer urgent GPS must be a complete valid non-zero pair", () => {
+  assert.deepEqual(
+    urgentPublicAdapter.validateCustomerUrgentGps(13.7563, 100.5018),
+    { ok: true, latitude: 13.7563, longitude: 100.5018 }
+  );
+  assert.deepEqual(urgentPublicAdapter.validateCustomerUrgentGps("", ""), { ok: true, latitude: null, longitude: null });
+  for (const pair of [
+    [13.7, ""],
+    ["", 100.5],
+    ["abc", 100.5],
+    [Number.NaN, 100.5],
+    [91, 100.5],
+    [13.7, 181],
+    [0, 0],
+  ]) {
+    assert.equal(urgentPublicAdapter.validateCustomerUrgentGps(pair[0], pair[1]).ok, false, String(pair));
+  }
 });
 
 test("deriveUrgentBookingToken is deterministic for the same request key", () => {

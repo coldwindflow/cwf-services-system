@@ -128,8 +128,9 @@ test("Admin Add and Queue no longer call public forced availability", () => {
 });
 
 test("changed Admin booking scripts have one shared cache-bust build", () => {
-  const build = "20260719_customer_booking_pr3_v1";
-  for (const page of ["admin-add-v2", "admin-queue-v2", "admin-review-v2"]) {
-    assert.match(read(`${page}.html`), new RegExp(`${page}\\.js\\?v=${build}`));
+  const pr3Build = "20260719_customer_booking_pr3_v1";
+  for (const page of ["admin-add-v2", "admin-queue-v2"]) {
+    assert.match(read(`${page}.html`), new RegExp(`${page}\\.js\\?v=${pr3Build}`));
   }
+  assert.match(read("admin-review-v2.html"), /admin-review-v2\.js\?v=20260726_urgent_preferred_time_gps_v1/);
 });

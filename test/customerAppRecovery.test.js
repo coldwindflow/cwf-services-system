@@ -293,7 +293,7 @@ test("Customer App build id is consistent across shell and service worker", () =
   const sw = read("customer-app/sw.js");
   const app = read("customer-app/assets/customer-app.js");
   const manifest = read("customer-app/manifest.webmanifest");
-  const build = "20260720_customer_booking_postdeploy_hardening_v2";
+  const build = "20260726_urgent_preferred_time_gps_v2";
 
   assert.match(index, new RegExp(`customer-app\\.css\\?v=${build}`));
   assert.match(index, new RegExp(`modules\\/api\\.js\\?v=${build}`));
@@ -311,7 +311,7 @@ test("Customer App build id is consistent across shell and service worker", () =
 test("store module is loaded in index.html and precached in the service worker app shell", () => {
   const index = read("customer-app/index.html");
   const sw = read("customer-app/sw.js");
-  const build = "20260720_customer_booking_postdeploy_hardening_v2";
+  const build = "20260726_urgent_preferred_time_gps_v2";
 
   assert.match(index, new RegExp(`modules/store\\.js\\?v=${build}`));
   assert.match(sw, /`\.\/modules\/store\.js\?v=\$\{BUILD_ID\}`/);
@@ -830,21 +830,23 @@ test("urgent route is registered and renders distinct urgent screen", () => {
   root.state.setRoute("urgent");
   const container = new WizardContainer(root);
   root.bookingUrgent.render(container);
-  assert.match(container.innerHTML, /data-urgent-step="form"/);
+  assert.match(container.innerHTML, /data-urgent-step="services"/);
   assert.match(container.innerHTML, /จองล้างแอร์ด่วน/);
 });
 
-test("customer urgent booking uses the PR3 pending-approval contract without client fake appointment", () => {
+test("customer urgent booking uses the preferred-time pending-approval contract", () => {
   const urgent = read("customer-app/modules/bookingUrgent.js");
   const api = read("customer-app/modules/api.js");
   const server = read("server/services/booking/createBookingJob.js");
 
   assert.doesNotMatch(urgent, /nextUrgentAppointmentIso/);
-  assert.doesNotMatch(urgent, /appointment_datetime:\s*nextUrgentAppointmentIso/);
+  assert.match(urgent, /appointment_datetime:\s*appointmentDatetime\(\)/);
   assert.match(urgent, /job_type:\s*"ล้าง"/);
   const urgentApi = api.slice(api.indexOf("async submitUrgentRequest"), api.indexOf("async loadCatalogItemReviews"));
   assert.match(urgentApi, /delete body\.dispatch_mode/);
-  assert.match(urgentApi, /delete body\.allow_time_proposal/);
+  assert.doesNotMatch(urgentApi, /delete body\.allow_time_proposal/);
+  assert.match(urgent, /allow_time_proposal:\s*d\.allow_time_proposal === true/);
+  assert.match(urgent, /gps_latitude/);
   assert.match(server, /function handlePublicCustomerUrgentBook/);
   assert.match(server, /req\.cwfBookSource = "customer"/);
   assert.match(server, /const urgentOfferEnabled = false/);

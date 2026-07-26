@@ -113,7 +113,7 @@ function blockReadOnlyMutation(){
 function applyReadOnlyMode(readOnly){
   const ids = [
     "mCustomerName", "mCustomerPhone", "mJobType", "mAppt", "mAddress",
-    "mMaps", "mZone", "mNote", "mLat", "mLng", "mTechType",
+    "mMaps", "mZone", "mNote", "mLat", "mLng", "mTimePreference", "mTechType",
     "mPrimaryTech", "mDispatchMode", "mTeamSearch", "btnLoadSlots",
     "btnSave", "btnDispatch", "btnRebroadcast", "btnCancel",
   ];
@@ -740,6 +740,7 @@ async function openJob(jobId){
       job_type: full.job_type,
       duration_min: Number(full.duration_min||0) || 60,
       appointment_datetime: full.appointment_datetime,
+      allow_time_proposal: full.allow_time_proposal === true,
       customer_name: full.customer_name,
       customer_phone: full.customer_phone,
       address_text: full.address_text,
@@ -770,6 +771,9 @@ async function openJob(jobId){
     $("mJobType").value = text(CURRENT.job_type||"");
     $("mBookingCode").value = text(CURRENT.booking_code||"");
     $("mAppt").value = toLocalInputDatetime(CURRENT.appointment_datetime);
+    $("mTimePreference").value = CURRENT.allow_time_proposal
+      ? "เสนอเวลาใหม่ได้"
+      : "ต้องการตามเวลานี้";
     // Clear EVERY location field before populating so values from a previously
     // opened job can never leak into this one (esp. Lat/Lng, which were only set
     // conditionally and otherwise kept their stale value).

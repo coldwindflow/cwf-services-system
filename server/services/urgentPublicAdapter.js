@@ -4,9 +4,6 @@ const crypto = require("crypto");
 const jobTiming = require("./jobTiming");
 const { normalizeServiceType } = require("../normalizers");
 
-const URGENT_LEAD_TIME_MIN = 30;
-const UI_START_MIN = 9 * 60; // 09:00, matches the Admin Add locked business window
-const UI_END_MIN = 18 * 60; // 18:00
 const STRICT_CLEANING_JOB_TYPES = new Set([
   "ล้าง",
   "ล้างแอร์",
@@ -74,6 +71,10 @@ function sanitizeCustomerUrgentBody(body) {
     customer_phone: String(src.customer_phone || "").trim(),
     address_text: String(src.address_text || "").trim(),
     maps_url: String(src.maps_url || "").trim(),
+    appointment_datetime: String(src.appointment_datetime || "").trim(),
+    allow_time_proposal: src.allow_time_proposal,
+    gps_latitude: src.gps_latitude,
+    gps_longitude: src.gps_longitude,
     job_zone: String(src.job_zone || "").trim(),
     customer_note: String(src.customer_note || "").trim(),
     job_type: String(src.job_type || "").trim(),
@@ -88,32 +89,49 @@ function sanitizeCustomerUrgentBody(body) {
   };
 }
 
-function addDaysToYmd(ymd, days) {
-  const d = new Date(`${String(ymd)}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + Number(days || 0));
-  return d.toISOString().slice(0, 10);
+function normalizeCustomerUrgentAppointment(value) {
+  const match = String(value || "").trim().match(
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?(?:\+07:00)?$/
+  );
+  if (!match) return null;
+  const [, year, month, day, hour, minute, second = "00"] = match;
+  const numbers = [year, month, day, hour, minute, second].map(Number);
+  if (numbers.some((part) => !Number.isInteger(part))) return null;
+  if (numbers[1] < 1 || numbers[1] > 12 || numbers[3] > 23 || numbers[4] > 59 || numbers[5] > 59) return null;
+  const check = new Date(Date.UTC(numbers[0], numbers[1] - 1, numbers[2]));
+  if (
+    check.getUTCFullYear() !== numbers[0]
+    || check.getUTCMonth() !== numbers[1] - 1
+    || check.getUTCDate() !== numbers[2]
+  ) return null;
+  return `${year}-${month}-${day}T${hour}:${minute}:00+07:00`;
 }
 
-// Server-side, Asia/Bangkok, business-hours-aware urgent appointment
-// timestamp: now + lead time, rounded UP to the nearest slot step, clamped
-// to the 09:00-18:00 window (rolling to next day's open if past close).
-// Reuses jobTiming's canonical Bangkok-now/step-rounding helpers instead of
-// duplicating that formula; only the "roll to next business day" extension
-// (specific to this urgent lead-time use case) lives here.
-function computeCustomerUrgentAppointmentIso(now = jobTiming.getBangkokNow()) {
-  const nowMin = (Number(now.hour || 0) * 60) + Number(now.minute || 0);
-  const rounded = jobTiming.ceilMinuteToStep(nowMin + URGENT_LEAD_TIME_MIN, jobTiming.SLOT_STEP_MIN);
-  let targetDate = now.ymd;
-  let targetMin;
-  if (rounded <= UI_END_MIN) {
-    targetMin = Math.max(UI_START_MIN, rounded);
-  } else {
-    targetDate = addDaysToYmd(now.ymd, 1);
-    targetMin = UI_START_MIN;
-  }
-  const hh = String(Math.floor(targetMin / 60)).padStart(2, "0");
-  const mm = String(targetMin % 60).padStart(2, "0");
-  return `${targetDate}T${hh}:${mm}:00+07:00`;
+function isCustomerUrgentAppointmentPast(appointmentIso, now = jobTiming.getBangkokNow()) {
+  const normalized = normalizeCustomerUrgentAppointment(appointmentIso);
+  if (!normalized) return true;
+  const nowYmd = String(now?.ymd || "");
+  const nowHour = String(Number(now?.hour || 0)).padStart(2, "0");
+  const nowMinute = String(Number(now?.minute || 0)).padStart(2, "0");
+  const nowKey = `${nowYmd}T${nowHour}:${nowMinute}`;
+  return normalized.slice(0, 16) <= nowKey;
+}
+
+function gpsFieldProvided(value) {
+  return value !== undefined && value !== null && String(value).trim() !== "";
+}
+
+function validateCustomerUrgentGps(latitude, longitude) {
+  const latProvided = gpsFieldProvided(latitude);
+  const lngProvided = gpsFieldProvided(longitude);
+  if (!latProvided && !lngProvided) return { ok: true, latitude: null, longitude: null };
+  if (!(latProvided && lngProvided)) return { ok: false, latitude: null, longitude: null };
+  const lat = Number(latitude);
+  const lng = Number(longitude);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return { ok: false, latitude: null, longitude: null };
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return { ok: false, latitude: null, longitude: null };
+  if (lat === 0 && lng === 0) return { ok: false, latitude: null, longitude: null };
+  return { ok: true, latitude: lat, longitude: lng };
 }
 
 // ---------------------------------------------------------------------------
@@ -141,13 +159,12 @@ function deriveUrgentBookingToken(requestKey) {
 }
 
 module.exports = {
-  URGENT_LEAD_TIME_MIN,
-  UI_START_MIN,
-  UI_END_MIN,
   sanitizeCustomerServiceLine,
   sanitizeCustomerUrgentBody,
   canonicalUrgentCleaningJobType,
   isStrictUrgentCleaningPayload,
-  computeCustomerUrgentAppointmentIso,
+  normalizeCustomerUrgentAppointment,
+  isCustomerUrgentAppointmentPast,
+  validateCustomerUrgentGps,
   deriveUrgentBookingToken,
 };
