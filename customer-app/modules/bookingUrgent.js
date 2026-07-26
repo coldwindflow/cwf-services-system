@@ -84,6 +84,11 @@
     return key;
   }
 
+  function isUrgentDisabledError(error) {
+    return ["URGENT_BOOKING_DISABLED", "CUSTOMER_BOOKING_DISABLED", "ONLINE_BOOKING_DISABLED"]
+      .includes(String(error?.data?.code || "").trim().toUpperCase());
+  }
+
   function appointmentDatetime() {
     const d = draft();
     if (!/^\d{4}-\d{2}-\d{2}$/.test(String(d.date || "")) || !/^\d{2}:\d{2}$/.test(String(d.time || ""))) return "";
@@ -587,9 +592,7 @@
       root.state.setUrgentFlow({ step: "submitted", status: "success", error: "", result, liveStatus: null, liveStatusError: "" });
     } catch (error) {
       if (submitEpoch !== pollEpoch) return;
-      const disabled = ["URGENT_BOOKING_DISABLED", "CUSTOMER_BOOKING_DISABLED", "ONLINE_BOOKING_DISABLED"]
-        .includes(String(error?.data?.code || "").trim().toUpperCase())
-        || Number(error?.status) === 503;
+      const disabled = isUrgentDisabledError(error);
       root.state.setUrgentFlow({
         step: "review",
         status: "error",
@@ -876,6 +879,7 @@
       renderSubmitted,
       requestCurrentLocation,
       refreshPricing,
+      isUrgentDisabledError,
     },
   };
 })();

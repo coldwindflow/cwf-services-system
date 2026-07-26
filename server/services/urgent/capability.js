@@ -18,11 +18,14 @@ async function resolveUrgentCapability(pool) {
     const raw = config && typeof config === "object" && !Array.isArray(config)
       ? config.page_availability
       : null;
-    // Preserve the existing legacy CMS contract: an absent page_availability
-    // block means all Customer App pages are enabled.
-    const enabled = !raw || typeof raw !== "object" || Array.isArray(raw)
-      ? true
-      : raw.urgent === true;
+    // Urgent is a transactional runtime lane, not a legacy page-only default.
+    // It opens only for an explicitly published boolean true.
+    const enabled = Boolean(
+      raw
+      && typeof raw === "object"
+      && !Array.isArray(raw)
+      && raw.urgent === true
+    );
     return { enabled, degraded: false };
   } catch (_) {
     // Transactional public capability is fail-closed. Do not expose storage

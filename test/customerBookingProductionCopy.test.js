@@ -5,7 +5,7 @@ const path = require("node:path");
 const vm = require("node:vm");
 
 const ROOT = path.resolve(__dirname, "..");
-const BUILD = "20260726_urgent_direct_auto_offer_v1";
+const BUILD = "20260727_urgent_direct_auto_offer_blockers_v2";
 
 function read(relativePath) {
   return fs.readFileSync(path.join(ROOT, relativePath), "utf8");
@@ -70,6 +70,10 @@ test("central customer copy maps booking failures without exposing raw backend d
   assert.equal(copy.bookingError({ status: 409, data: { code: "SLOT_UNAVAILABLE" } }), "ช่วงเวลานี้เพิ่งมีผู้จอง กรุณาเลือกเวลาใหม่");
   assert.equal(copy.bookingError({ data: { code: "NO_OPEN_SLOTS" } }), "ยังไม่มีคิวว่างในวันที่เลือก กรุณาเลือกวันอื่น");
   assert.equal(copy.bookingError({ status: 503, data: { code: "URGENT_BOOKING_DISABLED" } }), "ขณะนี้ยังไม่เปิดรับจองออนไลน์ กรุณาติดต่อแอดมิน");
+  assert.equal(copy.bookingError({ status: 503, data: {} }), "ระบบขัดข้องชั่วคราว กรุณาลองใหม่หรือติดต่อแอดมิน");
+  assert.equal(copy.bookingError({ status: 409, data: { code: "IDEMPOTENCY_KEY_REUSED" } }), "ระบบขัดข้องชั่วคราว กรุณาลองใหม่หรือติดต่อแอดมิน");
+  assert.equal(copy.bookingError(Object.assign(new Error("timeout"), { name: "AbortError" })), "เชื่อมต่อระบบไม่สำเร็จ กรุณาลองอีกครั้ง");
+  assert.equal(copy.bookingError({ status: 503, data: { code: "SCHEDULED_BOOKING_DISABLED" } }), "ขณะนี้ยังไม่เปิดรับจองออนไลน์ กรุณาติดต่อแอดมิน");
   assert.equal(copy.bookingError(new TypeError("Failed to fetch https://secret.example")), "เชื่อมต่อระบบไม่สำเร็จ กรุณาลองอีกครั้ง");
 
   const hostile = Object.assign(new Error("relation jobs does not exist"), {
@@ -79,6 +83,14 @@ test("central customer copy maps booking failures without exposing raw backend d
   const output = copy.bookingError(hostile);
   assert.equal(output, "ระบบขัดข้องชั่วคราว กรุณาลองใหม่หรือติดต่อแอดมิน");
   assert.doesNotMatch(output, /SQL|jobs|\/public\/book|INTERNAL|relation/i);
+});
+
+test("urgent submit classifies disabled only from an explicit stable code", () => {
+  const { root } = loadBookingModules();
+  const isDisabled = root.bookingUrgent._test.isUrgentDisabledError;
+  assert.equal(isDisabled({ status: 503, data: { code: "URGENT_BOOKING_DISABLED" } }), true);
+  assert.equal(isDisabled({ status: 503, data: {} }), false);
+  assert.equal(isDisabled({ status: 503, data: { code: "DATABASE_UNAVAILABLE" } }), false);
 });
 
 test("central urgent submitted view model classifies pending, actionable, and terminal states", () => {

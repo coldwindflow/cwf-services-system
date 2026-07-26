@@ -1055,6 +1055,7 @@ function createBookingJobService(dependencies = {}) {
     if (canonicalBookingMode === "urgent" && urgentCapability?.enabled !== true) {
       return res.status(503).json({
         error: "ระบบจองด่วนออนไลน์ปิดให้บริการชั่วคราว กรุณาติดต่อแอดมินทาง LINE",
+        code: "URGENT_BOOKING_DISABLED",
         line_url: CWF_LINE_CONTACT_URL,
       });
     }
@@ -1527,7 +1528,7 @@ function createBookingJobService(dependencies = {}) {
           address_text,
           maps_url,
           job_zone,
-        }, { db: client, criteriaList });
+        }, { db: client, criteriaList, techType: "partner" });
         const availablePartners = dispatch.available;
 
         if (!availablePartners.length) {

@@ -4,9 +4,14 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
+const { spawnSync } = require("node:child_process");
 
 const { resolveUrgentCapability } = require("../server/services/urgent/capability");
-const { createUrgentDispatchService } = require("../server/services/urgent/dispatch");
+const {
+  createUrgentDispatchService,
+  normalizeUrgentTechType,
+  isUrgentEmploymentEligible,
+} = require("../server/services/urgent/dispatch");
 const { createBookingJobService } = require("../server/services/booking/createBookingJob");
 const urgentPublicAdapter = require("../server/services/urgentPublicAdapter");
 
@@ -31,6 +36,27 @@ test("persisted page_availability.urgent is read on every request and needs no E
   assert.doesNotMatch(read("server/services/urgent/capability.js"), /process\.env|ENABLE_/);
 });
 
+test("urgent capability opens only for an explicitly published boolean true", async () => {
+  const cases = [
+    { label: "true", rows: [{ published_config: { page_availability: { urgent: true } } }], enabled: true },
+    { label: "false", rows: [{ published_config: { page_availability: { urgent: false } } }], enabled: false },
+    { label: "no row", rows: [], enabled: false },
+    { label: "missing published", rows: [{ published_config: null }], enabled: false },
+    { label: "missing page availability", rows: [{ published_config: {} }], enabled: false },
+    { label: "missing urgent", rows: [{ published_config: { page_availability: { home: true } } }], enabled: false },
+    { label: "null", rows: [{ published_config: { page_availability: { urgent: null } } }], enabled: false },
+    { label: "string", rows: [{ published_config: { page_availability: { urgent: "true" } } }], enabled: false },
+    { label: "number", rows: [{ published_config: { page_availability: { urgent: 1 } } }], enabled: false },
+    { label: "array", rows: [{ published_config: { page_availability: [] } }], enabled: false },
+  ];
+  for (const scenario of cases) {
+    const result = await resolveUrgentCapability({ query: async () => ({ rows: scenario.rows }) });
+    assert.equal(result.enabled, scenario.enabled, scenario.label);
+  }
+  assert.equal((await resolveUrgentCapability(null)).enabled, false);
+  assert.equal((await resolveUrgentCapability({ query: async () => { throw new Error("db down"); } })).enabled, false);
+});
+
 test("closed authoritative urgent switch rejects before database mutation and ignores caller flags", async () => {
   let enabled = false;
   let connects = 0;
@@ -52,6 +78,7 @@ test("closed authoritative urgent switch rejects before database mutation and ig
   };
   const closed = await invoke({ booking_mode: "urgent", urgent: true, enabled: true });
   assert.equal(closed.statusCode, 503);
+  assert.equal(closed.body.code, "URGENT_BOOKING_DISABLED");
   assert.equal(connects, 0);
   enabled = true;
   const opened = await invoke({ booking_mode: "urgent", urgent: false });
@@ -62,6 +89,7 @@ test("closed authoritative urgent switch rejects before database mutation and ig
 function dispatchFixture(overrides = {}) {
   const rows = overrides.rows || [{
     username: "ready-partner",
+    employment_type: "partner",
     home_service_zone_code: "BKK",
     secondary_service_zone_code: null,
     allow_out_of_zone: false,
@@ -75,13 +103,13 @@ function dispatchFixture(overrides = {}) {
       if (/FROM public\.users/.test(sql)) return { rows };
       if (/technician_monthly_work_calendar/.test(sql)) {
         return {
-          rows: overrides.calendar === false ? [] : [{
-            technician_username: "ready-partner",
+          rows: overrides.calendar === false ? [] : rows.map((row) => ({
+            technician_username: row.username,
             day_status: "working",
             can_accept_urgent_job: overrides.urgentDay !== false,
             start_time: overrides.calendarStart || "09:00",
             end_time: overrides.calendarEnd || "18:00",
-          }],
+          })),
         };
       }
       if (/technician_workdays_v2/.test(sql)) return { rows: overrides.workdays || [] };
@@ -109,7 +137,6 @@ function dispatchFixture(overrides = {}) {
 
 test("canonical urgent eligibility applies ready/partner SQL, strict zone, all-line matrix, workday/window and collision", async () => {
   const source = read("server/services/urgent/dispatch.js");
-  assert.match(source, /employment_type[\s\S]*='partner'/);
   assert.match(source, /accept_status[\s\S]*='ready'/);
   assert.match(source, /accept_status_expires_at > NOW\(\)/);
   assert.doesNotMatch(source, /can_accept_advance_job/);
@@ -132,7 +159,10 @@ test("canonical urgent eligibility applies ready/partner SQL, strict zone, all-l
 
   const wrongZone = dispatchFixture({ zone: "CNX" });
   assert.deepEqual((await wrongZone.service.findEligibleTechnicians(job, { db: wrongZone.db, criteriaList })).available, []);
-  const noMatrix = dispatchFixture({ rows: [{ ...dispatchFixture().service, username: "x", work_start: "09:00", work_end: "18:00", matrix_json: {} }] });
+  const noMatrix = dispatchFixture({ rows: [{
+    username: "x", employment_type: "partner", home_service_zone_code: "BKK",
+    work_start: "09:00", work_end: "18:00", matrix_json: {},
+  }] });
   assert.deepEqual((await noMatrix.service.findEligibleTechnicians(job, { db: noMatrix.db, criteriaList })).available, []);
   const off = dispatchFixture({ workdays: [{ technician_username: "ready-partner", is_off: true }] });
   assert.deepEqual((await off.service.findEligibleTechnicians(job, { db: off.db, criteriaList })).available, []);
@@ -144,6 +174,85 @@ test("canonical urgent eligibility applies ready/partner SQL, strict zone, all-l
   assert.deepEqual((await capacityFull.service.findEligibleTechnicians(job, { db: capacityFull.db, criteriaList })).available, []);
   const collision = dispatchFixture({ free: false });
   assert.deepEqual((await collision.service.findEligibleTechnicians(job, { db: collision.db, criteriaList })).available, []);
+});
+
+test("canonical dispatch preserves partner, company-compatible, all, and invalid scopes", async () => {
+  const rows = [
+    { username: "partner", employment_type: "partner" },
+    { username: "company", employment_type: "company" },
+    { username: "custom", employment_type: "custom" },
+    { username: "special", employment_type: "special_only" },
+  ].map((row) => ({
+    ...row,
+    home_service_zone_code: "BKK",
+    secondary_service_zone_code: null,
+    allow_out_of_zone: false,
+    work_start: "09:00",
+    work_end: "18:00",
+    weekly_off_days: "",
+    matrix_json: { ok: true },
+  }));
+  const fixture = dispatchFixture({ rows });
+  const job = {
+    appointment_datetime: "2026-07-27T10:00:00+07:00",
+    duration_min: 60,
+    address_text: "Bangkok",
+  };
+  const criteriaList = [{ job: "wash", ac: "wall", wash: "normal" }];
+  const find = async (techType) => (await fixture.service.findEligibleTechnicians(
+    job,
+    { db: fixture.db, criteriaList, techType },
+  )).available.sort();
+
+  assert.deepEqual(await find("partner"), ["partner"]);
+  assert.deepEqual(await find("company"), ["company", "custom", "special"]);
+  assert.deepEqual(await find("all"), ["company", "custom", "partner", "special"]);
+  assert.equal(isUrgentEmploymentEligible("partner", "company"), false);
+  assert.equal(isUrgentEmploymentEligible("custom", "company"), true);
+  assert.throws(() => normalizeUrgentTechType("other"), { code: "INVALID_URGENT_TECH_TYPE" });
+  await assert.rejects(() => find("other"), { code: "INVALID_URGENT_TECH_TYPE" });
+});
+
+test("Bangkok weekly off is deterministic under UTC and Asia/Bangkok host timezones", async () => {
+  const modulePath = path.join(ROOT, "server/services/urgent/dispatch.js");
+  const probe = `
+    const d = require(${JSON.stringify(modulePath)});
+    process.stdout.write(JSON.stringify({
+      weekday: d.bangkokWeekday("2026-07-27"),
+      mondayOff: d.weeklyOff("1", "2026-07-27"),
+      sundayOff: d.weeklyOff("0", "2026-07-27"),
+      emptySunday: d.weeklyOff("", "2026-07-26")
+    }));
+  `;
+  const run = (tz) => {
+    const result = spawnSync(process.execPath, ["-e", probe], {
+      encoding: "utf8",
+      env: { ...process.env, TZ: tz },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    return JSON.parse(result.stdout);
+  };
+  const utc = run("UTC");
+  const bangkok = run("Asia/Bangkok");
+  assert.deepEqual(utc, { weekday: 1, mondayOff: true, sundayOff: false, emptySunday: false });
+  assert.deepEqual(bangkok, utc);
+
+  const job = {
+    appointment_datetime: "2026-07-27T10:00:00+07:00",
+    duration_min: 60,
+    address_text: "Bangkok",
+  };
+  const criteriaList = [{ job: "wash", ac: "wall", wash: "normal" }];
+  const mondayOff = dispatchFixture({ rows: [{
+    username: "monday-off", employment_type: "partner", home_service_zone_code: "BKK",
+    work_start: "09:00", work_end: "18:00", weekly_off_days: "1", matrix_json: { ok: true },
+  }] });
+  const sundayOff = dispatchFixture({ rows: [{
+    username: "sunday-off", employment_type: "partner", home_service_zone_code: "BKK",
+    work_start: "09:00", work_end: "18:00", weekly_off_days: "0", matrix_json: { ok: true },
+  }] });
+  assert.deepEqual((await mondayOff.service.findEligibleTechnicians(job, { db: mondayOff.db, criteriaList })).available, []);
+  assert.deepEqual((await sundayOff.service.findEligibleTechnicians(job, { db: sundayOff.db, criteriaList })).available, ["sunday-off"]);
 });
 
 test("urgent creation, offer expiry, post-commit notification, first-wins locks and finalizer invariants are wired", () => {

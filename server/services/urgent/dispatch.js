@@ -29,12 +29,52 @@ function parseMinute(value) {
   return (Number(match[1]) * 60) + Number(match[2]);
 }
 
+const URGENT_TECH_TYPES = new Set(["partner", "company", "all"]);
+
+function normalizeUrgentTechType(value, fallback = "partner") {
+  const raw = value === undefined || value === null ? fallback : value;
+  const techType = String(raw).trim().toLowerCase();
+  if (!URGENT_TECH_TYPES.has(techType)) {
+    const error = new Error("tech_type ต้องเป็น partner|company|all");
+    error.statusCode = 400;
+    error.code = "INVALID_URGENT_TECH_TYPE";
+    throw error;
+  }
+  return techType;
+}
+
+function isUrgentEmploymentEligible(employmentType, techType) {
+  const scope = normalizeUrgentTechType(techType);
+  const employment = String(employmentType || "company").trim().toLowerCase() || "company";
+  if (scope === "all") return ["partner", "company", "custom", "special_only"].includes(employment);
+  if (scope === "company") return ["company", "custom", "special_only"].includes(employment);
+  return employment === "partner";
+}
+
+function bangkokWeekday(dateText) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dateText || ""));
+  if (!match) return NaN;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (
+    date.getUTCFullYear() !== year
+    || date.getUTCMonth() !== month - 1
+    || date.getUTCDate() !== day
+  ) return NaN;
+  return date.getUTCDay();
+}
+
 function weeklyOff(weeklyOffDays, dateText) {
-  const day = new Date(`${dateText}T00:00:00+07:00`).getDay();
+  const day = bangkokWeekday(dateText);
+  if (!Number.isInteger(day)) return false;
   return String(weeklyOffDays || "")
     .split(",")
-    .map((value) => Number(value.trim()))
-    .some((value) => Number.isInteger(value) && value === day);
+    .map((value) => value.trim())
+    .filter((value) => /^[0-6]$/.test(value))
+    .map(Number)
+    .some((value) => value === day);
 }
 
 function createUrgentDispatchService(dependencies = {}) {
@@ -48,6 +88,7 @@ function createUrgentDispatchService(dependencies = {}) {
 
   async function findEligibleTechnicians(job, options = {}) {
     const db = options.db || pool;
+    const techType = normalizeUrgentTechType(options.techType, "partner");
     const appointment = bangkokDateAndMinute(job.appointment_datetime);
     if (!appointment) return { available: [], zoneCode: null, totalCandidates: 0 };
 
@@ -62,17 +103,22 @@ function createUrgentDispatchService(dependencies = {}) {
       return { available: [], zoneCode: null, totalCandidates: 0 };
     }
 
-    const criteriaList = Array.isArray(options.criteriaList) && options.criteriaList.length
-      ? options.criteriaList
-      : job.job_id
-        ? await loadCanonicalServiceCriteria(db, job.job_id)
-        : availabilityEngine.buildCriteriaList(job);
+    let criteriaList;
+    if (Array.isArray(options.criteriaList) && options.criteriaList.length) {
+      criteriaList = options.criteriaList;
+    } else if (job.job_id) {
+      const persistedServices = await loadCanonicalServiceCriteria(db, job.job_id);
+      criteriaList = availabilityEngine.buildCriteriaList({ services: persistedServices });
+    } else {
+      criteriaList = availabilityEngine.buildCriteriaList(job);
+    }
     if (!availabilityEngine.validateCriteriaList(criteriaList)) {
       return { available: [], zoneCode, totalCandidates: 0 };
     }
 
     const candidates = await db.query(
       `SELECT u.username,
+              COALESCE(p.employment_type,'company') AS employment_type,
               p.home_service_zone_code,
               p.secondary_service_zone_code,
               COALESCE(p.allow_out_of_zone,FALSE) AS allow_out_of_zone,
@@ -84,14 +130,21 @@ function createUrgentDispatchService(dependencies = {}) {
          JOIN public.technician_profiles p ON p.username=u.username
          LEFT JOIN public.technician_service_matrix m ON m.username=u.username
         WHERE u.role='technician'
-          AND COALESCE(p.employment_type,'company')='partner'
+          AND (
+                $1::text = 'all'
+             OR ($1::text = 'company' AND COALESCE(p.employment_type,'company') IN ('company','custom','special_only'))
+             OR ($1::text = 'partner' AND COALESCE(p.employment_type,'company') = 'partner')
+          )
           AND COALESCE(p.accept_status,'paused')='ready'
           AND p.accept_status_expires_at IS NOT NULL
           AND p.accept_status_expires_at > NOW()
-        ORDER BY u.username`
+        ORDER BY u.username`,
+      [techType]
     );
 
-    const usernames = (candidates.rows || []).map((row) => row.username);
+    const candidateRows = (candidates.rows || [])
+      .filter((row) => isUrgentEmploymentEligible(row.employment_type, techType));
+    const usernames = candidateRows.map((row) => row.username);
     const [calendars, overrides, specialSlots] = await Promise.all([
       usernames.length
         ? db.query(
@@ -142,7 +195,7 @@ function createUrgentDispatchService(dependencies = {}) {
 
     const zone = String(zoneCode || "").toUpperCase();
     const filtered = [];
-    for (const row of candidates.rows || []) {
+    for (const row of candidateRows) {
       if (!row.matrix_json || !availabilityEngine.techMatchesAllCriteriaStrict(row.matrix_json, criteriaList)) continue;
       const calendar = calendarMap.get(row.username);
       if (!calendar
@@ -177,7 +230,7 @@ function createUrgentDispatchService(dependencies = {}) {
     const ranked = rankTechniciansForServiceZone(filtered, zoneCode)
       .map((row) => row.username)
       .slice(0, 30);
-    return { available: ranked, zoneCode, totalCandidates: filtered.length };
+    return { available: ranked, zoneCode, totalCandidates: filtered.length, techType };
   }
 
   return { findEligibleTechnicians };
@@ -185,5 +238,9 @@ function createUrgentDispatchService(dependencies = {}) {
 
 module.exports = {
   bangkokDateAndMinute,
+  bangkokWeekday,
+  weeklyOff,
+  normalizeUrgentTechType,
+  isUrgentEmploymentEligible,
   createUrgentDispatchService,
 };

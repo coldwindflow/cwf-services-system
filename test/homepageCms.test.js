@@ -198,7 +198,7 @@ test("featured_services normalizes auto-mode defaults and validates manual selec
   assert.match(adminSource, /จำนวนการ์ดต่อชุด \(สูงสุด 6\)/);
   assert.match(adminSource, /ดึงจาก Catalog อัตโนมัติ \(Featured ก่อน\)/);
   assert.match(adminSource, /max="6"[^>]*data-featured-limit/);
-  assert.match(adminHtml, /admin-homepage-cms\.js\?v=20260717_customer_icon_cms_v1/);
+  assert.match(adminHtml, /admin-homepage-cms\.js\?v=20260727_urgent_switch_fail_closed_v1/);
 });
 
 test("legacy published config without featured_services fields gets safe defaults without losing existing content", () => {
@@ -305,7 +305,7 @@ test("customer homepage has no admin control, bottom nav is fixed five-tab, and 
   const sw = read("customer-app/sw.js");
   const app = read("customer-app/assets/customer-app.js");
   const manifest = read("customer-app/manifest.webmanifest");
-  const build = "20260726_urgent_direct_auto_offer_v1";
+  const build = "20260727_urgent_direct_auto_offer_blockers_v2";
 
   assert.doesNotMatch(index + ui, /โหมดแอดมิน|openCms|localStorage\.getItem\('cwfHomeCmsDemo'/);
   assert.match(index, /data-route="store"[\s\S]*ร้านค้า/);
@@ -1517,21 +1517,21 @@ test("admin-homepage-cms.js wires the articles auto-sync editor: toggle, source_
    missing → all enabled; degraded fail-safe = Home + Tracking only.
    ========================================================================== */
 
-test("page_availability: exports have the locked 7 keys and default shapes", () => {
+test("page_availability: exports have the locked 7 keys and fail-closed urgent default", () => {
   assert.deepEqual(PAGE_AVAILABILITY_KEYS, ["home", "store", "booking", "scheduled", "urgent", "tracking", "profile"]);
-  assert.deepEqual({ ...DEFAULT_PAGE_AVAILABILITY }, { home: true, store: true, booking: true, scheduled: true, urgent: true, tracking: true, profile: true });
+  assert.deepEqual({ ...DEFAULT_PAGE_AVAILABILITY }, { home: true, store: true, booking: true, scheduled: true, urgent: false, tracking: true, profile: true });
   // Degraded fail-safe keeps only the landing page and Tracking reachable.
   assert.deepEqual({ ...DEGRADED_PAGE_AVAILABILITY }, { home: true, store: false, booking: false, scheduled: false, urgent: false, tracking: true, profile: false });
 });
 
-test("page_availability: DEFAULT_CONFIG ships all-enabled", () => {
-  assert.deepEqual(DEFAULT_CONFIG.page_availability, { home: true, store: true, booking: true, scheduled: true, urgent: true, tracking: true, profile: true });
+test("page_availability: DEFAULT_CONFIG keeps legacy pages enabled but urgent closed", () => {
+  assert.deepEqual(DEFAULT_CONFIG.page_availability, { home: true, store: true, booking: true, scheduled: true, urgent: false, tracking: true, profile: true });
 });
 
-test("page_availability: absent block validates to all-enabled (legacy safe), not an error", () => {
+test("page_availability: absent block keeps legacy defaults but does not open urgent", () => {
   const out = validateConfig({ sections: [{ id: "hero", type: "hero", enabled: true, sort_order: 1, title: "x", items: [] }] });
   assert.equal(out.ok, true);
-  assert.deepEqual(out.config.page_availability, { home: true, store: true, booking: true, scheduled: true, urgent: true, tracking: true, profile: true });
+  assert.deepEqual(out.config.page_availability, { home: true, store: true, booking: true, scheduled: true, urgent: false, tracking: true, profile: true });
 });
 
 test("page_availability: a valid explicit block is preserved as booleans", () => {
@@ -1556,7 +1556,7 @@ test("page_availability: rejects missing key, unknown key, non-boolean value, an
   assert.equal(allDisabled.ok, false);
 });
 
-test("page_availability: readPageAvailability never returns all-disabled and legacy → all-enabled", () => {
+test("page_availability: readPageAvailability never returns all-disabled and legacy keeps urgent closed", () => {
   assert.deepEqual(readPageAvailability({}), { ...DEFAULT_PAGE_AVAILABILITY });
   assert.deepEqual(readPageAvailability({ page_availability: null }), { ...DEFAULT_PAGE_AVAILABILITY });
   // A corrupt all-disabled map is coerced back to the all-enabled safe default.
@@ -1585,7 +1585,7 @@ test("page_availability: hydrateDraftConfig preserves sections/theme/page_header
     sections: [{ id: "hero", type: "hero", enabled: true, sort_order: 1, title: "keep me", items: [] }],
     theme: { primary: "#123456" },
     page_headers: { tracking: { enabled: true, title: "T" } },
-    // no page_availability → legacy, must backfill all-enabled
+    // no page_availability → legacy defaults, but urgent must fail closed
   });
   assert.match(JSON.stringify(hydrated.sections), /keep me/);
   assert.deepEqual(hydrated.theme, { primary: "#123456" });
@@ -1593,7 +1593,7 @@ test("page_availability: hydrateDraftConfig preserves sections/theme/page_header
   assert.deepEqual(hydrated.page_availability, { ...DEFAULT_PAGE_AVAILABILITY });
 });
 
-test("GET /public/customer-app-config: no published config → all-enabled fallback, no admin leak", async () => {
+test("GET /public/customer-app-config: no published config → legacy defaults with urgent closed, no admin leak", async () => {
   const pool = createPool();
   pool.state.row.published_config = null;
   const server = await withServer(pool, (_req, _res, next) => next());
@@ -1612,7 +1612,7 @@ test("GET /public/customer-app-config: no published config → all-enabled fallb
   }
 });
 
-test("GET /public/customer-app-config: legacy published (no flags) → all-enabled, not fallback", async () => {
+test("GET /public/customer-app-config: legacy published (no flags) → legacy defaults with urgent closed", async () => {
   const pool = createPool();
   pool.state.row.published_config = { version: 2, sections: [{ id: "hero", type: "hero", enabled: true, sort_order: 1, title: "x", items: [] }] };
   pool.state.row.version = 2;

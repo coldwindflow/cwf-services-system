@@ -30,7 +30,7 @@ const jobTiming = require("./server/services/jobTiming");
 const urgentPublicAdapter = require("./server/services/urgentPublicAdapter");
 const urgentFinalizer = require("./server/services/urgent/finalizer");
 const urgentCapability = require("./server/services/urgent/capability");
-const { createUrgentDispatchService } = require("./server/services/urgent/dispatch");
+const { createUrgentDispatchService, normalizeUrgentTechType } = require("./server/services/urgent/dispatch");
 const trackingPrivacy = require("./server/services/public/trackingPrivacy");
 const customerPricingHelpers = require("./server/customerPricing");
 const customerAuth = require("./server/customerAuth");
@@ -13534,15 +13534,20 @@ const urgentDispatchService = createUrgentDispatchService({
   isServiceZoneFilterEnabled: () => ENABLE_SERVICE_ZONE_FILTER,
 });
 
-async function buildUrgentOfferCandidatesForJob(job, _techType='partner', db=pool) {
+async function buildUrgentOfferCandidatesForJob(job, techType='partner', db=pool) {
   await expireTechnicianAcceptStatuses(db);
-  return urgentDispatchService.findEligibleTechnicians(job, { db });
+  return urgentDispatchService.findEligibleTechnicians(job, { db, techType });
 }
 
 app.post('/jobs/:job_id/rebroadcast_offer_v2', requireAdminSoft, async (req, res) => {
   const job_id = Number(req.params.job_id);
   if (!Number.isInteger(job_id) || job_id <= 0) return res.status(400).json({ error: 'job_id ไม่ถูกต้อง' });
-  const techType = String(req.body?.tech_type || 'all').trim().toLowerCase();
+  let techType;
+  try {
+    techType = normalizeUrgentTechType(req.body?.tech_type, 'all');
+  } catch (error) {
+    return res.status(400).json({ error: error.message, code: error.code });
+  }
   const client = await pool.connect();
   try {
     await client.query('BEGIN');

@@ -33,11 +33,11 @@ const FOCAL_POSITIONS = new Set(["top", "center", "bottom"]);
 // ---- Customer App page availability ------------------------------------------
 // Which Customer App V2 top-level pages are enabled. Stored inside the same
 // Homepage CMS config (published_config) — no new table/migration. Legacy
-// configs without this field are interpreted as all-enabled. The urgent field is
-// also the authoritative runtime kill switch for public urgent booking.
+// Legacy configs keep the historical defaults for non-transactional pages.
+// Urgent is the authoritative runtime kill switch and defaults closed.
 const PAGE_AVAILABILITY_KEYS = ["home", "store", "booking", "scheduled", "urgent", "tracking", "profile"];
 const DEFAULT_PAGE_AVAILABILITY = Object.freeze({
-  home: true, store: true, booking: true, scheduled: true, urgent: true, tracking: true, profile: true,
+  home: true, store: true, booking: true, scheduled: true, urgent: false, tracking: true, profile: true,
 });
 // Fail-safe when there is no config AND no valid client cache: keep the landing
 // page and Tracking reachable, close transactional/unfinished flows.
@@ -64,13 +64,13 @@ function normalizePageAvailability(raw, errors) {
   for (const key of PAGE_AVAILABILITY_KEYS) {
     if (!Object.prototype.hasOwnProperty.call(raw, key)) {
       errors.push(`page_availability.${key} is required`);
-      out[key] = true;
+      out[key] = DEFAULT_PAGE_AVAILABILITY[key];
       continue;
     }
     const v = raw[key];
     if (typeof v !== "boolean") {
       errors.push(`page_availability.${key} must be a boolean`);
-      out[key] = true;
+      out[key] = DEFAULT_PAGE_AVAILABILITY[key];
       continue;
     }
     out[key] = v;
@@ -90,7 +90,7 @@ function readPageAvailability(config) {
   let anyEnabled = false;
   for (const key of PAGE_AVAILABILITY_KEYS) {
     const v = raw[key];
-    out[key] = typeof v === "boolean" ? v : true;
+    out[key] = typeof v === "boolean" ? v : DEFAULT_PAGE_AVAILABILITY[key];
     if (out[key]) anyEnabled = true;
   }
   return anyEnabled ? out : { ...DEFAULT_PAGE_AVAILABILITY };
@@ -113,7 +113,7 @@ const SOCIAL_HOST_PATTERNS = {
 
 const DEFAULT_CONFIG = {
   version: 1,
-  page_availability: { home: true, store: true, booking: true, scheduled: true, urgent: true, tracking: true, profile: true },
+  page_availability: { home: true, store: true, booking: true, scheduled: true, urgent: false, tracking: true, profile: true },
   navigation: iconRegistry.defaultNavigation(),
   icon_overrides: iconRegistry.defaultOverrides(),
   sections: [
@@ -742,9 +742,7 @@ function hydrateDraftConfig(rawConfig) {
       ? [...base.sections, ...missing.map((section) => JSON.parse(JSON.stringify(section)))]
       : base.sections,
   };
-  if (!hydrated.page_availability || typeof hydrated.page_availability !== "object" || Array.isArray(hydrated.page_availability)) {
-    hydrated.page_availability = { ...DEFAULT_PAGE_AVAILABILITY };
-  }
+  hydrated.page_availability = readPageAvailability(hydrated);
   Object.assign(hydrated, iconRegistry.normalizeConfig(hydrated, "stored"));
   return hydrated;
 }
@@ -832,7 +830,7 @@ function createHomepageRoutes(deps = {}) {
         resolveUrgentCapability(pool),
       ]);
       if (!row || !row.published_config) {
-        // No published config yet → default all-enabled (fallback, not degraded).
+        // No published config yet → legacy page defaults with urgent closed.
         return res.json({
           ok: true,
           page_availability: {
@@ -846,7 +844,7 @@ function createHomepageRoutes(deps = {}) {
           degraded: false,
         });
       }
-      // Legacy published config with no page_availability → all-enabled, not a fallback.
+      // Legacy published config without page flags keeps urgent closed.
       return res.json({
         ok: true,
         page_availability: {
