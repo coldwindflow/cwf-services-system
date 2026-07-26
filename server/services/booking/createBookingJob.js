@@ -308,4 +308,1364 @@ function createBookingJobService(dependencies = {}) {
     let final_lng = chosenAdminLL ? chosenAdminLL.lng : null;
 
 
-    // saniti◊Ø}Ú⁄$z{-ÆÈ‹j◊ù¿–¢∂FWFW&÷ñÊó7Fñ5Fˆ∂V‚¬&’––¢ì∞–¢ñbÜWÜó7FñÊrÁ&˜w5≥“í∞–¢ÚÚ&6R6fWGíÊWC¢6ˆÊ7W'&VÁB&WVW7BvóFÇFÜR6÷R∂Wí6ˆ÷÷óGFVBfó'7B‡–¢ÚÚ6÷R6ÊˆÊñ6¬ñ∆ˆB”‚&W∆ì≤Áí÷FW&ñ¬FñffW&VÊ6R”‚∂Wí◊&WW6RCê–¢ÚÚÜÊÚ◊WFFñˆ‚¬ÊÚñFVÁFñfñW'2ıîíí‚6÷R6ˆ◊&ó6ˆ‚2FÜR&R÷f∆ñváBFÇ‡–¢6ˆÁ7B&˜r“WÜó7FñÊrÁ&˜w5≥”∞–¢vóB6∆ñVÁBÁVW'íÇ$4Ù‘‘ïB"ì∞–¢6ˆÁ7BñÊ6ˆ÷ñÊt&ˆˆ∂ñÊr“∞–¢ˆñÁF÷VÁEˆFFWFñ÷R¬7W7Fˆ÷W%˜ÜˆÊR¬7W7Fˆ÷W%ˆÊ÷R¬FG&W75˜FWáB¬÷5˜W&¬¿¢¶ˆ%˜¶ˆÊR¬¶ˆ%˜GóR¬7W7Fˆ÷W%ˆÊ˜FR¬∆∆˜u˜Fñ÷U˜&˜˜6√¢∆∆˜uFñ÷U&˜˜6¬¿¢w5ˆ∆FóGVFS¢W'6ó7FVDw4∆FóGVFR¬w5ˆ∆ˆÊvóGVFS¢W'6ó7FVDw4∆ˆÊvóGVFR¿¢GW&FñˆÂˆ÷ñ„¢GW&FñˆÂˆ÷ñÂ˜c"¬ñ∆ˆEc"¬óFV‘ñEGí¬7FÊF&E&ñ6S¢7FÊF&E˜&ñ6R¿¢”∞¢ñbÇÜvóB66ÜVGV∆VEñ∆ˆD÷F6ÜW4WÜó7FñÊráˆˆ¬¬&˜r¬ñÊ6ˆ÷ñÊt&ˆˆ∂ñÊrííí∞¢&WGW&‚&W2Á7FGW2ÉCííÊß6ˆ‚á∞–¢W'&˜#¢.àNã>à.äﬁâûã^òûânãûàò>àÆòûòNâæòä^òûä~àãâÆàã.ä>àéäﬁà~äﬁã~òéâíàä>ãéâ>ã.òä>ãNòéäàã.ä>àéäﬁà~ò>äæäòÇ"¿–¢6ˆFS¢$îDT’ıDT‰5ïÙ¥Uïı$UU4TB"¿–¢“ì∞–¢––¢&WGW&‚&W2Êß6ˆ‚á∞–¢7V66W73¢G'VR¿–¢&W∆ñVC¢G'VR¿–¢¶ˆ%ˆñC¢&˜rÊ¶ˆ%ˆñB¿–¢&ˆˆ∂ñÊuˆ6ˆFS¢&˜rÊ&ˆˆ∂ñÊuˆ6ˆFR¿–¢Fˆ∂V„¢&˜rÊ&ˆˆ∂ñÊu˜Fˆ∂V‚¿–¢&ˆˆ∂ñÊuˆ÷ˆFS¢&“¿–¢Fó7F6Öˆ÷ˆFS¢&˜rÊFó7F6Öˆ÷ˆFR«¬&Ê˜&÷¬"¿–¢GW&FñˆÂˆ÷ñ„¢ÁV÷&W"á&˜rÊGW&FñˆÂˆ÷ñ‚«¬GW&FñˆÂˆ÷ñÂ˜c"«¬í¿–¢VffV7FófUˆ&∆ˆ6µˆ÷ñ„¢VffV7FófT&∆ˆ6¥÷ñ‚ÑÁV÷&W"á&˜rÊGW&FñˆÂˆ÷ñ‚«¬GW&FñˆÂˆ÷ñÂ˜c"«¬íí¿–¢G&fV≈ˆ'VffW%ˆ÷ñ„¢E$dT≈Ù%TddU%Ù‘î‚¿–¢&6U˜F˜F√¢ÁV÷&W"á&˜rÊ¶ˆ%˜&ñ6R«¬í¿–¢“ì∞–¢––¢––†–¢∆WBG&gE&W6W'fFñˆÂFV6Ç“ÁV∆√∞–¢ñbÜ&“””“'66ÜVGV∆VB"í∞–¢6ˆÁ7B7F'Dó6Ú“Ê˜&÷∆ó¶TˆñÁF÷VÁDFFWFñ÷RÜˆñÁF÷VÁEˆFFWFñ÷Rì∞–¢G&gE&W6W'fFñˆÂFV6Ç“vóB7W7Fˆ÷W$fñ∆&ñ∆óGíÁ&W6W'fUV&∆ñ47W7Fˆ÷W%FV6ÜÊñ6ñ‚Ä–¢V&∆ñ47W7Fˆ÷W$fñ∆&ñ∆óGîFW2Ü6∆ñVÁBí¿–¢∞–¢‚‚Áñ∆ˆEc"¿–¢FFS¢7G&ñÊrá7F'Dó6ÚíÁ6∆ñ6RÉ¬í¿–¢7F'C¢7G&ñÊrá7F'Dó6ÚíÁ6∆ñ6RÉ¬bí¿–¢FV6Ö˜GóS¢&WVW7FVEFV6ÖGóR¿–¢GW&FñˆÂˆ÷ñ„¢GW&FñˆÂˆ÷ñÂ˜c"¿–¢––¢ì∞–¢––†–¢ÚÚíâNãnà~ä>ã.àNã"&6U˜&ñ6Ràéã.àD –¢6ˆÁ7B6W'fñ6T∆ñÊTóFV◊2“vóB7W7Fˆ÷W%&ñ6ñÊtÜV«W'2Ê'Vñ∆D7W7Fˆ÷W%6W'fñ6T∆ñÊTóFV◊4g&ˆ’ñ∆ˆBÄ–¢áñ∆ˆEc"Á6W'fñ6W2bb'&íÊó4'&íáñ∆ˆEc"Á6W'fñ6W2íê–¢Úñ∆ˆEc –¢¢≤‚‚Áñ∆ˆEc"¬6W'fñ6W3¢∑∞–¢¶ˆ%˜GóS¢ñ∆ˆEc"Ê¶ˆ%˜GóR¿–¢5˜GóS¢ñ∆ˆEc"Ê5˜GóR¿–¢'GS¢ñ∆ˆEc"Ê'GR¿–¢÷6ÜñÊUˆ6˜VÁC¢ñ∆ˆEc"Ê÷6ÜñÊUˆ6˜VÁB¿–¢v6Ö˜f&ñÁC¢ñ∆ˆEc"Áv6Ö˜f&ñÁB¿–¢&Wó%˜f&ñÁC¢ñ∆ˆEc"Á&Wó%˜f&ñÁB¿–¢’““¿–¢6∆ñVÁ@–¢ì∞–†–¢ÚÚf∆∆&6≤á6ñÊv∆R6W'fñ6Rê–¢∆WB6ˆ◊WFVDóFV◊2“µ”∞–¢∆WBF˜F¬“ÁV÷&W"á7FÊF&E˜&ñ6R«¬ì∞–†–¢ñbá6W'fñ6T∆ñÊTóFV◊2Ê∆VÊwFÇí∞–¢6ˆ◊WFVDóFV◊2“6ˆ◊WFVDóFV◊2Ê6ˆÊ6Bá6W'fñ6T∆ñÊTóFV◊2ì∞–¢F˜F¬“6W'fñ6T∆ñÊTóFV◊2Á&VGV6RÇá2∆óBì”‚2≤ÁV÷&W"ÜóBÊ∆ñÊU˜F˜F««√í¬ì∞–¢“V«6RñbáF˜F¬‚í∞–¢ÚÚ7W7Fˆ÷W"&ñ6Rf∆∆&6≤ˆÊ«ì≤ó&ˆ∆¬vñ∆¬Ê˜BG&VBFÜó22FV6ÜÊñ6ñ‚ñÊ6ˆ÷P–¢6ˆ◊WFVDóFV◊2ÁW6Çá≤óFV’ˆñC¢ÁV∆¬¬óFV’ˆÊ÷S¢àNòéã.âÆä>ãNàã.ä>äã.â^ä>âã.âíÇG∑ñ∆ˆEc"Ê¶ˆ%˜GóR«¬r“w“ñ¬Gì¢¬VÊóE˜&ñ6S¢F˜F¬¬∆ñÊU˜F˜F√¢F˜F¬¬ó5˜6W'fñ6S¢f«6R“ì∞–¢––†–¢ÚÚWáG&2Ü7W7Fˆ÷W"◊fó6ñ&∆RˆÊ«íê–¢ñbÜóFV‘ñEGíÊ∆VÊwFÇí∞–¢6ˆÁ7BñG2“óFV‘ñEGíÊ÷ÇáÇí”‚ÇÊóFV’ˆñBì∞–¢6ˆÁ7B6E"“vóB6∆ñVÁBÁVW'íÄ–¢4TƒT5BóFV’ˆñB¬óFV’ˆÊ÷R¬&6U˜&ñ6P–¢e$Ù“V&∆ñ2Ê6F∆ˆuˆóFV◊0–¢tÑU$Ró5ˆ7FófS’E%TR‰Bó5ˆ7W7Fˆ÷W%˜fó6ñ&∆S’E%TRÚ¢5U5DÙ‘U%Ù4DƒÙuıdï4î$ƒUÙÙ‰≈í¢Ú‰BóFV’ˆñB“ÂíÇC£¶&ñvñÁEµ“ñ¿–¢∂ñG5––¢ì∞–†–¢6ˆÁ7B÷“ÊWr÷Ü6E"Á&˜w2Ê÷Çá"í”‚¥ÁV÷&W"á"ÊóFV’ˆñBí¬%“íì∞–¢6ˆÁ7BWáG&∆ñÊW2“óFV‘ñEGê–¢Ê÷ÇáÇí”‚∞–¢6ˆÁ7BóB“÷ÊvWBÑÁV÷&W"áÇÊóFV’ˆñBíì∞–¢ñbÇóBí&WGW&‚ÁV∆√∞–¢6ˆÁ7BGí“ÁV÷&W"áÇÁGíì∞–¢6ˆÁ7BVÊóE˜&ñ6R“ÁV÷&W"ÜóBÊ&6U˜&ñ6R«¬ì∞–¢6ˆÁ7B∆ñÊU˜F˜F¬“Gí¢VÊóE˜&ñ6S∞–¢F˜F¬≥“∆ñÊU˜F˜F√∞–¢&WGW&‚∞–¢óFV’ˆñC¢ÁV÷&W"ÜóBÊóFV’ˆñBí¿–¢óFV’ˆÊ÷S¢óBÊóFV’ˆÊ÷R¿–¢Gí¿–¢VÊóE˜&ñ6R¿–¢∆ñÊU˜F˜F¬¿–¢”∞–¢“ê–¢Êfñ«FW"Ñ&ˆˆ∆V‚ì∞–†–¢6ˆ◊WFVDóFV◊2“6ˆ◊WFVDóFV◊2Ê6ˆÊ6BÜWáG&∆ñÊW2ì∞–¢––†–¢ÚÚ"íäÆä>òûã.à~à~ã.âê–†–¢ÚÚ)»Rò.âæä>ò.äàÆãòéâûâﬁãòéà~ä^ãûààNòûã#¢ä>ãâÆâÆòä^ã~äﬁàò>äæòûäﬁãâ^ò.âûäãâ^ãNâ^ã.äòà~ã~òéäﬁâûòNà"á7WW"F÷ñ‚â^ãòûà~àNòéã"ê–¢ÚÚî’ı%DÂC¢.ä>ã.àNã""à.äﬁà~à~ã.âûâ^òûäﬁà~òâæò~âûä>ã.àNã.âÓã~òûâûâã.âûòâNãNäéäæòûã.äòâæä^ã^òéä.âûä>ã.àNã"ê–¢ÚÚ“¶ˆ'2Ê¶ˆ%˜&ñ6Ròàò~â¢&6U˜F˜F¬òâ~òéã.âûãòûâê–¢ÚÚ“äÆòéä~âûä^âNâÆãâûâ~ãnàòä.àâ~ã^òÇ¶ˆ%˜&ˆ÷˜FñˆÁ2Ê∆ñVEˆFó66˜VÁ@–¢6ˆÁ7B&6U˜F˜F¬“ÁV÷&W"áF˜F¬«¬ì∞–¢6ˆÁ7B&ˆ÷ıñ6≤“vóBfñÊD&W7D7W7Fˆ÷W%&ˆ÷˜Fñˆ‚áñ∆ˆEc"¬&6U˜F˜F¬¬6∆ñVÁBì∞–¢6ˆÁ7B∆ñVE&ˆ÷Ú“&ˆ÷ıñ6≥ÚÁ&ˆ÷Ú«¬ÁV∆√∞–¢6ˆÁ7B∆ñVDFó66˜VÁB“÷FÇÊ÷ñ‚ÑÁV÷&W"Ü&6U˜F˜F¬«¬í¬ÁV÷&W"á&ˆ÷ıñ6≥ÚÊFó66˜VÁB«¬íì∞–†–¢ÚÚ)»RFó7F6Öˆ÷ˆFS†–¢ÚÚ“66ÜVGV∆VBéä^ãûààNòûã.àéäﬁà~âæàâ^ãBí”‚Ê˜&÷¬éò>äæòûòà.òûã.òäﬁâNäãNâí˛àNãNä~â^ã.äâæàâ^ãBê–¢ÚÚ“W&vVÁBéä.ãNà~à~ã.âûâNòéä~âíí”‚ˆffW"éòNâ≤f∆˜rˆffW"ê–¢6ˆÁ7BFó7F6Ñ÷ˆFR“Ü&“””“wW&vVÁBríÚvˆffW"r¢vÊ˜&÷¬s∞–†–¢6ˆÁ7B6F∆ˆt∆ñÊµ&VGí“vóBó4¶ˆ'46F∆ˆt∆ñÊµ66ÜV÷&VGíÇì∞–¢6ˆÁ7B¶ˆ$ñÁ6W'D6ˆ«V÷Á2“∞–¢&7W7Fˆ÷W%ˆÊ÷R"¬&7W7Fˆ÷W%˜ÜˆÊR"¬&¶ˆ%˜GóR"¬&ˆñÁF÷VÁEˆFFWFñ÷R"¬&¶ˆ%˜&ñ6R"¿–¢&FG&W75˜FWáB"¬'FV6ÜÊñ6ñÂ˜FV“"¬'FV6ÜÊñ6ñÂ˜W6W&Ê÷R"¬&¶ˆ%˜7FGW2"¿–¢&&ˆˆ∂ñÊu˜Fˆ∂V‚"¬&¶ˆ%˜6˜W&6R"¬&Fó7F6Öˆ÷ˆFR"¬&7W7Fˆ÷W%ˆÊ˜FR"¿¢&÷5˜W&¬"¬&¶ˆ%˜¶ˆÊR"¬&GW&FñˆÂˆ÷ñ‚"¬&&ˆˆ∂ñÊuˆ÷ˆFR"¬&∆∆˜u˜Fñ÷U˜&˜˜6¬"¿¢&w5ˆ∆FóGVFR"¬&w5ˆ∆ˆÊvóGVFR"¿¢”∞¢6ˆÁ7B¶ˆ$ñÁ6W'Ef«VW57¬“≤"C"¬"C""¬"C2"¬"CB"¬"CR"¬"Cb"¬$ÂTƒ¬"¬"Cb"¬"C"¬"Cr"¬"v7W7Fˆ÷W"r"¬"CB"¬"CÇ"¬"Cí"¬"C"¬"C""¬"C2"¬"CR"¬"Cr"¬"CÇ%”∞¢6ˆÁ7B¶ˆ$ñÁ6W'E&◊2“∞–¢7G&ñÊrÜ7W7Fˆ÷W%ˆÊ÷RíÁG&ñ“Çí¿–¢Ü7W7Fˆ÷W%˜ÜˆÊR«¬""íÁFı7G&ñÊrÇíÁG&ñ“Çí¿–¢7G&ñÊrÜ¶ˆ%˜GóRíÁG&ñ“Çí¿–¢ˆñÁF÷VÁEˆFFWFñ÷R¿–¢ÁV÷&W"Ü&6U˜F˜F¬«¬í¿–¢7G&ñÊrÜFG&W75˜FWáBíÁG&ñ“Çí¿–¢Fˆ∂V‚¿–¢Ü7W7Fˆ÷W%ˆÊ˜FR«¬""íÁFı7G&ñÊrÇí¿–¢Ü÷5˜W&¬«¬""íÁFı7G&ñÊrÇí¿–¢Ü¶ˆ%˜¶ˆÊR«¬""íÁFı7G&ñÊrÇí¿–¢&“””“'W&vVÁB"Ú§Ù%ı5DEU2‰D‘îÂıU$tTÂEıtïDî‰r¢§Ù%ı5DEU2‰5U5DÙ‘U%ı44ÑTETƒTEı$UdîUr¿¢GW&FñˆÂˆ÷ñÂ˜c"¿–¢Ü&“””“wW&vVÁBrÚwW&vVÁBr¢w66ÜVGV∆VBrí¿–¢Fó7F6Ñ÷ˆFR¿–¢∆∆˜uFñ÷U&˜˜6¬¿¢G&gE&W6W'fFñˆÂFV6ÇÚG&gE&W6W'fFñˆÂFV6ÇÁW6W&Ê÷R¢ÁV∆¬¿¢W'6ó7FVDw4∆FóGVFR¿¢W'6ó7FVDw4∆ˆÊvóGVFR¿¢”∞¢ñbÜ6F∆ˆt∆ñÊµ&VGíí∞–¢¶ˆ$ñÁ6W'D6ˆ«V÷Á2ÁW6ÇÇ&6F∆ˆuˆóFV’ˆñB"¬&7W7Fˆ÷W%˜7V""ì∞–¢¶ˆ$ñÁ6W'E&◊2ÁW6Çá6fT6F∆ˆtóFV‘ñDf˜$¶ˆ"¬7W7Fˆ÷W%7V$f˜$¶ˆ"ì∞–¢¶ˆ$ñÁ6W'Ef«VW57¬ÁW6ÇÜBG∂¶ˆ$ñÁ6W'E&◊2Ê∆VÊwFÇ“÷¬BG∂¶ˆ$ñÁ6W'E&◊2Ê∆VÊwFá÷ì∞–¢––†–¢6ˆÁ7B"“vóB6∆ñVÁBÁVW'íÄ–¢ –¢îÂ4U%BîÂDÚV&∆ñ2Ê¶ˆ'0–¢ÇG∂¶ˆ$ñÁ6W'D6ˆ«V÷Á2Ê¶ˆñ‚Ç"¬"ó“ê–¢d≈TU2ÇG∂¶ˆ$ñÁ6W'Ef«VW57¬Ê¶ˆñ‚Ç"¬"ó“ê–¢$UEU$‰î‰r¶ˆ%ˆñB¬&ˆˆ∂ñÊu˜Fˆ∂V‡–¢¿–¢¶ˆ$ñÁ6W'E&◊0–¢ì∞–†–¢ÚÚGF6Ç&ˆ÷ÚFÚ¶ˆ"ÜñbÁíê–¢ñbÜ∆ñVE&ˆ÷Úbb∆ñVDFó66˜VÁB‚ó∞–¢G'ó∞–¢vóB6∆ñVÁBÁVW'íÄ–¢îÂ4U%BîÂDÚV&∆ñ2Ê¶ˆ%˜&ˆ÷˜FñˆÁ2Ü¶ˆ%ˆñB¬&ˆ÷ıˆñB¬∆ñVEˆFó66˜VÁBê–¢d≈TU2ÇC¬C"¬C2ê–¢Ù‚4Ù‰dƒî5BÜ¶ˆ%ˆñBíDÚUDDR4UB&ˆ÷ıˆñC‘UÑ4≈TDTBÁ&ˆ÷ıˆñB¬∆ñVEˆFó66˜VÁC‘UÑ4≈TDTBÊ∆ñVEˆFó66˜VÁF¿–¢∑"Á&˜w5≥“Ê¶ˆ%ˆñB¬ÁV÷&W"Ü∆ñVE&ˆ÷ÚÁ&ˆ÷ıˆñBí¬ÁV÷&W"Ü∆ñVDFó66˜VÁBï––¢ì∞–¢÷6F6ÇÜRó∞–¢ÚÚfñ¬÷˜V„¢Fˆ‚wB'&V≤&ˆˆ∂ñÊp–¢6ˆÁ6ˆ∆RÁv&‚Çu∑V&∆ñ5ˆ&ˆˆµ“&ˆ÷ÚGF6Çfñ∆VBr¬RÊ÷W76vRì∞–¢––¢––†–¢6ˆÁ7B¶ˆ%ˆñB“"Á&˜w5≥“Ê¶ˆ%ˆñC∞–¢ÚÚ)»R&ˆˆ∂ñÊuˆ6ˆFRéäÆãéòéäòNäòéòä>ã^ä.àrê–¢6ˆÁ7B&ˆˆ∂ñÊuˆ6ˆFR“vóBvVÊW&FUVÊóVT&ˆˆ∂ñÊt6ˆFRÜ6∆ñVÁBì∞–†–¢vóB6∆ñVÁBÁVW'íÜUDDRV&∆ñ2Ê¶ˆ'24UB&ˆˆ∂ñÊuˆ6ˆFS“CtÑU$R¶ˆ%ˆñC“C&¬∂&ˆˆ∂ñÊuˆ6ˆFR¬¶ˆ%ˆñE“ì∞–†–¢ÚÚ5$TDUıU$tTÂEÙÙddU%5ıc ¢∆WBW&vVÁDˆffW'46˜VÁB“∞¢∆WBW&vVÁEW6ÖF&vWG2“µ”∞¢ñbÜ&“””“'W&vVÁB"bbW&vVÁDˆffW$VÊ&∆VBí∞¢vóBWáó&UFV6ÜÊñ6ñ‰66WE7FGW6W2Ü6∆ñVÁBì∞¢6ˆÁ7B7&óFW&ñ∆ó7B“FWVÊFVÊ6ñW2Êfñ∆&ñ∆óGîVÊvñÊRÊ'Vñ∆D7&óFW&ñ∆ó7Báñ∆ˆEc"ì∞¢6ˆÁ7BFó7F6Ç“vóBW&vVÁDFó7F6Ö6W'fñ6RÊfñÊDV∆ñvñ&∆UFV6ÜÊñ6ñÁ2á∞¢‚‚Áñ∆ˆEc"¿¢¶ˆ%ˆñB¿¢ˆñÁF÷VÁEˆFFWFñ÷R¿¢GW&FñˆÂˆ÷ñ„¢GW&FñˆÂˆ÷ñÂ˜c"¿¢FG&W75˜FWáB¿¢÷5˜W&¬¿¢¶ˆ%˜¶ˆÊR¿¢“¬≤F#¢6∆ñVÁB¬7&óFW&ñ∆ó7B“ì∞¢6ˆÁ7Bfñ∆&∆U'FÊW'2“Fó7F6ÇÊfñ∆&∆S∞†–¢ñbÇfñ∆&∆U'FÊW'2Ê∆VÊwFÇí∞–¢vóB6∆ñVÁBÁVW'íÄ–¢UDDRV&∆ñ2Ê¶ˆ'0–¢4UB¶ˆ%˜7FGW3“rG¥§Ù%ı5DEU2ÂU$tTÂEÙ‰ııDT4Ñ‰î4îÁ“p–¢tÑU$R¶ˆ%ˆñC“C¿–¢∂¶ˆ%ˆñE––¢ì∞–¢6ˆÁ6ˆ∆RÁv&‚Ç%∑V&∆ñ5ˆ&ˆˆµ“W&vVÁEˆÊıˆˆffW%˜F&vWG2"¬≤¶ˆ%ˆñB¬&ˆˆ∂ñÊuˆ6ˆFR“ì∞–¢“V«6R∞–¢ÚÚ)»R6fWGì¢àéã>àãâNòNäòéòàãNâí3àÆòéã.àr˛â~ã^äâ~ã^òéäÆòéàrˆffW –¢f˜"Ü6ˆÁ7BRˆbfñ∆&∆U'FÊW'2í∞–¢vóB6∆ñVÁBÁVW'íÄ–¢îÂ4U%BîÂDÚV&∆ñ2Ê¶ˆ%ˆˆffW'2Ü¶ˆ%ˆñB¬FV6ÜÊñ6ñÂ˜W6W&Ê÷R¬7FGW2¬Wáó&W5ˆBê–¢d≈TU2ÇC¬C"¬rG¥ÙddU%ı5DEU2ÂT‰Dî‰w“r¬‰ırÇí≤îÂDU%d¬s÷ñÁWFW2rñ¿–¢∂¶ˆ%ˆñB¬U––¢ì∞–¢–¢W&vVÁDˆffW'46˜VÁB“fñ∆&∆U'FÊW'2Ê∆VÊwFÉ∞¢W&vVÁEW6ÖF&vWG2“fñ∆&∆U'FÊW'3∞¢6ˆÁ6ˆ∆RÊ∆ˆrÇ%∑V&∆ñ5ˆ&ˆˆµ“W&vVÁEˆˆffW'2"¬≤¶ˆ%ˆñB¬&ˆˆ∂ñÊuˆ6ˆFR¬6˜VÁC¢fñ∆&∆U'FÊW'2Ê∆VÊwFÇ“ì∞¢–¢–†–†–¢ÚÚ2íâÆãâûâ~ãnàä>ã.ä.àã.ä2éânòûã.äãRê–¢f˜"Ü6ˆÁ7BóBˆb6ˆ◊WFVDóFV◊2í∞–¢vóB6∆ñVÁBÁVW'íÄ–¢ –¢îÂ4U%BîÂDÚV&∆ñ2Ê¶ˆ%ˆóFV◊0–¢Ü¶ˆ%ˆñB¬óFV’ˆñB¬óFV’ˆÊ÷R¬Gí¬VÊóE˜&ñ6R¬∆ñÊU˜F˜F¬¬76ñvÊVE˜FV6ÜÊñ6ñÂ˜W6W&Ê÷R¬ó5˜6W'fñ6R¿–¢7W7Fˆ÷W%˜&ñ6U˜'V∆UˆñB¬Ê˜&÷≈˜VÊóE˜&ñ6R¬7W7Fˆ÷W%˜&ñ6Uˆ∆&V¬¬7W7Fˆ÷W%ˆ6◊ñvÂˆÊ÷R¬7W7Fˆ÷W%˜&ñ6U˜6˜W&6Rê–¢d≈TU2ÇC¬C"¬C2¬CB¬CR¬Cb¬Cr¬CÇ¬Cí¬C¬C¬C"¬C2ê–¢¿–¢∞–¢¶ˆ%ˆñB¿–¢óBÊóFV’ˆñB«¬ÁV∆¬¿–¢óBÊóFV’ˆÊ÷R¿–¢ÁV÷&W"ÜóBÁGí«¬í¿–¢ÁV÷&W"ÜóBÁVÊóE˜&ñ6R«¬í¿–¢ÁV÷&W"ÜóBÊ∆ñÊU˜F˜F¬«¬í¿–¢óBÊ76ñvÊVE˜FV6ÜÊñ6ñÂ˜W6W&Ê÷R«¬ÁV∆¬¿–¢óBÊó5˜6W'fñ6R¿–¢óBÊ7W7Fˆ÷W%˜&ñ6U˜'V∆UˆñB«¬ÁV∆¬¿–¢óBÊÊ˜&÷≈˜VÊóE˜&ñ6R«¬ÁV∆¬¿–¢óBÊ7W7Fˆ÷W%˜&ñ6Uˆ∆&V¬«¬ÁV∆¬¿–¢óBÊ7W7Fˆ÷W%ˆ6◊ñvÂˆÊ÷R«¬ÁV∆¬¿–¢óBÊ7W7Fˆ÷W%˜&ñ6U˜6˜W&6R«¬ÁV∆¬¿–¢––¢ì∞–¢––†–¢vóBVÁ7W&T6ÊˆÊñ6ƒ&ˆˆ∂ñÊt¶ˆ%VÊóG2Ü¶ˆ%ˆñB¬6∆ñVÁBì∞¢vóB6∆ñVÁBÁVW'íÜUDDRV&∆ñ2Ê¶ˆ'24UBW%˜VÊóEˆWfñFVÊ6UˆVÊ&∆VC’E%TRtÑU$R¶ˆ%ˆñC“C¬∂¶ˆ%ˆñE“ì∞†¢ñbÜ&“””“'W&vVÁB"bbGóVˆb∆ˆt¶ˆ%WFFR””“&gVÊ7Fñˆ‚"í∞¢vóB∆ˆt¶ˆ%WFFRÜ¶ˆ%ˆñB¬∞¢7F˜%˜W6W&Ê÷S¢&7W7Fˆ÷W""¿¢7F˜%˜&ˆ∆S¢&7W7Fˆ÷W""¿¢7Fñˆ„¢&7W7Fˆ÷W%˜W&vVÁEˆ7&VFVB"¿¢÷W76vS¢W&vVÁEW6ÖF&vWG2Ê∆VÊwFÄ¢Ú.ä>ãâÆàNã>à.äﬁòä^òûäràã>ä^ãà~äÆòéà~à~ã.âûò>äæòûàÆòéã.à~â~ã^òéâÓä>òûäﬁää>ãâÆà~ã.âí ¢¢.à.â>ãâûã^òûä.ãà~òNäòéäã^àÆòéã.à~ä>ãâÆà~ã.âí"¿¢ñ∆ˆC¢≤Fó7F6Öˆ÷ˆFS¢&ˆffW""“¿¢“¬6∆ñVÁBì∞¢–¢vóB6∆ñVÁBÁVW'íÇ$4Ù‘‘ïB"ì∞†¢ñbÜ&“””“'W&vVÁB"bbW&vVÁEW6ÖF&vWG2Ê∆VÊwFÇbbGóVˆbˆÊ˜FñgïW&vVÁDˆffW"””“&gVÊ7Fñˆ‚"í∞¢G'í∞¢vóBˆÊ˜FñgïW&vVÁDˆffW"á∞¢W6W&Ê÷W3¢W&vVÁEW6ÖF&vWG2¿¢¶ˆ%ˆñB¿¢&ˆˆ∂ñÊuˆ6ˆFR¿¢¶ˆ%˜GóR¿¢ˆñÁF÷VÁEˆFFWFñ÷R¿¢¶ˆ%˜¶ˆÊR¿¢“ì∞¢“6F6ÇÜÊ˜FñgîW'&˜"í∞¢6ˆÁ6ˆ∆RÊW'&˜"Ç%∑V&∆ñ5ˆ&ˆˆµ“W&vVÁBÊ˜Fñfñ6Fñˆ‚fñ∆VBgFW"6ˆ÷÷óB"¬∞¢¶ˆ%ˆñB¿¢÷W76vS¢Ê˜FñgîW'&˜"bbÊ˜FñgîW'&˜"Ê÷W76vR¿¢“ì∞¢–¢–¢6ˆÁ6ˆ∆RÊ∆ˆrÇu∑V&∆ñ5ˆ&ˆˆµ“r¬≤¶ˆ%ˆñB¬&ˆˆ∂ñÊuˆ6ˆFR¬&ˆˆ∂ñÊuˆ÷ˆFS¢&“¬&WVW7FVE˜FV6Ö˜GóS¢&WVW7FVEFV6ÖGóR¬GW&FñˆÂˆ÷ñ„¢GW&FñˆÂˆ÷ñÂ˜c"¬VffV7FófUˆ&∆ˆ6µˆ÷ñ„¢VffV7FófT&∆ˆ6¥÷ñ‚ÜGW&FñˆÂˆ÷ñÂ˜c"í“ì∞¢6ˆÁ7BW&vVÁEV&∆ñ57FGW2“&“””“'W&vVÁB ¢Ú∞¢Ü6S¢W&vVÁDˆffW'46˜VÁB‚Ú'6V&6ÜñÊr"¢&f∆∆&6≤"¿¢÷W76vS¢W&vVÁDˆffW'46˜VÁB‚ ¢Ú.ä>ãâÆàNã>à.äﬁòä^òûäràã>ä^ãà~äÆòéà~à~ã.âûò>äæòûàÆòéã.à~â~ã^òéâÓä>òûäﬁää>ãâÆà~ã.âí ¢¢.à.â>ãâûã^òûä.ãà~òNäòéäã^àÆòéã.à~ä>ãâÆà~ã.âíàNãéâ>äÆã.äã.ä>ânâ^ãNâNâ^ã.ääÆânã.âûãäæä>ã~äﬁâ^ãNâNâ^òéäﬁòäﬁâNäãNâûòNâNòí"¿¢–¢¢∑”∞¢&W2Êß6ˆ‚á∞¢7V66W73¢G'VR¿–¢¶ˆ%ˆñB¿–¢&ˆˆ∂ñÊuˆ6ˆFR¿–¢Fˆ∂V„¢"Á&˜w5≥“Ê&ˆˆ∂ñÊu˜Fˆ∂V‚¿–¢&ˆˆ∂ñÊuˆ÷ˆFS¢&“¿–¢Fó7F6Öˆ÷ˆFS¢Fó7F6Ñ÷ˆFR¿–¢‚‚‚Ü&“””“'66ÜVGV∆VB ¢Ú≤ˆffW'5ˆ6˜VÁC¢¬W&vVÁEˆˆffW%ˆVÊ&∆VC¢f«6R–¢¢W&vVÁEV&∆ñ57FGW2í¿¢GW&FñˆÂˆ÷ñ„¢GW&FñˆÂˆ÷ñÂ˜c"¿–¢VffV7FófUˆ&∆ˆ6µˆ÷ñ„¢VffV7FófT&∆ˆ6¥÷ñ‚ÜGW&FñˆÂˆ÷ñÂ˜c"í¿–¢G&fV≈ˆ'VffW%ˆ÷ñ„¢E$dT≈Ù%TddU%Ù‘î‚¿–¢∆ñVE˜&ˆ÷Û¢Ü∆ñVE&ˆ÷Úbb∆ñVDFó66˜VÁB‚íÚ∞–¢&ˆ÷ıˆñC¢∆ñVE&ˆ÷ÚÁ&ˆ÷ıˆñB¿–¢&ˆ÷ıˆÊ÷S¢∆ñVE&ˆ÷ÚÁ&ˆ÷ıˆÊ÷R¿–¢&ˆ÷ı˜GóS¢∆ñVE&ˆ÷ÚÁ&ˆ÷ı˜GóR¿–¢&ˆ÷ı˜f«VS¢∆ñVE&ˆ÷ÚÁ&ˆ÷ı˜f«VR¿–¢Fó66˜VÁC¢∆ñVDFó66˜VÁB¿–¢“¢ÁV∆¬¿–¢&6U˜F˜F√¢ÁV÷&W"Ü&6U˜F˜F¬«¬í¿–¢“ì∞–¢“6F6ÇÜRí∞–¢vóB6∆ñVÁBÁVW'íÇ%$Ùƒƒ$4≤"ì∞–¢6ˆÁ7B7FGW46ˆFR“ÁV÷&W"ÜSÚÁ7FGW46ˆFR«¬SÚÁ7FGW2«¬Sì∞–¢6ˆÁ6ˆ∆RÊW'&˜"ÜRì∞–¢&W2Á7FGW2á7FGW46ˆFR„“Cbb7FGW46ˆFR¬cÚ7FGW46ˆFR¢SíÊß6ˆ‚á∞–¢W'&˜#¢RÊ÷W76vR«¬.àéäﬁà~à~ã.âûòNäòéäÆã>òä>ò~àÇ"¿–¢6ˆFS¢SÚÊ6ˆFR«¬VÊFVfñÊVB¿–¢“ì∞–¢“fñÊ∆«í∞–¢6∆ñVÁBÁ&V∆V6RÇì∞–¢––¢––†–¢&WGW&‚∞–¢ÜÊF∆TF÷ñ‰&ˆˆµc"¿–¢ÜÊF∆TñÁFW&Êƒ&ˆˆ¥g&ˆ‘í¿–¢ÜÊF∆UV&∆ñ47W7Fˆ÷W%W&vVÁD&ˆˆ≤¿–¢ÜÊF∆UV&∆ñ4&ˆˆ≤¿–¢”∞–ß––†–¶÷ˆGV∆RÊWá˜'G2“∞–¢7&VFT&ˆˆ∂ñÊt¶ˆ%6W'fñ6R¿–ß”∞–
+    // sanitize items
+    const safeItemsIn = Array.isArray(items) ? items : [];
+    const itemIdQty = safeItemsIn
+      .map((x) => ({ item_id: Number(x.item_id), qty: Number(x.qty || 1) }))
+      .filter((x) => Number.isFinite(x.item_id) && x.item_id > 0 && Number.isFinite(x.qty) && x.qty > 0);
+
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+
+      // Durable, cross-instance idempotency for customer-sourced urgent
+      // requests: an advisory lock scoped to this transaction serializes any
+      // concurrent/retried requests sharing the same urgent_request_key
+      // (across all app-server instances connected to this Postgres), and
+      // auto-releases on COMMIT/ROLLBACK so it can never be left held by a
+      // crashed process. If a job for this exact key already committed
+      // (found via the deterministic booking_token), short-circuit here and
+      // return that prior result instead of creating a second job/offer set.
+      if (urgentRequestKey && urgentDeterministicToken) {
+        await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [urgentRequestKey]);
+        const dupCheck = await client.query(
+          `SELECT j.job_id, j.booking_code, j.booking_token, COALESCE(j.job_status,'') AS job_status,
+                  COUNT(o.offer_id)::int AS offers_count
+             FROM public.jobs j
+             LEFT JOIN public.job_offers o ON o.job_id=j.job_id
+            WHERE j.booking_token=$1
+            GROUP BY j.job_id, j.booking_code, j.booking_token, j.job_status
+            LIMIT 1`,
+          [urgentDeterministicToken]
+        );
+        const dupRow = dupCheck.rows[0] || null;
+        if (dupRow && dupRow.booking_code) {
+          await client.query("COMMIT");
+          const duplicatePayload = {
+            success: true,
+            booking_code: dupRow.booking_code,
+            token: dupRow.booking_token,
+            duplicate: true,
+            offers_count: Number(dupRow.offers_count || 0),
+          };
+          if (dupRow.job_status === JOB_STATUS.URGENT_NO_TECHNICIAN) {
+            duplicatePayload.phase = "admin_review";
+            duplicatePayload.admin_review = true;
+            duplicatePayload.message = "‡∏™‡πà‡∏á‡∏Ñ‡∏≥‡∏Ç‡∏≠‡πÄ‡∏Ç‡πâ‡∏≤‡∏Ñ‡∏¥‡∏ß‡πÅ‡∏≠‡∏î‡∏°‡∏¥‡∏ô‡πÅ‡∏•‡πâ‡∏ß";
+          }
+          return res.json(duplicatePayload);
+        }
+      }
+
+      await expireTechnicianAcceptStatuses(client);
+
+      // promo
+      let promo = null;
+      if (promotion_id) {
+        const pr = await client.query(
+          `SELECT promo_id, promo_name, promo_type, promo_value
+           FROM public.promotions
+           WHERE promo_id=$1 AND is_active=TRUE LIMIT 1`,
+          [promotion_id]
+        );
+        promo = pr.rows[0] || null;
+      }
+
+      // resolve items
+  const computedItems = [];
+
+  const serviceLineItems = await customerPricingHelpers.buildCustomerServiceLineItemsFromPayload(
+    (payloadV2.services && Array.isArray(payloadV2.services))
+      ? payloadV2
+      : { ...payloadV2, services: [{
+          job_type: payloadV2.job_type,
+          ac_type: payloadV2.ac_type,
+          btu: payloadV2.btu,
+          machine_count: payloadV2.machine_count,
+          wash_variant: payloadV2.wash_variant,
+          repair_variant: payloadV2.repair_variant,
+          assigned_to: (isUrgentOffer ? null : (technician_username || null)),
+        }] },
+    client
+  );
+
+  if (coerceNumber(override_price, 0) > 0) {
+    // Customer override price only. Payroll must never use this as technician income.
+    computedItems.push({ item_id: null, item_name: `‡∏Ñ‡πà‡∏≤‡∏ö‡∏£‡∏¥‡∏Å‡∏≤‡∏£ (override)`, qty: 1, unit_price: coerceNumber(override_price, 0), line_total: coerceNumber(override_price, 0), is_service: false, customer_price_source: 'manual_override' });
+  } else if (serviceLineItems.length) {
+    for (const it of serviceLineItems) computedItems.push(it);
+  } else if (standard_price > 0) {
+    computedItems.push({ item_id: null, item_name: `‡∏Ñ‡πà‡∏≤‡∏ö‡∏£‡∏¥‡∏Å‡∏≤‡∏£‡∏°‡∏≤‡∏ï‡∏£‡∏ê‡∏≤‡∏ô (${payloadV2.job_type || '-'})`, qty: 1, unit_price: Number(standard_price), line_total: Number(standard_price), is_service: false });
+  }
+
+      if (itemIdQty.length) {
+        const ids = itemIdQty.map((x) => x.item_id);
+        const catR = await client.query(
+          `SELECT item_id, item_name, base_price
+           FROM public.catalog_items
+           WHERE is_active=TRUE AND item_id = ANY($1::bigint[])`,
+          [ids]
+        );
+        const map = new Map(catR.rows.map((r) => [Number(r.item_id), r]));
+        for (const x of itemIdQty) {
+          const it = map.get(Number(x.item_id));
+          if (!it) continue;
+          const qty = Number(x.qty);
+          const unit_price = Number(it.base_price || 0);
+          computedItems.push({
+            item_id: Number(it.item_id),
+            item_name: it.item_name,
+            qty,
+            unit_price,
+            line_total: qty * unit_price,
+          });
+        }
+      }
+
+      // pricing via existing calcPricing
+      const pricing = calcPricing(computedItems, promo);
+
+      if (isUrgentOffer && ENABLE_SERVICE_ZONE_FILTER && !detectedZoneCode) {
+        const err = new Error('‡∏¢‡∏¥‡∏á‡∏á‡∏≤‡∏ô‡∏î‡πà‡∏ß‡∏ô‡πÑ‡∏°‡πà‡∏™‡∏≥‡πÄ‡∏£‡πá‡∏à: ‡∏£‡∏∞‡∏ö‡∏ö‡∏¢‡∏±‡∏á‡∏£‡∏∞‡∏ö‡∏∏‡πÇ‡∏ã‡∏ô‡∏û‡∏∑‡πâ‡∏ô‡∏ó‡∏µ‡πà‡πÑ‡∏°‡πà‡πÑ‡∏î‡πâ ‡∏Å‡∏£‡∏∏‡∏ì‡∏≤‡πÄ‡∏•‡∏∑‡∏≠‡∏Å‡πÇ‡∏ã‡∏ô‡∏´‡∏£‡∏∑‡∏≠‡∏Å‡∏£‡∏≠‡∏Å‡∏¢‡πà‡∏≤‡∏ô/‡πÄ‡∏Ç‡∏ï‡πÉ‡∏´‡πâ‡∏ä‡∏±‡∏î‡πÄ‡∏à‡∏ô‡∏Å‡πà‡∏≠‡∏ô‡∏¢‡∏¥‡∏á‡∏á‡∏≤‡∏ô');
+        err.statusCode = 409;
+        err.code = 'NO_SERVICE_ZONE_FOR_URGENT_OFFER';
+        err.debug = { service_zone_code: detectedZoneCode || null, service_zone_source: detectedZoneSource || null };
+        throw err;
+      }
+
+      // choose technician
+      // Urgent offer must NEVER auto-assign before a technician accepts the offer.
+      let selectedTech = isUrgentOffer ? "" : (assign_mode === 'team' ? teamRepresentative : requestedTech);
+      if (!isUrgentOffer && !selectedTech) {
+        // list group techs (Admin assign ignores accept_status)
+        const isAll = (ttype === 'all');
+        const tr = await client.query(
+          `
+          SELECT u.username, p.home_service_zone_code, p.secondary_service_zone_code, COALESCE(p.allow_out_of_zone,FALSE) AS allow_out_of_zone
+          FROM public.users u
+          LEFT JOIN public.technician_profiles p ON p.username=u.username
+          WHERE u.role='technician'
+            AND ($2::boolean IS TRUE OR COALESCE(p.accept_status,'paused')='ready' AND p.accept_status_expires_at IS NOT NULL AND p.accept_status_expires_at > NOW())
+            AND ($3::boolean IS TRUE OR (
+                  ($1='company' AND COALESCE(p.employment_type,'company') IN ('company','custom','special_only'))
+               OR ($1<>'company' AND COALESCE(p.employment_type,'company') = $1)
+            ))
+          ORDER BY u.username
+          `,
+          [ttype === 'all' ? 'company' : ttype, true, isAll]
+        );
+        const rankedRows = (ENABLE_SERVICE_ZONE_FILTER && detectedZoneCode) ? rankTechniciansForServiceZone(tr.rows || [], detectedZoneCode) : (tr.rows || []);
+        const list = rankedRows.map((r) => r.username).slice(0, 60);
+        selectedTech = await pickFirstAvailableTech(list, apptIso, duration_min);
+      } else if (!isUrgentOffer && selectedTech) {
+        // ‚úÖ Forced lock: allow even if technician hasn't opened accept_status,
+        // but still block lock on the technician's off-day.
+        if (mode === 'forced') {
+          try {
+            const pr = await client.query(
+              `SELECT username, weekly_off_days FROM public.technician_profiles WHERE username=$1 LIMIT 1`,
+              [selectedTech]
+            );
+            const techRow = { username: selectedTech, weekly_off_days: pr.rows[0]?.weekly_off_days || '' };
+            const apptDate = String(apptIso).slice(0,10);
+            const offMap = await buildOffMapForDate(apptDate, [selectedTech]);
+            if (isTechOffOnDate(techRow, apptDate, offMap)) {
+              return res.status(409).json({ error: `‡∏ä‡πà‡∏≤‡∏á‡∏ß‡∏±‡∏ô‡∏´‡∏¢‡∏∏‡∏î: ${selectedTech} (‡πÑ‡∏°‡πà‡∏™‡∏≤‡∏°‡∏≤‡∏£‡∏ñ‡∏•‡πá‡∏≠‡∏Ñ‡∏á‡∏≤‡∏ô‡πÑ‡∏î‡πâ)` });
+            }
+          } catch (e) {
+            console.warn('[admin_book_v2] off-day check failed (fail-open)', e.message);
+          }
+        }
+        const conflict = await checkTechCollision(selectedTech, apptIso, duration_min, null);
+        if (conflict) {
+          return http409Conflict(res, conflict);
+        }
+        if (detectedZoneCode) {
+          const zoneMatch = await technicianMatchesServiceZone(selectedTech, detectedZoneCode);
+          if (!zoneMatch.matches) {
+            forced_assignment_zone_warning = {
+              technician_username: selectedTech,
+              job_zone: detectedZoneCode,
+              technician_zone: zoneMatch.zone_code,
+              allow_out_of_zone: zoneMatch.allow_out_of_zone,
+            };
+            console.warn("[admin_book_v2] forced out-of-zone assignment", forced_assignment_zone_warning);
+          }
+        }
+      }
+
+      if (!isUrgentOffer && !selectedTech) {
+        return res.status(409).json({ error: "‡πÑ‡∏°‡πà‡∏û‡∏ö‡∏ä‡πà‡∏≤‡∏á‡∏ß‡πà‡∏≤‡∏á‡πÉ‡∏ô‡∏ä‡πà‡∏ß‡∏á‡πÄ‡∏ß‡∏•‡∏≤‡∏ô‡∏µ‡πâ" });
+      }
+
+      // ‚úÖ Team members collision check (including buffer) - backward compatible
+      const tmList = (!isUrgentOffer && assign_mode === 'team')
+        ? [...new Set(tmSelectedList.filter(u => u && u !== selectedTech))].slice(0, 10)
+        : [];
+      for (const u of tmList) {
+        const conflict = await checkTechCollision(u, apptIso, duration_min, null);
+        if (conflict) {
+          return http409Conflict(res, conflict);
+        }
+      }
+
+      const jobStatus = bm === "urgent" ? JOB_STATUS.ADMIN_URGENT_WAITING : JOB_STATUS.ADMIN_SCHEDULED_PENDING;
+      const jobInsert = await client.query(
+        `
+        INSERT INTO public.jobs
+        (customer_name, customer_phone, job_type, appointment_datetime, job_price,
+         address_text, technician_team, technician_username, job_status,
+         booking_token, job_source, dispatch_mode, customer_note,
+         maps_url, job_zone, duration_min, booking_mode, admin_override_duration_min,
+         gps_latitude, gps_longitude, service_zone_code, service_zone_source, allow_time_proposal)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$22,$23,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
+        RETURNING job_id
+        `,
+        [
+          String(customer_name).trim(),
+          (customer_phone || "").toString().trim(),
+          String(job_type).trim(),
+          apptIso,
+          Number(pricing.total || 0),
+          String(address_text).trim(),
+          (!isUrgentOffer && mode === "forced") ? selectedTech : null,
+          isUrgentOffer ? null : selectedTech,
+          jobStatus,
+          mode,
+          (customer_note || "").toString(),
+          (String(maps_url || "").trim() || null),
+          (String(job_zone || "").trim() || null),
+          duration_min,
+          (isUrgentOffer ? "urgent" : "scheduled"),
+          Math.max(0, coerceNumber(override_duration_min, 0)),
+          final_lat,
+          final_lng,
+          detectedZoneCode,
+          detectedZoneSource,
+          allowTimeProposal,
+          publicBookingToken,
+          createdBySource,
+        ]
+      );
+
+      const job_id = jobInsert.rows[0].job_id;
+      const booking_code = await generateUniqueBookingCode(client);
+      await client.query(`UPDATE public.jobs SET booking_code=$1 WHERE job_id=$2`, [booking_code, job_id]);
+
+      // ‚úÖ Team members (primary + assistants) - backward compatible
+      // Urgent jobs are intentionally unassigned until a technician accepts the offer.
+      // NOTE: some production DBs may not have is_primary column yet.
+      if (!isUrgentOffer) try {
+        const tmAll = [...new Set([selectedTech, ...tmList].map(x => (x||"").toString().trim()).filter(Boolean))].slice(0, 10);
+        await client.query(`DELETE FROM public.job_team_members WHERE job_id=$1`, [job_id]);
+        for (const u of tmAll) {
+          try {
+            await client.query(
+              `INSERT INTO public.job_team_members (job_id, username, is_primary)
+               VALUES ($1,$2,$3)`,
+              [job_id, u, u === selectedTech]
+            );
+          } catch (insErr) {
+            if (insErr && String(insErr.code) === '42703') {
+              await client.query(
+                `INSERT INTO public.job_team_members (job_id, username)
+                 VALUES ($1,$2)
+                 ON CONFLICT (job_id, username) DO NOTHING`,
+                [job_id, u]
+              );
+            } else {
+              throw insErr;
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("[admin_book_v2] save team members failed", e);
+      }
+
+      // ‚úÖ job_assignments upsert (team status per technician)
+      if (!isUrgentOffer) try {
+        const tmAll = [...new Set([selectedTech, ...tmList].map(x => (x||"").toString().trim()).filter(Boolean))].slice(0, 10);
+        for (const u of tmAll) {
+          await client.query(
+            `
+            INSERT INTO public.job_assignments (job_id, technician_username, status)
+            VALUES ($1,$2,'${ASSIGNMENT_STATUS.IN_PROGRESS}')
+            ON CONFLICT (job_id, technician_username) DO UPDATE SET status=EXCLUDED.status
+            `,
+            [job_id, u]
+          );
+        }
+      } catch (e) {
+        console.warn("[admin_book_v2] upsert job_assignments failed (fail-open)", e.message);
+      }
+
+      // job_items
+      for (const it of computedItems) {
+        await client.query(
+          `INSERT INTO public.job_items
+            (job_id, item_id, item_name, qty, unit_price, line_total, assigned_technician_username, is_service,
+             customer_price_rule_id, normal_unit_price, customer_price_label, customer_campaign_name, customer_price_source)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+          [
+            job_id,
+            it.item_id || null,
+            it.item_name,
+            Number(it.qty || 0),
+            Number(it.unit_price || 0),
+            Number(it.line_total || 0),
+            (it.assigned_technician_username || null),
+            !!it.is_service,
+            it.customer_price_rule_id || null,
+            it.normal_unit_price || null,
+            it.customer_price_label || null,
+            it.customer_campaign_name || null,
+            it.customer_price_source || null,
+          ]
+        );
+      }
+
+      if (promo) {
+        await client.query(
+          `INSERT INTO public.job_promotions (job_id, promo_id, applied_discount)
+           VALUES ($1,$2,$3)
+           ON CONFLICT (job_id) DO UPDATE SET promo_id=EXCLUDED.promo_id, applied_discount=EXCLUDED.applied_discount`,
+          [job_id, promo.promo_id, Number(pricing.discount || 0)]
+        );
+      }
+
+      const directPushTargets = isUrgentOffer ? [] : [...new Set([selectedTech, ...tmList].map(x => (x||"").toString().trim()).filter(Boolean))];
+      let urgentPushTargets = [];
+
+      // urgent offers to partner (‡∏ñ‡πâ‡∏≤ bm=urgent ‡πÅ‡∏•‡∏∞‡∏Å‡∏•‡∏∏‡πà‡∏° partner)
+      if (isUrgentOffer) {
+        const partners = await client.query(
+          `
+          SELECT u.username, p.home_service_zone_code, p.secondary_service_zone_code, COALESCE(p.allow_out_of_zone,FALSE) AS allow_out_of_zone
+          FROM public.users u
+          LEFT JOIN public.technician_profiles p ON p.username=u.username
+          WHERE u.role='technician'
+            AND COALESCE(p.accept_status,'paused')='ready' AND p.accept_status_expires_at IS NOT NULL AND p.accept_status_expires_at > NOW()
+            AND (
+                  $1::text = 'all'
+               OR ($1::text = 'company' AND COALESCE(p.employment_type,'company') IN ('company','custom','special_only'))
+               OR ($1::text <> 'company' AND COALESCE(p.employment_type,'company') = $1::text)
+            )
+          ORDER BY u.username
+          `
+        , [ttype]);
+
+        const partnerRows = partners.rows || [];
+        let candidateRows = partnerRows;
+        if (ENABLE_SERVICE_ZONE_FILTER && detectedZoneCode) {
+          const primary = partnerRows.filter(r => String(r.home_service_zone_code || "").toUpperCase() === detectedZoneCode);
+          const secondary = partnerRows.filter(r => String(r.home_service_zone_code || "").toUpperCase() !== detectedZoneCode && String(r.secondary_service_zone_code || "").toUpperCase() === detectedZoneCode);
+          zone_filter_applied = true;
+          zone_matched_technicians_count = primary.length + secondary.length;
+          zone_fallback_used = false;
+          candidateRows = [...primary, ...secondary];
+        }
+        const list = rankTechniciansForServiceZone(candidateRows, detectedZoneCode).map((r) => r.username);
+        // ‡∏à‡∏≥‡∏Å‡∏±‡∏î 30 ‡∏ó‡∏µ‡∏°
+        const maxTeams = 30;
+        const shuffled = list.slice(0, maxTeams);
+        const available = [];
+        for (const u of shuffled) {
+          const ok = await isTechFree(u, apptIso, duration_min, null);
+          if (ok) available.push(u);
+        }
+
+        if (!available.length) {
+          if (createdBySource === "customer" && bm === "urgent" && mode === "offer") {
+            await client.query(
+              `UPDATE public.jobs
+                  SET job_status='${JOB_STATUS.URGENT_NO_TECHNICIAN}',
+                      technician_username=NULL,
+                      technician_team=NULL,
+                      dispatch_mode='offer'
+                WHERE job_id=$1`,
+              [job_id]
+            );
+            console.warn("[admin_book_v2] customer_urgent_no_offer_targets", {
+              job_id,
+              booking_code,
+              service_zone_code: detectedZoneCode || null,
+            });
+          } else {
+          const err = new Error('‡∏¢‡∏¥‡∏á‡∏á‡∏≤‡∏ô‡∏î‡πà‡∏ß‡∏ô‡πÑ‡∏°‡πà‡∏™‡∏≥‡πÄ‡∏£‡πá‡∏à: ‡∏ï‡∏≠‡∏ô‡∏ô‡∏µ‡πâ‡πÑ‡∏°‡πà‡∏°‡∏µ‡∏ä‡πà‡∏≤‡∏á‡∏ó‡∏µ‡πà‡πÄ‡∏õ‡∏¥‡∏î‡∏£‡∏±‡∏ö‡∏á‡∏≤‡∏ô ‡∏ß‡πà‡∏≤‡∏á‡∏à‡∏£‡∏¥‡∏á ‡πÅ‡∏•‡∏∞‡∏≠‡∏¢‡∏π‡πà‡πÉ‡∏ô‡πÇ‡∏ã‡∏ô‡∏ô‡∏µ‡πâ ‡∏£‡∏∞‡∏ö‡∏ö‡∏à‡∏∂‡∏á‡∏¢‡∏±‡∏á‡πÑ‡∏°‡πà‡πÑ‡∏î‡πâ‡∏™‡πà‡∏á‡∏á‡∏≤‡∏ô‡∏≠‡∏≠‡∏Å‡πÑ‡∏õ‡πÉ‡∏´‡πâ‡∏ä‡πà‡∏≤‡∏á‡∏£‡∏±‡∏ö');
+          err.statusCode = 409;
+          err.code = 'NO_URGENT_OFFER_TARGETS';
+          err.debug = {
+            partner_count: partnerRows.length,
+            candidate_count: candidateRows.length,
+            service_zone_code: detectedZoneCode || null,
+            zone_filter_applied,
+            zone_matched_technicians_count,
+            zone_fallback_used,
+          };
+          throw err;
+          }
+        }
+
+        for (const u of available) {
+          await client.query(
+            `INSERT INTO public.job_offers (job_id, technician_username, status, expires_at)
+             VALUES ($1,$2,'${OFFER_STATUS.PENDING}', NOW() + INTERVAL '10 minutes')`,
+            [job_id, u]
+          );
+        }
+        urgentPushTargets = available.slice();
+        console.log("[admin_book_v2] urgent_offers", { job_id, booking_code, count: available.length });
+      }
+
+      await ensureCanonicalBookingJobUnits(job_id, client);
+      await client.query(`UPDATE public.jobs SET per_unit_evidence_enabled=TRUE WHERE job_id=$1`, [job_id]);
+      await client.query("COMMIT");
+
+      // ‚úÖ Prepare technician income preview/cache right after job creation.
+      // Covers: normal/forced jobs + urgent offers shown on ‡∏£‡∏±‡∏ö‡∏á‡∏≤‡∏ô‡πÉ‡∏´‡∏°‡πà.
+      // It calculates only this job per technician, so technician app can display income immediately.
+      let incomeByUsernameForNotify = {};
+      try {
+        const previewTargets = [...new Set([selectedTech, ...tmList, ...urgentPushTargets].map(x => (x || '').toString().trim()).filter(Boolean))].slice(0, 60);
+        incomeByUsernameForNotify = await _refreshTechnicianIncomePreviewForJob(job_id, previewTargets, { source: isUrgentOffer ? 'offer_preview' : 'job_preview' }) || {};
+      } catch (e) {
+        console.warn('[income_preview] admin_book_v2 preview failed', e.message);
+      }
+
+      // üîî best-effort push: ‡∏´‡πâ‡∏≤‡∏°‡πÉ‡∏´‡πâ‡πÅ‡∏à‡πâ‡∏á‡πÄ‡∏ï‡∏∑‡∏≠‡∏ô‡∏û‡∏±‡∏á‡∏à‡∏ô‡∏Å‡∏≤‡∏£‡∏•‡∏á‡∏á‡∏≤‡∏ô fail
+      // ‡πÉ‡∏™‡πà‡∏¢‡∏≠‡∏î ‚Äú‡∏ó‡∏µ‡πà‡∏ä‡πà‡∏≤‡∏á‡∏à‡∏∞‡πÑ‡∏î‡πâ‡∏£‡∏±‡∏ö‚Äù ‡∏•‡∏á‡πÉ‡∏ô‡πÅ‡∏à‡πâ‡∏á‡πÄ‡∏ï‡∏∑‡∏≠‡∏ô ‡πÇ‡∏î‡∏¢‡πÉ‡∏ä‡πâ preview ‡∏ó‡∏µ‡πà‡∏Ñ‡∏≥‡∏ô‡∏ß‡∏ì‡πÑ‡∏ß‡πâ‡∏´‡∏•‡∏±‡∏á‡∏™‡∏£‡πâ‡∏≤‡∏á‡∏á‡∏≤‡∏ô‡∏ó‡∏±‡∏ô‡∏ó‡∏µ
+      try {
+        if (urgentPushTargets.length) {
+          _notifyUrgentOffer({ usernames: urgentPushTargets, job_id, booking_code, job_type, appointment_datetime: apptIso, job_zone, income_by_username: incomeByUsernameForNotify }).catch(()=>{});
+        } else if (directPushTargets.length) {
+          _notifyDirectJobAssigned({ usernames: directPushTargets, job_id, booking_code, job_type, appointment_datetime: apptIso, job_zone, income_by_username: incomeByUsernameForNotify }).catch(()=>{});
+        }
+      } catch (_) {}
+
+      console.log("[admin_book_v2]", {
+        job_id,
+        booking_code,
+        tech_type: ttype,
+        technician_username: isUrgentOffer ? null : selectedTech,
+        duration_min,
+        effective_block_min: effectiveBlockMin(duration_min),
+        standard_price,
+        total: pricing.total,
+        promo_id: promo?.promo_id || null,
+      });
+
+      return res.json({
+        success: true,
+        job_id,
+        booking_code,
+        token: publicBookingToken,
+        technician_username: isUrgentOffer ? null : selectedTech,
+        tech_type: ttype,
+        duration_min,
+        effective_block_min: effectiveBlockMin(duration_min),
+        travel_buffer_min: TRAVEL_BUFFER_MIN,
+        standard_price: Number(standard_price || 0),
+        subtotal: Number(pricing.subtotal || 0),
+        discount: Number(pricing.discount || 0),
+        total: Number(pricing.total || 0),
+        booking_mode: bm,
+        dispatch_mode: mode,
+        service_zone_code: detectedZoneCode,
+        service_zone_label: detectedZoneLabel,
+        service_zone_source: detectedZoneSource,
+        zone_filter_applied,
+        zone_matched_technicians_count,
+        zone_fallback_used,
+        forced_assignment_zone_warning,
+        offers_count: urgentPushTargets.length,
+        allow_time_proposal: allowTimeProposal,
+        ...(createdBySource === "customer" && isUrgentOffer && urgentPushTargets.length === 0 ? {
+          phase: "admin_review",
+          admin_review: true,
+          message: "‡∏™‡πà‡∏á‡∏Ñ‡∏≥‡∏Ç‡∏≠‡πÄ‡∏Ç‡πâ‡∏≤‡∏Ñ‡∏¥‡∏ß‡πÅ‡∏≠‡∏î‡∏°‡∏¥‡∏ô‡πÅ‡∏•‡πâ‡∏ß",
+        } : {}),
+      });
+    } catch (e) {
+      await client.query("ROLLBACK");
+      const statusCode = Number(e?.statusCode || e?.status || 500);
+      console.error("/admin/book_v2 error:", e);
+      return res.status(statusCode >= 400 && statusCode < 600 ? statusCode : 500).json({
+        error: e.message || "admin book v2 failed",
+        code: e?.code || undefined,
+        debug: e?.debug || undefined,
+      });
+    } finally {
+      client.release();
+    }
+  }
+
+  async function handleInternalBookFromAi(req, res) {
+    const missing = validateInternalBookingPayload(req.body);
+    if (missing.length) {
+      return res.status(400).json({
+        error: 'MISSING_REQUIRED_FIELDS',
+        missing_fields: missing,
+      });
+    }
+    const originalJson = res.json.bind(res);
+    res.json = (payload) => {
+      if (payload && payload.success) {
+        return originalJson({
+          ...payload,
+          admin_notification: buildAdminBookingNotificationPayload(req.body, payload),
+        });
+      }
+      return originalJson(payload);
+    };
+    return handleAdminBookV2(req, res);
+  }
+
+  function deriveCustomerScheduledBookingToken(requestKey) {
+    const key = String(requestKey || "").trim();
+    if (!key) return null;
+    return crypto.createHash("sha256").update(`scheduled_v1:${key}`).digest("hex").slice(0, 24);
+  }
+
+  // A scheduled request key is bound to the booking it first created. On replay we
+  // only return the existing job when the FULL canonical material payload matches;
+  // a key reused with any different material field is a key-reuse error, never a
+  // silent return of the old job's data. "Material" = every persisted field that
+  // defines the booking contract: appointment, contact, place, and the canonical
+  // service composition (from job_items, which also carries price).
+  function normalizedBookingScalar(value) {
+    return String(value == null ? "" : value).trim();
+  }
+
+  // Canonical, order-independent signature of a set of line items. line_total
+  // captures unit price √ó qty, so BTU/variant/qty/price changes all shift it.
+  function bookingLineSignature(rows) {
+    return (rows || [])
+      .map((it) => `${normalizedBookingScalar(it.item_name)}#${Number(it.qty || 0)}#${Number(it.line_total || 0)}`)
+      .sort()
+      .join("|");
+  }
+
+  async function loadStoredBookingLineSignature(db, jobId) {
+    const r = await db.query(
+      `SELECT item_name, qty, line_total FROM public.job_items WHERE job_id=$1`,
+      [jobId]
+    );
+    return bookingLineSignature(r.rows);
+  }
+
+  // Rebuild the incoming service + extra lines with the SAME normalizer used to
+  // create a booking, so an identical service payload yields an identical
+  // signature (and any material change yields a different one). Read-only.
+  async function buildIncomingBookingLineSignature(db, payloadV2, itemIdQty, standardPrice) {
+    let computed = [];
+    let total = Number(standardPrice || 0);
+    const serviceLines = await customerPricingHelpers.buildCustomerServiceLineItemsFromPayload(
+      (payloadV2.services && Array.isArray(payloadV2.services))
+        ? payloadV2
+        : {
+            ...payloadV2,
+            services: [{
+              job_type: payloadV2.job_type,
+              ac_type: payloadV2.ac_type,
+              btu: payloadV2.btu,
+              machine_count: payloadV2.machine_count,
+              wash_variant: payloadV2.wash_variant,
+              repair_variant: payloadV2.repair_variant,
+            }],
+          },
+      db
+    );
+    if (serviceLines.length) {
+      computed = computed.concat(serviceLines);
+    } else if (total > 0) {
+      computed.push({ item_name: `‡∏Ñ‡πà‡∏≤‡∏ö‡∏£‡∏¥‡∏Å‡∏≤‡∏£‡∏°‡∏≤‡∏ï‡∏£‡∏ê‡∏≤‡∏ô (${payloadV2.job_type || "-"})`, qty: 1, line_total: total });
+    }
+    if (itemIdQty && itemIdQty.length) {
+      const ids = itemIdQty.map((x) => x.item_id);
+      const catR = await db.query(
+        `SELECT item_id, item_name, base_price FROM public.catalog_items
+          WHERE is_active=TRUE AND is_customer_visible=TRUE AND item_id = ANY($1::bigint[])`,
+        [ids]
+      );
+      const map = new Map(catR.rows.map((row) => [Number(row.item_id), row]));
+      for (const x of itemIdQty) {
+        const it = map.get(Number(x.item_id));
+        if (!it) continue;
+        const qty = Number(x.qty);
+        computed.push({ item_name: it.item_name, qty, line_total: qty * Number(it.base_price || 0) });
+      }
+    }
+    return bookingLineSignature(computed);
+  }
+
+  // Scalar material fields persisted on the jobs row (everything but the service
+  // lines, which are compared via the signature above).
+  function scheduledScalarsMatch(jobRow, incoming, options = {}) {
+    const apptTime = (v) => {
+      const t = new Date(v).getTime();
+      return Number.isFinite(t) ? t : NaN;
+    };
+    if (options.serverAppointmentAuthoritative !== true) {
+      const a = apptTime(jobRow.appointment_datetime);
+      const b = apptTime(normalizeAppointmentDatetime(incoming.appointment_datetime));
+      if (!(Number.isFinite(a) && Number.isFinite(b) && a === b)) return false;
+    }
+    if (normalizedBookingScalar(jobRow.customer_phone).replace(/\D/g, "") !== normalizedBookingScalar(incoming.customer_phone).replace(/\D/g, "")) return false;
+    if (normalizedBookingScalar(jobRow.customer_name) !== normalizedBookingScalar(incoming.customer_name)) return false;
+    if (normalizedBookingScalar(jobRow.address_text) !== normalizedBookingScalar(incoming.address_text)) return false;
+    if (normalizedBookingScalar(jobRow.maps_url) !== normalizedBookingScalar(incoming.maps_url)) return false;
+    if (normalizedBookingScalar(jobRow.job_zone) !== normalizedBookingScalar(incoming.job_zone)) return false;
+    if (normalizedBookingScalar(jobRow.job_type) !== normalizedBookingScalar(incoming.job_type)) return false;
+    if (normalizedBookingScalar(jobRow.customer_note) !== normalizedBookingScalar(incoming.customer_note)) return false;
+    if (Boolean(jobRow.allow_time_proposal) !== Boolean(incoming.allow_time_proposal)) return false;
+    const storedLat = jobRow.gps_latitude == null || String(jobRow.gps_latitude).trim() === "" ? null : Number(jobRow.gps_latitude);
+    const storedLng = jobRow.gps_longitude == null || String(jobRow.gps_longitude).trim() === "" ? null : Number(jobRow.gps_longitude);
+    const incomingLat = incoming.gps_latitude == null || String(incoming.gps_latitude).trim() === "" ? null : Number(incoming.gps_latitude);
+    const incomingLng = incoming.gps_longitude == null || String(incoming.gps_longitude).trim() === "" ? null : Number(incoming.gps_longitude);
+    if (storedLat !== incomingLat || storedLng !== incomingLng) return false;
+    if (Number(jobRow.duration_min || 0) !== Number(incoming.duration_min || 0)) return false;
+    return true;
+  }
+
+  // Full canonical match = scalar fields + service-line signature. Used identically
+  // by the pre-flight replay and the in-transaction race path.
+  async function scheduledPayloadMatchesExisting(db, jobRow, incoming, options = {}) {
+    if (!scheduledScalarsMatch(jobRow, incoming, options)) return false;
+    const storedSig = await loadStoredBookingLineSignature(db, jobRow.job_id);
+    const incomingSig = await buildIncomingBookingLineSignature(db, incoming.payloadV2, incoming.itemIdQty, incoming.standardPrice);
+    return storedSig === incomingSig;
+  }
+
+  // Customer App V2 urgent requests are just another entry point into the
+  // existing public booking workflow: this adapter strips the request down to
+  // a customer-safe allowlist and validates the customer's Bangkok wall-clock
+  // preference before any pricing or database work. Deduplication of
+  // retried/duplicate submits sharing the same client-generated
+  // urgent_request_key is handled durably inside handlePublicBook's existing
+  // transaction (advisory lock + deterministic booking_token lookup), not
+  // here, so it survives process restarts and works across instances.
+  function handlePublicCustomerUrgentBook(req, res) {
+    const incoming = urgentPublicAdapter.sanitizeCustomerUrgentBody(req.body || {});
+    const requestKey = incoming.urgent_request_key;
+    if (!requestKey || requestKey.length < 16) {
+      return res.status(400).json({ error: "MISSING_REQUEST_KEY", code: "MISSING_REQUEST_KEY" });
+    }
+    if (!urgentPublicAdapter.isStrictUrgentCleaningPayload(incoming)) {
+      return res.status(400).json({ error: "URGENT_CLEANING_ONLY", code: "URGENT_CLEANING_ONLY" });
+    }
+    const appointment = urgentPublicAdapter.normalizeCustomerUrgentAppointment(incoming.appointment_datetime);
+    if (!appointment) {
+      return res.status(400).json({ error: "‡∏ß‡∏±‡∏ô‡πÅ‡∏•‡∏∞‡πÄ‡∏ß‡∏•‡∏≤‡∏ó‡∏µ‡πà‡∏ï‡πâ‡∏≠‡∏á‡∏Å‡∏≤‡∏£‡πÑ‡∏°‡πà‡∏ñ‡∏π‡∏Å‡∏ï‡πâ‡∏≠‡∏á", code: "INVALID_APPOINTMENT_DATETIME" });
+    }
+    if (urgentPublicAdapter.isCustomerUrgentAppointmentPast(appointment)) {
+      return res.status(409).json({ error: "‡∏ß‡∏±‡∏ô‡πÅ‡∏•‡∏∞‡πÄ‡∏ß‡∏•‡∏≤‡∏ó‡∏µ‡πà‡πÄ‡∏•‡∏∑‡∏≠‡∏Å‡∏¢‡πâ‡∏≠‡∏ô‡∏´‡∏•‡∏±‡∏á‡πÑ‡∏°‡πà‡πÑ‡∏î‡πâ ‡∏Å‡∏£‡∏∏‡∏ì‡∏≤‡πÄ‡∏•‡∏∑‡∏≠‡∏Å‡πÄ‡∏ß‡∏•‡∏≤‡πÉ‡∏´‡∏°‡πà", code: "APPOINTMENT_IN_PAST" });
+    }
+    if (incoming.allow_time_proposal !== true && incoming.allow_time_proposal !== false) {
+      return res.status(400).json({ error: "‡∏Å‡∏£‡∏∏‡∏ì‡∏≤‡πÄ‡∏•‡∏∑‡∏≠‡∏Å‡πÄ‡∏á‡∏∑‡πà‡∏≠‡∏ô‡πÑ‡∏Ç‡∏Å‡∏≤‡∏£‡πÄ‡∏™‡∏ô‡∏≠‡πÄ‡∏ß‡∏•‡∏≤", code: "INVALID_TIME_PROPOSAL_PREFERENCE" });
+    }
+    const gps = urgentPublicAdapter.validateCustomerUrgentGps(incoming.gps_latitude, incoming.gps_longitude);
+    if (!gps.ok) {
+      return res.status(400).json({ error: "‡∏Ç‡πâ‡∏≠‡∏°‡∏π‡∏• GPS ‡πÑ‡∏°‡πà‡∏ñ‡∏π‡∏Å‡∏ï‡πâ‡∏≠‡∏á ‡∏Å‡∏£‡∏∏‡∏ì‡∏≤‡∏™‡πà‡∏á‡∏•‡∏∞‡∏ï‡∏¥‡∏à‡∏π‡∏î‡πÅ‡∏•‡∏∞‡∏•‡∏≠‡∏á‡∏à‡∏¥‡∏à‡∏π‡∏î‡∏ó‡∏µ‡πà‡∏ñ‡∏π‡∏Å‡∏ï‡πâ‡∏≠‡∏á‡∏û‡∏£‡πâ‡∏≠‡∏°‡∏Å‡∏±‡∏ô", code: "INVALID_GPS" });
+    }
+
+    req.cwfBookSource = "customer";
+    req.cwfPublicUrgentPrepared = true;
+    req.body = {
+      ...incoming,
+      appointment_datetime: appointment,
+      booking_mode: "urgent",
+      dispatch_mode: "offer",
+      tech_type: "partner",
+      assign_mode: "auto",
+      technician_username: "",
+      team_members: [],
+      allow_time_proposal: incoming.allow_time_proposal,
+      gps_latitude: gps.latitude,
+      gps_longitude: gps.longitude,
+    };
+
+    return handlePublicBook(req, res);
+  }
+
+  // ‚úÖ Fail-safe capability check: jobs.catalog_item_id / jobs.customer_sub are
+  // additive columns from a migration that may not have run yet. Never assume
+  // they exist ‚Äî insert NULL/omit them until the schema is confirmed ready.
+  let jobsCatalogLinkSchemaReadyCache = false;
+  async function isJobsCatalogLinkSchemaReady() {
+    if (jobsCatalogLinkSchemaReadyCache) return true;
+    try {
+      const r = await pool.query(
+        `SELECT COUNT(*)::int AS cnt FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = 'jobs'
+            AND column_name IN ('catalog_item_id', 'customer_sub')`
+      );
+      const ready = Number(r.rows?.[0]?.cnt || 0) === 2;
+      if (ready) jobsCatalogLinkSchemaReadyCache = true;
+      return ready;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  async function handlePublicBook(req, res) {
+    // ‚úÖ ‡∏•‡∏π‡∏Å‡∏Ñ‡πâ‡∏≤‡∏à‡∏≠‡∏á‡∏Ñ‡∏¥‡∏ß (‡πÑ‡∏°‡πà‡∏ö‡∏±‡∏á‡∏Ñ‡∏±‡∏ö‡∏Å‡∏£‡∏≠‡∏Å lat/lng) + ‡πÄ‡∏•‡∏∑‡∏≠‡∏Å‡∏£‡∏≤‡∏¢‡∏Å‡∏≤‡∏£‡∏ö‡∏£‡∏¥‡∏Å‡∏≤‡∏£/‡∏™‡∏¥‡∏ô‡∏Ñ‡πâ‡∏≤‡πÑ‡∏î‡πâ
+    // - ‡πÇ‡∏õ‡∏£‡πÇ‡∏°‡∏ä‡∏±‡πà‡∏ô: ‡πÉ‡∏´‡πâ‡πÅ‡∏≠‡∏î‡∏°‡∏¥‡∏ô‡πÄ‡∏õ‡πá‡∏ô‡∏Ñ‡∏ô‡πÉ‡∏™‡πà/‡∏•‡∏ö‡πÄ‡∏ó‡πà‡∏≤‡∏ô‡∏±‡πâ‡∏ô (‡∏ù‡∏±‡πà‡∏á‡∏•‡∏π‡∏Å‡∏Ñ‡πâ‡∏≤‡πÑ‡∏°‡πà‡∏£‡∏±‡∏ö promo_id)
+    const {
+      customer_name,
+      customer_phone,
+      job_type,
+      appointment_datetime,
+      address_text,
+      customer_note,
+      maps_url,
+      gps_latitude,
+      gps_longitude,
+      job_zone,
+      items, // [{item_id, qty}] (extras)
+      booking_mode,
+      client_app,
+      allow_admin_schedule_fallback,
+      allow_time_proposal,
+      ac_type,
+      btu,
+      machine_count,
+      wash_variant,
+      repair_variant,
+      services,
+      scheduled_request_key,
+      urgent_request_key,
+      catalog_item_id, // optional: links this booking to the Store catalog item it was booked for
+    } = req.body || {};
+
+    // üîí Kill switch (fail closed) ‚Äî CANONICAL GATE. /public/book is entirely
+    // unauthenticated, so the gate keys off the canonical booking_mode ONLY.
+    // client_app is attacker-controlled and MUST NOT be a security boundary:
+    // gating on it would let a request drop/forge client_app and slip past.
+    // This runs before urgent routing, pricing, idempotency, insert, and offer
+    // dispatch, so a closed lane can never create a job/offer. Admin bookings use
+    // the session-authenticated /admin route, never this one. Unknown modes are
+    // rejected outright (no fall-through).
+    const canonicalBookingMode = String(booking_mode || "scheduled").trim().toLowerCase();
+    if (canonicalBookingMode !== "scheduled" && canonicalBookingMode !== "urgent") {
+      return res.status(400).json({ error: "‡∏õ‡∏£‡∏∞‡πÄ‡∏†‡∏ó‡∏Å‡∏≤‡∏£‡∏à‡∏≠‡∏á‡πÑ‡∏°‡πà‡∏ñ‡∏π‡∏Å‡∏ï‡πâ‡∏≠‡∏á", code: "UNKNOWN_BOOKING_MODE" });
+    }
+    const urgentCapability = canonicalBookingMode === "urgent"
+      ? await resolveCustomerUrgentCapability()
+      : null;
+    if (canonicalBookingMode === "urgent" && urgentCapability?.enabled !== true) {
+      return res.status(503).json({
+        error: "‡∏£‡∏∞‡∏ö‡∏ö‡∏à‡∏≠‡∏á‡∏î‡πà‡∏ß‡∏ô‡∏≠‡∏≠‡∏ô‡πÑ‡∏•‡∏ô‡πå‡∏õ‡∏¥‡∏î‡πÉ‡∏´‡πâ‡∏ö‡∏£‡∏¥‡∏Å‡∏≤‡∏£‡∏ä‡∏±‡πà‡∏ß‡∏Ñ‡∏£‡∏≤‡∏ß ‡∏Å‡∏£‡∏∏‡∏ì‡∏≤‡∏ï‡∏¥‡∏î‡∏ï‡πà‡∏≠‡πÅ‡∏≠‡∏î‡∏°‡∏¥‡∏ô‡∏ó‡∏≤‡∏á LINE",
+        line_url: CWF_LINE_CONTACT_URL,
+      });
+    }
+    if (canonicalBookingMode === "scheduled" && !ENABLE_CUSTOMER_SCHEDULED_BOOKING) {
+      return res.status(503).json({
+        error: "‡∏£‡∏∞‡∏ö‡∏ö‡∏à‡∏≠‡∏á‡∏Ñ‡∏¥‡∏ß‡∏≠‡∏≠‡∏ô‡πÑ‡∏•‡∏ô‡πå‡∏õ‡∏¥‡∏î‡πÉ‡∏´‡πâ‡∏ö‡∏£‡∏¥‡∏Å‡∏≤‡∏£‡∏ä‡∏±‡πà‡∏ß‡∏Ñ‡∏£‡∏≤‡∏ß ‡∏Å‡∏£‡∏∏‡∏ì‡∏≤‡∏ï‡∏¥‡∏î‡∏ï‡πà‡∏≠‡πÅ‡∏≠‡∏î‡∏°‡∏¥‡∏ô‡∏ó‡∏≤‡∏á LINE",
+        code: "SCHEDULED_BOOKING_DISABLED",
+        line_url: CWF_LINE_CONTACT_URL,
+      });
+    }
+
+    // Every unauthenticated urgent request is a customer request (admin books via
+    // the session-authenticated route, never this one). Route it through the
+    // customer-safe adapter on the CANONICAL booking_mode ALONE ‚Äî never client_app,
+    // which the caller can drop/forge to skip the sanitiser and reach the raw
+    // urgent engine with attacker-chosen technician/assign fields.
+    if (canonicalBookingMode === "urgent" && req.cwfPublicUrgentPrepared !== true) {
+      return handlePublicCustomerUrgentBook(req, res);
+    }
+
+    if (!customer_name || !job_type || !appointment_datetime || !address_text) {
+      return res.status(400).json({ error: "‡∏Å‡∏£‡∏≠‡∏Å‡∏Ç‡πâ‡∏≠‡∏°‡∏π‡∏•‡πÑ‡∏°‡πà‡∏Ñ‡∏£‡∏ö (‡∏ä‡∏∑‡πà‡∏≠/‡∏õ‡∏£‡∏∞‡πÄ‡∏†‡∏ó‡∏á‡∏≤‡∏ô/‡∏ß‡∏±‡∏ô‡∏ô‡∏±‡∏î/‡∏ó‡∏µ‡πà‡∏≠‡∏¢‡∏π‡πà)" });
+    }
+
+    // ‚úÖ Soft customer identity: never required, never trusted blindly elsewhere ‚Äî
+    // this is only a best-effort linkage so a logged-in customer can later prove
+    // ownership of *this* job for review eligibility. Booking proceeds for guests too.
+    let customerSubForJob = null;
+    try {
+      const jwtSecretForBook = getJwtSecret();
+      const cwfToken = parseCookieValue(req, "cwf_token");
+      if (jwtSecretForBook && cwfToken) {
+        const customerPayload = jwtVerify(cwfToken, jwtSecretForBook);
+        if (customerPayload && customerPayload.sub) {
+          customerSubForJob = String(customerPayload.sub);
+        }
+      }
+    } catch (_) {
+      customerSubForJob = null;
+    }
+    const catalogItemIdForJob = Number(catalog_item_id);
+    const safeCatalogItemIdForJob = Number.isFinite(catalogItemIdForJob) && catalogItemIdForJob > 0 ? catalogItemIdForJob : null;
+
+    // ‚úÖ sanitize items (‡πÑ‡∏°‡πà‡πÄ‡∏ä‡∏∑‡πà‡∏≠‡∏£‡∏≤‡∏Ñ‡∏≤/‡∏ä‡∏∑‡πà‡∏≠‡∏à‡∏≤‡∏Å‡∏ù‡∏±‡πà‡∏á‡∏•‡∏π‡∏Å‡∏Ñ‡πâ‡∏≤)
+    const safeItemsIn = Array.isArray(items) ? items : [];
+    const itemIdQty = safeItemsIn
+      .map((x) => ({ item_id: Number(x.item_id), qty: Number(x.qty || 1) }))
+      .filter((x) => Number.isFinite(x.item_id) && x.item_id > 0 && Number.isFinite(x.qty) && x.qty > 0);
+
+    let token = genToken(12);
+    // DURATION_PRICE_V2_PUBLIC_BOOK
+    let bm = canonicalBookingMode;
+    const clientApp = (client_app || "").toString().trim().toLowerCase();
+    // Idempotency is CANONICAL: every public scheduled booking must carry a valid
+    // request key, keyed off the canonical booking_mode ‚Äî never client_app. Gating
+    // this on client_app let an unauthenticated caller drop/forge it to skip the
+    // advisory-lock replay below and mint duplicate jobs. client_app stays only
+    // for telemetry/UX defaults, never for a security/idempotency decision.
+    const scheduledRequestKey = bm === "scheduled"
+      ? String(scheduled_request_key || "").trim()
+      : "";
+    const urgentRequestKey = bm === "urgent"
+      ? String(urgent_request_key || "").trim()
+      : "";
+    const validScheduledRequestKey = /^[A-Za-z0-9_-]{16,128}$/.test(scheduledRequestKey);
+    const validUrgentRequestKey = /^[A-Za-z0-9_-]{16,128}$/.test(urgentRequestKey);
+    if (bm === "scheduled" && !validScheduledRequestKey) {
+      return res.status(400).json({ error: "MISSING_REQUEST_KEY", code: "MISSING_REQUEST_KEY" });
+    }
+    if (bm === "urgent" && !validUrgentRequestKey) {
+      return res.status(400).json({ error: "MISSING_REQUEST_KEY", code: "MISSING_REQUEST_KEY" });
+    }
+    const scheduledDeterministicToken = scheduledRequestKey
+      ? deriveCustomerScheduledBookingToken(scheduledRequestKey)
+      : null;
+    const urgentDeterministicToken = urgentRequestKey
+      ? urgentPublicAdapter.deriveUrgentBookingToken(urgentRequestKey)
+      : null;
+    const bookingRequestKey = scheduledRequestKey || urgentRequestKey;
+    const deterministicToken = scheduledDeterministicToken || urgentDeterministicToken;
+    if (deterministicToken) token = deterministicToken;
+    const allowAdminScheduleFallback = allow_admin_schedule_fallback === true || String(allow_admin_schedule_fallback || "").trim() === "true";
+    const canUseAdminScheduleFallback = bm === "scheduled" && allowAdminScheduleFallback;
+    const urgentOfferEnabled = bm === "urgent";
+    const allowTimeProposal = allow_time_proposal === true
+      ? true
+      : allow_time_proposal === false || allow_time_proposal == null
+        ? false
+        : null;
+    if (clientApp === "customer_app_v2" && allowTimeProposal == null) {
+      return res.status(400).json({ error: "‡∏Å‡∏£‡∏∏‡∏ì‡∏≤‡πÄ‡∏•‡∏∑‡∏≠‡∏Å‡πÄ‡∏á‡∏∑‡πà‡∏≠‡∏ô‡πÑ‡∏Ç‡∏Å‡∏≤‡∏£‡πÄ‡∏™‡∏ô‡∏≠‡πÄ‡∏ß‡∏•‡∏≤" });
+    }
+    const persistedGpsLatitude = bm === "urgent" && gps_latitude != null ? Number(gps_latitude) : null;
+    const persistedGpsLongitude = bm === "urgent" && gps_longitude != null ? Number(gps_longitude) : null;
+    const payloadV2 = {
+      job_type: String(job_type).trim(),
+      ac_type: (ac_type || "").toString().trim(),
+      btu: Number(btu || 0),
+      machine_count: Number(machine_count || 1),
+      wash_variant: (wash_variant || "").toString().trim(),
+      repair_variant: (repair_variant || "").toString().trim(),
+      admin_override_duration_min: 0, // ‡∏•‡∏π‡∏Å‡∏Ñ‡πâ‡∏≤‡∏´‡πâ‡∏≤‡∏° override
+    };
+    if (Array.isArray(services) && services.length) payloadV2.services = services;
+    if (bm === "urgent") {
+      if (!urgentPublicAdapter.isStrictUrgentCleaningPayload(payloadV2)) {
+        return res.status(400).json({ error: "URGENT_CLEANING_ONLY", code: "URGENT_CLEANING_ONLY" });
+      }
+    }
+    // CWF Spec: conservative duration for schedule/collision
+    const duration_min_v2 = computeDurationMinMulti(payloadV2, { source: "public_book", conservative: true });
+    if (duration_min_v2 <= 0) return res.status(400).json({ error: "‡∏á‡∏≤‡∏ô‡∏õ‡∏£‡∏∞‡πÄ‡∏†‡∏ó‡∏ô‡∏µ‡πâ‡∏ï‡πâ‡∏≠‡∏á‡πÉ‡∏´‡πâ‡πÅ‡∏≠‡∏î‡∏°‡∏¥‡∏ô‡∏Å‡∏≥‡∏´‡∏ô‡∏î‡πÄ‡∏ß‡∏•‡∏≤ (duration)" });
+    if (bm === "scheduled") {
+      const startIsoForCutoff = normalizeAppointmentDatetime(appointment_datetime);
+      const requestedDate = String(startIsoForCutoff || "").slice(0, 10);
+      const requestedStart = String(startIsoForCutoff || "").slice(11, 16);
+      const requestedStartMin = toMin(requestedStart);
+      const nowParts = getNowBangkokParts();
+      const minStart = jobTiming.minimumStartForDate(requestedDate, {
+        ui_start_min: toMin("09:00"),
+        ui_end_min: toMin("18:00"),
+        slot_step_min: 30,
+        now_parts: nowParts,
+      });
+      if (requestedDate < nowParts.ymd || (minStart.is_today && requestedStartMin < minStart.minimum_start_min)) {
+        return res.status(409).json({
+          error: "SLOT_IN_PAST",
+          code: "SLOT_IN_PAST",
+          server_now: minStart.server_now,
+          timezone: minStart.timezone,
+          minimum_start: minStart.minimum_start,
+        });
+      }
+    }
+    const customerPrice = await customerPricingHelpers.resolveCustomerPricingMulti(payloadV2, pool);
+    const standard_price = Number(customerPrice.active_price ?? customerPrice.standard_price ?? 0);
+
+  // ‚úÖ Parse lat/lng from maps_url or address_text (fail-open)
+  const parsedLL = parseLatLngFromText(maps_url) || parseLatLngFromText(address_text);
+  const parsed_lat = parsedLL ? parsedLL.lat : null;
+  const parsed_lng = parsedLL ? parsedLL.lng : null;
+  console.log("[latlng_parse]", { ok: !!parsedLL });
+
+
+    // ‚úÖ Server-side validation: ‡∏ï‡πâ‡∏≠‡∏á‡∏°‡∏µ‡∏≠‡∏¢‡πà‡∏≤‡∏á‡∏ô‡πâ‡∏≠‡∏¢ 1 ‡∏ä‡πà‡∏≤‡∏á‡∏ß‡πà‡∏≤‡∏á‡∏à‡∏£‡∏¥‡∏á‡πÉ‡∏ô‡∏ä‡πà‡∏ß‡∏á‡πÄ‡∏ß‡∏•‡∏≤‡∏ô‡∏µ‡πâ (‡∏Ñ‡∏¥‡∏î buffer)
+    // - urgent => partner
+    // - scheduled (Customer App V2) => all employment types the admin opted in (customer_slot_visible)
+    // - scheduled (legacy callers) => company (unchanged)
+    // Defect 1: Customer App V2 scheduled booking must not be limited to company technicians;
+    // it mirrors the public availability query (tech_type=all) and stays strict via the
+    // customer_slot_visible + service matrix + monthly calendar gates below.
+    // Canonical: every public scheduled booking mirrors the public slot list
+    // (tech_type "all"), never a client_app-derived narrower set. Strictness comes
+    // from the customer_slot_visible + service-matrix + monthly-calendar gates
+    // inside customerAvailability, not from client_app.
+    // Payload-bound idempotency (checked BEFORE the availability gate): a genuine
+    // retry of the same request must replay its existing job even though that job
+    // now occupies the slot ‚Äî so the replay lookup cannot sit behind the "slot
+    // full" check. Reusing the key with a materially different payload is rejected
+    // with 409 (no mutation, no old-job data leaked).
+    if (bookingRequestKey && deterministicToken) {
+      const idem = await pool.connect();
+      let prior = null;
+      try {
+        await idem.query("BEGIN");
+        await idem.query("SELECT pg_advisory_xact_lock(hashtext($1))", [bookingRequestKey]);
+        const r = await idem.query(
+          `SELECT job_id, booking_code, booking_token, dispatch_mode, duration_min, job_price,
+                  appointment_datetime, customer_phone, customer_name, address_text, maps_url,
+                  job_zone, job_type, customer_note, allow_time_proposal, gps_latitude, gps_longitude
+             FROM public.jobs
+            WHERE booking_token=$1
+              AND job_source='customer'
+              AND booking_mode=$2
+              AND canceled_at IS NULL
+            LIMIT 1`,
+          [deterministicToken, bm]
+        );
+        await idem.query("COMMIT");
+        prior = r.rows[0] || null;
+      } catch (e) {
+        try { await idem.query("ROLLBACK"); } catch (_) {}
+        throw e;
+      } finally {
+        idem.release();
+      }
+      if (prior) {
+        const incomingBooking = {
+          appointment_datetime, customer_phone, customer_name, address_text, maps_url,
+          job_zone, job_type, customer_note, allow_time_proposal: allowTimeProposal,
+          gps_latitude: persistedGpsLatitude, gps_longitude: persistedGpsLongitude,
+          duration_min: duration_min_v2, payloadV2, itemIdQty, standardPrice: standard_price,
+        };
+        if (!(await scheduledPayloadMatchesExisting(pool, prior, incomingBooking))) {
+          // Same key, materially different booking. No mutation, no identifiers/PII.
+          return res.status(409).json({
+            error: "‡∏Ñ‡∏≥‡∏Ç‡∏≠‡∏ô‡∏µ‡πâ‡∏ñ‡∏π‡∏Å‡πÉ‡∏ä‡πâ‡πÑ‡∏õ‡πÅ‡∏•‡πâ‡∏ß‡∏Å‡∏±‡∏ö‡∏Å‡∏≤‡∏£‡∏à‡∏≠‡∏á‡∏≠‡∏∑‡πà‡∏ô ‡∏Å‡∏£‡∏∏‡∏ì‡∏≤‡πÄ‡∏£‡∏¥‡πà‡∏°‡∏Å‡∏≤‡∏£‡∏à‡∏≠‡∏á‡πÉ‡∏´‡∏°‡πà",
+            code: "IDEMPOTENCY_KEY_REUSED",
+          });
+        }
+        return res.json({
+          success: true,
+          replayed: true,
+          job_id: prior.job_id,
+          booking_code: prior.booking_code,
+          token: prior.booking_token,
+          booking_mode: bm,
+          dispatch_mode: prior.dispatch_mode || "normal",
+          duration_min: Number(prior.duration_min || duration_min_v2 || 0),
+          effective_block_min: effectiveBlockMin(Number(prior.duration_min || duration_min_v2 || 0)),
+          travel_buffer_min: TRAVEL_BUFFER_MIN,
+          base_total: Number(prior.job_price || 0),
+        });
+      }
+    }
+
+    const requestedTechType = bm === "urgent" ? "partner" : "all";
+    try {
+      if (bm === "scheduled") {
+        const startIso = normalizeAppointmentDatetime(appointment_datetime);
+        const start = String(startIso).slice(11, 16);
+        const available = await customerAvailability.hasAvailableStart(
+          publicCustomerAvailabilityDeps(),
+          {
+            ...payloadV2,
+            date: String(startIso).slice(0, 10),
+            start,
+            tech_type: requestedTechType,
+            duration_min: duration_min_v2,
+          }
+        );
+        if (!available) {
+          return res.status(409).json({ error: "‡∏ä‡πà‡∏ß‡∏á‡πÄ‡∏ß‡∏•‡∏≤‡∏ô‡∏µ‡πâ‡πÄ‡∏ï‡πá‡∏°‡πÅ‡∏•‡πâ‡∏ß ‡∏Å‡∏£‡∏∏‡∏ì‡∏≤‡πÄ‡∏•‡∏∑‡∏≠‡∏Å‡πÄ‡∏ß‡∏•‡∏≤‡∏≠‡∏∑‡πà‡∏ô" });
+        }
+      }
+    } catch (e) {
+      console.warn("[public_book] availability_check_fail", { bm, clientApp, err: e.message });
+      // Fail CLOSED for every public scheduled booking ‚Äî a failed capacity check
+      // must never silently let a booking through (this used to fall open for
+      // non-customer_app_v2 callers, a client_app-dependent weakness).
+      if (bm === "scheduled") {
+        const status = Number(e.status || 503);
+        const message = status === 400
+          ? "‡∏Ç‡πâ‡∏≠‡∏°‡∏π‡∏•‡∏ö‡∏£‡∏¥‡∏Å‡∏≤‡∏£‡πÑ‡∏°‡πà‡∏Ñ‡∏£‡∏ö‡∏™‡∏≥‡∏´‡∏£‡∏±‡∏ö‡∏ï‡∏£‡∏ß‡∏à‡∏Ñ‡∏¥‡∏ß ‡∏Å‡∏£‡∏∏‡∏ì‡∏≤‡πÄ‡∏•‡∏∑‡∏≠‡∏Å‡∏ö‡∏£‡∏¥‡∏Å‡∏≤‡∏£‡πÉ‡∏´‡∏°‡πà"
+          : "‡∏£‡∏∞‡∏ö‡∏ö‡∏ï‡∏£‡∏ß‡∏à‡∏Ñ‡∏¥‡∏ß‡∏ä‡πà‡∏≤‡∏á‡∏¢‡∏±‡∏á‡πÑ‡∏°‡πà‡∏û‡∏£‡πâ‡∏≠‡∏° ‡∏Å‡∏£‡∏∏‡∏ì‡∏≤‡∏•‡∏≠‡∏á‡πÉ‡∏´‡∏°‡πà‡∏≠‡∏µ‡∏Å‡∏Ñ‡∏£‡∏±‡πâ‡∏á";
+        return res.status(status).json({ error: message });
+      }
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+
+      if (bookingRequestKey && deterministicToken) {
+        await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [bookingRequestKey]);
+        const existing = await client.query(
+          `SELECT job_id, booking_code, booking_token, booking_mode, dispatch_mode,
+                  duration_min, job_price, appointment_datetime, customer_phone, customer_name,
+                  address_text, maps_url, job_zone, job_type, customer_note, allow_time_proposal,
+                  gps_latitude, gps_longitude
+             FROM public.jobs
+            WHERE booking_token=$1
+              AND job_source='customer'
+              AND booking_mode=$2
+              AND canceled_at IS NULL
+            LIMIT 1`,
+          [deterministicToken, bm]
+        );
+        if (existing.rows[0]) {
+          // Race safety net: a concurrent request with the same key committed first.
+          // Same canonical payload -> replay; any material difference -> key-reuse 409
+          // (no mutation, no identifiers/PII). Same comparison as the pre-flight path.
+          const row = existing.rows[0];
+          await client.query("COMMIT");
+          const incomingBooking = {
+            appointment_datetime, customer_phone, customer_name, address_text, maps_url,
+            job_zone, job_type, customer_note, allow_time_proposal: allowTimeProposal,
+            gps_latitude: persistedGpsLatitude, gps_longitude: persistedGpsLongitude,
+            duration_min: duration_min_v2, payloadV2, itemIdQty, standardPrice: standard_price,
+          };
+          if (!(await scheduledPayloadMatchesExisting(pool, row, incomingBooking))) {
+            return res.status(409).json({
+              error: "‡∏Ñ‡∏≥‡∏Ç‡∏≠‡∏ô‡∏µ‡πâ‡∏ñ‡∏π‡∏Å‡πÉ‡∏ä‡πâ‡πÑ‡∏õ‡πÅ‡∏•‡πâ‡∏ß‡∏Å‡∏±‡∏ö‡∏Å‡∏≤‡∏£‡∏à‡∏≠‡∏á‡∏≠‡∏∑‡πà‡∏ô ‡∏Å‡∏£‡∏∏‡∏ì‡∏≤‡πÄ‡∏£‡∏¥‡πà‡∏°‡∏Å‡∏≤‡∏£‡∏à‡∏≠‡∏á‡πÉ‡∏´‡∏°‡πà",
+              code: "IDEMPOTENCY_KEY_REUSED",
+            });
+          }
+          return res.json({
+            success: true,
+            replayed: true,
+            job_id: row.job_id,
+            booking_code: row.booking_code,
+            token: row.booking_token,
+            booking_mode: bm,
+            dispatch_mode: row.dispatch_mode || "normal",
+            duration_min: Number(row.duration_min || duration_min_v2 || 0),
+            effective_block_min: effectiveBlockMin(Number(row.duration_min || duration_min_v2 || 0)),
+            travel_buffer_min: TRAVEL_BUFFER_MIN,
+            base_total: Number(row.job_price || 0),
+          });
+        }
+      }
+
+      let draftReservationTech = null;
+      if (bm === "scheduled") {
+        const startIso = normalizeAppointmentDatetime(appointment_datetime);
+        draftReservationTech = await customerAvailability.reservePublicCustomerTechnician(
+          publicCustomerAvailabilityDeps(client),
+          {
+            ...payloadV2,
+            date: String(startIso).slice(0, 10),
+            start: String(startIso).slice(11, 16),
+            tech_type: requestedTechType,
+            duration_min: duration_min_v2,
+          }
+        );
+      }
+
+      // 1) ‡∏î‡∏∂‡∏á‡∏£‡∏≤‡∏Ñ‡∏≤ base_price ‡∏à‡∏≤‡∏Å DB
+  const serviceLineItems = await customerPricingHelpers.buildCustomerServiceLineItemsFromPayload(
+    (payloadV2.services && Array.isArray(payloadV2.services))
+      ? payloadV2
+      : { ...payloadV2, services: [{
+          job_type: payloadV2.job_type,
+          ac_type: payloadV2.ac_type,
+          btu: payloadV2.btu,
+          machine_count: payloadV2.machine_count,
+          wash_variant: payloadV2.wash_variant,
+          repair_variant: payloadV2.repair_variant,
+        }] },
+    client
+  );
+
+  // fallback (single service)
+  let computedItems = [];
+  let total = Number(standard_price || 0);
+
+  if (serviceLineItems.length) {
+    computedItems = computedItems.concat(serviceLineItems);
+    total = serviceLineItems.reduce((s,it)=> s + Number(it.line_total||0), 0);
+  } else if (total > 0) {
+    // customer price fallback only; payroll will not treat this as technician income
+    computedItems.push({ item_id: null, item_name: `‡∏Ñ‡πà‡∏≤‡∏ö‡∏£‡∏¥‡∏Å‡∏≤‡∏£‡∏°‡∏≤‡∏ï‡∏£‡∏ê‡∏≤‡∏ô (${payloadV2.job_type || '-'})`, qty: 1, unit_price: total, line_total: total, is_service: false });
+  }
+
+  // extras (customer-visible only)
+  if (itemIdQty.length) {
+    const ids = itemIdQty.map((x) => x.item_id);
+    const catR = await client.query(
+      `SELECT item_id, item_name, base_price
+       FROM public.catalog_items
+       WHERE is_active=TRUE AND is_customer_visible=TRUE /* CUSTOMER_CATALOG_VISIBLE_ONLY */ AND item_id = ANY($1::bigint[])`,
+      [ids]
+    );
+
+    const map = new Map(catR.rows.map((r) => [Number(r.item_id), r]));
+    const extraLines = itemIdQty
+      .map((x) => {
+        const it = map.get(Number(x.item_id));
+        if (!it) return null;
+        const qty = Number(x.qty);
+        const unit_price = Number(it.base_price || 0);
+        const line_total = qty * unit_price;
+        total += line_total;
+        return {
+          item_id: Number(it.item_id),
+          item_name: it.item_name,
+          qty,
+          unit_price,
+          line_total,
+        };
+      })
+      .filter(Boolean);
+
+    computedItems = computedItems.concat(extraLines);
+  }
+
+  // 2) ‡∏™‡∏£‡πâ‡∏≤‡∏á‡∏á‡∏≤‡∏ô
+
+      // ‚úÖ ‡πÇ‡∏õ‡∏£‡πÇ‡∏°‡∏ä‡∏±‡πà‡∏ô‡∏ù‡∏±‡πà‡∏á‡∏•‡∏π‡∏Å‡∏Ñ‡πâ‡∏≤: ‡∏£‡∏∞‡∏ö‡∏ö‡πÄ‡∏•‡∏∑‡∏≠‡∏Å‡πÉ‡∏´‡πâ‡∏≠‡∏±‡∏ï‡πÇ‡∏ô‡∏°‡∏±‡∏ï‡∏¥‡∏ï‡∏≤‡∏°‡πÄ‡∏á‡∏∑‡πà‡∏≠‡∏ô‡πÑ‡∏Ç (super admin ‡∏ï‡∏±‡πâ‡∏á‡∏Ñ‡πà‡∏≤)
+      // IMPORTANT: "‡∏£‡∏≤‡∏Ñ‡∏≤" ‡∏Ç‡∏≠‡∏á‡∏á‡∏≤‡∏ô‡∏ï‡πâ‡∏≠‡∏á‡πÄ‡∏õ‡πá‡∏ô‡∏£‡∏≤‡∏Ñ‡∏≤‡∏û‡∏∑‡πâ‡∏ô‡∏ê‡∏≤‡∏ô‡πÄ‡∏î‡∏¥‡∏° (‡∏´‡πâ‡∏≤‡∏°‡πÄ‡∏õ‡∏•‡∏µ‡πà‡∏¢‡∏ô‡∏£‡∏≤‡∏Ñ‡∏≤)
+      // - jobs.job_price ‡πÄ‡∏Å‡πá‡∏ö base_total ‡πÄ‡∏ó‡πà‡∏≤‡∏ô‡∏±‡πâ‡∏ô
+      // - ‡∏™‡πà‡∏ß‡∏ô‡∏•‡∏î‡∏ö‡∏±‡∏ô‡∏ó‡∏∂‡∏Å‡πÅ‡∏¢‡∏Å‡∏ó‡∏µ‡πà job_promotions.applied_discount
+      const base_total = Number(total || 0);
+      const promoPick = await findBestCustomerPromotion(payloadV2, base_total, client);
+      const appliedPromo = promoPick?.promo || null;
+      const appliedDiscount = Math.min(Number(base_total || 0), Number(promoPick?.discount || 0));
+
+      // ‚úÖ dispatch_mode:
+      // - scheduled (‡∏•‡∏π‡∏Å‡∏Ñ‡πâ‡∏≤‡∏à‡∏≠‡∏á‡∏õ‡∏Å‡∏ï‡∏¥) => normal (‡πÉ‡∏´‡πâ‡πÄ‡∏Ç‡πâ‡∏≤‡πÅ‡∏≠‡∏î‡∏°‡∏¥‡∏ô/‡∏Ñ‡∏¥‡∏ß‡∏ï‡∏≤‡∏°‡∏õ‡∏Å‡∏ï‡∏¥)
+      // - urgent (‡∏¢‡∏¥‡∏á‡∏á‡∏≤‡∏ô‡∏î‡πà‡∏ß‡∏ô)      => offer  (‡πÑ‡∏õ flow offer)
+      const dispatchMode = (bm === 'urgent') ? 'offer' : 'normal';
+
+      const catalogLinkReady = await isJobsCatalogLinkSchemaReady();
+      const jobInsertColumns = [
+        "customer_name", "customer_phone", "job_type", "appointment_datetime", "job_price",
+        "address_text", "technician_team", "technician_username", "job_status",
+        "booking_token", "job_source", "dispatch_mode", "customer_note",
+        "maps_url", "job_zone", "duration_min", "booking_mode", "allow_time_proposal",
+        "gps_latitude", "gps_longitude",
+      ];
+      const jobInsertValuesSql = ["$1", "$2", "$3", "$4", "$5", "$6", "NULL", "$16", "$11", "$7", "'customer'", "$14", "$8", "$9", "$10", "$12", "$13", "$15", "$17", "$18"];
+      const jobInsertParams = [
+        String(customer_name).trim(),
+        (customer_phone || "").toString().trim(),
+        String(job_type).trim(),
+        appointment_datetime,
+        Number(base_total || 0),
+        String(address_text).trim(),
+        token,
+        (customer_note || "").toString(),
+        (maps_url || "").toString(),
+        (job_zone || "").toString(),
+        bm === "urgent" ? JOB_STATUS.ADMIN_URGENT_WAITING : JOB_STATUS.CUSTOMER_SCHEDULED_REVIEW,
+        duration_min_v2,
+        (bm === 'urgent' ? 'urgent' : 'scheduled'),
+        dispatchMode,
+        allowTimeProposal,
+        draftReservationTech ? draftReservationTech.username : null,
+        persistedGpsLatitude,
+        persistedGpsLongitude,
+      ];
+      if (catalogLinkReady) {
+        jobInsertColumns.push("catalog_item_id", "customer_sub");
+        jobInsertParams.push(safeCatalogItemIdForJob, customerSubForJob);
+        jobInsertValuesSql.push(`$${jobInsertParams.length - 1}`, `$${jobInsertParams.length}`);
+      }
+
+      const r = await client.query(
+        `
+        INSERT INTO public.jobs
+        (${jobInsertColumns.join(", ")})
+        VALUES (${jobInsertValuesSql.join(",")})
+        RETURNING job_id, booking_token
+        `,
+        jobInsertParams
+      );
+
+      // attach promo to job (if any)
+      if(appliedPromo && appliedDiscount > 0){
+        try{
+          await client.query(
+            `INSERT INTO public.job_promotions (job_id, promo_id, applied_discount)
+             VALUES ($1,$2,$3)
+             ON CONFLICT (job_id) DO UPDATE SET promo_id=EXCLUDED.promo_id, applied_discount=EXCLUDED.applied_discount`,
+            [r.rows[0].job_id, Number(appliedPromo.promo_id), Number(appliedDiscount)]
+          );
+        }catch(e){
+          // fail-open: don't break booking
+          console.warn('[public_book] promo attach failed', e.message);
+        }
+      }
+
+      const job_id = r.rows[0].job_id;
+      // ‚úÖ booking_code (‡∏™‡∏∏‡πà‡∏° ‡πÑ‡∏°‡πà‡πÄ‡∏£‡∏µ‡∏¢‡∏á)
+      const booking_code = await generateUniqueBookingCode(client);
+
+      await client.query(`UPDATE public.jobs SET booking_code=$1 WHERE job_id=$2`, [booking_code, job_id]);
+
+      // CREATE_URGENT_OFFERS_V2
+      let urgentOffersCount = 0;
+      let urgentPushTargets = [];
+      if (bm === "urgent" && urgentOfferEnabled) {
+        await expireTechnicianAcceptStatuses(client);
+        const criteriaList = dependencies.availabilityEngine.buildCriteriaList(payloadV2);
+        const dispatch = await urgentDispatchService.findEligibleTechnicians({
+          ...payloadV2,
+          job_id,
+          appointment_datetime,
+          duration_min: duration_min_v2,
+          address_text,
+          maps_url,
+          job_zone,
+        }, { db: client, criteriaList });
+        const availablePartners = dispatch.available;
+
+        if (!availablePartners.length) {
+          await client.query(
+            `UPDATE public.jobs
+                SET job_status='${JOB_STATUS.URGENT_NO_TECHNICIAN}'
+              WHERE job_id=$1`,
+            [job_id]
+          );
+          console.warn("[public_book] urgent_no_offer_targets", { job_id, booking_code });
+        } else {
+          // ‚úÖ safety: ‡∏à‡∏≥‡∏Å‡∏±‡∏î‡πÑ‡∏°‡πà‡πÄ‡∏Å‡∏¥‡∏ô 30 ‡∏ä‡πà‡∏≤‡∏á/‡∏ó‡∏µ‡∏°‡∏ó‡∏µ‡πà‡∏™‡πà‡∏á offer
+          for (const u of availablePartners) {
+            await client.query(
+              `INSERT INTO public.job_offers (job_id, technician_username, status, expires_at)
+               VALUES ($1,$2,'${OFFER_STATUS.PENDING}', NOW() + INTERVAL '10 minutes')`,
+              [job_id, u]
+            );
+          }
+          urgentOffersCount = availablePartners.length;
+          urgentPushTargets = availablePartners;
+          console.log("[public_book] urgent_offers", { job_id, booking_code, count: availablePartners.length });
+        }
+      }
+
+
+      // 3) ‡∏ö‡∏±‡∏ô‡∏ó‡∏∂‡∏Å‡∏£‡∏≤‡∏¢‡∏Å‡∏≤‡∏£ (‡∏ñ‡πâ‡∏≤‡∏°‡∏µ)
+      for (const it of computedItems) {
+        await client.query(
+          `
+          INSERT INTO public.job_items
+            (job_id, item_id, item_name, qty, unit_price, line_total, assigned_technician_username, is_service,
+             customer_price_rule_id, normal_unit_price, customer_price_label, customer_campaign_name, customer_price_source)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+          `,
+          [
+            job_id,
+            it.item_id || null,
+            it.item_name,
+            Number(it.qty || 0),
+            Number(it.unit_price || 0),
+            Number(it.line_total || 0),
+            it.assigned_technician_username || null,
+            !!it.is_service,
+            it.customer_price_rule_id || null,
+            it.normal_unit_price || null,
+            it.customer_price_label || null,
+            it.customer_campaign_name || null,
+            it.customer_price_source || null,
+          ]
+        );
+      }
+
+      await ensureCanonicalBookingJobUnits(job_id, client);
+      await client.query(`UPDATE public.jobs SET per_unit_evidence_enabled=TRUE WHERE job_id=$1`, [job_id]);
+
+      if (bm === "urgent" && typeof logJobUpdate === "function") {
+        await logJobUpdate(job_id, {
+          actor_username: "customer",
+          actor_role: "customer",
+          action: "customer_urgent_created",
+          message: urgentPushTargets.length
+            ? "‡∏£‡∏±‡∏ö‡∏Ñ‡∏≥‡∏Ç‡∏≠‡πÅ‡∏•‡πâ‡∏ß ‡∏Å‡∏≥‡∏•‡∏±‡∏á‡∏™‡πà‡∏á‡∏á‡∏≤‡∏ô‡πÉ‡∏´‡πâ‡∏ä‡πà‡∏≤‡∏á‡∏ó‡∏µ‡πà‡∏û‡∏£‡πâ‡∏≠‡∏°‡∏£‡∏±‡∏ö‡∏á‡∏≤‡∏ô"
+            : "‡∏Ç‡∏ì‡∏∞‡∏ô‡∏µ‡πâ‡∏¢‡∏±‡∏á‡πÑ‡∏°‡πà‡∏°‡∏µ‡∏ä‡πà‡∏≤‡∏á‡∏£‡∏±‡∏ö‡∏á‡∏≤‡∏ô",
+          payload: { dispatch_mode: "offer" },
+        }, client);
+      }
+      await client.query("COMMIT");
+
+      if (bm === "urgent" && urgentPushTargets.length && typeof _notifyUrgentOffer === "function") {
+        try {
+          await _notifyUrgentOffer({
+            usernames: urgentPushTargets,
+            job_id,
+            booking_code,
+            job_type,
+            appointment_datetime,
+            job_zone,
+          });
+        } catch (notifyError) {
+          console.error("[public_book] urgent notification failed after commit", {
+            job_id,
+            message: notifyError && notifyError.message,
+          });
+        }
+      }
+      console.log('[public_book]', { job_id, booking_code, booking_mode: bm, requested_tech_type: requestedTechType, duration_min: duration_min_v2, effective_block_min: effectiveBlockMin(duration_min_v2) });
+      const urgentPublicStatus = bm === "urgent"
+        ? {
+          phase: urgentOffersCount > 0 ? "searching" : "fallback",
+          message: urgentOffersCount > 0
+            ? "‡∏£‡∏±‡∏ö‡∏Ñ‡∏≥‡∏Ç‡∏≠‡πÅ‡∏•‡πâ‡∏ß ‡∏Å‡∏≥‡∏•‡∏±‡∏á‡∏™‡πà‡∏á‡∏á‡∏≤‡∏ô‡πÉ‡∏´‡πâ‡∏ä‡πà‡∏≤‡∏á‡∏ó‡∏µ‡πà‡∏û‡∏£‡πâ‡∏≠‡∏°‡∏£‡∏±‡∏ö‡∏á‡∏≤‡∏ô"
+            : "‡∏Ç‡∏ì‡∏∞‡∏ô‡∏µ‡πâ‡∏¢‡∏±‡∏á‡πÑ‡∏°‡πà‡∏°‡∏µ‡∏ä‡πà‡∏≤‡∏á‡∏£‡∏±‡∏ö‡∏á‡∏≤‡∏ô ‡∏Ñ‡∏∏‡∏ì‡∏™‡∏≤‡∏°‡∏≤‡∏£‡∏ñ‡∏ï‡∏¥‡∏î‡∏ï‡∏≤‡∏°‡∏™‡∏ñ‡∏≤‡∏ô‡∏∞‡∏´‡∏£‡∏∑‡∏≠‡∏ï‡∏¥‡∏î‡∏ï‡πà‡∏≠‡πÅ‡∏≠‡∏î‡∏°‡∏¥‡∏ô‡πÑ‡∏î‡πâ",
+        }
+        : {};
+      res.json({
+        success: true,
+        job_id,
+        booking_code,
+        token: r.rows[0].booking_token,
+        booking_mode: bm,
+        dispatch_mode: dispatchMode,
+        ...(bm === "scheduled"
+          ? { offers_count: 0, urgent_offer_enabled: false }
+          : urgentPublicStatus),
+        duration_min: duration_min_v2,
+        effective_block_min: effectiveBlockMin(duration_min_v2),
+        travel_buffer_min: TRAVEL_BUFFER_MIN,
+        applied_promo: (appliedPromo && appliedDiscount > 0) ? {
+          promo_id: appliedPromo.promo_id,
+          promo_name: appliedPromo.promo_name,
+          promo_type: appliedPromo.promo_type,
+          promo_value: appliedPromo.promo_value,
+          discount: appliedDiscount,
+        } : null,
+        base_total: Number(base_total || 0),
+      });
+    } catch (e) {
+      await client.query("ROLLBACK");
+      const statusCode = Number(e?.statusCode || e?.status || 500);
+      console.error(e);
+      res.status(statusCode >= 400 && statusCode < 600 ? statusCode : 500).json({
+        error: e.message || "‡∏à‡∏≠‡∏á‡∏á‡∏≤‡∏ô‡πÑ‡∏°‡πà‡∏™‡∏≥‡πÄ‡∏£‡πá‡∏à",
+        code: e?.code || undefined,
+      });
+    } finally {
+      client.release();
+    }
+  }
+
+  return {
+    handleAdminBookV2,
+    handleInternalBookFromAi,
+    handlePublicCustomerUrgentBook,
+    handlePublicBook,
+  };
+}
+
+module.exports = {
+  createBookingJobService,
+};

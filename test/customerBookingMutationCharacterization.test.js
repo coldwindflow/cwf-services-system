@@ -366,4 +366,749 @@ function makeDependencies(overrides = {}) {
     http409Conflict: (res, conflict) => res.status(409).json({ error: "à¸Šà¸™à¸„à¸´à¸§", conflict }),
     generateUniqueBookingCode: async () => `CWF-PR2-${++bookingCodeSequence}`,
     effectiveBlockMin: (duration) => Number(duration) + 30,
-    iïÝ»¶‰žËkºwµçPñðíô¥t4(€€€€€€¤ì4(€€€ô°4(€€€€¸¸¹½Ù•ÉÉ¥‘•Ì°4(€ô¤ì4)ô4(4)‘‰Q•ÍÐ ‰É•…°A½ÍÑÉ•ME0èÁÉ½‘ÕÑ¥½¸µÍ¡…Á•Õ¹¥ÑÌ…¹É•…°…Ù…¥±…‰¥±¥Ñä•¹¥¹”…ÁÁÉ½Ù”µÕ±Ñ¤µÍ•ÉÙ¥”Í¡•‘Õ±•‰½½­¥¹œˆ°…Íå¹Œ€ ¤€ôøì4(€…Ý…¥ÐÍ••‘I•…±Ù…¥±…‰¥±¥Ñä ¤ì4(€½¹ÍÐ‘•ÁÍ½È€ô€¡‘ˆ€ôÁ½½°¤€ôøÉ•…±Ù…¥±…‰¥±¥Ñå•Á•¹‘•¹¥•Ì¡‘ˆ¤ì4(€½¹ÍÐ‰½½­¥¹œ€ôÉ•…Ñ•	½½­¥¹)½‰M•ÉÙ¥”¡µ…­••Á•¹‘•¹¥•Ì¡ì4(€€€½µÁÕÑ•ÕÉ…Ñ¥½¹5¥¹5Õ±Ñ¤è€¡Á…å±½…¤€ôøÁÉ¥¥¹!•±Á•ÉÌ¹½µÁÕÑ•ÕÉ…Ñ¥½¹5¥¹5Õ±Ñ¤¡Á…å±½…°ìÍ½ÕÉ”è€‰ÁÈÍ}É•…±}•¹¥¹”ˆ°½¹Í•ÉÙ…Ñ¥Ù”èÑÉÕ”ô¤°4(€€€ÕÍÑ½µ•ÉÙ…¥±…‰¥±¥Ñäè…Ù…¥±…‰¥±¥Ñå¹¥¹”°4(€€€ÁÕ‰±¥ÕÍÑ½µ•ÉÙ…¥±…‰¥±¥Ñå•ÁÌè‘•ÁÍ½È°4(€ô¤¤ì4(€½¹ÍÐÉ•…Ñ•€ô…Ý…¥Ð¥¹Ù½­”¡‰½½­¥¹œ¹¡…¹‘±•AÕ‰±¥	½½¬°ÁÕ‰±¥M¡•‘Õ±•‘	½‘ä¡ì4(€€€Í¡•‘Õ±•‘}É•ÅÕ•ÍÑ}­•äè€‰Í¡•‘Õ±•µÁÈÌµÉ•…°µ•¹¥¹”´ÀÀÀÄˆ°4(€€€©½‰}ÑåÁ”è€‹‚â—‚æ'‚âË‚âˆ°4(€€€…}ÑåÁ”è€‹‚âs‚âg‚âÇ‚âˆ°4(€€€‰ÑÔè€ÄÈÀÀÀ°4(€€€µ…¡¥¹•}½Õ¹Ðè€Ì°4(€€€Í•ÉÙ¥•Ìèl4(€€€€€ì©½‰}ÑåÁ”è€‹‚â—‚æ'‚âË‚âˆ°…}ÑåÁ”è€‹‚âs‚âg‚âÇ‚âˆ°Ý…Í¡}Ù…É¥…¹Ðè€‹‚â—‚æ'‚âË‚â‚âc‚â‚â‚â‡‚âS‚âÈˆ°‰ÑÔè€ÄÈÀÀÀ°µ…¡¥¹•}½Õ¹Ðè€Èô°4(€€€€€ì©½‰}ÑåÁ”è€‹‚â—‚æ'‚âË‚âˆ°…}ÑåÁ”è€‹‚â«‚â×‚æ#‚â_‚âÓ‚â£‚â_‚âË‚âˆ°Ý…Í¡}Ù…É¥…¹Ðè€ˆˆ°‰ÑÔè€ÈÐÀÀÀ°µ…¡¥¹•}½Õ¹Ðè€Äô°4(€€€t°4(€ô¤¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡É•…Ñ•¹ÍÑ…ÑÕÍ½‘”°€ÈÀÀ¤ì4(4(€½¹ÍÐÕ¹¥ÑÌ€ô€¡…Ý…¥ÐÁ½½°¹ÅÕ•Éä 4(€€€M1PÕ¹¥Ñ}¹¼°…}ÑåÁ”°Ý…Í¡}ÑåÁ”°‰ÑÔ4(€€€€€€I=4ÁÕ‰±¥Œ¹©½‰}Õ¹¥ÑÌ4(€€€€€]!I©½‰}¥ôÄ4(€€€€€=IH	dÕ¹¥Ñ}¹½€°4(€€€mÉ•…Ñ•¹‰½‘ä¹©½‰}¥‘t4(€€¤¤¹É½ÝÌì4(€…ÍÍ•ÉÐ¹‘••ÁÅÕ…°¡Õ¹¥ÑÌ°l4(€€€ìÕ¹¥Ñ}¹¼è€Ä°…}ÑåÁ”è€‹‚âs‚âg‚âÇ‚âˆ°Ý…Í¡}ÑåÁ”è€‹‚â—‚æ'‚âË‚â‚âc‚â‚â‚â‡‚âS‚âÈˆ°‰ÑÔè€ˆÄÈÀÀÀˆô°4(€€€ìÕ¹¥Ñ}¹¼è€È°…}ÑåÁ”è€‹‚âs‚âg‚âÇ‚âˆ°Ý…Í¡}ÑåÁ”è€‹‚â—‚æ'‚âË‚â‚âc‚â‚â‚â‡‚âS‚âÈˆ°‰ÑÔè€ˆÄÈÀÀÀˆô°4(€€€ìÕ¹¥Ñ}¹¼è€Ì°…}ÑåÁ”è€‹‚â«‚â×‚æ#‚â_‚âÓ‚â£‚â_‚âË‚âˆ°Ý…Í¡}ÑåÁ”è¹Õ±°°‰ÑÔè€ˆÈÐÀÀÀˆô°4(€t¤ì4(4(€½¹ÍÐ•Ù•¹ÑÌ€ôíôì4(€½¹ÍÐ…ÁÁÉ½Ù…°€ôµ…­•ÁÁÉ½Ù…±M•ÉÙ¥”¡•Ù•¹ÑÌ°ì4(€€€…Ù…¥±…‰¥±¥Ñå¹¥¹”°4(€€€•ÑÙ…¥±…‰¥±¥Ñå•Á•¹‘•¹¥•Ìè‘•ÁÍ½È°4(€ô¤ì4(€½¹ÍÐ…ÁÁÉ½Ù•€ô…Ý…¥Ð¥¹Ù½­•ÁÁÉ½Ù…°¡…ÁÁÉ½Ù…°¹…ÁÁÉ½Ù”°É•…Ñ•¹‰½‘ä¹©½‰}¥¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡…ÁÁÉ½Ù•¹ÍÑ…ÑÕÍ½‘”°€ÈÀÀ¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡…ÁÁÉ½Ù•¹‰½‘ä¹É•Á±…å•°™…±Í”¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡9Õµ‰•È ¡…Ý…¥ÐÁ½½°¹ÅÕ•Éä¡M1P=U9P ¨¤I=4ÁÕ‰±¥Œ¹©½‰}…ÍÍ¥¹µ•¹ÑÌ]!I©½‰}¥ôÅ€°mÉ•…Ñ•¹‰½‘ä¹©½‰}¥‘t¤¤¹É½ÝÍlÁt¹½Õ¹Ð¤°€Ä¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…° ¡…Ý…¥ÐÁ½½°¹ÅÕ•Éä¡M1P©½‰}ÍÑ…ÑÕÌI=4ÁÕ‰±¥Œ¹©½‰Ì]!I©½‰}¥ôÅ€°mÉ•…Ñ•¹‰½‘ä¹©½‰}¥‘t¤¤¹É½ÝÍlÁt¹©½‰}ÍÑ…ÑÕÌ°)=	}MQQUL¹5%9}M!U1}A9%9¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡•Ù•¹ÑÌ¹¥¹½µ”¹±•¹Ñ °€Ä¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡•Ù•¹ÑÌ¹‘¥É•Ð¹±•¹Ñ °€Ä¤ì4)ô¤ì4(4)…Íå¹Œ™Õ¹Ñ¥½¸¥¹Ù½­•ÁÁÉ½Ù…°¡¡…¹‘±•È°©½‰%°‰½‘ä€ôíô¤ì4(€½¹ÍÐÉ•Ä€ôìÁ…É…µÌèì©½‰}¥èMÑÉ¥¹œ¡©½‰%¤ô°‰½‘ä°…ÕÑ èìÕÍ•É¹…µ”è€‰…‘µ¥¸µÑ•ÍÐˆôôì4(€½¹ÍÐÉ•Ì€ôÉ•ÍÁ½¹Í•!…É¹•ÍÌ ¤ì4(€…Ý…¥Ð¡…¹‘±•È¡É•Ä°É•Ì¤ì4(€É•ÑÕÉ¸É•Ìì4)ô4(4)‘‰Q•ÍÐ ‰É•…°A½ÍÑÉ•ME0èÍ¡•‘Õ±•…ÁÁÉ½Ù…°É•…Ñ•Ì½¹”…ÍÍ¥¹µ•¹Ð…™Ñ•ÈÉ•Ù…±¥‘…Ñ¥½¸…¹É•Á±…ä¡…Ì¹¼‘ÕÁ±¥…Ñ”Í¥‘”•™™•Ðˆ°…Íå¹Œ€ ¤€ôøì4(€½¹ÍÐ‰½½­¥¹œ€ôÉ•…Ñ•	½½­¥¹)½‰M•ÉÙ¥”¡µ…­••Á•¹‘•¹¥•Ì ¤¤ì4(€½¹ÍÐÉ•…Ñ•€ô…Ý…¥Ð¥¹Ù½­”¡‰½½­¥¹œ¹¡…¹‘±•AÕ‰±¥	½½¬°ÁÕ‰±¥M¡•‘Õ±•‘	½‘ä ¤¤ì4(€½¹ÍÐ•Ù•¹ÑÌ€ôíôì4(€½¹ÍÐ…ÁÁÉ½Ù…°€ôµ…­•ÁÁÉ½Ù…±M•ÉÙ¥”¡•Ù•¹ÑÌ¤ì4(€½¹ÍÐ™¥ÉÍÐ€ô…Ý…¥Ð¥¹Ù½­•ÁÁÉ½Ù…°¡…ÁÁÉ½Ù…°¹…ÁÁÉ½Ù”°É•…Ñ•¹‰½‘ä¹©½‰}¥¤ì4(€½¹ÍÐÉ•Á±…ä€ô…Ý…¥Ð¥¹Ù½­•ÁÁÉ½Ù…°¡…ÁÁÉ½Ù…°¹…ÁÁÉ½Ù”°É•…Ñ•¹‰½‘ä¹©½‰}¥¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡™¥ÉÍÐ¹ÍÑ…ÑÕÍ½‘”°€ÈÀÀ¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡™¥ÉÍÐ¹‰½‘ä¹É•Á±…å•°™…±Í”¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡É•Á±…ä¹‰½‘ä¹É•Á±…å•°ÑÉÕ”¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡•Ù•¹ÑÌ¹É•Í•ÉÙ•=ÁÑ¥½¹Ì¹±•¹Ñ °€Ä¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡•Ù•¹ÑÌ¹É•Í•ÉÙ•=ÁÑ¥½¹ÍlÁt¹ÁÉ•™•ÉÉ•‘}ÕÍ•É¹…µ”°€‰Ñ• µ„ˆ¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡•Ù•¹ÑÌ¹É•Í•ÉÙ•=ÁÑ¥½¹ÍlÁt¹¥¹½É•}©½‰}¥°É•…Ñ•¹‰½‘ä¹©½‰}¥¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡•Ù•¹ÑÌ¹¥¹½µ”¹±•¹Ñ °€Ä¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡•Ù•¹ÑÌ¹‘¥É•Ð¹±•¹Ñ °€Ä¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡•Ù•¹ÑÌ¹…Õ‘¥Ð¹±•¹Ñ °€Ä¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡•Ù•¹ÑÌ¹…Õ‘¥ÑlÁt¹…Ñ¥½¸°€‰ÕÍÑ½µ•É}‰½½­¥¹}…ÁÁÉ½Ù•ˆ¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡9Õµ‰•È ¡…Ý…¥ÐÁ½½°¹ÅÕ•Éä¡M1P=U9P ¨¤I=4ÁÕ‰±¥Œ¹©½‰}…ÍÍ¥¹µ•¹ÑÌ]!I©½‰}¥ôÅ€°mÉ•…Ñ•¹‰½‘ä¹©½‰}¥‘t¤¤¹É½ÝÍlÁt¹½Õ¹Ð¤°€Ä¤ì4(€½¹ÍÐ©½ˆ€ô€¡…Ý…¥ÐÁ½½°¹ÅÕ•Éä¡M1P©½‰}ÍÑ…ÑÕÌI=4ÁÕ‰±¥Œ¹©½‰Ì]!I©½‰}¥ôÅ€°mÉ•…Ñ•¹‰½‘ä¹©½‰}¥‘t¤¤¹É½ÝÍlÁtì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡©½ˆ¹©½‰}ÍÑ…ÑÕÌ°)=	}MQQUL¹5%9}M!U1}A9%9¤ì4)ô¤ì4(4)‘‰Q•ÍÐ ‰É•…°A½ÍÑÉ•ME0è¥¹Ù…±¥É•Í•ÉÙ•Ñ•¡¹¥¥…¸¥ÌÍ…™•±äÉ•…ÍÍ¥¹•¥¸Ñ¡”Í…µ”…ÁÁÉ½Ù…°ÑÉ…¹Í…Ñ¥½¸ˆ°…Íå¹Œ€ ¤€ôøì4(€½¹ÍÐ‰½½­¥¹œ€ôÉ•…Ñ•	½½­¥¹)½‰M•ÉÙ¥”¡µ…­••Á•¹‘•¹¥•Ì ¤¤ì4(€½¹ÍÐÉ•…Ñ•€ô…Ý…¥Ð¥¹Ù½­”¡‰½½­¥¹œ¹¡…¹‘±•AÕ‰±¥	½½¬°ÁÕ‰±¥M¡•‘Õ±•‘	½‘ä ¤¤ì4(€½¹ÍÐ…±±Ì€ômtì4(€½¹ÍÐ…ÁÁÉ½Ù…°€ôµ…­•ÁÁÉ½Ù…±M•ÉÙ¥”¡íô°ì4(€€€…Ù…¥±…‰¥±¥Ñå¹¥¹”èì4(€€€€€É•Í•ÉÙ•AÕ‰±¥ÕÍÑ½µ•ÉQ•¡¹¥¥…¸è…Íå¹Œ€¡}‘•ÁÌ°½ÁÑ¥½¹Ì¤€ôøì4(€€€€€€€…±±Ì¹ÁÕÍ ¡½ÁÑ¥½¹Ì¤ì4(€€€€€€€¥˜€¡½ÁÑ¥½¹Ì¹ÁÉ•™•ÉÉ•‘}ÕÍ•É¹…µ”¤ì4(€€€€€€€€€½¹ÍÐ•ÉÉ½È€ô¹•ÜÉÉ½È ‰UMQ=5I}M1=Q}MQ1ˆ¤ì4(€€€€€€€€€•ÉÉ½È¹ÍÑ…ÑÕÌ€ô€ÐÀäì4(€€€€€€€€€Ñ¡É½Ü•ÉÉ½Èì4(€€€€€€€ô4(€€€€€€€É•ÑÕÉ¸ìÕÍ•É¹…µ”è€‰Ñ• µˆˆôì4(€€€€€ô°4(€€€ô°4(€ô¤ì4(€½¹ÍÐÉ•ÍÕ±Ð€ô…Ý…¥Ð¥¹Ù½­•ÁÁÉ½Ù…°¡…ÁÁÉ½Ù…°¹…ÁÁÉ½Ù”°É•…Ñ•¹‰½‘ä¹©½‰}¥¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡É•ÍÕ±Ð¹ÍÑ…ÑÕÍ½‘”°€ÈÀÀ¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡…±±Ì¹±•¹Ñ °€È¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡…±±ÍlÁt¹ÁÉ•™•ÉÉ•‘}ÕÍ•É¹…µ”°€‰Ñ• µ„ˆ¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡…±±ÍlÅt¹ÁÉ•™•ÉÉ•‘}ÕÍ•É¹…µ”°Õ¹‘•™¥¹•¤ì4(€½¹ÍÐ…ÍÍ¥¹µ•¹Ð€ô€¡…Ý…¥ÐÁ½½°¹ÅÕ•Éä¡M1PÑ•¡¹¥¥…¹}ÕÍ•É¹…µ”I=4ÁÕ‰±¥Œ¹©½‰}…ÍÍ¥¹µ•¹ÑÌ]!I©½‰}¥ôÅ€°mÉ•…Ñ•¹‰½‘ä¹©½‰}¥‘t¤¤¹É½ÝÍlÁtì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡…ÍÍ¥¹µ•¹Ð¹Ñ•¡¹¥¥…¹}ÕÍ•É¹…µ”°€‰Ñ• µˆˆ¤ì4)ô¤ì4(4)‘‰Q•ÍÐ ‰É•…°A½ÍÑÉ•ME0è…ÁÁÉ½Ù…°™…¥±ÕÉ”É½±±Ì‰…¬…¹±•…Ù•ÌÁ•¹‘¥¹œÉ•Í•ÉÙ…Ñ¥½¸¥¹Ñ…Ðˆ°…Íå¹Œ€ ¤€ôøì4(€½¹ÍÐ‰½½­¥¹œ€ôÉ•…Ñ•	½½­¥¹)½‰M•ÉÙ¥”¡µ…­••Á•¹‘•¹¥•Ì ¤¤ì4(€½¹ÍÐÉ•…Ñ•€ô…Ý…¥Ð¥¹Ù½­”¡‰½½­¥¹œ¹¡…¹‘±•AÕ‰±¥	½½¬°ÁÕ‰±¥M¡•‘Õ±•‘	½‘ä ¤¤ì4(€½¹ÍÐ…ÁÁÉ½Ù…°€ôµ…­•ÁÁÉ½Ù…±M•ÉÙ¥”¡íô°ì4(€€€…Ù…¥±…‰¥±¥Ñå¹¥¹”èì4(€€€€€É•Í•ÉÙ•AÕ‰±¥ÕÍÑ½µ•ÉQ•¡¹¥¥…¸è…Íå¹Œ€ ¤€ôøì4(€€€€€€€½¹ÍÐ•ÉÉ½È€ô¹•ÜÉÉ½È ‰UMQ=5I}M1=Q}MQ1ˆ¤ì4(€€€€€€€•ÉÉ½È¹ÍÑ…ÑÕÌ€ô€ÐÀäì4(€€€€€€€Ñ¡É½Ü•ÉÉ½Èì4(€€€€€ô°4(€€€ô°4(€ô¤ì4(€½¹ÍÐÉ•ÍÕ±Ð€ô…Ý…¥Ð¥¹Ù½­•ÁÁÉ½Ù…°¡…ÁÁÉ½Ù…°¹…ÁÁÉ½Ù”°É•…Ñ•¹‰½‘ä¹©½‰}¥¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡É•ÍÕ±Ð¹ÍÑ…ÑÕÍ½‘”°€ÐÀä¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡9Õµ‰•È ¡…Ý…¥ÐÁ½½°¹ÅÕ•Éä¡M1P=U9P ¨¤I=4ÁÕ‰±¥Œ¹©½‰}…ÍÍ¥¹µ•¹ÑÌ]!I©½‰}¥ôÅ€°mÉ•…Ñ•¹‰½‘ä¹©½‰}¥‘t¤¤¹É½ÝÍlÁt¹½Õ¹Ð¤°€À¤ì4(€½¹ÍÐ©½ˆ€ô€¡…Ý…¥ÐÁ½½°¹ÅÕ•Éä¡M1P©½‰}ÍÑ…ÑÕÌ°Ñ•¡¹¥¥…¹}ÕÍ•É¹…µ”I=4ÁÕ‰±¥Œ¹©½‰Ì]!I©½‰}¥ôÅ€°mÉ•…Ñ•¹‰½‘ä¹©½‰}¥‘t¤¤¹É½ÝÍlÁtì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡©½ˆ¹©½‰}ÍÑ…ÑÕÌ°)=	}MQQUL¹UMQ=5I}M!U1}IY%\¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡©½ˆ¹Ñ•¡¹¥¥…¹}ÕÍ•É¹…µ”°€‰Ñ• µ„ˆ¤ì4)ô¤ì4(4)‘‰Q•ÍÐ ‰É•…°A½ÍÑÉ•ME0è…ÁÁÉ½Ù…°™…¥±Ì±½Í•Ý¡•¸Á•¹‘¥¹œÉ•Í•ÉÙ…Ñ¥½¸…±É•…‘ä¡…Ì…ÍÍ¥¹µ•¹ÐÍÑ…Ñ”ˆ°…Íå¹Œ€ ¤€ôøì4(€½¹ÍÐ‰½½­¥¹œ€ôÉ•…Ñ•	½½­¥¹)½‰M•ÉÙ¥”¡µ…­••Á•¹‘•¹¥•Ì ¤¤ì4(€½¹ÍÐÉ•…Ñ•€ô…Ý…¥Ð¥¹Ù½­”¡‰½½­¥¹œ¹¡…¹‘±•AÕ‰±¥	½½¬°ÁÕ‰±¥M¡•‘Õ±•‘	½‘ä ¤¤ì4(€…Ý…¥ÐÁ½½°¹ÅÕ•Éä 4(€€€%9MIP%9Q<ÁÕ‰±¥Œ¹©½‰}…ÍÍ¥¹µ•¹ÑÌ€¡©½‰}¥°Ñ•¡¹¥¥…¹}ÕÍ•É¹…µ”°ÍÑ…ÑÕÌ¤Y1UL€ Ä°Õ¹•áÁ•Ñ•µÑ• œ°¥¹}ÁÉ½É•ÍÌœ¥€°4(€€€mÉ•…Ñ•¹‰½‘ä¹©½‰}¥‘t4(€€¤ì4(€½¹ÍÐ•Ù•¹ÑÌ€ôíôì4(€½¹ÍÐ…ÁÁÉ½Ù…°€ôµ…­•ÁÁÉ½Ù…±M•ÉÙ¥”¡•Ù•¹ÑÌ¤ì4(€½¹ÍÐÉ•ÍÕ±Ð€ô…Ý…¥Ð¥¹Ù½­•ÁÁÉ½Ù…°¡…ÁÁÉ½Ù…°¹…ÁÁÉ½Ù”°É•…Ñ•¹‰½‘ä¹©½‰}¥¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡É•ÍÕ±Ð¹ÍÑ…ÑÕÍ½‘”°€ÐÀä¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡É•ÍÕ±Ð¹‰½‘ä¹½‘”°€‰A9%9}IMIYQ%=9}MQQ}I%Pˆ¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…° ¡…Ý…¥ÐÁ½½°¹ÅÕ•Éä¡M1P©½‰}ÍÑ…ÑÕÌI=4ÁÕ‰±¥Œ¹©½‰Ì]!I©½‰}¥ôÅ€°mÉ•…Ñ•¹‰½‘ä¹©½‰}¥‘t¤¤¹É½ÝÍlÁt¹©½‰}ÍÑ…ÑÕÌ°)=	}MQQUL¹UMQ=5I}M!U1}IY%\¤ì4)ô¤ì4(4)‘‰Q•ÍÐ ‰É•…°A½ÍÑÉ•ME0èÁÕ‰±¥ŒÕÉ•¹Ð™…±±‰…¬¥Ì¹½Ð…Ñ•‰äÑ¡”±•…ä…‘µ¥¸µ…ÁÁÉ½Ù…°µÕÑ…Ñ¥½¸ˆ°…Íå¹Œ€ ¤€ôøì(€…Ý…¥ÐÍ••‘Q•¡¹¥¥…¹Ì ¤ì4(€½¹ÍÐ‰½½­¥¹œ€ôÉ•…Ñ•	½½­¥¹)½‰M•ÉÙ¥”¡µ…­••Á•¹‘•¹¥•Ì ¤¤ì4(€½¹ÍÐÉ•…Ñ•€ô…Ý…¥Ð¥¹Ù½­”¡‰½½­¥¹œ¹¡…¹‘±•AÕ‰±¥	½½¬°ÁÕ‰±¥UÉ•¹Ñ	½‘ä ¤¤ì4(€½¹ÍÐ•Ù•¹ÑÌ€ôíôì4(€½¹ÍÐ…ÁÁÉ½Ù…°€ôµ…­•ÁÁÉ½Ù…±M•ÉÙ¥”¡•Ù•¹ÑÌ°ì4(€€€¹½Ñ¥™åUÉ•¹Ñ=™™•Èè…Íå¹Œ€¡Á…å±½…¤€ôøì4(€€€€€½¹ÍÐ½µµ¥ÑÑ•€ô…Ý…¥ÐÁ½½°¹ÅÕ•Éä¡M1P©½‰}ÍÑ…ÑÕÌI=4ÁÕ‰±¥Œ¹©½‰Ì]!I©½‰}¥ôÅ€°mÁ…å±½…¹©½‰}¥‘t¤ì4(€€€€€…ÍÍ•ÉÐ¹•ÅÕ…°¡½µµ¥ÑÑ•¹É½ÝÍlÁt¹©½‰}ÍÑ…ÑÕÌ°)=	}MQQUL¹5%9}UI9Q}]%Q%9¤ì4(€€€€€•Ù•¹ÑÌ¹½™™•ÉÌ€ô€¡•Ù•¹ÑÌ¹½™™•ÉÌñðmt¤¹½¹…Ð¡mÁ…å±½…‘t¤ì4(€€€ô°4(€ô¤ì4(€½¹ÍÐ™¥ÉÍÐ€ô…Ý…¥Ð¥¹Ù½­•ÁÁÉ½Ù…°¡…ÁÁÉ½Ù…°¹…ÁÁÉ½Ù”°É•…Ñ•¹‰½‘ä¹©½‰}¥°ìÑ•¡¹¥¥…¹}ÕÍ•É¹…µ”è€‰Ñ• µ„ˆô¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡™¥ÉÍÐ¹ÍÑ…ÑÕÍ½‘”°€ÐÀä¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡•Ù•¹ÑÌ¹½™™•ÉÌ°Õ¹‘•™¥¹•¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡9Õµ‰•È ¡…Ý…¥ÐÁ½½°¹ÅÕ•Éä¡M1P=U9P ¨¤I=4ÁÕ‰±¥Œ¹©½‰}½™™•ÉÌ]!I©½‰}¥ôÅ€°mÉ•…Ñ•¹‰½‘ä¹©½‰}¥‘t¤¤¹É½ÝÍlÁt¹½Õ¹Ð¤°€À¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡9Õµ‰•È ¡…Ý…¥ÐÁ½½°¹ÅÕ•Éä¡M1P=U9P ¨¤I=4ÁÕ‰±¥Œ¹©½‰}…ÍÍ¥¹µ•¹ÑÌ]!I©½‰}¥ôÅ€°mÉ•…Ñ•¹‰½‘ä¹©½‰}¥‘t¤¤¹É½ÝÍlÁt¹½Õ¹Ð¤°€À¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡9Õµ‰•È ¡…Ý…¥ÐÁ½½°¹ÅÕ•Éä¡M1P=U9P ¨¤I=4ÁÕ‰±¥Œ¹©½‰}Ñ•…µ}µ•µ‰•ÉÌ]!I©½‰}¥ôÅ€°mÉ•…Ñ•¹‰½‘ä¹©½‰}¥‘t¤¤¹É½ÝÍlÁt¹½Õ¹Ð¤°€À¤ì4)ô¤ì4(4)‘‰Q•ÍÐ ‰É•…°A½ÍÑÉ•ME0èÉ•©•Ð±•…ÉÌ¡¥‘‘•¸É•Í•ÉÙ…Ñ¥½¸…¹É•±•…Í•ÌÍ¡•‘Õ±•±½…ˆ°…Íå¹Œ€ ¤€ôøì4(€½¹ÍÐ‰½½­¥¹œ€ôÉ•…Ñ•	½½­¥¹)½‰M•ÉÙ¥”¡µ…­••Á•¹‘•¹¥•Ì ¤¤ì4(€½¹ÍÐÉ•…Ñ•€ô…Ý…¥Ð¥¹Ù½­”¡‰½½­¥¹œ¹¡…¹‘±•AÕ‰±¥	½½¬°ÁÕ‰±¥M¡•‘Õ±•‘	½‘ä ¤¤ì4(€½¹ÍÐ‰•™½É”€ô…Ý…¥Ð±½…‘ÕÍÑ½µ•ÉM¡•‘Õ±•‘1½…‘5…À¡Á½½°°€ˆÈÀÈØ´Àà´ÀÄˆ°l‰Ñ• µ„‰t¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡‰•™½É”¹•Ð ‰Ñ• µ„ˆ¤¹©½‰Í}½Õ¹Ð°€Ä¤ì4(€½¹ÍÐ•Ù•¹ÑÌ€ôíôì4(€½¹ÍÐ…ÁÁÉ½Ù…°€ôµ…­•ÁÁÉ½Ù…±M•ÉÙ¥”¡•Ù•¹ÑÌ¤ì4(€½¹ÍÐÉ•©•Ñ•€ô…Ý…¥Ð¥¹Ù½­•ÁÁÉ½Ù…°¡…ÁÁÉ½Ù…°¹É•©•Ð°É•…Ñ•¹‰½‘ä¹©½‰}¥°ìÉ•…Í½¸è€‰¹½Ð…ÁÁÉ½Ù•ˆô¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡É•©•Ñ•¹ÍÑ…ÑÕÍ½‘”°€ÈÀÀ¤ì4(€½¹ÍÐ…™Ñ•È€ô…Ý…¥Ð±½…‘ÕÍÑ½µ•ÉM¡•‘Õ±•‘1½…‘5…À¡Á½½°°€ˆÈÀÈØ´Àà´ÀÄˆ°l‰Ñ• µ„‰t¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡…™Ñ•È¹•Ð ‰Ñ• µ„ˆ¤¹©½‰Í}½Õ¹Ð°€À¤ì4(€½¹ÍÐÉ½Ü€ô€¡…Ý…¥ÐÁ½½°¹ÅÕ•Éä¡M1PÑ•¡¹¥¥…¹}ÕÍ•É¹…µ”°…¹•±•‘}…Ð°…¹•±}É•…Í½¸I=4ÁÕ‰±¥Œ¹©½‰Ì]!I©½‰}¥ôÅ€°mÉ•…Ñ•¹‰½‘ä¹©½‰}¥‘t¤¤¹É½ÝÍlÁtì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡É½Ü¹Ñ•¡¹¥¥…¹}ÕÍ•É¹…µ”°¹Õ±°¤ì4(€…ÍÍ•ÉÐ¹½¬¡É½Ü¹…¹•±•‘}…Ð¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡É½Ü¹…¹•±}É•…Í½¸°€‰¹½Ð…ÁÁÉ½Ù•ˆ¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡•Ù•¹ÑÌ¹…Õ‘¥Ð¹±•¹Ñ °€Ä¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡•Ù•¹ÑÌ¹…Õ‘¥ÑlÁt¹…Ñ¥½¸°€‰ÕÍÑ½µ•É}‰½½­¥¹}É•©•Ñ•ˆ¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡•Ù•¹ÑÌ¹…Õ‘¥ÑlÁt¹Á…å±½…¹É•Í•ÉÙ•‘}Ñ•¡¹¥¥…¸°€‰Ñ• µ„ˆ¤ì4(€½¹ÍÐ…Õ‘¥Ð€ô€¡…Ý…¥ÐÁ½½°¹ÅÕ•Éä¡M1P…Ñ¥½¸°Á…å±½…‘}©Í½¸I=4ÁÕ‰±¥Œ¹©½‰}ÕÁ‘…Ñ•Í}ØÈ]!I©½‰}¥ôÅ€°mÉ•…Ñ•¹‰½‘ä¹©½‰}¥‘t¤¤¹É½ÝÍlÁtì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡…Õ‘¥Ð¹…Ñ¥½¸°€‰ÕÍÑ½µ•É}‰½½­¥¹}É•©•Ñ•ˆ¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡…Õ‘¥Ð¹Á…å±½…‘}©Í½¸¹É•Í•ÉÙ•‘}Ñ•¡¹¥¥…¸°€‰Ñ• µ„ˆ¤ì4)ô¤ì4(4)‘‰Q•ÍÐ ‰É•…°A½ÍÑÉ•ME0è•á…ÐÁ•¹‘¥¹œÉ•Í•ÉÙ…Ñ¥½¸¥Ì¡¥‘‘•¸Õ¹Ñ¥°…ÍÍ¥¹µ•¹Ð…ÁÁÉ½Ù…°ˆ°…Íå¹Œ€ ¤€ôøì4(€½¹ÍÐ‰½½­¥¹œ€ôÉ•…Ñ•	½½­¥¹)½‰M•ÉÙ¥”¡µ…­••Á•¹‘•¹¥•Ì ¤¤ì4(€½¹ÍÐÉ•…Ñ•€ô…Ý…¥Ð¥¹Ù½­”¡‰½½­¥¹œ¹¡…¹‘±•AÕ‰±¥	½½¬°ÁÕ‰±¥M¡•‘Õ±•‘	½‘ä ¤¤ì4(€½¹ÍÐ¡¥‘‘•¸€ô…Ý…¥ÐÁ½½°¹ÅÕ•Éä 4(€€€M1P©½‰}¥I=4ÁÕ‰±¥Œ¹©½‰Ì¨4(€€€€€]!I¨¹©½‰}¥ôÄ9¨¹Ñ•¡¹¥¥…¹}ÕÍ•É¹…µ”ôÈ4(€€€€€€€99=P€‘íÁ•¹‘¥¹ÕÍÑ½µ•ÉM¡•‘Õ±•‘I•Í•ÉÙ…Ñ¥½¹MÅ° ‰¨ˆ¥õ€°4(€€€mÉ•…Ñ•¹‰½‘ä¹©½‰}¥°€‰Ñ• µ„‰t4(€€¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡¡¥‘‘•¸¹É½ÝÌ¹±•¹Ñ °€À¤ì4(€½¹ÍÐ…ÁÁÉ½Ù…°€ôµ…­•ÁÁÉ½Ù…±M•ÉÙ¥”¡íô¤ì4(€…Ý…¥Ð¥¹Ù½­•ÁÁÉ½Ù…°¡…ÁÁÉ½Ù…°¹…ÁÁÉ½Ù”°É•…Ñ•¹‰½‘ä¹©½‰}¥¤ì4(€½¹ÍÐÙ¥Í¥‰±”€ô…Ý…¥ÐÁ½½°¹ÅÕ•Éä 4(€€€M1P¨¹©½‰}¥I=4ÁÕ‰±¥Œ¹©½‰Ì¨4(€€€€€]!I¨¹©½‰}¥ôÄ9€ 4(€€€€€€€€¡¨¹Ñ•¡¹¥¥…¹}ÕÍ•É¹…µ”ôÈ99=P€‘íÁ•¹‘¥¹ÕÍÑ½µ•ÉM¡•‘Õ±•‘I•Í•ÉÙ…Ñ¥½¹MÅ° ‰¨ˆ¥ô¤4(€€€€€€€=Ha%MQL€¡M1P€ÄI=4ÁÕ‰±¥Œ¹©½‰}…ÍÍ¥¹µ•¹ÑÌ©„]!I©„¹©½‰}¥õ¨¹©½‰}¥9©„¹Ñ•¡¹¥¥…¹}ÕÍ•É¹…µ”ôÈ¤4(€€€€€€¥€°4(€€€mÉ•…Ñ•¹‰½‘ä¹©½‰}¥°€‰Ñ• µ„‰t4(€€¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡Ù¥Í¥‰±”¹É½ÝÌ¹±•¹Ñ °€Ä¤ì4)ô¤ì4(4)‘‰Q•ÍÐ ‰É•…°A½ÍÑÉ•ME0è‘µ¥¸ÕÑ¼°M¥¹±”°Q•…´°…¹½É•ÁÉ•Í•ÉÙ”…ÍÍ¥¹µ•¹ÑÌ…¹ÍÑ…ÑÕÌˆ°…Íå¹Œ€ ¤€ôøì4(€½¹ÍÐ…Í•Ì€ôl4(€€€ì¹…µ”è€‰…ÕÑ¼ˆ°Á…Ñ èì…ÍÍ¥¹}µ½‘”è€‰…ÕÑ¼ˆô°•áÁ•Ñ•èl‰Ñ• µ„‰tô°4(€€€ì¹…µ”è€‰Í¥¹±”ˆ°Á…Ñ èì…ÍÍ¥¹}µ½‘”è€‰Í¥¹±”ˆ°Ñ•¡¹¥¥…¹}ÕÍ•É¹…µ”è€‰Ñ• µ„ˆô°•áÁ•Ñ•èl‰Ñ• µ„‰tô°4(€€€ì¹…µ”è€‰Ñ•…´ˆ°Á…Ñ èì…ÍÍ¥¹}µ½‘”è€‰Ñ•…´ˆ°Ñ•…µ}µ•µ‰•ÉÌèl‰Ñ• µ„ˆ°€‰Ñ• µˆ‰tô°•áÁ•Ñ•èl‰Ñ• µ„ˆ°€‰Ñ• µˆ‰tô°4(€€€ì¹…µ”è€‰™½É•ˆ°Á…Ñ èì…ÍÍ¥¹}µ½‘”è€‰Í¥¹±”ˆ°‘¥ÍÁ…Ñ¡}µ½‘”è€‰™½É•ˆ°Ñ•¡¹¥¥…¹}ÕÍ•É¹…µ”è€‰Ñ• µ„ˆô°•áÁ•Ñ•èl‰Ñ• µ„‰tô°4(€tì4(€™½È€¡½¹ÍÐ•¹ÑÉä½˜…Í•Ì¤ì4(€€€…Ý…¥ÐÁ½½°¹ÅÕ•Éä¡QIU9QÁÕ‰±¥Œ¹©½‰}ÁÉ½µ½Ñ¥½¹Ì°ÁÕ‰±¥Œ¹©½‰}½™™•ÉÌ°ÁÕ‰±¥Œ¹©½‰}…ÍÍ¥¹µ•¹ÑÌ°ÁÕ‰±¥Œ¹©½‰}Ñ•…µ}µ•µ‰•ÉÌ°ÁÕ‰±¥Œ¹©½‰}¥Ñ•µÌ°ÁÕ‰±¥Œ¹©½‰ÌIMQIP%9Q%QdM€¤ì4(€€€…Ý…¥ÐÁ½½°¹ÅÕ•Éä¡QIU9QÁÕ‰±¥Œ¹Ñ•¡¹¥¥…¹}µ½¹Ñ¡±å}Ý½É­}…±•¹‘…È°(€€€€€ÁÕ‰±¥Œ¹Ñ•¡¹¥¥…¹}Í•ÉÙ¥•}µ…ÑÉ¥à°ÁÕ‰±¥Œ¹Ñ•¡¹¥¥…¹}ÁÉ½™¥±•Ì°ÁÕ‰±¥Œ¹ÕÍ•ÉÍ€¤ì(€€€…Ý…¥ÐÍ••‘Q•¡¹¥¥…¹Ì ¤ì4(€€€½¹ÍÐÍ•ÉÙ¥”€ôÉ•…Ñ•	½½­¥¹)½‰M•ÉÙ¥”¡µ…­••Á•¹‘•¹¥•Ì ¤¤ì4(€€€½¹ÍÐÉ•ÍÕ±Ð€ô…Ý…¥Ð¥¹Ù½­”¡Í•ÉÙ¥”¹¡…¹‘±•‘µ¥¹	½½­XÈ°ì4(€€€€€ÕÍÑ½µ•É}¹…µ”è‘µ¥¸€‘í•¹ÑÉä¹¹…µ•õ€°4(€€€€€ÕÍÑ½µ•É}Á¡½¹”è€ˆÀàÀÀÀÀÀÀÀÀˆ°4(€€€€€©½‰}ÑåÁ”è€‹‚â—‚æ'‚âË‚â‚æ‚â·‚â‚æ0ˆ°4(€€€€€…ÁÁ½¥¹Ñµ•¹Ñ}‘…Ñ•Ñ¥µ”è€ˆÈÀÈØ´Àà´ÀÅPÀäèÀÀèÀÀ¬ÀÜèÀÀˆ°4(€€€€€…‘‘É•ÍÍ}Ñ•áÐè€‹‚â‚â‚âã‚â‚æ‚â_‚â{‚â¼ˆ°4(€€€€€‰½½­¥¹}µ½‘”è€‰Í¡•‘Õ±•ˆ°4(€€€€€Ñ•¡}ÑåÁ”è€‰…±°ˆ°4(€€€€€…}ÑåÁ”è€‹‚âs‚âg‚âÇ‚âˆ°4(€€€€€µ…¡¥¹•}½Õ¹Ðè€Ä°4(€€€€€Ý…Í¡}Ù…É¥…¹Ðè€‹‚â—‚æ'‚âË‚â‚âc‚â‚â‚â‡‚âS‚âÈˆ°4(€€€€€€¸¸¹•¹ÑÉä¹Á…Ñ °4(€€€ô¤ì4(€€€…ÍÍ•ÉÐ¹•ÅÕ…°¡É•ÍÕ±Ð¹ÍÑ…ÑÕÍ½‘”°€ÈÀÀ°•¹ÑÉä¹¹…µ”¤ì4(€€€…ÍÍ•ÉÐ¹•ÅÕ…° ¡…Ý…¥ÐÁ½½°¹ÅÕ•Éä¡M1P©½‰}ÍÑ…ÑÕÌI=4ÁÕ‰±¥Œ¹©½‰Í€¤¤¹É½ÝÍlÁt¹©½‰}ÍÑ…ÑÕÌ°)=	}MQQUL¹5%9}M!U1}A9%9¤ì4(€€€½¹ÍÐ…ÍÍ¥¹•€ô€¡…Ý…¥ÐÁ½½°¹ÅÕ•Éä¡M1PÑ•¡¹¥¥…¹}ÕÍ•É¹…µ”I=4ÁÕ‰±¥Œ¹©½‰}…ÍÍ¥¹µ•¹ÑÌ=IH	dÑ•¡¹¥¥…¹}ÕÍ•É¹…µ•€¤¤¹É½ÝÌ¹µ…À ¡É½Ü¤€ôøÉ½Ü¹Ñ•¡¹¥¥…¹}ÕÍ•É¹…µ”¤ì4(€€€…ÍÍ•ÉÐ¹‘••ÁÅÕ…°¡…ÍÍ¥¹•°•¹ÑÉä¹•áÁ•Ñ•°•¹ÑÉä¹¹…µ”¤ì4(€€€…ÍÍ•ÉÐ¹•ÅÕ…°¡9Õµ‰•È ¡…Ý…¥ÐÁ½½°¹ÅÕ•Éä¡M1P=U9P ¨¤I=4ÁÕ‰±¥Œ¹©½‰}¥Ñ•µÍ€¤¤¹É½ÝÍlÁt¹½Õ¹Ð¤°€Ä°•¹ÑÉä¹¹…µ”¤ì4(€ô4)ô¤ì4(4)‘‰Q•ÍÐ ‰É•…°A½ÍÑÉ•ME0è¥¹Ñ•É¹…°‰½½­¥¹œÁÉ•Í•ÉÙ•ÌÙ…±¥‘…Ñ¥½¸…¹…‘µ¥¸µ¹½Ñ¥™¥…Ñ¥½¸Í•É¥…±¥é…Ñ¥½¸ˆ°…Íå¹Œ€ ¤€ôøì4(€…Ý…¥ÐÍ••‘Q•¡¹¥¥…¹Ì ¤ì4(€½¹ÍÐÍ•ÉÙ¥”€ôÉ•…Ñ•	½½­¥¹)½‰M•ÉÙ¥”¡µ…­••Á•¹‘•¹¥•Ì ¤¤ì4(€½¹ÍÐ¥¹Ù…±¥€ô…Ý…¥Ð¥¹Ù½­”¡Í•ÉÙ¥”¹¡…¹‘±•%¹Ñ•É¹…±	½½­É½µ¤°ìÕÍÑ½µ•É}¹…µ”è€‰$ˆô¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡¥¹Ù…±¥¹ÍÑ…ÑÕÍ½‘”°€ÐÀÀ¤ì4(€…ÍÍ•ÉÐ¹‘••ÁÅÕ…°¡¥¹Ù…±¥¹‰½‘ä¹µ¥ÍÍ¥¹}™¥•±‘Ì°l‰©½‰}ÑåÁ”ˆ°€‰…ÁÁ½¥¹Ñµ•¹Ñ}‘…Ñ•Ñ¥µ”ˆ°€‰…‘‘É•ÍÍ}Ñ•áÐ‰t¤ì4(4(€½¹ÍÐÙ…±¥€ô…Ý…¥Ð¥¹Ù½­”¡Í•ÉÙ¥”¹¡…¹‘±•%¹Ñ•É¹…±	½½­É½µ¤°ì4(€€€ÕÍÑ½µ•É}¹…µ”è€‰$ÕÍÑ½µ•Èˆ°4(€€€ÕÍÑ½µ•É}Á¡½¹”è€ˆÀàÄÄÄÄÄÄÄÄˆ°4(€€€©½‰}ÑåÁ”è€‹‚â—‚æ'‚âË‚â‚æ‚â·‚â‚æ0ˆ°4(€€€…ÁÁ½¥¹Ñµ•¹Ñ}‘…Ñ•Ñ¥µ”è€ˆÈÀÈØ´Àà´ÀÅPÄÀèÀÀèÀÀ¬ÀÜèÀÀˆ°4(€€€…‘‘É•ÍÍ}Ñ•áÐè€‹‚â‚â‚âã‚â‚æ‚â_‚â{‚â¼ˆ°4(€€€‰½½­¥¹}µ½‘”è€‰Í¡•‘Õ±•ˆ°4(€€€Ñ•¡}ÑåÁ”è€‰…±°ˆ°4(€€€…ÍÍ¥¹}µ½‘”è€‰…ÕÑ¼ˆ°4(€€€…}ÑåÁ”è€‹‚âs‚âg‚âÇ‚âˆ°4(€€€µ…¡¥¹•}½Õ¹Ðè€Ä°4(€€€Ý…Í¡}Ù…É¥…¹Ðè€‹‚â—‚æ'‚âË‚â‚âc‚â‚â‚â‡‚âS‚âÈˆ°4(€ô¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡Ù…±¥¹ÍÑ…ÑÕÍ½‘”°€ÈÀÀ¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡Ù…±¥¹‰½‘ä¹ÍÕ•ÍÌ°ÑÉÕ”¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡Ù…±¥¹‰½‘ä¹…‘µ¥¹}¹½Ñ¥™¥…Ñ¥½¸¹•Ù•¹Ð°€‰¹•Ý}‰½½­¥¹}É•…Ñ•‘}™É½µ}…¤ˆ¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡Ù…±¥¹‰½‘ä¹…‘µ¥¹}¹½Ñ¥™¥…Ñ¥½¸¹µ•ÍÍ…•}™¥•±‘Ì¹©½‰}¥°9Õµ‰•È¡Ù…±¥¹‰½‘ä¹©½‰}¥¤¤ì4)ô¤ì4(4)‘‰Q•ÍÐ ‰É•…°A½ÍÑÉ•ME0èÕÉ•¹ÐÑÉ…¹Í…Ñ¥½¸É½±±‰…¬±•…Ù•Ì¹¼Á…ÉÑ¥…°©½ˆ°¥Ñ•µÌ°½È½™™•ÉÌˆ°…Íå¹Œ€ ¤€ôøì4(€…Ý…¥ÐÍ••‘Q•¡¹¥¥…¹Ì ¤ì4(€½¹ÍÐÍ•ÉÙ¥”€ôÉ•…Ñ•	½½­¥¹)½‰M•ÉÙ¥”¡µ…­••Á•¹‘•¹¥•Ì¡ì4(€€€•¹ÍÕÉ•	½½­¥¹)½‰U¹¥ÑÌè…Íå¹Œ€ ¤€ôøìÑ¡É½Ü¹•ÜÉÉ½È ‰™¥áÑÕÉ”ÕÉ•¹ÐÉ½±±‰…¬ˆ¤ìô°4(€ô¤¤ì4(€½¹ÍÐÉ•ÍÕ±Ð€ô…Ý…¥Ð¥¹Ù½­”¡Í•ÉÙ¥”¹¡…¹‘±•AÕ‰±¥	½½¬°ÁÕ‰±¥UÉ•¹Ñ	½‘ä¡ìÕÉ•¹Ñ}É•ÅÕ•ÍÑ}­•äè€‰ÕÉ•¹ÐµÁÈÈµ­•äµÉ½±±‰…¬ˆô¤¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡É•ÍÕ±Ð¹ÍÑ…ÑÕÍ½‘”°€ÔÀÀ¤ì4(€™½È€¡½¹ÍÐÑ…‰±”½˜l‰©½‰Ìˆ°€‰©½‰}¥Ñ•µÌˆ°€‰©½‰}½™™•ÉÌ‰t¤ì4(€€€…ÍÍ•ÉÐ¹•ÅÕ…°¡9Õµ‰•È ¡…Ý…¥ÐÁ½½°¹ÅÕ•Éä¡M1P=U9P ¨¤I=4ÁÕ‰±¥Œ¸‘íÑ…‰±•õ€¤¤¹É½ÝÍlÁt¹½Õ¹Ð¤°€À°Ñ…‰±”¤ì4(€ô4)ô¤ì4(
+    isTechFree: async () => true,
+    getJwtSecret: () => "",
+    parseCookieValue: () => "",
+    jwtVerify: () => null,
+    toMin: (value) => {
+      const [hour, minute] = String(value).split(":").map(Number);
+      return hour * 60 + minute;
+    },
+    getNowBangkokParts: () => ({ ymd: "2026-07-01", hh: 8, mm: 0 }),
+    jobTiming: {
+      minimumStartForDate: () => ({ is_today: false, server_now: "2026-07-01T08:00:00+07:00", timezone: "Asia/Bangkok", minimum_start: "09:00" }),
+    },
+    customerAvailability: {
+      hasAvailableStart: async () => true,
+      reservePublicCustomerTechnician: async () => ({ username: "tech-a" }),
+    },
+    publicCustomerAvailabilityDeps: () => ({}),
+    findBestCustomerPromotion: async () => ({ promo: null, discount: 0 }),
+    availabilityEngine: {
+      buildCriteriaList: (payload) => [{ job: "wash", ac: payload.ac_type || "wall", wash: payload.wash_variant || "normal" }],
+      validateCriteriaList: () => true,
+      techMatchesAllCriteriaStrict: () => true,
+    },
+    urgentDispatchService: {
+      findEligibleTechnicians: async () => ({ available: [], zoneCode: null, totalCandidates: 0 }),
+    },
+    resolveCustomerUrgentCapability: async () => ({ enabled: true, degraded: false }),
+    logJobUpdate: async () => {},
+    isServiceZoneFilterEnabled: () => false,
+    isCustomerScheduledBookingEnabled: () => true,
+    lineContactUrl: "https://lin.ee/test",
+    travelBufferMin: 30,
+    getInvalidJobSiteCoordinatesMessage: () => "à¸žà¸´à¸à¸±à¸”à¸«à¸™à¹‰à¸²à¸‡à¸²à¸™à¹„à¸¡à¹ˆà¸–à¸¹à¸à¸•à¹‰à¸­à¸‡",
+    refreshTechnicianIncomePreviewForJob: async () => ({}),
+    notifyUrgentOffer: async () => {},
+    notifyDirectJobAssigned: async () => {},
+    ...overrides,
+  };
+}
+
+async function seedTechnicians() {
+  await pool.query(`INSERT INTO public.users (username, role) VALUES ('tech-a','technician'),('tech-b','technician')`);
+  await pool.query(`
+    INSERT INTO public.technician_profiles
+      (username, weekly_off_days, accept_status, accept_status_expires_at, employment_type, allow_out_of_zone, customer_slot_visible)
+    VALUES
+      ('tech-a','','ready',NOW() + INTERVAL '1 day','partner',FALSE,TRUE),
+      ('tech-b','','ready',NOW() + INTERVAL '1 day','company',FALSE,TRUE)
+  `);
+  await pool.query(
+    `INSERT INTO public.technician_service_matrix (username, matrix_json)
+     VALUES ('tech-a',$1::jsonb),('tech-b',$1::jsonb)`,
+    [JSON.stringify({
+      job_types: { wash: true },
+      ac_types: { wall: true },
+      wash_wall_variants: { normal: true },
+    })]
+  );
+  await pool.query(`
+    INSERT INTO public.technician_monthly_work_calendar
+      (technician_username, work_date, day_status, can_accept_advance_job,
+       can_accept_urgent_job, start_time, end_time, max_jobs_per_day, max_units_per_day, source)
+    VALUES
+      ('tech-a','2026-08-01','working',TRUE,TRUE,'09:00','18:00',5,10,'test'),
+      ('tech-b','2026-08-01','working',TRUE,TRUE,'09:00','18:00',5,10,'test')
+    ON CONFLICT (technician_username, work_date) DO UPDATE
+      SET day_status=EXCLUDED.day_status,
+          can_accept_advance_job=EXCLUDED.can_accept_advance_job,
+          can_accept_urgent_job=EXCLUDED.can_accept_urgent_job,
+          start_time=EXCLUDED.start_time,
+          end_time=EXCLUDED.end_time,
+          max_jobs_per_day=EXCLUDED.max_jobs_per_day,
+          max_units_per_day=EXCLUDED.max_units_per_day
+  `);
+}
+
+function toMinute(value) {
+  const [hour, minute] = String(value || "").slice(0, 5).split(":").map(Number);
+  return (hour * 60) + minute;
+}
+
+function collisionFreeIntervals(blocks, windowStart, windowEnd, durationMin) {
+  const sorted = (blocks || []).slice().sort((a, b) => a.start_min - b.start_min);
+  const intervals = [];
+  let cursor = windowStart;
+  for (const block of sorted) {
+    const latestStart = Number(block.start_min) - durationMin;
+    if (latestStart >= cursor) intervals.push({ startMin: cursor, endMin: latestStart });
+    cursor = Math.max(cursor, Number(block.end_min));
+  }
+  if (cursor + durationMin <= windowEnd) intervals.push({ startMin: cursor, endMin: windowEnd - durationMin });
+  return intervals;
+}
+
+function realAvailabilityDependencies(db) {
+  return {
+    pool: db,
+    db,
+    listTechniciansByType: async (type) => {
+      const result = await db.query(
+        `SELECT username, employment_type, customer_slot_visible
+           FROM public.technician_profiles
+          WHERE ($1='all' OR employment_type=$1)
+          ORDER BY username`,
+        [String(type || "all")]
+      );
+      return result.rows;
+    },
+    listBusyBlocksForTechOnDate: async (username, date, ignoreJobId) => {
+      const result = await db.query(
+        `SELECT
+           (EXTRACT(HOUR FROM appointment_datetime AT TIME ZONE 'Asia/Bangkok')::int * 60
+             + EXTRACT(MINUTE FROM appointment_datetime AT TIME ZONE 'Asia/Bangkok')::int) AS start_min,
+           (EXTRACT(HOUR FROM appointment_datetime AT TIME ZONE 'Asia/Bangkok')::int * 60
+             + EXTRACT(MINUTE FROM appointment_datetime AT TIME ZONE 'Asia/Bangkok')::int
+             + COALESCE(duration_min,60)::int) AS end_min
+           FROM public.jobs
+          WHERE technician_username=$1
+            AND (appointment_datetime AT TIME ZONE 'Asia/Bangkok')::date=$2::date
+            AND ($3::bigint IS NULL OR job_id <> $3::bigint)
+            AND COALESCE(job_status,'') <> 'à¸¢à¸à¹€à¸¥à¸´à¸'`,
+        [username, date, ignoreJobId || null]
+      );
+      return result.rows.map((row) => ({ start_min: Number(row.start_min), end_min: Number(row.end_min) }));
+    },
+    buildStartIntervalsByCollision: collisionFreeIntervals,
+    toMin: toMinute,
+    minToHHMM: (minute) => `${String(Math.floor(Number(minute) / 60)).padStart(2, "0")}:${String(Number(minute) % 60).padStart(2, "0")}`,
+    getNowBangkokParts: () => ({ ymd: "2026-07-01", hour: 8, minute: 0 }),
+  };
+}
+
+async function seedRealAvailability() {
+  await seedTechnicians();
+  const matrix = {
+    job_types: { wash: true, repair: true, install: true },
+    ac_types: { wall: true, fourway: true, hanging: true, ceiling: true },
+    wash_wall_variants: { normal: true, premium: true, coil: true, overhaul: true },
+    repair_variants: { inspection: true, leak_check: true, parts: true, general: true },
+  };
+  await pool.query(
+    `INSERT INTO public.technician_service_matrix (username, matrix_json)
+     VALUES ('tech-a',$1::jsonb),('tech-b',$1::jsonb)
+     ON CONFLICT (username) DO UPDATE SET matrix_json=EXCLUDED.matrix_json`,
+    [JSON.stringify(matrix)]
+  );
+  await pool.query(
+    `INSERT INTO public.technician_monthly_work_calendar
+       (technician_username, work_date, day_status, can_accept_advance_job, start_time, end_time, max_jobs_per_day, max_units_per_day, source)
+     VALUES
+       ('tech-a','2026-08-01','working',TRUE,'09:00','18:00',5,10,'test'),
+       ('tech-b','2026-08-01','working',TRUE,'09:00','18:00',5,10,'test')
+     ON CONFLICT (technician_username, work_date) DO UPDATE
+       SET day_status=EXCLUDED.day_status,
+           can_accept_advance_job=EXCLUDED.can_accept_advance_job,
+           start_time=EXCLUDED.start_time,
+           end_time=EXCLUDED.end_time,
+           max_jobs_per_day=EXCLUDED.max_jobs_per_day,
+           max_units_per_day=EXCLUDED.max_units_per_day`
+  );
+}
+
+dbTest("real PostgreSQL: public scheduled success preserves response, status, items, pricing, and assignment reservation", async () => {
+  const sideEffects = [];
+  const service = createBookingJobService(makeDependencies({
+    refreshTechnicianIncomePreviewForJob: async (...args) => { sideEffects.push(["income", args]); return {}; },
+    notifyUrgentOffer: async (...args) => { sideEffects.push(["urgent", args]); },
+    notifyDirectJobAssigned: async (...args) => { sideEffects.push(["direct", args]); },
+  }));
+  const result = await invoke(service.handlePublicBook, publicScheduledBody());
+  assert.equal(result.statusCode, 200);
+  assert.deepEqual(Object.keys(result.body), [
+    "success", "job_id", "booking_code", "token", "booking_mode", "dispatch_mode",
+    "offers_count", "urgent_offer_enabled", "duration_min", "effective_block_min",
+    "travel_buffer_min", "applied_promo", "base_total",
+  ]);
+  assert.equal(result.body.booking_mode, "scheduled");
+  assert.equal(result.body.base_total, 600);
+  assert.equal(Object.hasOwn(result.body, "technician_username"), false);
+  assert.equal(Object.hasOwn(result.body, "technician"), false);
+
+  const job = (await pool.query(`SELECT * FROM public.jobs`)).rows[0];
+  const items = (await pool.query(`SELECT item_name, qty::int, line_total::int FROM public.job_items ORDER BY item_name`)).rows;
+  assert.equal(job.job_status, JOB_STATUS.CUSTOMER_SCHEDULED_REVIEW);
+  assert.equal(job.technician_username, "tech-a");
+  assert.equal(Number(job.job_price), 600);
+  assert.deepEqual(items, [{ item_name: "à¸¥à¹‰à¸²à¸‡à¹à¸­à¸£à¹Œà¸œà¸™à¸±à¸‡ â€¢ à¸¥à¹‰à¸²à¸‡à¸˜à¸£à¸£à¸¡à¸”à¸² â€¢ 12000 BTU â€¢ 1 à¹€à¸„à¸£à¸·à¹ˆà¸­à¸‡", qty: 1, line_total: 600 }]);
+  assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_assignments`)).rows[0].count), 0);
+  assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_team_members`)).rows[0].count), 0);
+  assert.deepEqual(sideEffects, []);
+  const capacity = await loadCustomerScheduledLoadMap(pool, "2026-08-01", ["tech-a"]);
+  assert.equal(capacity.get("tech-a").jobs_count, 1);
+  const collisionOccupancy = await pool.query(
+    `SELECT COUNT(*)::int AS count FROM public.jobs j
+      WHERE j.technician_username=$1
+        AND j.appointment_datetime >= $2::timestamptz
+        AND j.appointment_datetime < $3::timestamptz
+        AND COALESCE(j.job_status,'') <> 'à¸¢à¸à¹€à¸¥à¸´à¸'`,
+    ["tech-a", "2026-08-01T00:00:00+07:00", "2026-08-02T00:00:00+07:00"]
+  );
+  assert.equal(collisionOccupancy.rows[0].count, 1);
+  const reviewQueue = await pool.query(
+    `SELECT COUNT(*)::int AS count FROM public.jobs
+      WHERE job_source='customer' AND booking_mode='scheduled' AND job_status=$1 AND canceled_at IS NULL`,
+    [JOB_STATUS.CUSTOMER_SCHEDULED_REVIEW]
+  );
+  assert.equal(reviewQueue.rows[0].count, 1);
+});
+
+test("canonical booking criteria preserve wash/repair variants, BTU, and line quantity without inference defaults", () => {
+  assert.deepEqual(parseCanonicalServiceItem({
+    item_name: "à¸¥à¹‰à¸²à¸‡à¹à¸­à¸£à¹Œà¸œà¸™à¸±à¸‡ â€¢ à¸¥à¹‰à¸²à¸‡à¸žà¸£à¸µà¹€à¸¡à¸µà¸¢à¸¡ â€¢ 18000 BTU â€¢ 2 à¹€à¸„à¸£à¸·à¹ˆà¸­à¸‡",
+    qty: 2,
+  }), {
+    job_type: "à¸¥à¹‰à¸²à¸‡",
+    ac_type: "à¸œà¸™à¸±à¸‡",
+    wash_variant: "à¸¥à¹‰à¸²à¸‡à¸žà¸£à¸µà¹€à¸¡à¸µà¸¢à¸¡",
+    repair_variant: "",
+    btu: 18000,
+    machine_count: 2,
+  });
+  assert.deepEqual(parseCanonicalServiceItem({
+    item_name: "à¸‹à¹ˆà¸­à¸¡à¹à¸­à¸£à¹Œà¸œà¸™à¸±à¸‡ â€¢ à¸•à¸£à¸§à¸ˆà¹€à¸Šà¹‡à¸„à¸£à¸±à¹ˆà¸§ â€¢ 12000 BTU â€¢ 1 à¹€à¸„à¸£à¸·à¹ˆà¸­à¸‡",
+    qty: 1,
+  }), {
+    job_type: "à¸‹à¹ˆà¸­à¸¡",
+    ac_type: "à¸œà¸™à¸±à¸‡",
+    wash_variant: "",
+    repair_variant: "à¸•à¸£à¸§à¸ˆà¹€à¸Šà¹‡à¸„à¸£à¸±à¹ˆà¸§",
+    btu: 12000,
+    machine_count: 1,
+  });
+});
+
+dbTest("real PostgreSQL: scheduled retry replays the same job without duplicate items", async () => {
+  const service = createBookingJobService(makeDependencies());
+  const body = publicScheduledBody();
+  const first = await invoke(service.handlePublicBook, body);
+  const replay = await invoke(service.handlePublicBook, body);
+  assert.equal(first.statusCode, 200);
+  assert.equal(replay.statusCode, 200);
+  assert.equal(replay.body.replayed, true);
+  assert.equal(replay.body.job_id, first.body.job_id);
+  assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.jobs`)).rows[0].count), 1);
+  assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_items`)).rows[0].count), 1);
+});
+
+dbTest("real PostgreSQL: scheduled rollback leaves no partial job or items", async () => {
+  const service = createBookingJobService(makeDependencies({
+    ensureBookingJobUnits: async () => { throw new Error("fixture assignment failure"); },
+  }));
+  const result = await invoke(service.handlePublicBook, publicScheduledBody({ scheduled_request_key: "scheduled-pr2-key-rollback" }));
+  assert.equal(result.statusCode, 500);
+  assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.jobs`)).rows[0].count), 0);
+  assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_items`)).rows[0].count), 0);
+});
+
+dbTest("real PostgreSQL: public urgent creates one offer set and notifies only after commit", async () => {
+  await seedTechnicians();
+  const notifications = [];
+  const income = [];
+  const baseDependencies = makeDependencies();
+  const realDispatch = createUrgentDispatchService({
+    pool,
+    availabilityEngine,
+    detectServiceZoneFromText: baseDependencies.detectServiceZoneFromText,
+    rankTechniciansForServiceZone: baseDependencies.rankTechniciansForServiceZone,
+    isTechFree: baseDependencies.isTechFree,
+    isServiceZoneFilterEnabled: () => false,
+  });
+  const probe = await realDispatch.findEligibleTechnicians({
+    ...publicUrgentBody(),
+    duration_min: 60,
+  }, {
+    db: pool,
+    criteriaList: availabilityEngine.buildCriteriaList(publicUrgentBody()),
+  });
+  assert.deepEqual(probe.available, ["tech-a"], "real PostgreSQL urgent eligibility fixture");
+  const service = createBookingJobService(makeDependencies({
+    availabilityEngine,
+    notifyUrgentOffer: async (payload) => { notifications.push(payload); },
+    refreshTechnicianIncomePreviewForJob: async (...args) => { income.push(args); return {}; },
+    urgentDispatchService: {
+      findEligibleTechnicians: async (...args) => {
+        const result = await realDispatch.findEligibleTechnicians(...args);
+        assert.deepEqual(result.available, ["tech-a"], "transactional urgent eligibility");
+        return result;
+      },
+    },
+  }));
+  const body = publicUrgentBody();
+  const first = await invoke(service.handlePublicBook, body);
+  const replay = await invoke(service.handlePublicBook, body);
+  assert.equal(first.statusCode, 200);
+  assert.equal(first.body.booking_mode, "urgent");
+  assert.equal(first.body.dispatch_mode, "offer");
+  assert.equal(first.body.phase, "searching");
+  assert.equal(Object.hasOwn(first.body, "offers_count"), false);
+  assert.equal(replay.body.replayed, true);
+  assert.equal(replay.body.booking_code, first.body.booking_code);
+  assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.jobs`)).rows[0].count), 1);
+  assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_offers`)).rows[0].count), 1);
+  assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_assignments`)).rows[0].count), 0);
+  assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_team_members`)).rows[0].count), 0);
+  const urgentJob = (await pool.query(`SELECT job_status, technician_username FROM public.jobs`)).rows[0];
+  assert.equal(urgentJob.job_status, JOB_STATUS.ADMIN_URGENT_WAITING);
+  assert.equal(urgentJob.technician_username, null);
+  assert.equal(notifications.length, 1);
+  assert.deepEqual(notifications[0].usernames, ["tech-a"]);
+  assert.equal(income.length, 0);
+});
+
+dbTest("real PostgreSQL: urgent retry preserves customer preferred time/GPS and rejects every material payload reuse", async () => {
+  const service = createBookingJobService(makeDependencies());
+  const body = publicUrgentBody({ urgent_request_key: "urgent-pr3-clock-replay-0001" });
+  const first = await invoke(service.handlePublicBook, body);
+  const replay = await invoke(service.handlePublicBook, body);
+  assert.equal(first.statusCode, 200);
+  assert.equal(replay.statusCode, 200);
+  assert.equal(replay.body.replayed, true);
+  assert.equal(replay.body.job_id, first.body.job_id);
+  const stored = (await pool.query(
+    `SELECT appointment_datetime, allow_time_proposal, gps_latitude, gps_longitude
+       FROM public.jobs WHERE job_id=$1`,
+    [first.body.job_id]
+  )).rows[0];
+  assert.equal(new Date(stored.appointment_datetime).getTime(), new Date(body.appointment_datetime).getTime());
+  assert.equal(stored.allow_time_proposal, false);
+  assert.equal(stored.gps_latitude, null);
+  assert.equal(stored.gps_longitude, null);
+  assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.jobs`)).rows[0].count), 1);
+
+  const mutations = [
+    { appointment_datetime: "2026-08-01T14:00:00+07:00" },
+    { gps_latitude: 13.7563, gps_longitude: 100.5018 },
+    { maps_url: "https://www.google.com/maps?q=13.7563,100.5018" },
+    { allow_time_proposal: true },
+    { customer_note: "materially changed" },
+  ];
+  for (const patch of mutations) {
+    const changed = await invoke(service.handlePublicBook, { ...body, ...patch });
+    assert.equal(changed.statusCode, 409, JSON.stringify(patch));
+    assert.equal(changed.body.code, "IDEMPOTENCY_KEY_REUSED", JSON.stringify(patch));
+  }
+  assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.jobs`)).rows[0].count), 1);
+});
+
+dbTest("real PostgreSQL: urgent persists multiple cleaning lines, customer GPS, preference, and no pre-approval technician side effects", async () => {
+  const service = createBookingJobService(makeDependencies());
+  const body = publicUrgentBody({
+    urgent_request_key: "urgent-preferred-gps-multi-0001",
+    maps_url: "https://www.google.com/maps?q=13.7563,100.5018",
+    gps_latitude: 13.7563,
+    gps_longitude: 100.5018,
+    allow_time_proposal: true,
+    services: [
+      { job_type: "à¸¥à¹‰à¸²à¸‡", ac_type: "à¸œà¸™à¸±à¸‡", btu: 12000, machine_count: 2, wash_variant: "à¸¥à¹‰à¸²à¸‡à¸˜à¸£à¸£à¸¡à¸”à¸²", repair_variant: "" },
+      { job_type: "à¸¥à¹‰à¸²à¸‡", ac_type: "à¸ªà¸µà¹ˆà¸—à¸´à¸¨à¸—à¸²à¸‡", btu: 24000, machine_count: 1, wash_variant: "", repair_variant: "" },
+    ],
+  });
+  const result = await invoke(service.handlePublicBook, body);
+  assert.equal(result.statusCode, 200);
+  const job = (await pool.query(
+    `SELECT appointment_datetime, maps_url, gps_latitude, gps_longitude, allow_time_proposal,
+            technician_username, job_status
+       FROM public.jobs WHERE job_id=$1`,
+    [result.body.job_id]
+  )).rows[0];
+  assert.equal(new Date(job.appointment_datetime).getTime(), new Date(body.appointment_datetime).getTime());
+  assert.equal(job.maps_url, body.maps_url);
+  assert.equal(Number(job.gps_latitude), body.gps_latitude);
+  assert.equal(Number(job.gps_longitude), body.gps_longitude);
+  assert.equal(job.allow_time_proposal, true);
+  assert.equal(job.technician_username, null);
+  assert.equal(job.job_status, JOB_STATUS.URGENT_NO_TECHNICIAN);
+  assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_items WHERE job_id=$1`, [result.body.job_id])).rows[0].count), 2);
+  assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_offers WHERE job_id=$1`, [result.body.job_id])).rows[0].count), 0);
+  assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_assignments WHERE job_id=$1`, [result.body.job_id])).rows[0].count), 0);
+  assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_team_members WHERE job_id=$1`, [result.body.job_id])).rows[0].count), 0);
+});
+
+dbTest("real PostgreSQL: strict urgent cleaning classifier rejects tampering before pricing and DB mutation", async () => {
+  let pricingCalls = 0;
+  const baseDependencies = makeDependencies();
+  const service = createBookingJobService(makeDependencies({
+    customerPricingHelpers: {
+      ...baseDependencies.customerPricingHelpers,
+      resolveCustomerPricingMulti: async () => {
+        pricingCalls += 1;
+        throw new Error("pricing must not run for rejected urgent payload");
+      },
+    },
+  }));
+  const cleanLine = { job_type: "à¸¥à¹‰à¸²à¸‡", ac_type: "à¸œà¸™à¸±à¸‡", btu: 12000, machine_count: 1, wash_variant: "à¸¥à¹‰à¸²à¸‡à¸˜à¸£à¸£à¸¡à¸”à¸²" };
+  const cases = [
+    { name: "top-level repair with cleaning services", patch: { job_type: "à¸‹à¹ˆà¸­à¸¡", services: [cleanLine] } },
+    { name: "Thai mixed cleaning and repair", patch: { job_type: "à¸¥à¹‰à¸²à¸‡à¹à¸¥à¸°à¸‹à¹ˆà¸­à¸¡" } },
+    { name: "English mixed cleaning and repair", patch: { job_type: "clean and repair" } },
+    { name: "one non-cleaning service line", patch: { job_type: "à¸¥à¹‰à¸²à¸‡", services: [cleanLine, { ...cleanLine, job_type: "à¸‹à¹ˆà¸­à¸¡" }] } },
+  ];
+  for (let index = 0; index < cases.length; index += 1) {
+    const entry = cases[index];
+    const result = await invoke(service.handlePublicBook, publicUrgentBody({
+      urgent_request_key: `urgent-pr3-tamper-${String(index + 1).padStart(4, "0")}`,
+      ...entry.patch,
+    }));
+    assert.equal(result.statusCode, 400, entry.name);
+    assert.equal(result.body.code, "URGENT_CLEANING_ONLY", entry.name);
+    assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.jobs`)).rows[0].count), 0, entry.name);
+    assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_items`)).rows[0].count), 0, entry.name);
+  }
+  assert.equal(pricingCalls, 0);
+});
+
+dbTest("real PostgreSQL: concurrent scheduled retry commits exactly one job and item set", async () => {
+  const service = createBookingJobService(makeDependencies());
+  const body = publicScheduledBody({ scheduled_request_key: "scheduled-pr3-concurrent-0001" });
+  const [one, two] = await Promise.all([
+    invoke(service.handlePublicBook, body),
+    invoke(service.handlePublicBook, body),
+  ]);
+  assert.equal(one.statusCode, 200);
+  assert.equal(two.statusCode, 200);
+  assert.equal(one.body.job_id, two.body.job_id);
+  assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.jobs`)).rows[0].count), 1);
+  assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_items`)).rows[0].count), 1);
+  assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_assignments`)).rows[0].count), 0);
+});
+
+dbTest("real PostgreSQL: public urgent non-cleaning rejects before any mutation", async () => {
+  const service = createBookingJobService(makeDependencies());
+  const result = await invoke(service.handlePublicBook, publicUrgentBody({ job_type: "à¸‹à¹ˆà¸­à¸¡à¹à¸­à¸£à¹Œ" }));
+  assert.equal(result.statusCode, 400);
+  assert.equal(result.body.code, "URGENT_CLEANING_ONLY");
+  assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.jobs`)).rows[0].count), 0);
+  assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_items`)).rows[0].count), 0);
+});
+
+function makeApprovalService(events = {}, overrides = {}) {
+  return createBookingApprovalService({
+    pool,
+    availabilityEngine: {
+      reservePublicCustomerTechnician: async (_deps, options) => {
+        events.reserveOptions = (events.reserveOptions || []).concat([options]);
+        return { username: options.preferred_username || "tech-b" };
+      },
+    },
+    getAvailabilityDependencies: (db) => ({ db, pool: db }),
+    refreshTechnicianIncomePreviewForJob: async (...args) => {
+      events.income = (events.income || []).concat([args]);
+      return {};
+    },
+    notifyDirectJobAssigned: async (payload) => {
+      events.direct = (events.direct || []).concat([payload]);
+    },
+    notifyUrgentOffer: async (payload) => {
+      events.offers = (events.offers || []).concat([payload]);
+    },
+    isTechReady: async () => true,
+    checkTechCollision: async () => null,
+    logJobUpdate: async (jobId, payload, db) => {
+      events.audit = (events.audit || []).concat([payload]);
+      await db.query(
+        `INSERT INTO public.job_updates_v2 (job_id, action, payload_json) VALUES ($1,$2,$3::jsonb)`,
+        [jobId, payload.action, JSON.stringify(payload.payload || {})]
+      );
+    },
+    ...overrides,
+  });
+}
+
+dbTest("real PostgreSQL: production-shaped units and real availability engine approve multi-service scheduled booking", async () => {
+  await seedRealAvailability();
+  const depsFor = (db = pool) => realAvailabilityDependencies(db);
+  const booking = createBookingJobService(makeDependencies({
+    computeDurationMinMulti: (payload) => pricingHelpers.computeDurationMinMulti(payload, { source: "pr3_real_engine", conservative: true }),
+    customerAvailability: availabilityEngine,
+    publicCustomerAvailabilityDeps: depsFor,
+  }));
+  const created = await invoke(booking.handlePublicBook, publicScheduledBody({
+    scheduled_request_key: "scheduled-pr3-real-engine-0001",
+    job_type: "à¸¥à¹‰à¸²à¸‡",
+    ac_type: "à¸œà¸™à¸±à¸‡",
+    btu: 12000,
+    machine_count: 3,
+    services: [
+      { job_type: "à¸¥à¹‰à¸²à¸‡", ac_type: "à¸œà¸™à¸±à¸‡", wash_variant: "à¸¥à¹‰à¸²à¸‡à¸˜à¸£à¸£à¸¡à¸”à¸²", btu: 12000, machine_count: 2 },
+      { job_type: "à¸¥à¹‰à¸²à¸‡", ac_type: "à¸ªà¸µà¹ˆà¸—à¸´à¸¨à¸—à¸²à¸‡", wash_variant: "", btu: 24000, machine_count: 1 },
+    ],
+  }));
+  assert.equal(created.statusCode, 200);
+
+  const units = (await pool.query(
+    `SELECT unit_no, ac_type, wash_type, btu
+       FROM public.job_units
+      WHERE job_id=$1
+      ORDER BY unit_no`,
+    [created.body.job_id]
+  )).rows;
+  assert.deepEqual(units, [
+    { unit_no: 1, ac_type: "à¸œà¸™à¸±à¸‡", wash_type: "à¸¥à¹‰à¸²à¸‡à¸˜à¸£à¸£à¸¡à¸”à¸²", btu: "12000" },
+    { unit_no: 2, ac_type: "à¸œà¸™à¸±à¸‡", wash_type: "à¸¥à¹‰à¸²à¸‡à¸˜à¸£à¸£à¸¡à¸”à¸²", btu: "12000" },
+    { unit_no: 3, ac_type: "à¸ªà¸µà¹ˆà¸—à¸´à¸¨à¸—à¸²à¸‡", wash_type: null, btu: "24000" },
+  ]);
+
+  const events = {};
+  const approval = makeApprovalService(events, {
+    availabilityEngine,
+    getAvailabilityDependencies: depsFor,
+  });
+  const approved = await invokeApproval(approval.approve, created.body.job_id);
+  assert.equal(approved.statusCode, 200);
+  assert.equal(approved.body.replayed, false);
+  assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_assignments WHERE job_id=$1`, [created.body.job_id])).rows[0].count), 1);
+  assert.equal((await pool.query(`SELECT job_status FROM public.jobs WHERE job_id=$1`, [created.body.job_id])).rows[0].job_status, JOB_STATUS.ADMIN_SCHEDULED_PENDING);
+  assert.equal(events.income.length, 1);
+  assert.equal(events.direct.length, 1);
+});
+
+async function invokeApproval(handler, jobId, body = {}) {
+  const req = { params: { job_id: String(jobId) }, body, auth: { username: "admin-test" } };
+  const res = responseHarness();
+  await handler(req, res);
+  return res;
+}
+
+dbTest("real PostgreSQL: scheduled approval creates one assignment after revalidation and replay has no duplicate side effect", async () => {
+  const booking = createBookingJobService(makeDependencies());
+  const created = await invoke(booking.handlePublicBook, publicScheduledBody());
+  const events = {};
+  const approval = makeApprovalService(events);
+  const first = await invokeApproval(approval.approve, created.body.job_id);
+  const replay = await invokeApproval(approval.approve, created.body.job_id);
+  assert.equal(first.statusCode, 200);
+  assert.equal(first.body.replayed, false);
+  assert.equal(replay.body.replayed, true);
+  assert.equal(events.reserveOptions.length, 1);
+  assert.equal(events.reserveOptions[0].preferred_username, "tech-a");
+  assert.equal(events.reserveOptions[0].ignore_job_id, created.body.job_id);
+  assert.equal(events.income.length, 1);
+  assert.equal(events.direct.length, 1);
+  assert.equal(events.audit.length, 1);
+  assert.equal(events.audit[0].action, "customer_booking_approved");
+  assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_assignments WHERE job_id=$1`, [created.body.job_id])).rows[0].count), 1);
+  const job = (await pool.query(`SELECT job_status FROM public.jobs WHERE job_id=$1`, [created.body.job_id])).rows[0];
+  assert.equal(job.job_status, JOB_STATUS.ADMIN_SCHEDULED_PENDING);
+});
+
+dbTest("real PostgreSQL: invalid reserved technician is safely reassigned in the same approval transaction", async () => {
+  const booking = createBookingJobService(makeDependencies());
+  const created = await invoke(booking.handlePublicBook, publicScheduledBody());
+  const calls = [];
+  const approval = makeApprovalService({}, {
+    availabilityEngine: {
+      reservePublicCustomerTechnician: async (_deps, options) => {
+        calls.push(options);
+        if (options.preferred_username) {
+          const error = new Error("CUSTOMER_SLOT_STALE");
+          error.status = 409;
+          throw error;
+        }
+        return { username: "tech-b" };
+      },
+    },
+  });
+  const result = await invokeApproval(approval.approve, created.body.job_id);
+  assert.equal(result.statusCode, 200);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].preferred_username, "tech-a");
+  assert.equal(calls[1].preferred_username, undefined);
+  const assignment = (await pool.query(`SELECT technician_username FROM public.job_assignments WHERE job_id=$1`, [created.body.job_id])).rows[0];
+  assert.equal(assignment.technician_username, "tech-b");
+});
+
+dbTest("real PostgreSQL: approval failure rolls back and leaves pending reservation intact", async () => {
+  const booking = createBookingJobService(makeDependencies());
+  const created = await invoke(booking.handlePublicBook, publicScheduledBody());
+  const approval = makeApprovalService({}, {
+    availabilityEngine: {
+      reservePublicCustomerTechnician: async () => {
+        const error = new Error("CUSTOMER_SLOT_STALE");
+        error.status = 409;
+        throw error;
+      },
+    },
+  });
+  const result = await invokeApproval(approval.approve, created.body.job_id);
+  assert.equal(result.statusCode, 409);
+  assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_assignments WHERE job_id=$1`, [created.body.job_id])).rows[0].count), 0);
+  const job = (await pool.query(`SELECT job_status, technician_username FROM public.jobs WHERE job_id=$1`, [created.body.job_id])).rows[0];
+  assert.equal(job.job_status, JOB_STATUS.CUSTOMER_SCHEDULED_REVIEW);
+  assert.equal(job.technician_username, "tech-a");
+});
+
+dbTest("real PostgreSQL: approval fails closed when pending reservation already has assignment state", async () => {
+  const booking = createBookingJobService(makeDependencies());
+  const created = await invoke(booking.handlePublicBook, publicScheduledBody());
+  await pool.query(
+    `INSERT INTO public.job_assignments (job_id, technician_username, status) VALUES ($1,'unexpected-tech','in_progress')`,
+    [created.body.job_id]
+  );
+  const events = {};
+  const approval = makeApprovalService(events);
+  const result = await invokeApproval(approval.approve, created.body.job_id);
+  assert.equal(result.statusCode, 409);
+  assert.equal(result.body.code, "PENDING_RESERVATION_STATE_DRIFT");
+  assert.equal((await pool.query(`SELECT job_status FROM public.jobs WHERE job_id=$1`, [created.body.job_id])).rows[0].job_status, JOB_STATUS.CUSTOMER_SCHEDULED_REVIEW);
+});
+
+dbTest("real PostgreSQL: public urgent fallback is not gated by the legacy admin-approval mutation", async () => {
+  await seedTechnicians();
+  const booking = createBookingJobService(makeDependencies());
+  const created = await invoke(booking.handlePublicBook, publicUrgentBody());
+  const events = {};
+  const approval = makeApprovalService(events, {
+    notifyUrgentOffer: async (payload) => {
+      const committed = await pool.query(`SELECT job_status FROM public.jobs WHERE job_id=$1`, [payload.job_id]);
+      assert.equal(committed.rows[0].job_status, JOB_STATUS.ADMIN_URGENT_WAITING);
+      events.offers = (events.offers || []).concat([payload]);
+    },
+  });
+  const first = await invokeApproval(approval.approve, created.body.job_id, { technician_username: "tech-a" });
+  assert.equal(first.statusCode, 409);
+  assert.equal(events.offers, undefined);
+  assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_offers WHERE job_id=$1`, [created.body.job_id])).rows[0].count), 0);
+  assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_assignments WHERE job_id=$1`, [created.body.job_id])).rows[0].count), 0);
+  assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_team_members WHERE job_id=$1`, [created.body.job_id])).rows[0].count), 0);
+});
+
+dbTest("real PostgreSQL: reject clears hidden reservation and releases scheduled load", async () => {
+  const booking = createBookingJobService(makeDependencies());
+  const created = await invoke(booking.handlePublicBook, publicScheduledBody());
+  const before = await loadCustomerScheduledLoadMap(pool, "2026-08-01", ["tech-a"]);
+  assert.equal(before.get("tech-a").jobs_count, 1);
+  const events = {};
+  const approval = makeApprovalService(events);
+  const rejected = await invokeApproval(approval.reject, created.body.job_id, { reason: "not approved" });
+  assert.equal(rejected.statusCode, 200);
+  const after = await loadCustomerScheduledLoadMap(pool, "2026-08-01", ["tech-a"]);
+  assert.equal(after.get("tech-a").jobs_count, 0);
+  const row = (await pool.query(`SELECT technician_username, canceled_at, cancel_reason FROM public.jobs WHERE job_id=$1`, [created.body.job_id])).rows[0];
+  assert.equal(row.technician_username, null);
+  assert.ok(row.canceled_at);
+  assert.equal(row.cancel_reason, "not approved");
+  assert.equal(events.audit.length, 1);
+  assert.equal(events.audit[0].action, "customer_booking_rejected");
+  assert.equal(events.audit[0].payload.reserved_technician, "tech-a");
+  const audit = (await pool.query(`SELECT action, payload_json FROM public.job_updates_v2 WHERE job_id=$1`, [created.body.job_id])).rows[0];
+  assert.equal(audit.action, "customer_booking_rejected");
+  assert.equal(audit.payload_json.reserved_technician, "tech-a");
+});
+
+dbTest("real PostgreSQL: exact pending reservation is hidden until assignment approval", async () => {
+  const booking = createBookingJobService(makeDependencies());
+  const created = await invoke(booking.handlePublicBook, publicScheduledBody());
+  const hidden = await pool.query(
+    `SELECT job_id FROM public.jobs j
+      WHERE j.job_id=$1 AND j.technician_username=$2
+        AND NOT ${pendingCustomerScheduledReservationSql("j")}`,
+    [created.body.job_id, "tech-a"]
+  );
+  assert.equal(hidden.rows.length, 0);
+  const approval = makeApprovalService({});
+  await invokeApproval(approval.approve, created.body.job_id);
+  const visible = await pool.query(
+    `SELECT j.job_id FROM public.jobs j
+      WHERE j.job_id=$1 AND (
+        (j.technician_username=$2 AND NOT ${pendingCustomerScheduledReservationSql("j")})
+        OR EXISTS (SELECT 1 FROM public.job_assignments ja WHERE ja.job_id=j.job_id AND ja.technician_username=$2)
+      )`,
+    [created.body.job_id, "tech-a"]
+  );
+  assert.equal(visible.rows.length, 1);
+});
+
+dbTest("real PostgreSQL: Admin Auto, Single, Team, and Forced preserve assignments and status", async () => {
+  const cases = [
+    { name: "auto", patch: { assign_mode: "auto" }, expected: ["tech-a"] },
+    { name: "single", patch: { assign_mode: "single", technician_username: "tech-a" }, expected: ["tech-a"] },
+    { name: "team", patch: { assign_mode: "team", team_members: ["tech-a", "tech-b"] }, expected: ["tech-a", "tech-b"] },
+    { name: "forced", patch: { assign_mode: "single", dispatch_mode: "forced", technician_username: "tech-a" }, expected: ["tech-a"] },
+  ];
+  for (const entry of cases) {
+    await pool.query(`TRUNCATE public.job_promotions, public.job_offers, public.job_assignments, public.job_team_members, public.job_items, public.jobs RESTART IDENTITY CASCADE`);
+    await pool.query(`TRUNCATE public.technician_monthly_work_calendar,
+      public.technician_service_matrix, public.technician_profiles, public.users`);
+    await seedTechnicians();
+    const service = createBookingJobService(makeDependencies());
+    const result = await invoke(service.handleAdminBookV2, {
+      customer_name: `Admin ${entry.name}`,
+      customer_phone: "0800000000",
+      job_type: "à¸¥à¹‰à¸²à¸‡à¹à¸­à¸£à¹Œ",
+      appointment_datetime: "2026-08-01T09:00:00+07:00",
+      address_text: "à¸à¸£à¸¸à¸‡à¹€à¸—à¸žà¸¯",
+      booking_mode: "scheduled",
+      tech_type: "all",
+      ac_type: "à¸œà¸™à¸±à¸‡",
+      machine_count: 1,
+      wash_variant: "à¸¥à¹‰à¸²à¸‡à¸˜à¸£à¸£à¸¡à¸”à¸²",
+      ...entry.patch,
+    });
+    assert.equal(result.statusCode, 200, entry.name);
+    assert.equal((await pool.query(`SELECT job_status FROM public.jobs`)).rows[0].job_status, JOB_STATUS.ADMIN_SCHEDULED_PENDING);
+    const assigned = (await pool.query(`SELECT technician_username FROM public.job_assignments ORDER BY technician_username`)).rows.map((row) => row.technician_username);
+    assert.deepEqual(assigned, entry.expected, entry.name);
+    assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_items`)).rows[0].count), 1, entry.name);
+  }
+});
+
+dbTest("real PostgreSQL: internal booking preserves validation and admin-notification serialization", async () => {
+  await seedTechnicians();
+  const service = createBookingJobService(makeDependencies());
+  const invalid = await invoke(service.handleInternalBookFromAi, { customer_name: "AI" });
+  assert.equal(invalid.statusCode, 400);
+  assert.deepEqual(invalid.body.missing_fields, ["job_type", "appointment_datetime", "address_text"]);
+
+  const valid = await invoke(service.handleInternalBookFromAi, {
+    customer_name: "AI Customer",
+    customer_phone: "0811111111",
+    job_type: "à¸¥à¹‰à¸²à¸‡à¹à¸­à¸£à¹Œ",
+    appointment_datetime: "2026-08-01T10:00:00+07:00",
+    address_text: "à¸à¸£à¸¸à¸‡à¹€à¸—à¸žà¸¯",
+    booking_mode: "scheduled",
+    tech_type: "all",
+    assign_mode: "auto",
+    ac_type: "à¸œà¸™à¸±à¸‡",
+    machine_count: 1,
+    wash_variant: "à¸¥à¹‰à¸²à¸‡à¸˜à¸£à¸£à¸¡à¸”à¸²",
+  });
+  assert.equal(valid.statusCode, 200);
+  assert.equal(valid.body.success, true);
+  assert.equal(valid.body.admin_notification.event, "new_booking_created_from_ai");
+  assert.equal(valid.body.admin_notification.message_fields.job_id, Number(valid.body.job_id));
+});
+
+dbTest("real PostgreSQL: urgent transaction rollback leaves no partial job, items, or offers", async () => {
+  await seedTechnicians();
+  const service = createBookingJobService(makeDependencies({
+    ensureBookingJobUnits: async () => { throw new Error("fixture urgent rollback"); },
+  }));
+  const result = await invoke(service.handlePublicBook, publicUrgentBody({ urgent_request_key: "urgent-pr2-key-rollback" }));
+  assert.equal(result.statusCode, 500);
+  for (const table of ["jobs", "job_items", "job_offers"]) {
+    assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.${table}`)).rows[0].count), 0, table);
+  }
+});

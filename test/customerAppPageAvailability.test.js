@@ -283,4 +283,573 @@ test("api exposes loadCustomerAppConfig as a no-store GET to /public/customer-ap
 test("build wiring: pageAvailability.js is registered in the HTML shell and the SW cache, with the new build id", () => {
   const build = "20260726_urgent_direct_auto_offer_v1";
   assert.match(indexHtml, new RegExp(`modules/pageAvailability\\.js\\?v=${build}`));
-  assert.match(sßÎö¶‰žËkºwµç}Ð¹…Á¤¹ÍÕ‰µ¥ÑUÉ•¹ÑI•ÅÕ•ÍÐ ¤ìÁ…¥¹Ð ‰ÕÉ•¹Ðˆ¤¡…ÁÀ¤ìô°4(€€€ÑÉ…­¥¹œè€¡…ÁÀ¤€ôøì¡…¹‘±•É…±±Ì¹ÑÉ…­¥¹œ€¬ô€ÄìÉ½½Ð¹…Á¤¹ÑÉ…­	½½­¥¹œ ¤ìÁ…¥¹Ð ‰ÑÉ…­¥¹œˆ¤¡…ÁÀ¤ìô°4(€€€ÁÉ½™¥±”è€¡…ÁÀ¤€ôøì¡…¹‘±•É…±±Ì¹ÁÉ½™¥±”€¬ô€ÄìÁ…¥¹Ð ‰ÁÉ½™¥±”ˆ¤¡…ÁÀ¤ìô°4(€ô¤ì4(4(€É•ÑÕÉ¸ì4(€€€É½½Ð°ÍÑ…Ñ”°…ÁÁ°°¡…¹‘±•É…±±Ì°…Á¥…±±Ì°É½ÕÑ•Q½…±±Ì°¹…Ù%Ñ•µÌ°4(€€€Í•Ñ±…Ìè€¡™±…Ì¤€ôøì…Á¥I•ÍÁ½¹Í”€ô…Íå¹Œ€ ¤€ôø€¡ì½¬èÑÉÕ”°‘•É…‘•è™…±Í”°Á…•}…Ù…¥±…‰¥±¥Ñäè™±…Ìô¤ìô°4(€€€±½…è€ ¤€ôøÉ½½Ð¹Á…•Ù…¥±…‰¥±¥Ñä¹±½… ¤°4(€€€É•¹‘•Èè€¡É•ÅÕ•ÍÑ•¤€ôøìÍÑ…Ñ”¹É•ÅÕ•ÍÑ•€ôÉ•ÅÕ•ÍÑ•ìÉ½½Ð¹É½ÕÑ•È¹É•¹‘•È¡ì™½ÕÌè™…±Í”ô¤ìô°4(€€€¥Í5…¥¹Ñ•¹…¹”è€ ¤€ôøMÑÉ¥¹œ¡…ÁÁ°¹¥¹¹•É!Q50¤¹¥¹±Õ‘•Ì ‹‚â¯‚âg‚æ'‚âË‚âg‚â×‚æ'‚â‚âÏ‚â—‚âÇ‚â‚âo‚â‚âÇ‚âk‚âo‚â‚âã‚âˆ¤°4(€€€¹…ÙÑ¥Ù”è€¡É½ÕÑ”¤€ôø¹…Ù%Ñ•µÌ¹™¥¹ ¡¸¤€ôø¸¹•ÑÑÑÉ¥‰ÕÑ” ‰‘…Ñ„µÉ½ÕÑ”ˆ¤€ôôôÉ½ÕÑ”¤¹¥ÍÑ¥Ù”°4(€€€¹…Ù!¥‘‘•¸è€¡É½ÕÑ”¤€ôø¹…Ù%Ñ•µÌ¹™¥¹ ¡¸¤€ôø¸¹•ÑÑÑÉ¥‰ÕÑ” ‰‘…Ñ„µÉ½ÕÑ”ˆ¤€ôôôÉ½ÕÑ”¤¹¡…ÍÑÑÉ¥‰ÕÑ” ‰¡¥‘‘•¸ˆ¤°4(€ôì4)ô4(4)½¹ÍÐ™±…Ì€ô€¡½Ù•È¤€ôø€¡ì¡½µ”èÑÉÕ”°ÍÑ½É”èÑÉÕ”°‰½½­¥¹œèÑÉÕ”°Í¡•‘Õ±•èÑÉÕ”°ÕÉ•¹ÐèÑÉÕ”°ÑÉ…­¥¹œèÑÉÕ”°ÁÉ½™¥±”èÑÉÕ”°€¸¸¹½Ù•Èô¤ì4(4)Ñ•ÍÐ ‰É½ÕÑ•ÈÉÕ¹Ñ¥µ”è…¸9	1É½ÕÑ”…±±Ì¥ÑÌ¡…¹‘±•È•á…Ñ±ä½¹”ˆ°…Íå¹Œ€ ¤€ôøì4(€½¹ÍÐ €ô±½…‘I½ÕÑ•ÉIÕ¹Ñ¥µ” ¤ì4(€ ¹Í•Ñ±…Ì¡™±…Ì ¤¤ì4(€…Ý…¥Ð ¹±½… ¤ì4(€ ¹É•¹‘•È ‰¡½µ”ˆ¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ ¹¡…¹‘±•É…±±Ì¹¡½µ”°€Ä¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ ¹¥Í5…¥¹Ñ•¹…¹” ¤°™…±Í”¤ì4)ô¤ì4(4)Ñ•ÍÐ ‰É½ÕÑ•ÈÉÕ¹Ñ¥µ”è‘¥Í…‰±•QÉ…­¥¹œ¹•Ù•È…±±ÌÑ¡”ÑÉ…­¥¹œ¡…¹‘±•È½È€½ÁÕ‰±¥Œ½ÑÉ…¬ˆ°…Íå¹Œ€ ¤€ôøì4(€½¹ÍÐ €ô±½…‘I½ÕÑ•ÉIÕ¹Ñ¥µ” ¤ì4(€ ¹Í•Ñ±…Ì¡™±…Ì¡ìÑÉ…­¥¹œè™…±Í”ô¤¤ì4(€…Ý…¥Ð ¹±½… ¤ì4(€ ¹É•¹‘•È ‰ÑÉ…­¥¹œˆ¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ ¹¡…¹‘±•É…±±Ì¹ÑÉ…­¥¹œ°€À°€‰ÑÉ…­¥¹œ¡…¹‘±•ÈµÕÍÐ¹½ÐÉÕ¸ˆ¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ ¹…Á¥…±±Ì¹ÑÉ…¬°€À°€‰¹¼€½ÁÕ‰±¥Œ½ÑÉ…¬±½½­ÕÀµ…ä™¥É”ˆ¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ ¹¥Í5…¥¹Ñ•¹…¹” ¤°ÑÉÕ”°€‰µ…¥¹Ñ•¹…¹”ÍÉ••¸Í¡½Ý¸ˆ¤ì4)ô¤ì4(4)Ñ•ÍÐ ‰É½ÕÑ•ÈÉÕ¹Ñ¥µ”è‘¥Í…‰±•	½½­¥¹œ­••ÁÌ¥ÑÌ	½ÑÑ½´µ9…Ø¥Ñ•´ÁÉ•Í•¹Ð€¬…Ñ¥Ù”°Í¡½ÝÌµ…¥¹Ñ•¹…¹”°¹¼‰½½­¥¹œ¡…¹‘±•È½A$ˆ°…Íå¹Œ€ ¤€ôøì4(€½¹ÍÐ €ô±½…‘I½ÕÑ•ÉIÕ¹Ñ¥µ” ¤ì4(€ ¹Í•Ñ±…Ì¡™±…Ì¡ì‰½½­¥¹œè™…±Í”ô¤¤ì4(€…Ý…¥Ð ¹±½… ¤ì4(€ ¹É•¹‘•È ‰‰½½­¥¹œˆ¤ì4(€€¼¼½èÑ¡”€‹‚â#‚â·‚âˆµ•¹Ô¥Ñ•´ÍÑ…åÌ¥¸Ñ¡”¹…Ø€¡¹•Ù•È¡¥‘‘•¸½É•µ½Ù•¤ƒŠ˜4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ ¹¹…Ù!¥‘‘•¸ ‰‰½½­¥¹œˆ¤°™…±Í”°€‰‰½½­¥¹œ¹…Ø¥Ñ•´µÕÍÐ¹½Ð‰”¡¥‘‘•¸ˆ¤ì4(€€¼¼ƒŠ˜…¹¥ÌÍ¡½Ý¸…Ñ¥Ù”™½ÈÑ¡”‘¥Í…‰±•É½ÕÑ”¥ÐÁ½¥¹ÑÌ…Ð¸4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ ¹¹…ÙÑ¥Ù” ‰‰½½­¥¹œˆ¤°ÑÉÕ”°€‰‰½½­¥¹œ¹…Ø¥Ñ•´µÕÍÐ‰”…Ñ¥Ù”ˆ¤ì4(€€¼¼I½ÕÑ”É•Í½±Ù•ÌÑ¼€‰½½­¥¹œ…¹Í¡½ÝÌÑ¡”±½­•µ…¥¹Ñ•¹…¹”ÍÉ••¸ƒŠ˜4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ ¹ÍÑ…Ñ”¹É½ÕÑ”°€‰‰½½­¥¹œˆ°€‰UI0½É½ÕÑ”ÍÑ…åÌ€‰½½­¥¹œˆ¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ ¹¥Í5…¥¹Ñ•¹…¹” ¤°ÑÉÕ”°€‰µ…¥¹Ñ•¹…¹”ÍÉ••¸Í¡½Ý¸ˆ¤ì4(€€¼¼ƒŠ˜Ý¥Ñ¡½ÕÐ•Ù•ÈÉÕ¹¹¥¹œÑ¡”‰½½­¥¹œ¡…¹‘±•È€¡Í¼¹¼Í¡•‘Õ±•½ÕÉ•¹ÐA$¤¸4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ ¹¡…¹‘±•É…±±Ì¹‰½½­¥¹œ°€À¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ ¹…Á¥…±±Ì¹ÁÉ¥¥¹œ°€À¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ ¹…Á¥…±±Ì¹…Ù…¥±…‰¥±¥Ñä°€À¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ ¹…Á¥…±±Ì¹ÕÉ•¹Ð°€À¤ì4)ô¤ì4(4)Ñ•ÍÐ ‰É½ÕÑ•ÈÉÕ¹Ñ¥µ”èÉ”µ•¹…‰±¥¹œ„Á…”É•ÍÑ½É•Ì¹½Éµ…°‰•¡…Ù¥½ÕÈ€¡¡…¹‘±•ÈÉÕ¹Ì°¹¼µ…¥¹Ñ•¹…¹”¤ˆ°…Íå¹Œ€ ¤€ôøì4(€½¹ÍÐ €ô±½…‘I½ÕÑ•ÉIÕ¹Ñ¥µ” ¤ì4(€ ¹Í•Ñ±…Ì¡™±…Ì¡ì‰½½­¥¹œè™…±Í”ô¤¤ì4(€…Ý…¥Ð ¹±½… ¤ì4(€ ¹É•¹‘•È ‰‰½½­¥¹œˆ¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ ¹¥Í5…¥¹Ñ•¹…¹” ¤°ÑÉÕ”¤ì4(€€¼¼‘µ¥¸É”µ•¹…‰±•Ì‰½½­¥¹œì„™É•Í …Ù…¥±…‰¥±¥Ñä±½…™±¥ÁÌÑ¡”™±…œ¸4(€ ¹Í•Ñ±…Ì¡™±…Ì ¤¤ì4(€…Ý…¥Ð ¹±½… ¤ì4(€ ¹É•¹‘•È ‰‰½½­¥¹œˆ¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ ¹¡…¹‘±•É…±±Ì¹‰½½­¥¹œ°€Ä°€‰¡…¹‘±•ÈÉÕ¹Ì½¹”Ñ¡”Á…”¥Ì•¹…‰±•……¥¸ˆ¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ ¹¥Í5…¥¹Ñ•¹…¹” ¤°™…±Í”°€‰¹¼µ…¥¹Ñ•¹…¹”½¹”•¹…‰±•ˆ¤ì4)ô¤ì4(4)Ñ•ÍÐ ‰É½ÕÑ•ÈÉÕ¹Ñ¥µ”è‘¥Í…‰±•M¡•‘Õ±•¹•Ù•È…±±ÌÑ¡”¡…¹‘±•È°ÁÉ¥¥¹œ°½È…Ù…¥±…‰¥±¥Ñäˆ°…Íå¹Œ€ ¤€ôøì4(€½¹ÍÐ €ô±½…‘I½ÕÑ•ÉIÕ¹Ñ¥µ” ¤ì4(€ ¹Í•Ñ±…Ì¡™±…Ì¡ìÍ¡•‘Õ±•è™…±Í”ô¤¤ì4(€…Ý…¥Ð ¹±½… ¤ì4(€ ¹É•¹‘•È ‰Í¡•‘Õ±•ˆ¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ ¹¡…¹‘±•É…±±Ì¹Í¡•‘Õ±•°€À¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ ¹…Á¥…±±Ì¹ÁÉ¥¥¹œ°€À¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ ¹…Á¥…±±Ì¹…Ù…¥±…‰¥±¥Ñä°€À¤ì4)ô¤ì4(4)Ñ•ÍÐ ‰É½ÕÑ•ÈÉÕ¹Ñ¥µ”è‘¥Í…‰±•UÉ•¹Ð¹•Ù•È…±±ÌÑ¡”ÕÉ•¹Ð¡…¹‘±•È½A$ˆ°…Íå¹Œ€ ¤€ôøì4(€½¹ÍÐ €ô±½…‘I½ÕÑ•ÉIÕ¹Ñ¥µ” ¤ì4(€ ¹Í•Ñ±…Ì¡™±…Ì¡ìÕÉ•¹Ðè™…±Í”ô¤¤ì4(€…Ý…¥Ð ¹±½… ¤ì4(€ ¹É•¹‘•È ‰ÕÉ•¹Ðˆ¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ ¹¡…¹‘±•É…±±Ì¹ÕÉ•¹Ð°€À¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ ¹…Á¥…±±Ì¹ÕÉ•¹Ð°€À¤ì4)ô¤ì4(4)Ñ•ÍÐ ‰É½ÕÑ•ÈÉÕ¹Ñ¥µ”è‘¥Í…‰±•MÑ½É”¹•Ù•È…±±ÌÑ¡”ÍÑ½É”¡…¹‘±•Èˆ°…Íå¹Œ€ ¤€ôøì4(€½¹ÍÐ €ô±½…‘I½ÕÑ•ÉIÕ¹Ñ¥µ” ¤ì4(€ ¹Í•Ñ±…Ì¡™±…Ì¡ìÍÑ½É”è™…±Í”ô¤¤ì4(€…Ý…¥Ð ¹±½… ¤ì4(€ ¹É•¹‘•È ‰ÍÑ½É”ˆ¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ ¹¡…¹‘±•É…±±Ì¹ÍÑ½É”°€À¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ ¹¥Í5…¥¹Ñ•¹…¹” ¤°ÑÉÕ”¤ì4)ô¤ì4(4)Ñ•ÍÐ ‰É½ÕÑ•ÈÉÕ¹Ñ¥µ”è‘¥Í…‰±•ÍÑ½É•%Ñ•´´ÄÈÌ¹•Ù•È…±±ÌÑ¡”ÍÑ½É”µ‘•Ñ…¥°¡…¹‘±•Èˆ°…Íå¹Œ€ ¤€ôøì4(€½¹ÍÐ €ô±½…‘I½ÕÑ•ÉIÕ¹Ñ¥µ” ¤ì4(€ ¹Í•Ñ±…Ì¡™±…Ì¡ìÍÑ½É”è™…±Í”ô¤¤ì4(€…Ý…¥Ð ¹±½… ¤ì4(€ ¹É•¹‘•È ‰ÍÑ½É•%Ñ•´´ÄÈÌˆ¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ ¹¡…¹‘±•É…±±Ì¹ÍÑ½É•%Ñ•´°€À¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ ¹¥Í5…¥¹Ñ•¹…¹” ¤°ÑÉÕ”¤ì4)ô¤ì4(4)Ñ•ÍÐ ‰É½ÕÑ•ÈÉÕ¹Ñ¥µ”èÉ•…¡¥¹œ„‘¥Í…‰±•É½ÕÑ”€¡…ÌÙ¥„É½ÕÑ•Q¼½¡…Í ¤…¹¹½Ð‰åÁ…ÍÌÑ¡”Õ…Éˆ°…Íå¹Œ€ ¤€ôøì4(€½¹ÍÐ €ô±½…‘I½ÕÑ•ÉIÕ¹Ñ¥µ” ¤ì4(€ ¹Í•Ñ±…Ì¡™±…Ì¡ìÍÑ½É”è™…±Í”ô¤¤ì4(€…Ý…¥Ð ¹±½… ¤ì4(€€¼¼M¥µÕ±…Ñ”É½ÕÑ•Q¼ ÍÑ½É”œ¤±…¹‘¥¹œ€¡¥ÐÍ•ÑÌÑ¡”¡…Í ƒŠHÉ•¹‘•ÈÉ•…‘Ì¥Ð¤¸4(€ ¹É•¹‘•È ‰ÍÑ½É”ˆ¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ ¹¡…¹‘±•É…±±Ì¹ÍÑ½É”°€À°€‰Õ…É‰±½­ÌÉ•…É‘±•ÍÌ½˜¹…Ù¥…Ñ¥½¸Í½ÕÉ”ˆ¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ ¹¥Í5…¥¹Ñ•¹…¹” ¤°ÑÉÕ”¤ì4)ô¤ì4(4)Ñ•ÍÐ ‰É½ÕÑ•ÈÉÕ¹Ñ¥µ”è„‘¥É•Ð‘¥Í…‰±•¡…Í É•¹‘•ÉÌÑ¡”µ…¥¹Ñ•¹…¹”ÍÉ••¸ˆ°…Íå¹Œ€ ¤€ôøì4(€½¹ÍÐ €ô±½…‘I½ÕÑ•ÉIÕ¹Ñ¥µ” ¤ì4(€ ¹Í•Ñ±…Ì¡™±…Ì¡ìÁÉ½™¥±”è™…±Í”ô¤¤ì4(€…Ý…¥Ð ¹±½… ¤ì4(€ ¹É•¹‘•È ‰ÁÉ½™¥±”ˆ¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ ¹¡…¹‘±•É…±±Ì¹ÁÉ½™¥±”°€À¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ ¹¥Í5…¥¹Ñ•¹…¹” ¤°ÑÉÕ”¤ì4)ô¤ì4(4)Ñ•ÍÐ ‰É½ÕÑ•ÈÉÕ¹Ñ¥µ”è…¸Õ¹­¹½Ý¸É½ÕÑ”É•‘¥É•ÑÌÑ¼Ñ¡”™¥ÉÍÐ•¹…‰±•É½ÕÑ”€¡¹¼¡…¹‘±•ÈÉÕ¸¤ˆ°…Íå¹Œ€ ¤€ôøì4(€½¹ÍÐ €ô±½…‘I½ÕÑ•ÉIÕ¹Ñ¥µ” ¤ì4(€ ¹Í•Ñ±…Ì¡™±…Ì ¤¤ì€¼¼…±°•¹…‰±•ƒŠH™¥ÉÍÑ¹…‰±•‘I½ÕÑ”€ô¡½µ”4(€…Ý…¥Ð ¹±½… ¤ì4(€ ¹É•¹‘•È ‰Ñ½Ñ…±±äµ‰½ÕÌˆ¤ì4(€…ÍÍ•ÉÐ¹‘••ÁÅÕ…°¡ ¹É½ÕÑ•Q½…±±Ì°l‰¡½µ”‰t°€‰Õ¹­¹½Ý¸ƒŠH™¥ÉÍÑ¹…‰±•‘I½ÕÑ”ˆ¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ ¹¡…¹‘±•É…±±Ì¹¡½µ”°€À°€‰É•‘¥É•ÐÉ•ÑÕÉ¹Ì‰•™½É”…¹ä¡…¹‘±•ÈÉÕ¹Ìˆ¤ì4)ô¤ì4(4)Ñ•ÍÐ ‰É½ÕÑ•ÈÉÕ¹Ñ¥µ”è½¹1•…Ù”½˜Ñ¡”ÁÉ•Ù¥½ÕÌÉ½ÕÑ”™¥É•Ì½¸¹…Ù¥…Ñ¥½¸°…¹Ñ¡”¹•Ü•¹…‰±•¡…¹‘±•ÈÉÕ¹Ìˆ°…Íå¹Œ€ ¤€ôøì4(€½¹ÍÐ €ô±½…‘I½ÕÑ•ÉIÕ¹Ñ¥µ” ¤ì4(€ ¹Í•Ñ±…Ì¡™±…Ì ¤¤ì4(€…Ý…¥Ð ¹±½… ¤ì4(€ ¹É•¹‘•È ‰¡½µ”ˆ¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ ¹¡…¹‘±•É…±±Ì¹¡½µ”°€Ä¤ì4(€½¹ÍÐ±•…Ù•	…Í”€ô ¹¡…¹‘±•É…±±Ì¹¡½µ•1•…Ù”ì4(€ ¹É•¹‘•È ‰ÍÑ½É”ˆ¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ ¹¡…¹‘±•É…±±Ì¹¡½µ•1•…Ù”°±•…Ù•	…Í”€¬€Ä°€‰¡½µ”¹½¹1•…Ù”™¥É•ÌÝ¡•¸±•…Ù¥¹œ¡½µ”ˆ¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ ¹¡…¹‘±•É…±±Ì¹ÍÑ½É”°€Ä°€‰•¹…‰±•¡…¹‘±•ÈÍÑ¥±°ÉÕ¹Ì…™Ñ•ÈÑ¡”Õ…Éˆ¤ì4)ô¤ì4(4(¼¼€´´´´5L™¥¹…°µÑ½±”ÁÕÉ”‘•¥Í¥½¸€¡ÉÕ¹Ñ¥µ”¤€´´´´´´´´´´´´´´´´´´´´´´´´´´´´4)™Õ¹Ñ¥½¸±½…‘Q½±••¥Í¥½¸ ¤ì4(€½¹ÍÐÍÉŒ€ô•áÑÉ…Ñ¸¡…‘µ¥¹MÉŒ°€‰™Õ¹Ñ¥½¸Á…•Ù…¥±…‰¥±¥ÑåQ½±•±±½Ý• ˆ¤ì4(€½¹ÍÐÍ…¹‘‰½à€ôì4(€€€A}Y%1	%1%Qe}-eLèl‰¡½µ”ˆ°€‰ÍÑ½É”ˆ°€‰‰½½­¥¹œˆ°€‰Í¡•‘Õ±•ˆ°€‰ÕÉ•¹Ðˆ°€‰ÑÉ…­¥¹œˆ°€‰ÁÉ½™¥±”‰t°4(€ôì4(€Ù´¹É•…Ñ•½¹Ñ•áÐ¡Í…¹‘‰½à¤ì4(€Ù´¹ÉÕ¹%¹½¹Ñ•áÐ¡€‘íÍÉõq¹±½‰…±Q¡¥Ì¹}}™¸€ôÁ…•Ù…¥±…‰¥±¥ÑåQ½±•±±½Ý•í€°Í…¹‘‰½à¤ì4(€É•ÑÕÉ¸Í…¹‘‰½à¹}}™¸ì4)ô4(4)Ñ•ÍÐ ‰5LÑ½±”‘•¥Í¥½¸èÑÕÉ¹¥¹œ½™˜½¹”½˜µ…¹ä•¹…‰±•Á…•Ì¥Ì…±±½Ý•ˆ°€ ¤€ôøì4(€½¹ÍÐ…±±½Ü€ô±½…‘Q½±••¥Í¥½¸ ¤ì4(€½¹ÍÐÁ„€ôì¡½µ”èÑÉÕ”°ÍÑ½É”èÑÉÕ”°‰½½­¥¹œèÑÉÕ”°Í¡•‘Õ±•èÑÉÕ”°ÕÉ•¹ÐèÑÉÕ”°ÑÉ…­¥¹œèÑÉÕ”°ÁÉ½™¥±”èÑÉÕ”ôì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡…±±½Ü¡Á„°€‰ÍÑ½É”ˆ°™…±Í”¤°ÑÉÕ”¤ì4)ô¤ì4(4)Ñ•ÍÐ ‰5LÑ½±”‘•¥Í¥½¸èÑÕÉ¹¥¹œ½™˜Ñ¡”1MP•¹…‰±•Á…”¥ÌÉ•™ÕÍ•€¡¹•Ù•È…±°µ‘¥Í…‰±•¤ˆ°€ ¤€ôøì4(€½¹ÍÐ…±±½Ü€ô±½…‘Q½±••¥Í¥½¸ ¤ì4(€½¹ÍÐÁ„€ôì¡½µ”èÑÉÕ”°ÍÑ½É”è™…±Í”°‰½½­¥¹œè™…±Í”°Í¡•‘Õ±•è™…±Í”°ÕÉ•¹Ðè™…±Í”°ÑÉ…­¥¹œè™…±Í”°ÁÉ½™¥±”è™…±Í”ôì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡…±±½Ü¡Á„°€‰¡½µ”ˆ°™…±Í”¤°™…±Í”°€‰…¹¹½Ð‘¥Í…‰±”Ñ¡”™¥¹…°•¹…‰±•Á…”ˆ¤ì4(€€¼¼ÁÁ±å¥¹œÑ¡”Õ…É±•…Ù•Ì½¹™¥œÕ¹¡…¹•€¡Í¥µÕ±…Ñ”Ñ¡”¡…¹‘±•È¤¸4(€½¹ÍÐ‰•™½É”€ôì€¸¸¹Á„ôì4(€¥˜€¡…±±½Ü¡Á„°€‰¡½µ”ˆ°™…±Í”¤¤Á„¹¡½µ”€ô™…±Í”ì4(€…ÍÍ•ÉÐ¹‘••ÁÅÕ…°¡Á„°‰•™½É”°€‰½¹™¥œµÕÍÐ¹½Ð‰•½µ”…±°µ‘¥Í…‰±•ˆ¤ì4)ô¤ì4(4)Ñ•ÍÐ ‰5LÑ½±”‘•¥Í¥½¸èÑÕÉ¹¥¹œ„Á…”=8¥Ì…±Ý…åÌ…±±½Ý•ˆ°€ ¤€ôøì4(€½¹ÍÐ…±±½Ü€ô±½…‘Q½±••¥Í¥½¸ ¤ì4(€½¹ÍÐÁ„€ôì¡½µ”èÑÉÕ”°ÍÑ½É”è™…±Í”°‰½½­¥¹œè™…±Í”°Í¡•‘Õ±•è™…±Í”°ÕÉ•¹Ðè™…±Í”°ÑÉ…­¥¹œè™…±Í”°ÁÉ½™¥±”è™…±Í”ôì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡…±±½Ü¡Á„°€‰ÍÑ½É”ˆ°ÑÉÕ”¤°ÑÉÕ”¤ì4)ô¤ì4(4)Ñ•ÍÐ ‰5LÑ½±”¡…¹‘±•ÈÉ•Ù•ÉÑÌÑ¡”¡•­‰½à€¬Í¡½ÝÌÑ¡”µ•ÍÍ…”°…¹‰…­•¹Õ…É‘ÌÉ•µ…¥¸ˆ°€ ¤€ôøì4(€€¼¼!…¹‘±•ÈÝ¥É¥¹œ€¡¡•­‰½àÉ•Ù•ÉÐ€¬ÍÑ…ÑÕÌ¤ƒŠPÍÕÁÁ½ÉÑ¥¹œÍ½ÕÉ”…ÍÍ•ÉÑ¥½¹Ì¸4(€…ÍÍ•ÉÐ¹µ…Ñ ¡…‘µ¥¹MÉŒ°€½¥˜p …Á…•Ù…¥±…‰¥±¥ÑåQ½±•±±½Ý•‘p¡½¹™¥p¹Á…•}…Ù…¥±…‰¥±¥Ñä°­•ä°Ñ…É•Ñp¹¡•­•‘p¥p¤qì¼¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡…‘µ¥¹MÉŒ°€½Ñ…É•Ñp¹¡•­•€ôÑÉÕ”ì¼¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡…‘µ¥¹MÉŒ°€½Í•ÑMÑ…ÑÕÍp ‹‚âW‚æ'‚â·‚â‚æ‚âo‚âÓ‚âS‚â·‚â‹‚æ#‚âË‚â‚âg‚æ'‚â·‚âˆ€Äƒ‚â¯‚âg‚æ'‚âÈˆ°€‰‰…‰p¤¼¤ì4(€€¼¼•™•¹Í”µ¥¸µ‘•ÁÑ èÁÕ‰±¥Í ÍÑ¥±°É•™ÕÍ•Ì…¸…±°µ‘¥Í…‰±•½¹™¥œ¸4(€…ÍÍ•ÉÐ¹µ…Ñ ¡…‘µ¥¹MÉŒ°€½•¹…‰±•‘½Õ¹Ð€ôôô€À¼¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡…‘µ¥¹MÉŒ°€¿‚âW‚æ'‚â·‚â‚æ‚âo‚âÓ‚âS‚â·‚â‹‚æ#‚âË‚â‚âg‚æ'‚â·‚âˆ€Äƒ‚â¯‚âg‚æ'‚âË‚â‚æ#‚â·‚âdAÕ‰±¥Í ¼¤ì4)ô¤ì4(4(¼¨€ôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôô4(€€M•ÕÉ”ÑÉ…­¥¹œ‘••À±¥¹¬ƒŠP™É…µ•¹ÐÉ•‘•¹Ñ¥…°Á…ÉÍ”€¬UI0ÍÉÕˆ€¡ÉÕ¹Ñ¥µ”¤°4(€€É•™•ÉÉ•ÈÁ½±¥ä°…¹‰½½ÐÝ¥É¥¹œ¸4(€€€ôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôô€¨¼4(4(¼¼á•ÕÑ”Ñ¡”É•…°Á…ÉÍ•QÉ…­¥¹	½½Ð ¤™É½´ÕÍÑ½µ•Èµ…ÁÀ¹©Ì¥¸„Y4¸4)™Õ¹Ñ¥½¸±½…‘A…ÉÍ•QÉ…­¥¹	½½Ð ¤ì4(€½¹ÍÐÍÉŒ€ô•áÑÉ…Ñ¸¡‰½½ÑMÉŒ°€‰™Õ¹Ñ¥½¸Á…ÉÍ•QÉ…­¥¹	½½Ð ˆ¤ì4(€½¹ÍÐÍ…¹‘‰½à€ôìUI0°UI1M•…É¡A…É…µÌ°MÑÉ¥¹œôì4(€Ù´¹É•…Ñ•½¹Ñ•áÐ¡Í…¹‘‰½à¤ì4(€Ù´¹ÉÕ¹%¹½¹Ñ•áÐ¡€‘íÍÉõq¹±½‰…±Q¡¥Ì¹}}™¸€ôÁ…ÉÍ•QÉ…­¥¹	½½Ðí€°Í…¹‘‰½à¤ì4(€É•ÑÕÉ¸Í…¹‘‰½à¹}}™¸ì4)ô4(4)½¹ÍÐ=I%%8€ô€‰¡ÑÑÁÌè¼½Ý˜¹•á…µÁ±”¹½´ˆì4)½¹ÍÐ	M€ô€‘í=I%%9ô½ÕÍÑ½µ•Èµ…ÁÀ½¥¹‘•à¹¡Ñµ±€ì4)½¹ÍÐI€ô€‰AI%YQ}Q=-9|åáhˆì4(4)Ñ•ÍÐ ‰Á…ÉÍ•QÉ…­¥¹	½½Ðè½™™¥¥…°™É…µ•¹Ð™½É´€ÑÉ…­¥¹œýÄô…ÁÑÕÉ•Ì€¬ÍÉÕ‰ÌÑ¡”É•‘•¹Ñ¥…°ˆ°€ ¤€ôøì4(€½¹ÍÐÁ…ÉÍ”€ô±½…‘A…ÉÍ•QÉ…­¥¹	½½Ð ¤ì4(€½¹ÍÐÈ€ôÁ…ÉÍ”¡€‘í	MôÑÉ…­¥¹œýÄô‘íIõ€¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡È¹É•‘•¹Ñ¥…°°I¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡È¹¥ÍQÉ…­¥¹œ°ÑÉÕ”¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡È¹¡…¹•°ÑÉÕ”¤ì4(€…ÍÍ•ÉÐ¹½¬ …È¹±•…¹UÉ°¹¥¹±Õ‘•Ì¡I¤°€‰±•…¹UÉ°µÕÍÐ¹½Ð½¹Ñ…¥¸Ñ¡”É•‘•¹Ñ¥…°ˆ¤ì4(€…ÍÍ•ÉÐ¹½¬ …È¹±•…¹UÉ°¹¥¹±Õ‘•Ì ‰Äôˆ¤°€‰±•…¹UÉ°µÕÍÐ¹½Ð½¹Ñ…¥¸Äôˆ¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡È¹±•…¹UÉ°°€‘í	MôÑÉ…­¥¹€°€‰ÍÉÕ‰‰•Ñ¼„±•…¸€ÑÉ…­¥¹œˆ¤ì4)ô¤ì4(4)Ñ•ÍÐ ‰Á…ÉÍ•QÉ…­¥¹	½½Ðè½™™¥¥…°™É…µ•¹Ð™½É´€ÑÉ…­¥¹œýÑ½­•¸ô¥Ì…ÁÑÕÉ•€¬ÍÉÕ‰‰•ˆ°€ ¤€ôøì4(€½¹ÍÐÁ…ÉÍ”€ô±½…‘A…ÉÍ•QÉ…­¥¹	½½Ð ¤ì4(€½¹ÍÐÈ€ôÁ…ÉÍ”¡€‘í	MôÑÉ…­¥¹œýÑ½­•¸ô‘íIõ€¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡È¹É•‘•¹Ñ¥…°°I¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡È¹±•…¹UÉ°°€‘í	MôÑÉ…­¥¹€¤ì4(€…ÍÍ•ÉÐ¹½¬ …È¹±•…¹UÉ°¹¥¹±Õ‘•Ì¡I¤¤ì4)ô¤ì4(4)Ñ•ÍÐ ‰Á…ÉÍ•QÉ…­¥¹	½½Ðè±•…äÅÕ•Éä€ýÄô¸¸¸ÑÉ…­¥¹œÍÑ¥±°Ý½É­Ì…¹¥ÌÍÉÕ‰‰•ˆ°€ ¤€ôøì4(€½¹ÍÐÁ…ÉÍ”€ô±½…‘A…ÉÍ•QÉ…­¥¹	½½Ð ¤ì4(€½¹ÍÐÈ€ôÁ…ÉÍ”¡€‘í	MôýÄô‘íIôÑÉ…­¥¹€¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡È¹É•‘•¹Ñ¥…°°I¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡È¹¥ÍQÉ…­¥¹œ°ÑÉÕ”¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡È¹¡…¹•°ÑÉÕ”¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡È¹±•…¹UÉ°°€‘í	MôÑÉ…­¥¹€¤ì4(€…ÍÍ•ÉÐ¹½¬ …È¹±•…¹UÉ°¹¥¹±Õ‘•Ì¡I¤¤ì4(€…ÍÍ•ÉÐ¹½¬ „½pýÄõñpýÑ½­•¸ô¼¹Ñ•ÍÐ¡È¹±•…¹UÉ°¤°€‰¹¼É•‘•¹Ñ¥…°ÅÕ•ÉäÉ•µ…¥¹Ìˆ¤ì4)ô¤ì4(4)Ñ•ÍÐ ‰Á…ÉÍ•QÉ…­¥¹	½½Ðè±•…äÅÕ•Éä€ýÑ½­•¸ô¸¸¸ÑÉ…­¥¹œÍÑ¥±°Ý½É­Ì…¹¥ÌÍÉÕ‰‰•ˆ°€ ¤€ôøì4(€½¹ÍÐÁ…ÉÍ”€ô±½…‘A…ÉÍ•QÉ…­¥¹	½½Ð ¤ì4(€½¹ÍÐÈ€ôÁ…ÉÍ”¡€‘í	MôýÑ½­•¸ô‘íIôÑÉ…­¥¹€¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡È¹É•‘•¹Ñ¥…°°I¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡È¹±•…¹UÉ°°€‘í	MôÑÉ…­¥¹€¤ì4(€…ÍÍ•ÉÐ¹½¬ …È¹±•…¹UÉ°¹¥¹±Õ‘•Ì¡I¤¤ì4)ô¤ì4(4)Ñ•ÍÐ ‰Á…ÉÍ•QÉ…­¥¹	½½ÐèÕ¹É•±…Ñ•ÅÕ•ÉäÁ…É…µÌ…É”ÁÉ•Í•ÉÙ•€¡™É…µ•¹Ð™½É´¤ˆ°€ ¤€ôøì4(€½¹ÍÐÁ…ÉÍ”€ô±½…‘A…ÉÍ•QÉ…­¥¹	½½Ð ¤ì4(€½¹ÍÐÈ€ôÁ…ÉÍ”¡€‘í	MôýÕÑµ}Í½ÕÉ”õ±¥¹”ÑÉ…­¥¹œýÄô‘íIõ€¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡È¹É•‘•¹Ñ¥…°°I¤ì4(€…ÍÍ•ÉÐ¹½¬¡È¹±•…¹UÉ°¹¥¹±Õ‘•Ì ‰ÕÑµ}Í½ÕÉ”õ±¥¹”ˆ¤°€‰ÕÑ´Á…É…´ÁÉ•Í•ÉÙ•ˆ¤ì4(€…ÍÍ•ÉÐ¹½¬¡È¹±•…¹UÉ°¹•¹‘Í]¥Ñ  ˆÑÉ…­¥¹œˆ¤¤ì4(€…ÍÍ•ÉÐ¹½¬ …È¹±•…¹UÉ°¹¥¹±Õ‘•Ì¡I¤¤ì4)ô¤ì4(4)Ñ•ÍÐ ‰Á…ÉÍ•QÉ…­¥¹	½½ÐèÕ¹É•±…Ñ•ÅÕ•ÉäÁ…É…µÌ…É”ÁÉ•Í•ÉÙ•€¡±•…ä™½É´¤ˆ°€ ¤€ôøì4(€½¹ÍÐÁ…ÉÍ”€ô±½…‘A…ÉÍ•QÉ…­¥¹	½½Ð ¤ì4(€½¹ÍÐÈ€ôÁ…ÉÍ”¡€‘í	MôýÕÑµ}Í½ÕÉ”õ±¥¹”™Äô‘íIôÑÉ…­¥¹€¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡È¹É•‘•¹Ñ¥…°°I¤ì4(€…ÍÍ•ÉÐ¹½¬¡È¹±•…¹UÉ°¹¥¹±Õ‘•Ì ‰ÕÑµ}Í½ÕÉ”õ±¥¹”ˆ¤¤ì4(€…ÍÍ•ÉÐ¹½¬ …È¹±•…¹UÉ°¹¥¹±Õ‘•Ì¡I¤¤ì4(€…ÍÍ•ÉÐ¹½¬ „½lü™uÄô¼¹Ñ•ÍÐ¡È¹±•…¹UÉ°¤°€‰ÄÉ•µ½Ù•‰ÕÐÕÑ´­•ÁÐˆ¤ì4)ô¤ì4(4)Ñ•ÍÐ ‰Á…ÉÍ•QÉ…­¥¹	½½Ðè„¹½Éµ…°UI0Ý¥Ñ¡½ÕÐ„É•‘•¹Ñ¥…°¥Ì±•™ÐÕ¹¡…¹•ˆ°€ ¤€ôøì4(€½¹ÍÐÁ…ÉÍ”€ô±½…‘A…ÉÍ•QÉ…­¥¹	½½Ð ¤ì4(€½¹ÍÐÈ€ôÁ…ÉÍ”¡€‘í	MôýÕÑµ}Í½ÕÉ”õ±¥¹”¡½µ•€¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡È¹É•‘•¹Ñ¥…°°€ˆˆ¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡È¹¡…¹•°™…±Í”°€‰¹¼ÍÉÕˆ¹••‘•ƒŠH¹¼É•Á±…•MÑ…Ñ”ˆ¤ì4)ô¤ì4(4)Ñ•ÍÐ ‰Á…ÉÍ•QÉ…­¥¹	½½ÐèÑ¡”É•‘•¹Ñ¥…°¹•Ù•ÈÍÕÉÙ¥Ù•Ì¥¸±•…¹UÉ°…É½ÍÌ…±°Í•¹Í¥Ñ¥Ù”™½ÉµÌˆ°€ ¤€ôøì4(€½¹ÍÐÁ…ÉÍ”€ô±½…‘A…ÉÍ•QÉ…­¥¹	½½Ð ¤ì4(€½¹ÍÐ™½ÉµÌ€ôl4(€€€€‘í	MôÑÉ…­¥¹œýÄô‘íIõ€°4(€€€€‘í	MôÑÉ…­¥¹œýÑ½­•¸ô‘íIõ€°4(€€€€‘í	MôýÄô‘íIôÑÉ…­¥¹€°4(€€€€‘í	MôýÑ½­•¸ô‘íIôÑÉ…­¥¹€°4(€€€€‘í	MôýÕÑµ}Í½ÕÉ”õ±¥¹”ÑÉ…­¥¹œýÄô‘íIõ€°4(€tì4(€™½È€¡½¹ÍÐ¡É•˜½˜™½ÉµÌ¤ì4(€€€½¹ÍÐÈ€ôÁ…ÉÍ”¡¡É•˜¤ì4(€€€…ÍÍ•ÉÐ¹•ÅÕ…°¡È¹É•‘•¹Ñ¥…°°I°…ÁÑÕÉ•™½È€‘í¡É•™õ€¤ì4(€€€…ÍÍ•ÉÐ¹½¬ …È¹±•…¹UÉ°¹¥¹±Õ‘•Ì¡I¤°ÍÉÕ‰‰•™½È€‘í¡É•™õ€¤ì4(€€€…ÍÍ•ÉÐ¹½¬¡È¹¥ÍQÉ…­¥¹œ°ÑÉ…­¥¹œÉ½ÕÑ”™½È€‘í¡É•™õ€¤ì4(€ô4)ô¤ì4(4)Ñ•ÍÐ ‰‰½½ÐÝ¥É¥¹œèÍÉÕˆµ‰•™½É”µ¥¹¥Ð°Í¥¹±”Í•Ñ%¹¥Ñ¥…±É•‘•¹Ñ¥…°°É•Á±…•MÑ…Ñ”€¡¹¼¹•Ü¡¥ÍÑ½Éä•¹ÑÉä¤ˆ°€ ¤€ôøì4(€€¼¼A…ÉÍ”€¬ÍÉÕˆ¡…ÁÁ•¹Ì‰•™½É”ÁÀ¹ÍÑ…Ñ”¹¥¹¥Ð ¤¸4(€½¹ÍÐÁ…ÉÍ•%‘à€ô‰½½ÑMÉŒ¹¥¹‘•á=˜ ‰Á…ÉÍ•QÉ…­¥¹	½½Ð¡Ý¥¹‘½Ü¹±½…Ñ¥½¸¹¡É•˜¤ˆ¤ì4(€½¹ÍÐÍÑ…Ñ•%¹¥Ñ%‘à€ô‰½½ÑMÉŒ¹¥¹‘•á=˜ ‰ÁÀ¹ÍÑ…Ñ”¹¥¹¥Ð ¤ìˆ¤ì4(€…ÍÍ•ÉÐ¹½¬¡Á…ÉÍ•%‘à€„ôô€´Ä€˜˜ÍÑ…Ñ•%¹¥Ñ%‘à€„ôô€´Ä€˜˜Á…ÉÍ•%‘à€ðÍÑ…Ñ•%¹¥Ñ%‘à°€‰Á…ÉÍ”­ÍÉÕˆµÕÍÐÁÉ••‘”ÍÑ…Ñ”¹¥¹¥Ð ¤ˆ¤ì4(€€¼¼UÍ•Ì¡¥ÍÑ½Éä¹É•Á±…•MÑ…Ñ”€¡¹½Ð„¹•Ü¡¥ÍÑ½Éä•¹ÑÉä¤Ñ¼‘É½ÀÑ¡”É•‘•¹Ñ¥…°¸4(€…ÍÍ•ÉÐ¹µ…Ñ ¡‰½½ÑMÉŒ°€½Ý¥¹‘½Ýp¹¡¥ÍÑ½Éåp¹É•Á±…•MÑ…Ñ•p¡¹Õ±°°€ˆˆ°‰½½Ñp¹±•…¹UÉ±p¤¼¤ì4(€€¼¼Q¡”É•‘•¹Ñ¥…°¥Ì¡…¹‘•½Ù•È•á…Ñ±ä½¹”°™É½´Ñ¡”Á…ÉÍ•Ù…±Õ”¸4(€½¹ÍÐ½ÕÉÉ•¹•Ì€ô€¡‰½½ÑMÉŒ¹µ…Ñ  ½Í•Ñ%¹¥Ñ¥…±É•‘•¹Ñ¥…±pýp¹p¡‰½½Ñp¹É•‘•¹Ñ¥…±p¤½œ¤ñðmt¤¹±•¹Ñ ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡½ÕÉÉ•¹•Ì°€Ä°€‰Í•Ñ%¹¥Ñ¥…±É•‘•¹Ñ¥…°…±±••á…Ñ±ä½¹”Ý¥Ñ Ñ¡”Á…ÉÍ•É•‘•¹Ñ¥…°ˆ¤ì4(€€¼¼Q¡”É•‘•¹Ñ¥…°Á…Ñ µÕÍÐ9=PÁ•ÉÍ¥ÍÐÑ¡”Ñ½­•¸…¹åÝ¡•É”Í•É¥…±¥Í…‰±”¸4(€…ÍÍ•ÉÐ¹‘½•Í9½Ñ5…Ñ ¡‰½½ÑMÉŒ°€½±½…±MÑ½É…•p¹Í•Ñ%Ñ•µp¡mx¥t©‰½½Ñp¹É•‘•¹Ñ¥…°¼¤ì4(€…ÍÍ•ÉÐ¹‘½•Í9½Ñ5…Ñ ¡‰½½ÑMÉŒ°€½Í•ÍÍ¥½¹MÑ½É…•p¹Í•Ñ%Ñ•µp¡mx¥t©‰½½Ñp¹É•‘•¹Ñ¥…°¼¤ì4)ô¤ì4(4)Ñ•ÍÐ ‰É•™•ÉÉ•ÈÁ½±¥äè¥¹‘•à¹¡Ñµ°Í•ÑÌ¹¼µÉ•™•ÉÉ•È‰•™½É”…¹äÉ•Í½ÕÉ”±¥¹¬½ÍÉ¥ÁÐ°•á…Ñ±ä½¹”ˆ°€ ¤€ôøì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡¥¹‘•á!Ñµ°°€¼ñµ•Ñ„¹…µ”ô‰É•™•ÉÉ•Èˆ½¹Ñ•¹Ðô‰¹¼µÉ•™•ÉÉ•Èˆø¼¤ì4(€½¹ÍÐµ•Ñ…%‘à€ô¥¹‘•á!Ñµ°¹¥¹‘•á=˜ œñµ•Ñ„¹…µ”ô‰É•™•ÉÉ•Èˆœ¤ì4(€½¹ÍÐ™¥ÉÍÑ1¥¹¬€ô¥¹‘•á!Ñµ°¹¥¹‘•á=˜ ˆñ±¥¹¬ˆ¤ì4(€½¹ÍÐ™¥ÉÍÑMÉ¥ÁÐ€ô¥¹‘•á!Ñµ°¹¥¹‘•á=˜ ˆñÍÉ¥ÁÐˆ¤ì4(€…ÍÍ•ÉÐ¹½¬¡µ•Ñ…%‘à€„ôô€´Ä¤ì4(€…ÍÍ•ÉÐ¹½¬¡™¥ÉÍÑ1¥¹¬€ôôô€´Äñðµ•Ñ…%‘à€ð™¥ÉÍÑ1¥¹¬°€‰É•™•ÉÉ•Èµ•Ñ„µÕÍÐÁÉ••‘”Ñ¡”™¥ÉÍÐ€ñ±¥¹¬øˆ¤ì4(€…ÍÍ•ÉÐ¹½¬¡™¥ÉÍÑMÉ¥ÁÐ€ôôô€´Äñðµ•Ñ…%‘à€ð™¥ÉÍÑMÉ¥ÁÐ°€‰É•™•ÉÉ•Èµ•Ñ„µÕÍÐÁÉ••‘”Ñ¡”™¥ÉÍÐ€ñÍÉ¥ÁÐøˆ¤ì4(€½¹ÍÐ½Õ¹Ð€ô€¡¥¹‘•á!Ñµ°¹µ…Ñ  ½¹…µ”ô‰É•™•ÉÉ•Èˆ½œ¤ñðmt¤¹±•¹Ñ ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡½Õ¹Ð°€Ä°€‰•á…Ñ±ä½¹”É•™•ÉÉ•ÈÁ½±¥ä€¡¹¼‘ÕÁ±¥…Ñ”½½¹™±¥Ñ¥¹œ¤ˆ¤ì4(€…ÍÍ•ÉÐ¹‘½•Í9½Ñ5…Ñ ¡¥¹‘•á!Ñµ°°€½¡ÑÑÀµ•ÅÕ¥Øô‰É•™•ÉÉ•Èˆ½¤°€‰¹¼½¹™±¥Ñ¥¹œ¡ÑÑÀµ•ÅÕ¥ØÉ•™•ÉÉ•Èˆ¤ì4)ô¤ì4(
+  assert.match(swSrc, new RegExp(`BUILD_ID = "${build}"`));
+  assert.match(swSrc, /modules\/pageAvailability\.js\?v=\$\{BUILD_ID\}/);
+  // Loaded after api.js, before services.js (dependency order).
+  assert.ok(indexHtml.indexOf("modules/api.js") < indexHtml.indexOf("modules/pageAvailability.js"));
+  assert.ok(indexHtml.indexOf("modules/pageAvailability.js") < indexHtml.indexOf("modules/services.js"));
+});
+
+/* ==========================================================================
+   RUNTIME tests (execute the real code in a VM â€” not regex assertions).
+   ========================================================================== */
+
+const BUILD = "20260726_urgent_direct_auto_offer_v1";
+const adminSrc = read("admin-homepage-cms.js");
+
+function reqUrlOf(req) {
+  return req && typeof req === "object" && "url" in req ? String(req.url) : String(req);
+}
+
+// Extract a full brace-balanced function body from source text.
+function extractFn(src, signature) {
+  const start = src.indexOf(signature);
+  assert.notEqual(start, -1, `signature not found: ${signature}`);
+  let i = src.indexOf("{", start);
+  let depth = 0;
+  for (; i < src.length; i += 1) {
+    if (src[i] === "{") depth += 1;
+    else if (src[i] === "}") { depth -= 1; if (depth === 0) return src.slice(start, i + 1); }
+  }
+  throw new Error("unbalanced braces");
+}
+
+// ---- Service worker harness ----------------------------------------------
+function loadServiceWorker() {
+  const rec = { put: [], match: [], open: [], deleted: [] };
+  const handlers = {};
+  let existingCacheKeys = [];
+  let fetchImpl = async () => ({ ok: true, clone: () => ({ __clone: true }) });
+
+  function cacheObj() {
+    return {
+      addAll: () => Promise.resolve(),
+      put: (request) => { rec.put.push(reqUrlOf(request)); return Promise.resolve(); },
+      match: (request) => { rec.match.push(reqUrlOf(request)); return Promise.resolve(undefined); },
+    };
+  }
+  const caches = {
+    open: (name) => { rec.open.push(name); return Promise.resolve(cacheObj()); },
+    keys: () => Promise.resolve(existingCacheKeys.slice()),
+    delete: (key) => { rec.deleted.push(key); return Promise.resolve(true); },
+    // Top-level fallback lookup: return a shell marker only for the canonical
+    // credential-free shell path, undefined otherwise.
+    match: (request) => {
+      const u = reqUrlOf(request);
+      rec.match.push(u);
+      return Promise.resolve(u.includes("index.html") ? { __shell: true } : undefined);
+    },
+  };
+  const selfObj = {
+    addEventListener: (type, fn) => { handlers[type] = fn; },
+    skipWaiting: () => {},
+    clients: { claim: () => Promise.resolve() },
+    location: { origin: "https://cwf.example.com" },
+  };
+  const sandbox = {
+    self: selfObj,
+    caches,
+    fetch: (request, opts) => fetchImpl(request, opts),
+    URL,
+    Response: { error: () => ({ __error: true }) },
+    Promise,
+    console: { log() {}, warn() {}, error() {}, info() {} },
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(swSrc, sandbox);
+  return {
+    handlers,
+    rec,
+    origin: selfObj.location.origin,
+    setFetch: (fn) => { fetchImpl = fn; },
+    setExistingCacheKeys: (keys) => { existingCacheKeys = keys; },
+  };
+}
+
+function swRequest(sw, pathAndQuery, { mode = "navigate", method = "GET" } = {}) {
+  return { url: sw.origin + pathAndQuery, mode, method };
+}
+
+async function swFetch(sw, request) {
+  let responded;
+  sw.handlers.fetch({ request, respondWith: (p) => { responded = p; } });
+  return responded === undefined ? { __noRespond: true } : responded;
+}
+
+const TOKEN = "PRIVATE_TOKEN_9xZ";
+
+test("SW: navigation with ?q=<token> is network-only and never written to Cache Storage", async () => {
+  const sw = loadServiceWorker();
+  const marker = { ok: true, __net: true, clone: () => ({}) };
+  sw.setFetch(async () => marker);
+  const res = await swFetch(sw, swRequest(sw, `/customer-app/index.html?q=${TOKEN}#tracking`));
+  assert.equal(res, marker, "must return the network response directly");
+  assert.equal(sw.rec.put.length, 0, "must never cache.put a credential-bearing navigation");
+  assert.equal(sw.rec.match.length, 0, "must not caches.match the credential-bearing request on success");
+  const allKeys = [...sw.rec.put, ...sw.rec.match].join(" | ");
+  assert.ok(!allKeys.includes(TOKEN), "no cache key/lookup may contain the token");
+});
+
+test("SW: navigation with ?token=<token> is network-only and never cached", async () => {
+  const sw = loadServiceWorker();
+  const marker = { ok: true, clone: () => ({}) };
+  sw.setFetch(async () => marker);
+  const res = await swFetch(sw, swRequest(sw, `/customer-app/index.html?token=${TOKEN}#tracking`));
+  assert.equal(res, marker);
+  assert.equal(sw.rec.put.length, 0);
+  const allKeys = [...sw.rec.put, ...sw.rec.match, ...sw.rec.open].join(" | ");
+  assert.ok(!allKeys.includes(TOKEN), "token must never appear in any cache key");
+});
+
+test("SW: offline sensitive navigation falls back to the canonical credential-free app shell", async () => {
+  const sw = loadServiceWorker();
+  sw.setFetch(async () => { throw new Error("offline"); });
+  const res = await swFetch(sw, swRequest(sw, `/customer-app/index.html?q=${TOKEN}#tracking`));
+  assert.deepEqual(res, { __shell: true }, "offline â†’ cached app shell");
+  assert.equal(sw.rec.put.length, 0, "still no cache.put on the credential-bearing request");
+  // The only cache lookup is for the credential-free shell.
+  assert.deepEqual(sw.rec.match, [`./index.html?v=${BUILD}`]);
+  assert.ok(!sw.rec.match.join(" ").includes(TOKEN));
+});
+
+test("SW: a normal versioned asset still caches (put) on success", async () => {
+  const sw = loadServiceWorker();
+  const marker = { ok: true, clone: () => ({ __copy: true }) };
+  sw.setFetch(async () => marker);
+  const assetUrl = `/customer-app/modules/router.js?v=${BUILD}`;
+  const res = await swFetch(sw, swRequest(sw, assetUrl, { mode: "no-cors" }));
+  assert.equal(res, marker);
+  assert.deepEqual(sw.rec.put, [sw.origin + assetUrl], "normal asset must be cached");
+});
+
+test("SW: a plain navigation WITHOUT a credential still uses the caching path", async () => {
+  const sw = loadServiceWorker();
+  const marker = { ok: true, clone: () => ({ __copy: true }) };
+  sw.setFetch(async () => marker);
+  const res = await swFetch(sw, swRequest(sw, `/customer-app/index.html?v=${BUILD}`));
+  assert.equal(res, marker);
+  assert.deepEqual(sw.rec.put, [`${sw.origin}/customer-app/index.html?v=${BUILD}`]);
+});
+
+test("SW: /public/ requests stay network-only (never cached)", async () => {
+  const sw = loadServiceWorker();
+  const marker = { ok: true, clone: () => ({}) };
+  sw.setFetch(async () => marker);
+  const res = await swFetch(sw, swRequest(sw, `/public/track?q=${TOKEN}`, { mode: "cors" }));
+  assert.equal(res, marker, "network response returned directly");
+  assert.equal(sw.rec.put.length, 0, "/public/ must never be cached");
+  assert.ok(![...sw.rec.put, ...sw.rec.match].join(" ").includes(TOKEN));
+});
+
+test("SW: activation deletes stale Customer App cache namespaces and keeps the current one", async () => {
+  const sw = loadServiceWorker();
+  const current = `cwf-customer-app-v2-${BUILD}`;
+  const stale = "cwf-customer-app-v2-20260101_old";
+  sw.setExistingCacheKeys([stale, current, "some-other-cache"]);
+  let captured;
+  sw.handlers.activate({ waitUntil: (p) => { captured = p; } });
+  await captured;
+  assert.ok(sw.rec.deleted.includes(stale), "stale Customer App cache must be deleted");
+  assert.ok(!sw.rec.deleted.includes(current), "current cache must be kept");
+  assert.ok(!sw.rec.deleted.includes("some-other-cache"), "unrelated caches untouched");
+});
+
+// ---- Router guard runtime harness ----------------------------------------
+function makeNavItem(route) {
+  let active = false;
+  const attrs = { "data-route": route };
+  return {
+    getAttribute: (n) => (n in attrs ? attrs[n] : null),
+    setAttribute: (n, v) => { attrs[n] = String(v); },
+    removeAttribute: (n) => { delete attrs[n]; },
+    hasAttribute: (n) => n in attrs,
+    classList: { toggle: (cls, force) => { if (cls === "is-active") active = !!force; } },
+    get isActive() { return active; },
+  };
+}
+
+function loadRouterRuntime() {
+  const store = new Map();
+  const appEl = { innerHTML: "", dataset: {}, focus() {}, querySelectorAll: () => [] };
+  const body = { classList: { add() {}, remove() {}, toggle() {} } };
+  // The real Bottom Navigation (5 fixed items) â€” none are ever hidden/removed.
+  const navItems = ["home", "store", "booking", "tracking", "profile"].map(makeNavItem);
+  const documentObj = {
+    getElementById: (id) => (id === "app" ? appEl : null),
+    querySelectorAll: (sel) => (String(sel).includes("nav-item") ? navItems : []),
+    addEventListener: () => {},
+    body,
+  };
+  const history = { replaceState: () => {} };
+  const routeToCalls = [];
+  const handlerCalls = { home: 0, store: 0, storeItem: 0, booking: 0, scheduled: 0, urgent: 0, tracking: 0, profile: 0, homeLeave: 0 };
+  const apiCalls = { track: 0, pricing: 0, availability: 0, urgent: 0, store: 0 };
+  let apiResponse = async () => ({ ok: false });
+
+  const state = {
+    requested: "home",
+    route: null,
+    readRouteFromHash: () => state.requested,
+    setRoute: (r) => { state.route = r; },
+  };
+  const win = {
+    localStorage: {
+      getItem: (k) => (store.has(k) ? store.get(k) : null),
+      setItem: (k, v) => store.set(k, String(v)),
+      removeItem: (k) => store.delete(k),
+    },
+    addEventListener: () => {},
+  };
+  win.CWFCustomerAppV2 = {
+    api: {
+      loadCustomerAppConfig: (...a) => apiResponse(...a),
+      trackBooking: () => { apiCalls.track += 1; },
+      previewPricing: () => { apiCalls.pricing += 1; },
+      loadAvailability: () => { apiCalls.availability += 1; },
+      submitUrgentRequest: () => { apiCalls.urgent += 1; },
+    },
+    utils: { escapeHtml: (s) => String(s == null ? "" : s), routeTo: (r) => { routeToCalls.push(r); } },
+    state,
+  };
+  const sandbox = {
+    window: win,
+    document: documentObj,
+    history,
+    MutationObserver: function () { this.observe = () => {}; },
+    requestAnimationFrame: (fn) => setTimeout(fn, 0),
+    setTimeout,
+    clearTimeout,
+    Promise, Object, Array, String, Number, Boolean, JSON, Date, Set, Error, Math,
+    console: { log() {}, warn() {}, error() {}, info() {} },
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(moduleSrc, sandbox); // pageAvailability
+  vm.runInContext(routerSrc, sandbox); // router
+  const root = win.CWFCustomerAppV2;
+
+  // Real handlers render into the #app container they receive; the spies do too
+  // so a successful (enabled) render overwrites any prior maintenance markup.
+  const paint = (name) => (app) => { if (app) app.innerHTML = `<section data-rendered="${name}">ok</section>`; };
+  const home = (app) => { handlerCalls.home += 1; paint("home")(app); };
+  home.onLeave = () => { handlerCalls.homeLeave += 1; };
+  root.router.register({
+    home,
+    store: (app) => { handlerCalls.store += 1; apiCalls.store += 1; paint("store")(app); },
+    storeItem: (app) => { handlerCalls.storeItem += 1; apiCalls.store += 1; paint("storeItem")(app); },
+    booking: (app) => { handlerCalls.booking += 1; paint("booking")(app); },
+    scheduled: (app) => { handlerCalls.scheduled += 1; root.api.previewPricing(); root.api.loadAvailability(); paint("scheduled")(app); },
+    urgent: (app) => { handlerCalls.urgent += 1; root.api.submitUrgentRequest(); paint("urgent")(app); },
+    tracking: (app) => { handlerCalls.tracking += 1; root.api.trackBooking(); paint("tracking")(app); },
+    profile: (app) => { handlerCalls.profile += 1; paint("profile")(app); },
+  });
+
+  return {
+    root, state, appEl, handlerCalls, apiCalls, routeToCalls, navItems,
+    setFlags: (flags) => { apiResponse = async () => ({ ok: true, degraded: false, page_availability: flags }); },
+    load: () => root.pageAvailability.load(),
+    render: (requested) => { state.requested = requested; root.router.render({ focus: false }); },
+    isMaintenance: () => String(appEl.innerHTML).includes("à¸«à¸™à¹‰à¸²à¸™à¸µà¹‰à¸à¸³à¸¥à¸±à¸‡à¸›à¸£à¸±à¸šà¸›à¸£à¸¸à¸‡"),
+    navActive: (route) => navItems.find((n) => n.getAttribute("data-route") === route).isActive,
+    navHidden: (route) => navItems.find((n) => n.getAttribute("data-route") === route).hasAttribute("hidden"),
+  };
+}
+
+const flags = (over) => ({ home: true, store: true, booking: true, scheduled: true, urgent: true, tracking: true, profile: true, ...over });
+
+test("router runtime: an ENABLED route calls its handler exactly once", async () => {
+  const h = loadRouterRuntime();
+  h.setFlags(flags());
+  await h.load();
+  h.render("home");
+  assert.equal(h.handlerCalls.home, 1);
+  assert.equal(h.isMaintenance(), false);
+});
+
+test("router runtime: disabled Tracking never calls the tracking handler or /public/track", async () => {
+  const h = loadRouterRuntime();
+  h.setFlags(flags({ tracking: false }));
+  await h.load();
+  h.render("tracking");
+  assert.equal(h.handlerCalls.tracking, 0, "tracking handler must not run");
+  assert.equal(h.apiCalls.track, 0, "no /public/track lookup may fire");
+  assert.equal(h.isMaintenance(), true, "maintenance screen shown");
+});
+
+test("router runtime: disabled Booking keeps its Bottom-Nav item present + active, shows maintenance, no booking handler/API", async () => {
+  const h = loadRouterRuntime();
+  h.setFlags(flags({ booking: false }));
+  await h.load();
+  h.render("booking");
+  // DoD: the "à¸ˆà¸­à¸‡" menu item stays in the nav (never hidden/removed) â€¦
+  assert.equal(h.navHidden("booking"), false, "booking nav item must not be hidden");
+  // â€¦ and is shown active for the disabled route it points at.
+  assert.equal(h.navActive("booking"), true, "booking nav item must be active");
+  // Route resolves to #booking and shows the locked maintenance screen â€¦
+  assert.equal(h.state.route, "booking", "URL/route stays #booking");
+  assert.equal(h.isMaintenance(), true, "maintenance screen shown");
+  // â€¦ without ever running the booking handler (so no scheduled/urgent API).
+  assert.equal(h.handlerCalls.booking, 0);
+  assert.equal(h.apiCalls.pricing, 0);
+  assert.equal(h.apiCalls.availability, 0);
+  assert.equal(h.apiCalls.urgent, 0);
+});
+
+test("router runtime: re-enabling a page restores normal behaviour (handler runs, no maintenance)", async () => {
+  const h = loadRouterRuntime();
+  h.setFlags(flags({ booking: false }));
+  await h.load();
+  h.render("booking");
+  assert.equal(h.isMaintenance(), true);
+  // Admin re-enables booking; a fresh availability load flips the flag.
+  h.setFlags(flags());
+  await h.load();
+  h.render("booking");
+  assert.equal(h.handlerCalls.booking, 1, "handler runs once the page is enabled again");
+  assert.equal(h.isMaintenance(), false, "no maintenance once enabled");
+});
+
+test("router runtime: disabled Scheduled never calls the handler, pricing, or availability", async () => {
+  const h = loadRouterRuntime();
+  h.setFlags(flags({ scheduled: false }));
+  await h.load();
+  h.render("scheduled");
+  assert.equal(h.handlerCalls.scheduled, 0);
+  assert.equal(h.apiCalls.pricing, 0);
+  assert.equal(h.apiCalls.availability, 0);
+});
+
+test("router runtime: disabled Urgent never calls the urgent handler/API", async () => {
+  const h = loadRouterRuntime();
+  h.setFlags(flags({ urgent: false }));
+  await h.load();
+  h.render("urgent");
+  assert.equal(h.handlerCalls.urgent, 0);
+  assert.equal(h.apiCalls.urgent, 0);
+});
+
+test("router runtime: disabled Store never calls the store handler", async () => {
+  const h = loadRouterRuntime();
+  h.setFlags(flags({ store: false }));
+  await h.load();
+  h.render("store");
+  assert.equal(h.handlerCalls.store, 0);
+  assert.equal(h.isMaintenance(), true);
+});
+
+test("router runtime: disabled storeItem-123 never calls the store-detail handler", async () => {
+  const h = loadRouterRuntime();
+  h.setFlags(flags({ store: false }));
+  await h.load();
+  h.render("storeItem-123");
+  assert.equal(h.handlerCalls.storeItem, 0);
+  assert.equal(h.isMaintenance(), true);
+});
+
+test("router runtime: reaching a disabled route (as via routeTo/hash) cannot bypass the guard", async () => {
+  const h = loadRouterRuntime();
+  h.setFlags(flags({ store: false }));
+  await h.load();
+  // Simulate routeTo('store') landing (it sets the hash â†’ render reads it).
+  h.render("store");
+  assert.equal(h.handlerCalls.store, 0, "guard blocks regardless of navigation source");
+  assert.equal(h.isMaintenance(), true);
+});
+
+test("router runtime: a direct disabled hash renders the maintenance screen", async () => {
+  const h = loadRouterRuntime();
+  h.setFlags(flags({ profile: false }));
+  await h.load();
+  h.render("profile");
+  assert.equal(h.handlerCalls.profile, 0);
+  assert.equal(h.isMaintenance(), true);
+});
+
+test("router runtime: an unknown route redirects to the first enabled route (no handler run)", async () => {
+  const h = loadRouterRuntime();
+  h.setFlags(flags()); // all enabled â†’ firstEnabledRoute = home
+  await h.load();
+  h.render("totally-bogus");
+  assert.deepEqual(h.routeToCalls, ["home"], "unknown â†’ firstEnabledRoute");
+  assert.equal(h.handlerCalls.home, 0, "redirect returns before any handler runs");
+});
+
+test("router runtime: onLeave of the previous route fires on navigation, and the new enabled handler runs", async () => {
+  const h = loadRouterRuntime();
+  h.setFlags(flags());
+  await h.load();
+  h.render("home");
+  assert.equal(h.handlerCalls.home, 1);
+  const leaveBase = h.handlerCalls.homeLeave;
+  h.render("store");
+  assert.equal(h.handlerCalls.homeLeave, leaveBase + 1, "home.onLeave fires when leaving home");
+  assert.equal(h.handlerCalls.store, 1, "enabled handler still runs after the guard");
+});
+
+// ---- CMS final-toggle pure decision (runtime) ----------------------------
+function loadToggleDecision() {
+  const src = extractFn(adminSrc, "function pageAvailabilityToggleAllowed(");
+  const sandbox = {
+    PAGE_AVAILABILITY_KEYS: ["home", "store", "booking", "scheduled", "urgent", "tracking", "profile"],
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(`${src}\nglobalThis.__fn = pageAvailabilityToggleAllowed;`, sandbox);
+  return sandbox.__fn;
+}
+
+test("CMS toggle decision: turning off one of many enabled pages is allowed", () => {
+  const allow = loadToggleDecision();
+  const pa = { home: true, store: true, booking: true, scheduled: true, urgent: true, tracking: true, profile: true };
+  assert.equal(allow(pa, "store", false), true);
+});
+
+test("CMS toggle decision: turning off the LAST enabled page is refused (never all-disabled)", () => {
+  const allow = loadToggleDecision();
+  const pa = { home: true, store: false, booking: false, scheduled: false, urgent: false, tracking: false, profile: false };
+  assert.equal(allow(pa, "home", false), false, "cannot disable the final enabled page");
+  // Applying the guard leaves config unchanged (simulate the handler).
+  const before = { ...pa };
+  if (allow(pa, "home", false)) pa.home = false;
+  assert.deepEqual(pa, before, "config must not become all-disabled");
+});
+
+test("CMS toggle decision: turning a page ON is always allowed", () => {
+  const allow = loadToggleDecision();
+  const pa = { home: true, store: false, booking: false, scheduled: false, urgent: false, tracking: false, profile: false };
+  assert.equal(allow(pa, "store", true), true);
+});
+
+test("CMS toggle handler reverts the checkbox + shows the message, and backend guards remain", () => {
+  // Handler wiring (checkbox revert + status) â€” supporting source assertions.
+  assert.match(adminSrc, /if \(!pageAvailabilityToggleAllowed\(config\.page_availability, key, target\.checked\)\) \{/);
+  assert.match(adminSrc, /target\.checked = true;/);
+  assert.match(adminSrc, /setStatus\("à¸•à¹‰à¸­à¸‡à¹€à¸›à¸´à¸”à¸­à¸¢à¹ˆà¸²à¸‡à¸™à¹‰à¸­à¸¢ 1 à¸«à¸™à¹‰à¸²", "bad"\)/);
+  // Defense-in-depth: publish still refuses an all-disabled config.
+  assert.match(adminSrc, /enabledCount === 0/);
+  assert.match(adminSrc, /à¸•à¹‰à¸­à¸‡à¹€à¸›à¸´à¸”à¸­à¸¢à¹ˆà¸²à¸‡à¸™à¹‰à¸­à¸¢ 1 à¸«à¸™à¹‰à¸²à¸à¹ˆà¸­à¸™ Publish/);
+});
+
+/* ==========================================================================
+   Secure tracking deep link â€” fragment credential parse + URL scrub (runtime),
+   referrer policy, and boot wiring.
+   ========================================================================== */
+
+// Execute the real parseTrackingBoot() from customer-app.js in a VM.
+function loadParseTrackingBoot() {
+  const src = extractFn(bootSrc, "function parseTrackingBoot(");
+  const sandbox = { URL, URLSearchParams, String };
+  vm.createContext(sandbox);
+  vm.runInContext(`${src}\nglobalThis.__fn = parseTrackingBoot;`, sandbox);
+  return sandbox.__fn;
+}
+
+const ORIGIN = "https://cwf.example.com";
+const BASE = `${ORIGIN}/customer-app/index.html`;
+const CRED = "PRIVATE_TOKEN_9xZ";
+
+test("parseTrackingBoot: official fragment form #tracking?q= captures + scrubs the credential", () => {
+  const parse = loadParseTrackingBoot();
+  const r = parse(`${BASE}#tracking?q=${CRED}`);
+  assert.equal(r.credential, CRED);
+  assert.equal(r.isTracking, true);
+  assert.equal(r.changed, true);
+  assert.ok(!r.cleanUrl.includes(CRED), "cleanUrl must not contain the credential");
+  assert.ok(!r.cleanUrl.includes("q="), "cleanUrl must not contain q=");
+  assert.equal(r.cleanUrl, `${BASE}#tracking`, "scrubbed to a clean #tracking");
+});
+
+test("parseTrackingBoot: official fragment form #tracking?token= is captured + scrubbed", () => {
+  const parse = loadParseTrackingBoot();
+  const r = parse(`${BASE}#tracking?token=${CRED}`);
+  assert.equal(r.credential, CRED);
+  assert.equal(r.cleanUrl, `${BASE}#tracking`);
+  assert.ok(!r.cleanUrl.includes(CRED));
+});
+
+test("parseTrackingBoot: legacy query ?q=...#tracking still works and is scrubbed", () => {
+  const parse = loadParseTrackingBoot();
+  const r = parse(`${BASE}?q=${CRED}#tracking`);
+  assert.equal(r.credential, CRED);
+  assert.equal(r.isTracking, true);
+  assert.equal(r.changed, true);
+  assert.equal(r.cleanUrl, `${BASE}#tracking`);
+  assert.ok(!r.cleanUrl.includes(CRED));
+  assert.ok(!/\?q=|\?token=/.test(r.cleanUrl), "no credential query remains");
+});
+
+test("parseTrackingBoot: legacy query ?token=...#tracking still works and is scrubbed", () => {
+  const parse = loadParseTrackingBoot();
+  const r = parse(`${BASE}?token=${CRED}#tracking`);
+  assert.equal(r.credential, CRED);
+  assert.equal(r.cleanUrl, `${BASE}#tracking`);
+  assert.ok(!r.cleanUrl.includes(CRED));
+});
+
+test("parseTrackingBoot: unrelated query params are preserved (fragment form)", () => {
+  const parse = loadParseTrackingBoot();
+  const r = parse(`${BASE}?utm_source=line#tracking?q=${CRED}`);
+  assert.equal(r.credential, CRED);
+  assert.ok(r.cleanUrl.includes("utm_source=line"), "utm param preserved");
+  assert.ok(r.cleanUrl.endsWith("#tracking"));
+  assert.ok(!r.cleanUrl.includes(CRED));
+});
+
+test("parseTrackingBoot: unrelated query params are preserved (legacy form)", () => {
+  const parse = loadParseTrackingBoot();
+  const r = parse(`${BASE}?utm_source=line&q=${CRED}#tracking`);
+  assert.equal(r.credential, CRED);
+  assert.ok(r.cleanUrl.includes("utm_source=line"));
+  assert.ok(!r.cleanUrl.includes(CRED));
+  assert.ok(!/[?&]q=/.test(r.cleanUrl), "q removed but utm kept");
+});
+
+test("parseTrackingBoot: a normal URL without a credential is left unchanged", () => {
+  const parse = loadParseTrackingBoot();
+  const r = parse(`${BASE}?utm_source=line#home`);
+  assert.equal(r.credential, "");
+  assert.equal(r.changed, false, "no scrub needed â†’ no replaceState");
+});
+
+test("parseTrackingBoot: the credential never survives in cleanUrl across all sensitive forms", () => {
+  const parse = loadParseTrackingBoot();
+  const forms = [
+    `${BASE}#tracking?q=${CRED}`,
+    `${BASE}#tracking?token=${CRED}`,
+    `${BASE}?q=${CRED}#tracking`,
+    `${BASE}?token=${CRED}#tracking`,
+    `${BASE}?utm_source=line#tracking?q=${CRED}`,
+  ];
+  for (const href of forms) {
+    const r = parse(href);
+    assert.equal(r.credential, CRED, `captured for ${href}`);
+    assert.ok(!r.cleanUrl.includes(CRED), `scrubbed for ${href}`);
+    assert.ok(r.isTracking, `tracking route for ${href}`);
+  }
+});
+
+test("boot wiring: scrub-before-init, single setInitialCredential, replaceState (no new history entry)", () => {
+  // Parse + scrub happens before App.state.init().
+  const parseIdx = bootSrc.indexOf("parseTrackingBoot(window.location.href)");
+  const stateInitIdx = bootSrc.indexOf("App.state.init();");
+  assert.ok(parseIdx !== -1 && stateInitIdx !== -1 && parseIdx < stateInitIdx, "parse+scrub must precede state.init()");
+  // Uses history.replaceState (not a new history entry) to drop the credential.
+  assert.match(bootSrc, /window\.history\.replaceState\(null, "", boot\.cleanUrl\)/);
+  // The credential is handed over exactly once, from the parsed value.
+  const occurrences = (bootSrc.match(/setInitialCredential\?\.\(boot\.credential\)/g) || []).length;
+  assert.equal(occurrences, 1, "setInitialCredential called exactly once with the parsed credential");
+  // The credential path must NOT persist the token anywhere serialisable.
+  assert.doesNotMatch(bootSrc, /localStorage\.setItem\([^)]*boot\.credential/);
+  assert.doesNotMatch(bootSrc, /sessionStorage\.setItem\([^)]*boot\.credential/);
+});
+
+test("referrer policy: index.html sets no-referrer before any resource link/script, exactly once", () => {
+  assert.match(indexHtml, /<meta name="referrer" content="no-referrer">/);
+  const metaIdx = indexHtml.indexOf('<meta name="referrer"');
+  const firstLink = indexHtml.indexOf("<link");
+  const firstScript = indexHtml.indexOf("<script");
+  assert.ok(metaIdx !== -1);
+  assert.ok(firstLink === -1 || metaIdx < firstLink, "referrer meta must precede the first <link>");
+  assert.ok(firstScript === -1 || metaIdx < firstScript, "referrer meta must precede the first <script>");
+  const count = (indexHtml.match(/name="referrer"/g) || []).length;
+  assert.equal(count, 1, "exactly one referrer policy (no duplicate/conflicting)");
+  assert.doesNotMatch(indexHtml, /http-equiv="referrer"/i, "no conflicting http-equiv referrer");
+});

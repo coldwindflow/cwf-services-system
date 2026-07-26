@@ -335,4 +335,847 @@ test("unknown and non-wall AC types fail closed without a wall wash variant", ()
   assert.equal(unknown.verdict, "needs_assessment");
   assert.equal(unknown.catalogIntent, null);
   for (const acType of ["fourway", "hanging", "ceiling"]) {
-    const result = evaluate({ acType, monthsBand: "m6_8", symptoms: ["routine"], repairSignals: ["none"] });÷¼¶‰žËkºwµçMÕµ•¹Ð¤ì4(€½¹ÍÐ½¹Ñ…¥¹•È€ôìÅÕ•ÉåM•±•Ñ½Èè€ ¤€ôøµ½Õ¹Ðôì4(€½¹ÍÐ½¹ÑÉ½±±•È€ôÉÕ¹Ñ¥µ”¹…ÁÀ¹…‘Ù¥Í½È¹‰¥¹¡½¹Ñ…¥¹•È¤ì4(4(€µ½Õ¹Ð¹±¥¬¡ì€‰‘…Ñ„µ…‘Ù¥Í½Èµ±…Õ¹ ˆè€ˆˆô¤ì4(€½¹ÍÐ½Á•¹¥¹A½ÉÑ…°€ôÉÕ¹Ñ¥µ”¹‘½Õµ•¹Ð¹Á½ÉÑ…°ì4(€½¹ÍÐ½Á•¹¥¹M¡•±°€ôµ½Õ¹Ð¹¡½ÍÐ¹¥¹¹•É!Q50ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡µ½Õ¹Ð¹Í¡•±±]É¥Ñ•Ì°€Ä¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡½Á•¹¥¹M¡•±°°€½…‘Ù¥Í½ÈµÍ¡••Ðµ±…å•È¥Ìµ½Á•¹¥¹œ¼¤ì4(€…ÍÍ•ÉÐ¹½¬¡µ½Õ¹Ð¹±…å•È¹±…ÍÍ1¥ÍÐ¹½¹Ñ…¥¹Ì ‰¥Ìµ½Á•¹¥¹œˆ¤¤ì4(4(€µ½Õ¹Ð¹±¥¬¡ì€‰‘…Ñ„µ…‘Ù¥Í½Èµ…Œˆè€‰Ý…±°ˆô¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡µ½Õ¹Ð¹Í¡•±±]É¥Ñ•Ì°€Ä¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡µ½Õ¹Ð¹¡½ÍÐ¹¥¹¹•É!Q50°½Á•¹¥¹M¡•±°¤ì4(€…ÍÍ•ÉÐ¹½¬ …µ½Õ¹Ð¹±…å•È¹±…ÍÍ1¥ÍÐ¹½¹Ñ…¥¹Ì ‰¥Ìµ½Á•¹¥¹œˆ¤¤ì4(€…ÍÍ•ÉÐ¹½¬¡µ½Õ¹Ð¹‰½‘ä¹±…ÍÍ1¥ÍÐ¹½¹Ñ…¥¹Ì ‰¥ÌµÍÑ•Àµ™½ÉÝ…Éˆ¤¤ì4(4(€µ½Õ¹Ð¹±¥¬¡ì€‰‘…Ñ„µ…‘Ù¥Í½Èµ‰…¬ˆè€ˆˆô¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡µ½Õ¹Ð¹Í¡•±±]É¥Ñ•Ì°€Ä¤ì4(€…ÍÍ•ÉÐ¹½¬¡µ½Õ¹Ð¹‰½‘ä¹±…ÍÍ1¥ÍÐ¹½¹Ñ…¥¹Ì ‰¥ÌµÍÑ•Àµ‰…¬ˆ¤¤ì4(4(€µ½Õ¹Ð¹±¥¬¡ì€‰‘…Ñ„µ…‘Ù¥Í½Èµ…Œˆè€‰Ý…±°ˆô¤ì4(€µ½Õ¹Ð¹±¥¬¡ì€‰‘…Ñ„µ…‘Ù¥Í½Èµµ½¹Ñ¡Ìˆè€‰´Ñ|Ôˆô¤ì4(€µ½Õ¹Ð¹±¥¬¡ì€‰‘…Ñ„µ…‘Ù¥Í½ÈµÍåµÁÑ½´ˆè€‰É½ÕÑ¥¹”ˆô¤ì4(€µ½Õ¹Ð¹±¥¬¡ì€‰‘…Ñ„µ…‘Ù¥Í½ÈµÉ•Á…¥Èˆè€‰¹½¹”ˆô¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡½¹ÑÉ½±±•È¹ÍÑ…Ñ” ¤¹ÍÑ•À°€Ð¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡µ½Õ¹Ð¹Í¡•±±]É¥Ñ•Ì°€Ä¤ì4(4(€½¹ÍÐ™½ÕÍ•‘	•™½É•I•™É•Í €ô¹•Ü…­•±•µ•¹Ð ¤ì4(€ÉÕ¹Ñ¥µ”¹‘½Õµ•¹Ð¹…Ñ¥Ù•±•µ•¹Ð€ô™½ÕÍ•‘	•™½É•I•™É•Í ì4(€µ½Õ¹Ð¹ÍÉ½±°¹ÍÉ½±±Q½À€ô€ÄÜÌì4(€½¹ÍÐÉ•ÍÕ±Ñ½ÕÍ•Ì€ôµ½Õ¹Ð¹É•ÍÕ±Ñ½ÕÍ•Ìì4(€ÉÕ¹Ñ¥µ”¹…ÁÀ¹ÍÑ…Ñ”¹…Ñ…±½œ¹ÍÑ…ÑÕÌ€ô€‰ÍÕ•ÍÌˆì4(€ÉÕ¹Ñ¥µ”¹…ÁÀ¹ÍÑ…Ñ”¹…Ñ…±½œ¹¥Ñ•µÌ€ôm…Ñ…±½%Ñ•´ Ä¥tì4(€ÉÕ¹Ñ¥µ”¹…ÁÀ¹…‘Ù¥Í½È¹É•™É•Í¡…Ñ…±½œ¡½¹Ñ…¥¹•È¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡µ½Õ¹Ð¹Í¡•±±]É¥Ñ•Ì°€Ä¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡µ½Õ¹Ð¹¡½ÍÐ¹¥¹¹•É!Q50°½Á•¹¥¹M¡•±°¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡µ½Õ¹Ð¹ÍÉ½±°¹ÍÉ½±±Q½À°€ÄÜÌ¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ÉÕ¹Ñ¥µ”¹‘½Õµ•¹Ð¹…Ñ¥Ù•±•µ•¹Ð°™½ÕÍ•‘	•™½É•I•™É•Í ¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡µ½Õ¹Ð¹É•ÍÕ±Ñ½ÕÍ•Ì°É•ÍÕ±Ñ½ÕÍ•Ì¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡µ½Õ¹Ð¹…Ñ…±½œ¹¥¹¹•É!Q50°€½‘…Ñ„µ…‘Ù¥Í½ÈµÁÉ½‘ÕÐôˆÄˆ¼¤ì4(4(€µ½Õ¹Ð¹±¥¬¡ì€‰‘…Ñ„µ…‘Ù¥Í½Èµ±½Í”ˆè€ˆˆô¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡µ½Õ¹Ð¹¡½ÍÐ¹¥¹¹•É!Q50°€ˆˆ¤ì4(€µ½Õ¹Ð¹±¥¬¡ì€‰‘…Ñ„µ…‘Ù¥Í½Èµ±…Õ¹ ˆè€ˆˆô¤ì4(€…ÍÍ•ÉÐ¹¹½ÑÅÕ…°¡ÉÕ¹Ñ¥µ”¹‘½Õµ•¹Ð¹Á½ÉÑ…°°½Á•¹¥¹A½ÉÑ…°¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡µ½Õ¹Ð¹Í¡•±±]É¥Ñ•Ì°€Ä¤ì4(€…ÍÍ•ÉÐ¹½¬¡µ½Õ¹Ð¹±…å•È¹±…ÍÍ1¥ÍÐ¹½¹Ñ…¥¹Ì ‰¥Ìµ½Á•¹¥¹œˆ¤¤ì4)ô¤ì4(4)Ñ•ÍÐ ‰µÕ±Ñ¤µÍ•±•Ð•á±ÕÍ¥Ù”¡½¥•Ì…¹	…¬ÁÉ•Í•ÉÙ”Ñ¡”•á¥ÍÑ¥¹œ…¹ÍÝ•ÉÌˆ°€ ¤€ôøì4(€½¹ÍÐÉÕ¹Ñ¥µ”€ô±½…‘‘Ù¥Í½È ¤ì4(€½¹ÍÐµ½Õ¹Ð€ô¹•Ü…­•5½Õ¹Ð¡ÉÕ¹Ñ¥µ”¹‘½Õµ•¹Ð¤ì4(€½¹ÍÐ½¹ÑÉ½±±•È€ôÉÕ¹Ñ¥µ”¹…ÁÀ¹…‘Ù¥Í½È¹‰¥¹¡ìÅÕ•ÉåM•±•Ñ½Èè€ ¤€ôøµ½Õ¹Ðô¤ì4(€µ½Õ¹Ð¹±¥¬¡ì€‰‘…Ñ„µ…‘Ù¥Í½Èµ±…Õ¹ ˆè€ˆˆô¤ì4(€µ½Õ¹Ð¹±¥¬¡ì€‰‘…Ñ„µ…‘Ù¥Í½Èµ…Œˆè€‰Ý…±°ˆô¤ì4(€µ½Õ¹Ð¹±¥¬¡ì€‰‘…Ñ„µ…‘Ù¥Í½Èµµ½¹Ñ¡Ìˆè€‰´Ù|àˆô¤ì4(€µ½Õ¹Ð¹±¥¬¡ì€‰‘…Ñ„µ…‘Ù¥Í½ÈµÍåµÁÑ½´ˆè€‰¡•…Ùå}ÕÍ”ˆô¤ì4(€µ½Õ¹Ð¹±¥¬¡ì€‰‘…Ñ„µ…‘Ù¥Í½ÈµÍåµÁÑ½´ˆè€‰Á•ÑÌˆô¤ì4(€…ÍÍ•ÉÐ¹‘••ÁÅÕ…°¡ÉÉ…ä¹™É½´¡½¹ÑÉ½±±•È¹ÍÑ…Ñ” ¤¹ÍåµÁÑ½µÌ¤°l‰¡•…Ùå}ÕÍ”ˆ°€‰Á•ÑÌ‰t¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡½¹ÑÉ½±±•È¹ÍÑ…Ñ” ¤¹ÍÑ•À°€È¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡µ½Õ¹Ð¹…Ñ¥½¹Ì¹¥¹¹•É!Q50°€½‘…Ñ„µ…‘Ù¥Í½ÈµÍåµÁÑ½µÌµ‘½¹”¼¤ì4(€µ½Õ¹Ð¹±¥¬¡ì€‰‘…Ñ„µ…‘Ù¥Í½ÈµÍåµÁÑ½µÌµ‘½¹”ˆè€ˆˆô¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡½¹ÑÉ½±±•È¹ÍÑ…Ñ” ¤¹ÍÑ•À°€Ì¤ì4(€µ½Õ¹Ð¹±¥¬¡ì€‰‘…Ñ„µ…‘Ù¥Í½Èµ‰…¬ˆè€ˆˆô¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡½¹ÑÉ½±±•È¹ÍÑ…Ñ” ¤¹ÍÑ•À°€È¤ì4(€…ÍÍ•ÉÐ¹‘••ÁÅÕ…°¡ÉÉ…ä¹™É½´¡½¹ÑÉ½±±•È¹ÍÑ…Ñ” ¤¹ÍåµÁÑ½µÌ¤°l‰¡•…Ùå}ÕÍ”ˆ°€‰Á•ÑÌ‰t¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡µ½Õ¹Ð¹ÍÉ½±°¹ÍÉ½±±Q½À°€À¤ì4)ô¤ì4(4)Ñ•ÍÐ ‰Í…Á”°‰…­‘É½À°™½ÕÌÑÉ…À…¹±•…¹ÕÀ±½Í”Ñ¡”Í¡••ÐÝ¥Ñ¡½ÕÐ±•…­¥¹œ±¥ÍÑ•¹•ÉÌˆ°€ ¤€ôøì4(€½¹ÍÐÉÕ¹Ñ¥µ”€ô±½…‘‘Ù¥Í½È ¤ì4(€½¹ÍÐµ½Õ¹Ð€ô¹•Ü…­•5½Õ¹Ð¡ÉÕ¹Ñ¥µ”¹‘½Õµ•¹Ð¤ì4(€½¹ÍÐ½¹ÑÉ½±±•È€ôÉÕ¹Ñ¥µ”¹…ÁÀ¹…‘Ù¥Í½È¹‰¥¹¡ìÅÕ•ÉåM•±•Ñ½Èè€ ¤€ôøµ½Õ¹Ðô¤ì4(€µ½Õ¹Ð¹±¥¬¡ì€‰‘…Ñ„µ…‘Ù¥Í½Èµ±…Õ¹ ˆè€ˆˆô¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ÉÕ¹Ñ¥µ”¹‘½Õµ•¹Ð¹±¥ÍÑ•¹•ÉÌ¹Í¥é”°€Ä¤ì4(€ÉÕ¹Ñ¥µ”¹‘½Õµ•¹Ð¹…Ñ¥Ù•±•µ•¹Ð€ôµ½Õ¹Ð¹¹•áÑ	ÕÑÑ½¸ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ÉÕ¹Ñ¥µ”¹‘½Õµ•¹Ð¹­•å‘½Ý¸ ‰Q…ˆˆ¤°ÑÉÕ”¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ÉÕ¹Ñ¥µ”¹‘½Õµ•¹Ð¹…Ñ¥Ù•±•µ•¹Ð°µ½Õ¹Ð¹±½Í•	ÕÑÑ½¸¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ÉÕ¹Ñ¥µ”¹‘½Õµ•¹Ð¹­•å‘½Ý¸ ‰Í…Á”ˆ¤°ÑÉÕ”¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡½¹ÑÉ½±±•È¹ÍÑ…Ñ” ¤¹¥Í=Á•¸°™…±Í”¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ÉÕ¹Ñ¥µ”¹‘½Õµ•¹Ð¹±¥ÍÑ•¹•ÉÌ¹Í¥é”°€À¤ì4(4(€µ½Õ¹Ð¹±¥¬¡ì€‰‘…Ñ„µ…‘Ù¥Í½Èµ±…Õ¹ ˆè€ˆˆô¤ì4(€µ½Õ¹Ð¹±¥­	…­‘É½À ¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡½¹ÑÉ½±±•È¹ÍÑ…Ñ” ¤¹¥Í=Á•¸°™…±Í”¤ì4(€µ½Õ¹Ð¹±¥¬¡ì€‰‘…Ñ„µ…‘Ù¥Í½Èµ±…Õ¹ ˆè€ˆˆô¤ì4(€½¹ÑÉ½±±•È¹±•…¹ÕÀ ¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ÉÕ¹Ñ¥µ”¹‘½Õµ•¹Ð¹±¥ÍÑ•¹•ÉÌ¹Í¥é”°€À¤ì4(€…ÍÍ•ÉÐ¹½¬ …ÉÕ¹Ñ¥µ”¹‘½Õµ•¹Ð¹‰½‘ä¹±…ÍÍ1¥ÍÐ¹½¹Ñ…¥¹Ì ‰¡…Ìµ…‘Ù¥Í½ÈµÍ¡••Ðˆ¤¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡µ½Õ¹Ð¹±¥ÍÑ•¹•ÉÌ¹Í¥é”°€À¤ì4)ô¤ì4(4)Ñ•ÍÐ ‰±½Í•É•ÍÕ±ÐÍÑ…åÌ½µÁ…Ð…¹¹•Ù•È•áÁ½Í•Ì…Ñ…±½œ…É‘Ì½¸!½µ”ˆ°€ ¤€ôøì4(€½¹ÍÐÉÕ¹Ñ¥µ”€ô±½…‘‘Ù¥Í½È¡ì…Ñ…±½œèìÍÑ…ÑÕÌè€‰ÍÕ•ÍÌˆ°¥Ñ•µÌèm…Ñ…±½%Ñ•´ Ä¥tôô¤ì4(€½¹ÍÐµ½Õ¹Ð€ô¹•Ü…­•5½Õ¹Ð¡ÉÕ¹Ñ¥µ”¹‘½Õµ•¹Ð¤ì4(€½¹ÍÐ½¹ÑÉ½±±•È€ôÉÕ¹Ñ¥µ”¹…ÁÀ¹…‘Ù¥Í½È¹‰¥¹¡ìÅÕ•ÉåM•±•Ñ½Èè€ ¤€ôøµ½Õ¹Ðô¤ì4(€½µÁ±•Ñ•]…±±MÑ…¹‘…É‘‘Ù¥Í½È¡µ½Õ¹Ð¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡½¹ÑÉ½±±•È¹ÍÑ…Ñ” ¤¹É•½µµ•¹‘…Ñ¥½¸¹Ù•É‘¥Ð°€‰ÍÑ…¹‘…É‘}±•…¸ˆ¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡µ½Õ¹Ð¹¡Ñµ° ¤°€½…‘Ù¥Í½ÈµÉ•ÍÕ±ÐµÁÉ½‘ÕÑÌ¼¤ì4(€µ½Õ¹Ð¹±¥¬¡ì€‰‘…Ñ„µ…‘Ù¥Í½Èµ±½Í”ˆè€ˆˆô¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡µ½Õ¹Ð¹±…Õ¹¡•È¹¥¹¹•É!Q50°€¿‚âs‚â—‚â—‚æ#‚âË‚â«‚âã‚âP¼¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡µ½Õ¹Ð¹±…Õ¹¡•È¹¥¹¹•É!Q50°€¿‚âS‚âç‚âs‚â—‚âo‚â‚âÃ‚æ‚â‡‚âÓ‚âd¼¤ì4(€…ÍÍ•ÉÐ¹‘½•Í9½Ñ5…Ñ ¡µ½Õ¹Ð¹±…Õ¹¡•È¹¥¹¹•É!Q50°€½…‘Ù¥Í½ÈµÁÉ½‘ÕÑñ‘…Ñ„µ…‘Ù¥Í½Èµ¥Ñ•´µ…Ñ¥½¸¼¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡µ½Õ¹Ð¹¡½ÍÐ¹¥¹¹•É!Q50°€ˆˆ¤ì4(€µ½Õ¹Ð¹±¥¬¡ì€‰‘…Ñ„µ…‘Ù¥Í½ÈµÉ•Í•Ðµ±…Õ¹¡•Èˆè€ˆˆô¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡½¹ÑÉ½±±•È¹ÍÑ…Ñ” ¤¹É•½µµ•¹‘…Ñ¥½¸°¹Õ±°¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡½¹ÑÉ½±±•È¹ÍÑ…Ñ” ¤¹ÍÑ•À°€À¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡½¹ÑÉ½±±•È¹ÍÑ…Ñ” ¤¹¥Í=Á•¸°ÑÉÕ”¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡µ½Õ¹Ð¹¡Ñµ° ¤°€½‘…Ñ„µ…‘Ù¥Í½Èµ…Œô¼¤ì4)ô¤ì4(4)Ñ•ÍÐ ‰‰½½­¥¹œ¡…¹‘½™˜É½ÕÑ•Ì½¹±ä…™Ñ•È‰½Ñ •á¥ÍÑ¥¹œ…‘…ÁÑ•ÉÌÍÕ••…¹½Ñ¡•ÉÝ¥Í”½¹Ñ…ÑÌˆ°€ ¤€ôøì4(€½¹ÍÐ¥Ñ•´€ô…Ñ…±½%Ñ•´ à¤ì4(€½¹ÍÐÍÕ•ÍÌ€ô±½…‘‘Ù¥Í½È¡ì…Ñ…±½œèìÍÑ…ÑÕÌè€‰ÍÕ•ÍÌˆ°¥Ñ•µÌèm¥Ñ•µtôô¤ì4(€½¹ÍÐµ½Õ¹Ð€ô¹•Ü…­•5½Õ¹Ð¡ÍÕ•ÍÌ¹‘½Õµ•¹Ð¤ì4(€½¹ÍÐ½¹Ñ…¥¹•È€ôìÅÕ•ÉåM•±•Ñ½Èè€¡Í•±•Ñ½È¤€ôøÍ•±•Ñ½È€ôôô€‰m‘…Ñ„µÍµ…ÉÐµ…‘Ù¥Í½Étˆ€üµ½Õ¹Ð€è¹Õ±°ôì4(€ÍÕ•ÍÌ¹…ÁÀ¹…‘Ù¥Í½È¹‰¥¹¡½¹Ñ…¥¹•È¤ì4(€½µÁ±•Ñ•]…±±MÑ…¹‘…É‘‘Ù¥Í½È¡µ½Õ¹Ð¤ì4(€µ½Õ¹Ð¹±¥¬¡ì€‰‘…Ñ„µ…‘Ù¥Í½Èµ¥Ñ•´µ…Ñ¥½¸ˆè€ˆàˆô¤ì4(€…ÍÍ•ÉÐ¹‘••ÁÅÕ…°¡ÍÕ•ÍÌ¹É½ÕÑ•Ì°l‰Í¡•‘Õ±•‰t¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ÍÕ•ÍÌ¹…ÁÁ±¥•¹±•¹Ñ °€Ä¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ÍÕ•ÍÌ¹½¹Ñ…ÑÌ¹±•¹Ñ °€À¤ì4(4(€½¹ÍÐ‘•¹¥•€ô±½…‘‘Ù¥Í½È¡ì…Ñ…±½œèìÍÑ…ÑÕÌè€‰ÍÕ•ÍÌˆ°¥Ñ•µÌèm¥Ñ•µtô°…‘…ÁÑ•Èè€ ¤€ôø¹Õ±°ô¤ì4(€½¹ÍÐ‘•¹¥•‘5½Õ¹Ð€ô¹•Ü…­•5½Õ¹Ð¡‘•¹¥•¹‘½Õµ•¹Ð¤ì4(€‘•¹¥•¹…ÁÀ¹…‘Ù¥Í½È¹‰¥¹¡ìÅÕ•ÉåM•±•Ñ½Èè€ ¤€ôø‘•¹¥•‘5½Õ¹Ðô¤ì4(€½µÁ±•Ñ•]…±±MÑ…¹‘…É‘‘Ù¥Í½È¡‘•¹¥•‘5½Õ¹Ð¤ì4(€‘•¹¥•‘5½Õ¹Ð¹±¥¬¡ì€‰‘…Ñ„µ…‘Ù¥Í½Èµ¥Ñ•´µ…Ñ¥½¸ˆè€ˆàˆô¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡‘•¹¥•¹É½ÕÑ•Ì¹±•¹Ñ °€À¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡‘•¹¥•¹½¹Ñ…ÑÌ¹±•¹Ñ °€Ä¤ì4(4(€½¹ÍÐ…ÁÁ±å•¹¥•€ô±½…‘‘Ù¥Í½È¡ì…Ñ…±½œèìÍÑ…ÑÕÌè€‰ÍÕ•ÍÌˆ°¥Ñ•µÌèm¥Ñ•µtô°…ÁÁ±äè€ ¤€ôø™…±Í”ô¤ì4(€½¹ÍÐ…ÁÁ±å5½Õ¹Ð€ô¹•Ü…­•5½Õ¹Ð¡…ÁÁ±å•¹¥•¹‘½Õµ•¹Ð¤ì4(€…ÁÁ±å•¹¥•¹…ÁÀ¹…‘Ù¥Í½È¹‰¥¹¡ìÅÕ•ÉåM•±•Ñ½Èè€ ¤€ôø…ÁÁ±å5½Õ¹Ðô¤ì4(€½µÁ±•Ñ•]…±±MÑ…¹‘…É‘‘Ù¥Í½È¡…ÁÁ±å5½Õ¹Ð¤ì4(€…ÁÁ±å5½Õ¹Ð¹±¥¬¡ì€‰‘…Ñ„µ…‘Ù¥Í½Èµ¥Ñ•´µ…Ñ¥½¸ˆè€ˆàˆô¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡…ÁÁ±å•¹¥•¹É½ÕÑ•Ì¹±•¹Ñ °€À¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡…ÁÁ±å•¹¥•¹½¹Ñ…ÑÌ¹±•¹Ñ °€Ä¤ì4)ô¤ì4(4)Ñ•ÍÐ ‰µ…¹¥ÁÕ±…Ñ•Õ¹É•±…Ñ•…Ñ…±½œ¥Ñ•´¥¥ÌÉ•©•Ñ•‰•™½É”‰½½­¥¹œ…‘…ÁÑ•ÉÌÉÕ¸ˆ°€ ¤€ôøì4(€±•Ð…‘…ÁÑ•É…±±Ì€ô€Àì4(€±•Ð…ÁÁ±å…±±Ì€ô€Àì4(€½¹ÍÐÕ¹É•±…Ñ•€ô…Ñ…±½%Ñ•´ ä°ì‰½½­¥¹}…}ÑåÁ”è€‹‚â«‚â×‚æ#‚â_‚âÓ‚â£‚â_‚âË‚âˆ°‰½½­¥¹}Ý…Í¡}Ù…É¥…¹Ðè¹Õ±°ô¤ì4(€½¹ÍÐÉÕ¹Ñ¥µ”€ô±½…‘‘Ù¥Í½È¡ì4(€€€…Ñ…±½œèìÍÑ…ÑÕÌè€‰ÍÕ•ÍÌˆ°¥Ñ•µÌèmÕ¹É•±…Ñ•‘tô°4(€€€…‘…ÁÑ•Èè€ ¤€ôøì…‘…ÁÑ•É…±±Ì€¬ô€ÄìÉ•ÑÕÉ¸ì‘É…™Ðèíôôìô°4(€€€…ÁÁ±äè€ ¤€ôøì…ÁÁ±å…±±Ì€¬ô€ÄìÉ•ÑÕÉ¸ÑÉÕ”ìô°4(€ô¤ì4(€½¹ÍÐµ½Õ¹Ð€ô¹•Ü…­•5½Õ¹Ð¡ÉÕ¹Ñ¥µ”¹‘½Õµ•¹Ð¤ì4(€ÉÕ¹Ñ¥µ”¹…ÁÀ¹…‘Ù¥Í½È¹‰¥¹¡ìÅÕ•ÉåM•±•Ñ½Èè€ ¤€ôøµ½Õ¹Ðô¤ì4(€½µÁ±•Ñ•]…±±MÑ…¹‘…É‘‘Ù¥Í½È¡µ½Õ¹Ð¤ì4(€µ½Õ¹Ð¹±¥¬¡ì€‰‘…Ñ„µ…‘Ù¥Í½Èµ¥Ñ•´µ…Ñ¥½¸ˆè€ˆäˆô¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡…‘…ÁÑ•É…±±Ì°€À¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡…ÁÁ±å…±±Ì°€À¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ÉÕ¹Ñ¥µ”¹É½ÕÑ•Ì¹±•¹Ñ °€À¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ÉÕ¹Ñ¥µ”¹½¹Ñ…ÑÌ¹±•¹Ñ °€Ä¤ì4)ô¤ì4(4)Ñ•ÍÐ ‰É•Á…¥ÈÉ•ÍÕ±Ð…±Ý…åÌ½Á•¹Ì½¹Ñ…ÐM¡••Ð•Ù•¸Ý¡•¸„É•Á…¥È¥Ñ•´¡…Ì…‘…ÁÑ•Èµ½µÁ…Ñ¥‰±”µ•Ñ…‘…Ñ„ˆ°€ ¤€ôøì4(€½¹ÍÐÉ•Á…¥É%Ñ•´€ô…Ñ…±½%Ñ•´ ä°ì¥Ñ•µ}¹…µ”è€‹‚âW‚â‚âŸ‚â#‚æ‚â+‚æ‚â‚æ‚â·‚â‚æ0ˆ°©½‰}…Ñ•½Éäè€‹‚âW‚â‚âŸ‚â#‚æ‚â+‚æ‚âˆô¤ì4(€½¹ÍÐÉÕ¹Ñ¥µ”€ô±½…‘‘Ù¥Í½È¡ì4(€€€…Ñ…±½œèìÍÑ…ÑÕÌè€‰ÍÕ•ÍÌˆ°¥Ñ•µÌèmÉ•Á…¥É%Ñ•µtô°4(€€€Ù¥ÍÕ…±Y¥•ÝÁ½ÉÐèì¡•¥¡Ðè€ÔÈÀ°½™™Í•ÑQ½Àè€ÌÈô°4(€ô¤ì4(€½¹ÍÐµ½Õ¹Ð€ô¹•Ü…­•5½Õ¹Ð¡ÉÕ¹Ñ¥µ”¹‘½Õµ•¹Ð¤ì4(€½¹ÍÐ½¹Ñ…¥¹•È€ôìÅÕ•ÉåM•±•Ñ½Èè€ ¤€ôøµ½Õ¹Ðôì4(€½¹ÍÐ½¹ÑÉ½±±•È€ôÉÕ¹Ñ¥µ”¹…ÁÀ¹…‘Ù¥Í½È¹‰¥¹¡½¹Ñ…¥¹•È¤ì4(€µ½Õ¹Ð¹±¥¬¡ì€‰‘…Ñ„µ…‘Ù¥Í½Èµ±…Õ¹ ˆè€ˆˆô¤ì4(€µ½Õ¹Ð¹±¥¬¡ì€‰‘…Ñ„µ…‘Ù¥Í½Èµ…Œˆè€‰Ý…±°ˆô¤ì4(€µ½Õ¹Ð¹±¥¬¡ì€‰‘…Ñ„µ…‘Ù¥Í½Èµµ½¹Ñ¡Ìˆè€‰´Ñ|Ôˆô¤ì4(€µ½Õ¹Ð¹±¥¬¡ì€‰‘…Ñ„µ…‘Ù¥Í½ÈµÍåµÁÑ½´ˆè€‰É½ÕÑ¥¹”ˆô¤ì4(€µ½Õ¹Ð¹±¥¬¡ì€‰‘…Ñ„µ…‘Ù¥Í½ÈµÉ•Á…¥Èˆè€‰•ÉÉ½É}½‘”ˆô¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡½¹ÑÉ½±±•È¹ÍÑ…Ñ” ¤¹É•½µµ•¹‘…Ñ¥½¸¹Ù•É‘¥Ð°€‰É•Á…¥É}¡•¬ˆ¤ì4(€µ½Õ¹Ð¹±¥¬¡ì€‰‘…Ñ„µ…‘Ù¥Í½Èµ¥Ñ•´µ…Ñ¥½¸ˆè€ˆäˆô¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ÉÕ¹Ñ¥µ”¹É½ÕÑ•Ì¹±•¹Ñ °€À¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ÉÕ¹Ñ¥µ”¹…ÁÁ±¥•¹±•¹Ñ °€À¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ÉÕ¹Ñ¥µ”¹½¹Ñ…ÑÌ¹±•¹Ñ °€Ä¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ÉÕ¹Ñ¥µ”¹Ù¥ÍÕ…±Y¥•ÝÁ½ÉÐ¹±¥ÍÑ•¹•ÉÌ¹Í¥é”°€À¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ÉÕ¹Ñ¥µ”¹‘½Õµ•¹Ð¹Á½ÉÑ…°°¹Õ±°¤ì4)ô¤ì4(4)Ñ•ÍÐ ‰…‘Ù¥Í½ÈÉ•¹‘•È½¹ÑÉ…Ð¥Ì…•ÍÍ¥‰±”°½µÁ…Ð°µ½Ñ¥½¸µÍ…™”°…¹¡…Ì¹¼…ÕÑ½Á±…äÑ¥µ•Èˆ°€ ¤€ôøì4(€½¹ÍÐì…ÁÀô€ô±½…‘‘Ù¥Í½È ¤ì4(€½¹ÍÐ¡Ñµ°€ô…ÁÀ¹…‘Ù¥Í½È¹É•¹‘•ÉM•Ñ¥½¸¡ìÍÑ…ÑÕÌè€‰ÍÕ•ÍÌˆ°¥Ñ•µÌèmtô¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡¡Ñµ°°€½‘…Ñ„µÍµ…ÉÐµ…‘Ù¥Í½È¼¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡¡Ñµ°°€¿‚æ‚â‡‚æ#‚æ‚âg‚æ#‚æ‚â#‚âŸ‚æ#‚âË‚â‚âŸ‚â‚â—‚æ'‚âË‚â‚â¯‚â‚âß‚â·‚â/‚æ#‚â·‚â„¼¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡¡Ñµ°°€½‘…Ñ„µ…‘Ù¥Í½Èµ±…Õ¹ ¼¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡¡Ñµ°°€½…É¥„µ•áÁ…¹‘•ô‰™…±Í”ˆ¼¤ì4(€…ÍÍ•ÉÐ¹‘½•Í9½Ñ5…Ñ ¡¡Ñµ°°€½‘…Ñ„µ…‘Ù¥Í½ÈµÍ¡••Ðµ¡½ÍÑñ‘…Ñ„µ…‘Ù¥Í½ÈµÁ½ÉÑ…°¼¤ì4(€…ÍÍ•ÉÐ¹‘½•Í9½Ñ5…Ñ ¡¡Ñµ°°€½‘…Ñ„µ¥½¸ô‰Á±…äˆ¼¤ì4(€…ÍÍ•ÉÐ¹‘½•Í9½Ñ5…Ñ ¡M=UI°€½‘…Ñ„µ…‘Ù¥Í½Èµ¹•áÑðû‚â‚âÇ‚æ'‚âg‚âW‚æ#‚â·‚æ‚âlñðû‚âS‚âç‚âs‚â—‚âo‚â‚âÃ‚æ‚â‡‚âÓ‚âdð¼¤ì4(€…ÍÍ•ÉÐ¹‘½•Í9½Ñ5…Ñ ¡¡Ñµ°°€½‘…Ñ„µ…‘Ù¥Í½Èµ…ñ‘…Ñ„µ…‘Ù¥Í½Èµµ½¹Ñ¡Íñ‘…Ñ„µ…‘Ù¥Í½ÈµÍåµÁÑ½µñ‘…Ñ„µ…‘Ù¥Í½ÈµÉ•Á…¥È¼¤ì4(€…ÍÍ•ÉÐ¹‘½•Í9½Ñ5…Ñ ¡¡Ñµ°°€¿‚â‚âŸ‚âË‚â‡‚â‚âß‚âk‚â¯‚âg‚æ'‚âË‚â‚âË‚â‚âo‚â‚âÃ‚æ‚â‡‚âÓ‚âeó‚â‚âÇ‚æ'‚âg‚â_‚â×‚æ €Äƒ‚â#‚âË‚â€Ð¼¤ì4(€…ÍÍ•ÉÐ¹‘½•Í9½Ñ5…Ñ ¡¡Ñµ°°€¿‚âS‚âç‚âk‚â‚âÓ‚â‚âË‚â‚â#‚â‚âÓ‚â‚â#‚âË‚â…Ñ…±½œ¼¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡MM}M=UI°€½µ•‘¥„p¡ÁÉ•™•ÉÌµÉ•‘Õ•µµ½Ñ¥½¸èÉ•‘Õ•p¤¼¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡MM}M=UI°€½p¹…‘Ù¥Í½ÈµÍ¡••ÑmqÍqMt¨ýµ…àµ¡•¥¡Ðè€äÁ‘Ù ¼¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡MM}M=UI°€½p¹…‘Ù¥Í½ÈµÍ¡••Ðµ…Ñ¥½¹ÍmqÍqMt¨ýÍ…™”µ…É•„µ¥¹Í•Ðµ‰½ÑÑ½´¼¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡MM}M=UI°€½p¹…‘Ù¥Í½ÈµÁ½ÉÑ…°µÉ½½ÐqímqÍqMt¨ýÁ½Í¥Ñ¥½¸è™¥á•‘mqÍqMt¨ýèµ¥¹‘•àè€ÄÀÀÀÁmqÍqMt¨ý¥Í½±…Ñ¥½¸è¥Í½±…Ñ”¼¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡MM}M=UI°€½p¹…‘Ù¥Í½ÈµÍ¡••Ðp¹…‘Ù¥Í½Èµ¡¥ÀµÉ¥‘mqÍqMt¨ýÉ¥µÑ•µÁ±…Ñ”µ½±Õµ¹Ìèµ¥¹µ…áp À°€Å™Ép¤¼¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡MM}M=UI°€½µ•‘¥„p¡µ…àµÝ¥‘Ñ è€ÌàÁÁáp¥mqÍqMt¨ýp¹…‘Ù¥Í½ÈµÍ¡••Ðp¹…‘Ù¥Í½Èµ¡½¥”µÉ¥qìÉ¥µÑ•µÁ±…Ñ”µ½±Õµ¹Ìèµ¥¹µ…áp À°€Å™Ép¤¼¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡MM}M=UI°€½µ•‘¥„p¡µ…àµÝ¥‘Ñ è€ØÀÁÁáp¥mqÍqMt¨ý¡•¥¡ÐèÙ…Ép ´µ…‘Ù¥Í½ÈµÙ¥•ÝÁ½ÉÐµ¡•¥¡Ð°€ÄÀÁ‘Ù¡p¤¼¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡MM}M=UI°€½µ•‘¥„p¡µ…àµÝ¥‘Ñ è€ØÀÁÁáp¥mqÍqMt¨ýµ…àµ¡•¥¡Ðè¹½¹•mqÍqMt¨ý‰½É‘•ÈµÉ…‘¥ÕÌè€À¼¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡MM}M=UI°€½‰½‘åp¹¡…Ìµ…‘Ù¥Í½ÈµÍ¡••Ðqì½Ù•É™±½Üè¡¥‘‘•¸¼¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡MM}M=UI°€½p¹Íµ…ÉÐµ…‘Ù¥Í½ÈµÍ•Ñ¥½¸qímqÍqMt¨ýµ¥¸µ¡•¥¡Ðè€äÙÁámqÍqMt¨ýÁ…‘‘¥¹œè€ÄÁÁà¼¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡MM}M=UI°€½p¹…‘Ù¥Í½Èµ±…Õ¹¡•Èµ½ÉˆqímqÍqMt¨ýÝ¥‘Ñ è€ÌÑÁámqÍqMt¨ý¡•¥¡Ðè€ÌÑÁà¼¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡MM}M=UI°€½p¹…‘Ù¥Í½Èµ±…Õ¹¡•Èµ½Áä ÈqímqÍqMt¨ýÝ¡¥Ñ”µÍÁ…”è¹½ÝÉ…À¼¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡MM}M=UI°€½p¹…‘Ù¥Í½Èµ±…Õ¹¡•Èµ…Ñ¥½¹Ìp¹ÁÉ¥µ…Éäµ‰Ñ¸qímqÍqMt¨ý©ÕÍÑ¥™äµ½¹Ñ•¹Ðè•¹Ñ•ÉmqÍqMt¨ýµ¥¸µ¡•¥¡Ðè€ÌáÁà¼¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡MM}M=UI°€½µ•‘¥„p¡µ…àµÝ¥‘Ñ è€ØÀÁÁáp¥mqÍqMt¨ýp¹…‘Ù¥Í½Èµ±…Õ¹¡•Èµ½ÁäÀqì‘¥ÍÁ±…äè¹½¹”ìqô¼¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡MM}M=UI°€½p¹…‘Ù¥Í½ÈµÍ¡••ÐµÍÉ½±°qímqÍqMt¨ý½Ù•É™±½Üµäè…ÕÑ½mqÍqMt¨ý½Ù•ÉÍÉ½±°µ‰•¡…Ù¥½Èè½¹Ñ…¥¸¼¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡MM}M=UI°€½p¹…‘Ù¥Í½ÈµÍ¡••Ðµ…Ñ¥½¹ÌqímqÍqMt¨ýÍ…™”µ…É•„µ¥¹Í•Ðµ‰½ÑÑ½´¼¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡MM}M=UI°€½­•å™É…µ•Ì…‘Ù¥Í½Èµ½É‰¥Ð¼¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡MM}M=UI°€½­•å™É…µ•Ì…‘Ù¥Í½Èµ½Éˆµ‰É•…Ñ¡”¼¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡MM}M=UI°€½­•å™É…µ•Ì…‘Ù¥Í½Èµ±…Õ¹¡•ÈµÍ¡••¸¼¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡MM}M=UI°€½­•å™É…µ•Ì…‘Ù¥Í½Èµ¡½¥”µÍÝ••À¼¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡MM}M=UI°€½­•å™É…µ•Ì…‘Ù¥Í½Èµ¡•¬µÍÁÉ¥¹œ¼¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡MM}M=UI°€½­•å™É…µ•Ì…‘Ù¥Í½Èµ½¹™¥‘•¹”µÁ½À¼¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡MM}M=UI°€½­•å™É…µ•Ì…‘Ù¥Í½ÈµÍ¡••ÐµÕÀ¼¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡MM}M=UI°€½­•å™É…µ•Ì…‘Ù¥Í½ÈµÅÕ•ÍÑ¥½¸µ™½ÉÝ…É¼¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡MM}M=UI°€½­•å™É…µ•Ì…‘Ù¥Í½ÈµÉ•ÍÕ±ÐµÉ•Ù•…°¼¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡MM}M=UI°€½p¹…‘Ù¥Í½ÈµÍ¡••Ðµ±…å•Ép¹¥Ìµ½Á•¹¥¹œqì…¹¥µ…Ñ¥½¸è…‘Ù¥Í½Èµ‰…­‘É½Àµ¥¸¼¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡MM}M=UI°€½p¹…‘Ù¥Í½ÈµÍ¡••Ðµ±…å•Ép¹¥Ìµ½Á•¹¥¹œp¹…‘Ù¥Í½ÈµÍ¡••Ðqì…¹¥µ…Ñ¥½¸è…‘Ù¥Í½ÈµÍ¡••ÐµÕÀ¼¤ì4(€…ÍÍ•ÉÐ¹‘½•Í9½Ñ5…Ñ ¡MM}M=UI¹µ…Ñ  ½p¹…‘Ù¥Í½ÈµÍ¡••Ðµ±…å•ÈqímqÍqMt¨ýqô¼¤ü¹lÁtñð€ˆˆ°€½…¹¥µ…Ñ¥½¸è¼¤ì4(€…ÍÍ•ÉÐ¹‘½•Í9½Ñ5…Ñ ¡MM}M=UI¹µ…Ñ  ½p¹…‘Ù¥Í½ÈµÍ¡••ÐqímqÍqMt¨ýqô¼¤ü¹lÁtñð€ˆˆ°€½…¹¥µ…Ñ¥½¸è¼¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡MM}M=UI°€½p¹…‘Ù¥Í½ÈµÍ¡••Ðµ‰½‘åp¹¥ÌµÍÑ•Àµ™½ÉÝ…É€øp¹…‘Ù¥Í½ÈµÍÑ•À¼¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡MM}M=UI°€½p¹…‘Ù¥Í½ÈµÍ¡••Ðµ‰½‘åp¹¥ÌµÍÑ•Àµ‰…¬€øp¹…‘Ù¥Í½ÈµÍÑ•À¼¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡MM}M=UI°€½µ•‘¥„p¡ÁÉ•™•ÉÌµÉ•‘Õ•µµ½Ñ¥½¸èÉ•‘Õ•p¥mqÍqMt¨ýp¹…‘Ù¥Í½ÈµÍ¡••Ðµ±…å•ÉmqÍqMt¨ý…¹¥µ…Ñ¥½¸è¹½¹”€…¥µÁ½ÉÑ…¹Ð¼¤ì4(€…ÍÍ•ÉÐ¹‘½•Í9½Ñ5…Ñ ¡M=UI°€½Í•Ñ%¹Ñ•ÉÙ…±qÌ©p ¼¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡M=UI°€½‘½Õµ•¹Ñp¹‰½‘åp¹…ÁÁ•¹‘¡¥±‘p¡Á½ÉÑ…±I½½Ñp¤¼¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡M=UI°€½µ…Ñ¡5•‘¥…pýp¹p ‰p¡ÁÉ•™•ÉÌµÉ•‘Õ•µµ½Ñ¥½¸èÉ•‘Õ•p¤‰p¤¼¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡M=UI°€½Ý¥¹‘½Ýp¹Ù¥ÍÕ…±Y¥•ÝÁ½ÉÐ¼¤ì4(€½¹ÍÐÉ•‘Õ•€ô±½…‘‘Ù¥Í½È¡ìÉ•‘Õ•‘5½Ñ¥½¸èÑÉÕ”ô¤ì4(€½¹ÍÐµ½Õ¹Ð€ô¹•Ü…­•5½Õ¹Ð¡É•‘Õ•¹‘½Õµ•¹Ð¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡É•‘Õ•¹…ÁÀ¹…‘Ù¥Í½È¹‰¥¹¡ìÅÕ•ÉåM•±•Ñ½Èè€ ¤€ôøµ½Õ¹Ðô¤¹É•‘Õ•‘5½Ñ¥½¸°ÑÉÕ”¤ì4)ô¤ì4(4)Ñ•ÍÐ ‰!½µ”Á±…•Ì‰Õ¥±Ðµ¥¸…‘Ù¥Í½È…™Ñ•ÈEÕ¥¬Ñ¥½¹Ì…¹‰•™½É”•…ÑÕÉ•M•ÉÙ¥•Ìˆ°€ ¤€ôøì4(€½¹ÍÐ…ÁÀ€ôì4(€€€ÍÑ…Ñ”èì4(€€€€€¡½µ•Á…”èì½¹™¥œèìÍ•Ñ¥½¹Ìèl4(€€€€€€€ì¥è€‰¡•É¼ˆ°ÑåÁ”è€‰¡•É¼ˆ°•¹…‰±•èÑÉÕ”°Í½ÉÑ}½É‘•Èè€ÄÀ°Ñ¥Ñ±”è€‰!•É¼ˆ°¥Ñ•µÌèmtô°4(€€€€€€€ì¥è€‰ÅÕ¥¬ˆ°ÑåÁ”è€‰ÅÕ¥¬ˆ°•¹…‰±•èÑÉÕ”°Í½ÉÑ}½É‘•Èè€ÈÀ°¥Ñ•µÌèmtô°4(€€€€€€€ì¥è€‰™•…ÑÕÉ•ˆ°ÑåÁ”è€‰™•…ÑÕÉ•‘}Í•ÉÙ¥•Ìˆ°•¹…‰±•èÑÉÕ”°Í½ÉÑ}½É‘•Èè€ÌÀ°Ñ¥Ñ±”è€‰•…ÑÕÉ•ˆ°¥Ñ•µÌèmtô°4(€€€€€tôô°4(€€€€€…Ñ…±½œèìÍÑ…ÑÕÌè€‰ÍÕ•ÍÌˆ°¥Ñ•µÌèmtô°4(€€€ô°4(€€€…‘Ù¥Í½ÈèìÉ•¹‘•ÉM•Ñ¥½¸è€ ¤€ôø€ñÍ•Ñ¥½¸‘…Ñ„µÍµ…ÉÐµ…‘Ù¥Í½Èù‘Ù¥Í½Èð½Í•Ñ¥½¸ù€ô°4(€€€ÕÑ¥±Ìèì•Í…Á•!Ñµ°°¥½¸è€ ¤€ôø€ˆˆ°™½Éµ…Ñ	…¡Ðè€ ¤€ôø€ˆ´ˆ°ÍÑ…Ñ•	½àè€ ¤€ôø€ˆˆô°4(€€€Í•ÉÙ¥•ÌèìÅÕ¥­M•ÉÙ¥•Ìèmt°]11}è€‹‚âs‚âg‚âÇ‚âˆô°4(€ôì4(€Ù´¹ÉÕ¹%¹9•Ý½¹Ñ•áÐ¡U%}M=UI°ì4(€€€Ý¥¹‘½Üèì]ÕÍÑ½µ•ÉÁÁXÈè…ÁÀô°4(€€€‘½Õµ•¹Ðèì‰½‘äèì±…ÍÍ1¥ÍÐèì…‘ ¤íô°É•µ½Ù” ¤íôôô°•Ñ±•µ•¹Ñ	å%è€ ¤€ôø¹Õ±°ô°4(€€€UI0°4(€€€]•…­5…À°4(€€€M•Ð°4(€€€½¹Í½±”°4(€ô¤ì4(€½¹ÍÐ¡Ñµ°€ô…ÁÀ¹Õ¤¹}Ñ•ÍÐ¹É•¹‘•É!½µ•Á…•M•Ñ¥½¹Í]¥Ñ¡‘Ù¥Í½È ¤ì4(€…ÍÍ•ÉÐ¹½¬¡¡Ñµ°¹¥¹‘•á=˜ ‰‘…Ñ„µ¡½µ”µÍ•Ñ¥½¸õp‰ÅÕ¥­pˆˆ¤€ð¡Ñµ°¹¥¹‘•á=˜ ‰‘…Ñ„µÍµ…ÉÐµ…‘Ù¥Í½Èˆ¤¤ì4(€…ÍÍ•ÉÐ¹½¬¡¡Ñµ°¹¥¹‘•á=˜ ‰‘…Ñ„µÍµ…ÉÐµ…‘Ù¥Í½Èˆ¤€ð¡Ñµ°¹¥¹‘•á=˜ ‰‘…Ñ„µ¡½µ”µ™•…ÑÕÉ•µÍ•Ñ¥½¸ˆ¤¤ì4)ô¤ì4(4)Ñ•ÍÐ ‰…‘Ù¥Í½Èµ½‘Õ±”¥Ì±½…‘•‰•™½É”Õ¤¹©Ì…¹ÁÉ•…¡•Õ¹‘•ÈÑ¡”Í¡…É•‰Õ¥±¥ˆ°€ ¤€ôøì4(€½¹ÍÐ‰Õ¥±€ô€ˆÈÀÈØÀÜÈÙ}ÕÉ•¹Ñ}‘¥É•Ñ}…ÕÑ½}½™™•É}ØÄˆì(€…ÍÍ•ÉÐ¹½¬¡%9a}M=UI¹¥¹‘•á=˜¡µ½‘Õ±•Ì½…‘Ù¥Í½È¹©ÌýØô‘í‰Õ¥±‘õ€¤€ð%9a}M=UI¹¥¹‘•á=˜¡µ½‘Õ±•Ì½Õ¤¹©ÌýØô‘í‰Õ¥±‘õ€¤¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡M]}M=UI°¹•ÜI•áÀ¡	U%1}%€ô€ˆ‘í‰Õ¥±‘ô‰€¤¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡M]}M=UI°€½µ½‘Õ±•Íp½…‘Ù¥Í½Ép¹©ÍpýØõp‘qí	U%1}%qô¼¤ì4)ô¤ì4(
+    const result = evaluate({ acType, monthsBand: "m6_8", symptoms: ["routine"], repairSignals: ["none"] });
+    assert.equal(result.verdict, "needs_assessment");
+    assert.equal(result.catalogIntent.acType, acType);
+    assert.equal(result.catalogIntent.variant, undefined);
+  }
+});
+
+test("catalog mapping uses exact authoritative metadata for all wash variants and repair", () => {
+  const { app } = loadAdvisor();
+  const { evaluateRecommendation, mapCatalogItems } = app.advisor._test;
+  const items = [
+    catalogItem(1),
+    catalogItem(2, { booking_wash_variant: "à¸¥à¹‰à¸²à¸‡à¸žà¸£à¸µà¹€à¸¡à¸µà¸¢à¸¡" }),
+    catalogItem(3, { booking_wash_variant: "à¸¥à¹‰à¸²à¸‡à¹à¸‚à¸§à¸™à¸„à¸­à¸¢à¸¥à¹Œ" }),
+    catalogItem(4, { booking_wash_variant: "à¸¥à¹‰à¸²à¸‡à¹à¸šà¸šà¸•à¸±à¸”à¸¥à¹‰à¸²à¸‡" }),
+    catalogItem(5, { item_name: "à¸•à¸£à¸§à¸ˆà¹€à¸Šà¹‡à¸„à¹à¸­à¸£à¹Œ", item_category: "à¸•à¸£à¸§à¸ˆà¹€à¸Šà¹‡à¸„", job_category: "à¸•à¸£à¸§à¸ˆà¹€à¸Šà¹‡à¸„", booking_mode: "contact_admin", booking_ac_type: null, booking_btu: null, booking_wash_variant: null }),
+  ];
+  const cases = [
+    [{ acType: "wall", monthsBand: "m4_5", symptoms: ["routine"], repairSignals: ["none"] }, 1],
+    [{ acType: "wall", monthsBand: "m6_8", symptoms: ["heavy_use"], repairSignals: ["none"] }, 2],
+    [{ acType: "wall", monthsBand: "m9_12", symptoms: ["odor"], repairSignals: ["none"] }, 3],
+    [{ acType: "wall", monthsBand: "over12", symptoms: ["heavy_dirt"], repairSignals: ["none"] }, 4],
+    [{ acType: "wall", monthsBand: "m4_5", symptoms: ["routine"], repairSignals: ["error_code"] }, 5],
+  ];
+  for (const [input, expectedId] of cases) {
+    const matches = mapCatalogItems(evaluateRecommendation(input), items, { adapter: (item) => item.booking_mode === "bookable" ? { draft: {} } : null });
+    assert.equal(matches[0].item.item_id, expectedId);
+    assert.equal(matches[0].exact, true);
+    if (expectedId === 5) assert.equal(matches[0].directBook, false);
+  }
+});
+
+test("catalog mapping filters inactive hidden duplicate rows and never treats incomplete metadata as direct-book", () => {
+  const { app } = loadAdvisor();
+  const recommendation = app.advisor._test.evaluateRecommendation({ acType: "wall", monthsBand: "m4_5", symptoms: ["routine"], repairSignals: ["none"] });
+  const items = [
+    catalogItem(1),
+    catalogItem(1, { item_name: "duplicate" }),
+    catalogItem(2, { is_active: false }),
+    catalogItem(3, { is_customer_visible: false }),
+    catalogItem(4, { booking_btu: null }),
+  ];
+  const matches = app.advisor._test.mapCatalogItems(recommendation, items, {
+    adapter: (item) => item.booking_btu ? { draft: {} } : null,
+  });
+  assert.deepEqual(plain(matches.map((match) => match.item.item_id)), [1, 4]);
+  assert.equal(matches[0].directBook, true);
+  assert.equal(matches[1].directBook, false);
+});
+
+test("non-wall catalog matching requires the exact AC type", () => {
+  const { app } = loadAdvisor();
+  const recommendation = app.advisor._test.evaluateRecommendation({ acType: "fourway", monthsBand: "m6_8", symptoms: ["routine"], repairSignals: ["none"] });
+  const matches = app.advisor._test.mapCatalogItems(recommendation, [
+    catalogItem(1),
+    catalogItem(2, { booking_ac_type: "à¸ªà¸µà¹ˆà¸—à¸´à¸¨à¸—à¸²à¸‡", booking_wash_variant: null, item_name: "à¸¥à¹‰à¸²à¸‡à¹à¸­à¸£à¹Œà¸ªà¸µà¹ˆà¸—à¸´à¸¨à¸—à¸²à¸‡" }),
+  ], { adapter: () => ({ draft: {} }) });
+  assert.equal(matches[0].item.item_id, 2);
+  assert.equal(matches[0].exact, true);
+  assert.equal(matches.length, 1);
+});
+
+test("catalog mapping excludes cross-AC and limits wrong wall variants to explicit alternatives", () => {
+  const { app } = loadAdvisor();
+  const standard = app.advisor._test.evaluateRecommendation({ acType: "wall", monthsBand: "m4_5", symptoms: ["routine"], repairSignals: ["none"] });
+  const premium = catalogItem(2, { booking_wash_variant: "à¸¥à¹‰à¸²à¸‡à¸žà¸£à¸µà¹€à¸¡à¸µà¸¢à¸¡", item_name: "à¸¥à¹‰à¸²à¸‡à¸žà¸£à¸µà¹€à¸¡à¸µà¸¢à¸¡" });
+  const fourway = catalogItem(3, { booking_ac_type: "à¸ªà¸µà¹ˆà¸—à¸´à¸¨à¸—à¸²à¸‡", booking_wash_variant: null, item_name: "à¸¥à¹‰à¸²à¸‡à¹à¸­à¸£à¹Œà¸ªà¸µà¹ˆà¸—à¸´à¸¨à¸—à¸²à¸‡" });
+  const matches = app.advisor._test.mapCatalogItems(standard, [premium, fourway], { adapter: () => ({ draft: {} }) });
+  assert.equal(matches.length, 1);
+  assert.equal(matches[0].item.item_id, 2);
+  assert.equal(matches[0].matchType, "alternative");
+  assert.equal(matches[0].directBook, false);
+
+  const html = app.advisor._test.stepContent({
+    step: 4,
+    acType: "wall",
+    monthsBand: "m4_5",
+    symptoms: ["routine"],
+    repairSignals: ["none"],
+    recommendation: standard,
+  }, { status: "success", items: [premium, fourway] });
+  assert.match(html, /à¸—à¸²à¸‡à¹€à¸¥à¸·à¸­à¸à¸ªà¸³à¸£à¸­à¸‡/);
+  assert.doesNotMatch(html, /à¸¥à¹‰à¸²à¸‡à¹à¸­à¸£à¹Œà¸ªà¸µà¹ˆà¸—à¸´à¸¨à¸—à¸²à¸‡/);
+  assert.doesNotMatch(html, /à¸ˆà¸­à¸‡à¸šà¸£à¸´à¸à¸²à¸£à¸™à¸µà¹‰/);
+});
+
+test("no exact Catalog match renders assessment CTA instead of a wrong direct-book action", () => {
+  const { app } = loadAdvisor();
+  const recommendation = app.advisor._test.evaluateRecommendation({ acType: "wall", monthsBand: "m4_5", symptoms: ["routine"], repairSignals: ["none"] });
+  recommendation.alternative = null;
+  const html = app.advisor._test.stepContent({
+    step: 4,
+    acType: "wall",
+    monthsBand: "m4_5",
+    symptoms: ["routine"],
+    repairSignals: ["none"],
+    recommendation,
+  }, { status: "success", items: [catalogItem(9, { booking_ac_type: "à¸ªà¸µà¹ˆà¸—à¸´à¸¨à¸—à¸²à¸‡" })] });
+  assert.match(html, /à¹ƒà¸«à¹‰à¸—à¸µà¸¡à¸Šà¹ˆà¸§à¸¢à¸›à¸£à¸°à¹€à¸¡à¸´à¸™/);
+  assert.match(html, /class="primary-btn"[^>]*data-advisor-contact/);
+  assert.doesNotMatch(html, /à¸ˆà¸­à¸‡à¸šà¸£à¸´à¸à¸²à¸£à¸™à¸µà¹‰/);
+});
+
+test("result footer keeps reset secondary while business actions remain primary", () => {
+  const { app } = loadAdvisor();
+  const resultState = {
+    ...app.advisor._test.initialState(),
+    step: 4,
+    recommendation: app.advisor._test.evaluateRecommendation({
+      acType: "wall",
+      monthsBand: "m4_5",
+      symptoms: ["routine"],
+      repairSignals: ["none"],
+    }),
+  };
+  const footer = app.advisor._test.sheetActions(resultState);
+  assert.match(footer, /data-advisor-back/);
+  assert.match(footer, /data-advisor-reset/);
+  assert.doesNotMatch(footer, /primary-btn/);
+
+  const exactHtml = app.advisor._test.stepContent(resultState, {
+    status: "success",
+    items: [catalogItem(1)],
+  });
+  assert.match(exactHtml, /class="primary-btn"[^>]*data-advisor-item-action/);
+
+  const repairState = {
+    ...resultState,
+    recommendation: app.advisor._test.evaluateRecommendation({
+      acType: "wall",
+      monthsBand: "m4_5",
+      symptoms: ["routine"],
+      repairSignals: ["error_code"],
+    }),
+  };
+  const repairHtml = app.advisor._test.stepContent(repairState, {
+    status: "success",
+    items: [],
+  });
+  assert.match(repairHtml, /class="primary-btn"[^>]*data-advisor-contact/);
+});
+
+test("wizard advances, supports multi-select, refreshes Catalog, resets, and binds once", () => {
+  const { app, document } = loadAdvisor({ catalog: { status: "loading", items: [] } });
+  const mount = new FakeMount(document);
+  const container = { querySelector: (selector) => selector === "[data-smart-advisor]" ? mount : null };
+  const first = app.advisor.bind(container);
+  const second = app.advisor.bind(container);
+  assert.equal(first, second);
+  assert.equal(mount.listeners.size, 1);
+
+  mount.click({ "data-advisor-launch": "" });
+  mount.click({ "data-advisor-ac": "wall" });
+  mount.click({ "data-advisor-months": "m6_8" });
+  mount.click({ "data-advisor-symptom": "heavy_use" });
+  mount.click({ "data-advisor-symptom": "pets" });
+  mount.click({ "data-advisor-symptoms-done": "" });
+  mount.click({ "data-advisor-repair": "none" });
+  assert.equal(first.state().recommendation.verdict, "premium_clean");
+  assert.match(mount.html(), /à¸à¸³à¸¥à¸±à¸‡à¸„à¹‰à¸™à¸«à¸²à¸šà¸£à¸´à¸à¸²à¸£à¸—à¸µà¹ˆà¸•à¸£à¸‡à¸ˆà¸²à¸ Catalog/);
+  assert.equal(mount.resultFocuses, 1);
+
+  app.state.catalog.status = "success";
+  app.state.catalog.items = [catalogItem(2, { booking_wash_variant: "à¸¥à¹‰à¸²à¸‡à¸žà¸£à¸µà¹€à¸¡à¸µà¸¢à¸¡", item_name: "à¸¥à¹‰à¸²à¸‡à¹à¸­à¸£à¹Œà¸žà¸£à¸µà¹€à¸¡à¸µà¸¢à¸¡" })];
+  app.advisor.refreshCatalog(container);
+  assert.match(mount.html(), /à¸¥à¹‰à¸²à¸‡à¹à¸­à¸£à¹Œà¸žà¸£à¸µà¹€à¸¡à¸µà¸¢à¸¡/);
+  mount.click({ "data-advisor-back": "" });
+  assert.equal(first.state().step, 3);
+  mount.click({ "data-advisor-reset": "" });
+  assert.equal(first.state().step, 0);
+  assert.equal(first.state().recommendation, null);
+  assert.match(mount.html(), /à¹à¸­à¸£à¹Œà¸‚à¸­à¸‡à¸„à¸¸à¸“à¹€à¸›à¹‡à¸™à¹à¸šà¸šà¹„à¸«à¸™/);
+  first.cleanup();
+  assert.equal(mount.listeners.size, 0);
+});
+
+test("launcher opens an accessible sheet and close resumes the saved step", () => {
+  const runtime = loadAdvisor();
+  const mount = new FakeMount(runtime.document);
+  const controller = runtime.app.advisor.bind({ querySelector: () => mount });
+  assert.equal(mount.host.innerHTML, "");
+  assert.doesNotMatch(mount.launcher.innerHTML, /data-advisor-ac/);
+
+  mount.click({ "data-advisor-launch": "" });
+  assert.equal(controller.state().isOpen, true);
+  assert.match(mount.launcher.innerHTML, /aria-expanded="true"/);
+  assert.match(mount.host.innerHTML, /role="dialog"/);
+  assert.match(mount.host.innerHTML, /aria-modal="true"/);
+  assert.match(mount.html(), /data-advisor-ac/);
+  assert.ok(runtime.document.body.classList.contains("has-advisor-sheet"));
+  assert.equal(mount.questionFocuses, 1);
+
+  mount.click({ "data-advisor-ac": "wall" });
+  assert.equal(controller.state().step, 1);
+  assert.equal(mount.scroll.scrollTop, 0);
+  mount.click({ "data-advisor-close": "" });
+  assert.equal(controller.state().isOpen, false);
+  assert.equal(controller.state().acType, "wall");
+  assert.equal(mount.host.innerHTML, "");
+  assert.match(mount.launcher.innerHTML, /à¸—à¸³à¹à¸šà¸šà¸›à¸£à¸°à¹€à¸¡à¸´à¸™à¸•à¹ˆà¸­/);
+  assert.match(mount.launcher.innerHTML, /à¸—à¸³à¸–à¸¶à¸‡à¸‚à¸±à¹‰à¸™à¸—à¸µà¹ˆ 2 à¸ˆà¸²à¸ 4/);
+  assert.ok(!runtime.document.body.classList.contains("has-advisor-sheet"));
+  assert.equal(mount.launcherFocuses, 1);
+  assert.match(mount.launcher.innerHTML, /aria-expanded="false"/);
+
+  mount.click({ "data-advisor-launch": "" });
+  assert.equal(controller.state().step, 1);
+  assert.match(mount.html(), /data-advisor-months/);
+  assert.doesNotMatch(mount.html(), /data-advisor-ac=/);
+});
+
+test("sheet uses one body-level portal with separate event delegation and no orphan nodes", () => {
+  const runtime = loadAdvisor();
+  const mount = new FakeMount(runtime.document);
+  const controller = runtime.app.advisor.bind({ querySelector: () => mount });
+  assert.equal(runtime.document.body.children.length, 0);
+
+  mount.click({ "data-advisor-launch": "" });
+  const firstPortal = runtime.document.portal;
+  assert.ok(firstPortal);
+  assert.equal(firstPortal.parentElement, runtime.document.body);
+  assert.equal(firstPortal.getAttribute("data-advisor-portal"), "");
+  assert.equal(runtime.document.body.children.length, 1);
+  assert.equal(mount.listeners.size, 1);
+  assert.equal(firstPortal.listeners.size, 1);
+  assert.equal(mount.querySelector("[data-advisor-dialog]"), null);
+  assert.match(firstPortal.innerHTML, /data-advisor-dialog/);
+
+  mount.click({ "data-advisor-close": "" });
+  assert.equal(runtime.document.portal, null);
+  assert.equal(runtime.document.body.children.length, 0);
+  assert.equal(firstPortal.listeners.size, 0);
+
+  mount.click({ "data-advisor-launch": "" });
+  assert.notEqual(runtime.document.portal, firstPortal);
+  assert.equal(runtime.document.body.children.length, 1);
+  controller.cleanup();
+  assert.equal(runtime.document.portal, null);
+  assert.equal(runtime.document.body.children.length, 0);
+  assert.equal(mount.listeners.size, 0);
+});
+
+test("single choices auto-flow while symptoms remain multi-select and Back preserves answers", () => {
+  const runtime = loadAdvisor();
+  const mount = new FakeMount(runtime.document);
+  const controller = runtime.app.advisor.bind({ querySelector: () => mount });
+  mount.click({ "data-advisor-launch": "" });
+  assert.equal(controller.state().step, 0);
+  assert.equal(mount.actions.hidden, true);
+
+  mount.click({ "data-advisor-ac": "wall" });
+  assert.equal(controller.state().step, 1);
+  assert.match(runtime.document.portal.leading.innerHTML, /data-advisor-back/);
+  assert.match(runtime.document.portal.leading.innerHTML, /aria-label="à¸¢à¹‰à¸­à¸™à¸à¸¥à¸±à¸š"/);
+  assert.match(runtime.document.portal.leading.innerHTML, /data-advisor-icon="arrow-left"/);
+  assert.doesNotMatch(runtime.document.portal.leading.innerHTML, /data-icon="sparkle"/);
+  mount.click({ "data-advisor-months": "m6_8" });
+  assert.equal(controller.state().step, 2);
+
+  mount.click({ "data-advisor-symptom": "heavy_use" });
+  mount.click({ "data-advisor-symptom": "pets" });
+  assert.equal(controller.state().step, 2);
+  assert.deepEqual(Array.from(controller.state().symptoms), ["heavy_use", "pets"]);
+  assert.match(mount.actions.innerHTML, /data-advisor-symptoms-done/);
+  assert.doesNotMatch(mount.actions.innerHTML, /à¸‚à¸±à¹‰à¸™à¸•à¹ˆà¸­à¹„à¸›/);
+  mount.click({ "data-advisor-symptoms-done": "" });
+  assert.equal(controller.state().step, 3);
+  assert.equal(mount.actions.hidden, true);
+  assert.doesNotMatch(mount.actions.innerHTML, /à¸”à¸¹à¸œà¸¥à¸›à¸£à¸°à¹€à¸¡à¸´à¸™/);
+
+  mount.click({ "data-advisor-back": "" });
+  assert.equal(controller.state().step, 2);
+  assert.deepEqual(Array.from(controller.state().symptoms), ["heavy_use", "pets"]);
+  mount.click({ "data-advisor-symptoms-done": "" });
+  mount.click({ "data-advisor-repair": "error_code" });
+  assert.equal(controller.state().step, 4);
+  assert.equal(controller.state().recommendation.verdict, "repair_check");
+});
+
+test("semantic Back icon has its own arrow path instead of a utility fallback", () => {
+  assert.match(SOURCE, /"arrow-left":\s*'<path d="M19 12H5M11 18l-6-6 6-6"\/>'/);
+  assert.match(SOURCE, /data-advisor-back[^>]*aria-label="à¸¢à¹‰à¸­à¸™à¸à¸¥à¸±à¸š"[^>]*>\$\{semanticIcon\("arrow-left", 19\)\}/);
+  assert.doesNotMatch(SOURCE, /data-advisor-back[^>]*>\$\{icon\("arrow-left"/);
+  assert.match(CSS_SOURCE, /\.advisor-sheet-back\s*\{[^}]*width:\s*44px[^}]*height:\s*44px/s);
+  assert.match(CSS_SOURCE, /\.advisor-portal-root\s*\{[^}]*pointer-events:\s*none/s);
+  assert.match(CSS_SOURCE, /\.advisor-portal-root\.is-open\s*\{\s*pointer-events:\s*auto;?\s*\}/);
+  assert.match(CSS_SOURCE, /\.advisor-portal-root\.is-closing\s*\{\s*pointer-events:\s*none;?\s*\}/);
+});
+
+test("routine and no-repair choices auto-flow without dropping exclusive state", () => {
+  const runtime = loadAdvisor();
+  const mount = new FakeMount(runtime.document);
+  const controller = runtime.app.advisor.bind({ querySelector: () => mount });
+  mount.click({ "data-advisor-launch": "" });
+  mount.click({ "data-advisor-ac": "wall" });
+  mount.click({ "data-advisor-months": "m4_5" });
+  mount.click({ "data-advisor-symptom": "heavy_use" });
+  mount.click({ "data-advisor-symptom": "routine" });
+  assert.equal(controller.state().step, 3);
+  assert.deepEqual(Array.from(controller.state().symptoms), ["routine"]);
+  mount.click({ "data-advisor-repair": "none" });
+  assert.equal(controller.state().step, 4);
+  assert.equal(controller.state().recommendation.verdict, "standard_clean");
+  mount.click({ "data-advisor-back": "" });
+  assert.equal(controller.state().step, 3);
+  mount.click({ "data-advisor-back": "" });
+  assert.equal(controller.state().step, 2);
+  mount.click({ "data-advisor-symptom": "routine" });
+  assert.equal(controller.state().step, 3);
+  assert.deepEqual(Array.from(controller.state().symptoms), ["routine"]);
+});
+
+test("repair choices evaluate immediately with repair-first outcomes", () => {
+  for (const signal of ["error_code", "outdoor_not_running", "breaker_trip"]) {
+    const runtime = loadAdvisor();
+    const mount = new FakeMount(runtime.document);
+    const controller = runtime.app.advisor.bind({ querySelector: () => mount });
+    mount.click({ "data-advisor-launch": "" });
+    mount.click({ "data-advisor-ac": "wall" });
+    mount.click({ "data-advisor-months": "m4_5" });
+    mount.click({ "data-advisor-symptom": "routine" });
+    assert.equal(controller.state().step, 3, signal);
+    assert.equal(mount.actions.hidden, true, signal);
+    mount.click({ "data-advisor-repair": signal });
+    assert.equal(controller.state().step, 4, signal);
+    assert.equal(controller.state().recommendation.verdict, "repair_check", signal);
+    controller.cleanup();
+  }
+});
+
+test("selection lock prevents double advance and close cancels ghost navigation", () => {
+  const runtime = loadAdvisor({ deferTimers: true });
+  const mount = new FakeMount(runtime.document);
+  const controller = runtime.app.advisor.bind({ querySelector: () => mount });
+  mount.click({ "data-advisor-launch": "" });
+  mount.click({ "data-advisor-ac": "wall" });
+  mount.click({ "data-advisor-ac": "fourway" });
+  assert.equal(controller.state().step, 0);
+  assert.equal(controller.state().acType, "wall");
+  assert.equal(runtime.timers.size, 1);
+  runtime.runTimers();
+  assert.equal(controller.state().step, 1);
+
+  mount.click({ "data-advisor-months": "m4_5" });
+  assert.equal(runtime.timers.size, 1);
+  mount.click({ "data-advisor-close": "" });
+  assert.equal(controller.state().isOpen, false);
+  assert.equal(runtime.timers.size, 1);
+  runtime.runTimers();
+  assert.equal(controller.state().step, 1);
+  assert.equal(runtime.document.portal, null);
+
+  const reduced = loadAdvisor({ reducedMotion: true });
+  const reducedMount = new FakeMount(reduced.document);
+  const reducedController = reduced.app.advisor.bind({ querySelector: () => reducedMount });
+  reducedMount.click({ "data-advisor-launch": "" });
+  reducedMount.click({ "data-advisor-ac": "wall" });
+  assert.equal(reducedController.state().step, 1);
+  assert.equal(reduced.timers.size, 0);
+});
+
+test("semantic choice icons are deterministic, distinct, and emoji-free", () => {
+  const { app } = loadAdvisor();
+  const renderIcons = (step) => Array.from(app.advisor._test.stepContent({
+    step,
+    acType: "",
+    monthsBand: "",
+    symptoms: [],
+    repairSignals: [],
+    recommendation: null,
+  }, { status: "success", items: [] }).matchAll(/data-advisor-icon="([^"]+)"/g), (match) => match[1]);
+  const acIcons = renderIcons(0);
+  const monthIcons = renderIcons(1);
+  const symptomIcons = renderIcons(2);
+  const repairIcons = renderIcons(3);
+  assert.equal(acIcons.length, 5);
+  assert.equal(new Set(acIcons).size, 5);
+  assert.equal(monthIcons.length, 6);
+  assert.ok(new Set(monthIcons).size > 3);
+  assert.equal(symptomIcons.length, 12);
+  assert.equal(new Set(symptomIcons).size, 12);
+  assert.equal(repairIcons.length, 7);
+  assert.equal(new Set(repairIcons).size, 7);
+  assert.doesNotMatch([acIcons, monthIcons, symptomIcons, repairIcons].flat().join(""), /[\u{1F300}-\u{1FAFF}]/u);
+});
+
+test("visualViewport drives the mobile panel and listeners clean up on close and route leave", () => {
+  const runtime = loadAdvisor({ visualViewport: { height: 612.4, offsetTop: 48.6 } });
+  const mount = new FakeMount(runtime.document);
+  const controller = runtime.app.advisor.bind({ querySelector: () => mount });
+  mount.click({ "data-advisor-launch": "" });
+  const portal = runtime.document.portal;
+  assert.equal(portal.style.getPropertyValue("--advisor-viewport-height"), "612px");
+  assert.equal(portal.style.getPropertyValue("--advisor-viewport-top"), "49px");
+  assert.deepEqual(Array.from(runtime.visualViewport.listeners.keys()).sort(), ["resize", "scroll"]);
+
+  runtime.visualViewport.height = 488.2;
+  runtime.visualViewport.offsetTop = 72.1;
+  runtime.visualViewport.emit("resize");
+  assert.equal(portal.style.getPropertyValue("--advisor-viewport-height"), "488px");
+  assert.equal(portal.style.getPropertyValue("--advisor-viewport-top"), "72px");
+  runtime.visualViewport.offsetTop = 16;
+  runtime.visualViewport.emit("scroll");
+  assert.equal(portal.style.getPropertyValue("--advisor-viewport-top"), "16px");
+
+  mount.click({ "data-advisor-close": "" });
+  assert.equal(runtime.visualViewport.listeners.size, 0);
+  assert.equal(runtime.document.portal, null);
+  mount.click({ "data-advisor-launch": "" });
+  controller.cleanup();
+  assert.equal(runtime.visualViewport.listeners.size, 0);
+});
+
+test("animated close preserves viewport geometry until the panel is removed", () => {
+  const runtime = loadAdvisor({
+    deferTimers: true,
+    visualViewport: { height: 486.2, offsetTop: 71.7 },
+  });
+  const mount = new FakeMount(runtime.document);
+  runtime.app.advisor.bind({ querySelector: () => mount });
+  mount.click({ "data-advisor-launch": "" });
+  const portal = runtime.document.portal;
+  assert.equal(portal.style.getPropertyValue("--advisor-viewport-height"), "486px");
+  assert.equal(portal.style.getPropertyValue("--advisor-viewport-top"), "72px");
+
+  mount.click({ "data-advisor-close": "" });
+  assert.equal(runtime.visualViewport.listeners.size, 0);
+  assert.ok(!portal.classList.contains("is-open"));
+  assert.ok(portal.classList.contains("is-closing"));
+  assert.equal(portal.style.getPropertyValue("--advisor-viewport-height"), "486px");
+  assert.equal(portal.style.getPropertyValue("--advisor-viewport-top"), "72px");
+  assert.match(mount.host.innerHTML, /data-advisor-dialog/);
+  assert.ok(mount.layer.classList.contains("is-closing"));
+
+  runtime.visualViewport.height = 760;
+  runtime.visualViewport.offsetTop = 0;
+  runtime.visualViewport.emit("resize");
+  assert.equal(portal.style.getPropertyValue("--advisor-viewport-height"), "486px");
+  assert.equal(portal.style.getPropertyValue("--advisor-viewport-top"), "72px");
+
+  runtime.runTimers();
+  assert.equal(mount.host.innerHTML, "");
+  assert.equal(portal.style.getPropertyValue("--advisor-viewport-height"), "");
+  assert.equal(portal.style.getPropertyValue("--advisor-viewport-top"), "");
+  assert.equal(runtime.document.portal, null);
+});
+
+test("animated close blocks every Portal action before the node is removed", () => {
+  let adapterCalls = 0;
+  let applyCalls = 0;
+  const runtime = loadAdvisor({
+    deferTimers: true,
+    catalog: { status: "success", items: [catalogItem(1)] },
+    adapter: (item) => { adapterCalls += 1; return { id: item.item_id, draft: {} }; },
+    apply: () => { applyCalls += 1; return true; },
+  });
+  const mount = new FakeMount(runtime.document);
+  const controller = runtime.app.advisor.bind({ querySelector: () => mount });
+  mount.click({ "data-advisor-launch": "" });
+  mount.click({ "data-advisor-ac": "wall" });
+  runtime.runTimers();
+  mount.click({ "data-advisor-months": "m4_5" });
+  runtime.runTimers();
+  mount.click({ "data-advisor-symptom": "routine" });
+  runtime.runTimers();
+  mount.click({ "data-advisor-repair": "none" });
+  runtime.runTimers();
+  assert.equal(controller.state().step, 4);
+
+  const portal = runtime.document.portal;
+  const stateBeforeClose = controller.state();
+  const adapterCallsBeforeClose = adapterCalls;
+  const applyCallsBeforeClose = applyCalls;
+  mount.click({ "data-advisor-close": "" });
+  assert.ok(!portal.classList.contains("is-open"));
+  assert.ok(portal.classList.contains("is-closing"));
+  assert.equal(portal.listeners.size, 1);
+
+  mount.click({ "data-advisor-ac": "fourway" });
+  mount.click({ "data-advisor-back": "" });
+  mount.click({ "data-advisor-repair": "error_code" });
+  mount.click({ "data-advisor-item-action": "1" });
+  mount.click({ "data-advisor-detail": "1" });
+  mount.click({ "data-advisor-contact": "" });
+  mount.click({ "data-advisor-reset": "" });
+
+  assert.deepEqual(plain(controller.state()), plain({ ...stateBeforeClose, isOpen: false }));
+  assert.equal(adapterCalls, adapterCallsBeforeClose);
+  assert.equal(applyCalls, applyCallsBeforeClose);
+  assert.deepEqual(runtime.routes, []);
+  assert.deepEqual(runtime.contacts, []);
+  assert.equal(runtime.timers.size, 1);
+
+  runtime.runTimers();
+  assert.equal(runtime.document.portal, null);
+  assert.equal(portal.listeners.size, 0);
+});
+
+test("reopening during a pending close replaces the Portal and binds one working listener", () => {
+  const runtime = loadAdvisor({ deferTimers: true });
+  const mount = new FakeMount(runtime.document);
+  const controller = runtime.app.advisor.bind({ querySelector: () => mount });
+  mount.click({ "data-advisor-launch": "" });
+  const closingPortal = runtime.document.portal;
+  mount.click({ "data-advisor-close": "" });
+  assert.equal(runtime.timers.size, 1);
+  assert.ok(closingPortal.classList.contains("is-closing"));
+
+  mount.click({ "data-advisor-launch": "" });
+  const reopenedPortal = runtime.document.portal;
+  assert.notEqual(reopenedPortal, closingPortal);
+  assert.equal(runtime.timers.size, 0);
+  assert.equal(runtime.document.body.children.length, 1);
+  assert.equal(closingPortal.listeners.size, 0);
+  assert.equal(reopenedPortal.listeners.size, 1);
+  assert.ok(reopenedPortal.classList.contains("is-open"));
+  assert.ok(!reopenedPortal.classList.contains("is-closing"));
+
+  mount.click({ "data-advisor-ac": "wall" });
+  assert.equal(runtime.timers.size, 1);
+  runtime.runTimers();
+  assert.equal(controller.state().step, 1);
+  assert.equal(controller.state().acType, "wall");
+  controller.cleanup();
+});
+
+test("immediate close and cleanup remove viewport listeners and variables without delay", () => {
+  const immediateRuntime = loadAdvisor({
+    deferTimers: true,
+    visualViewport: { height: 520, offsetTop: 36 },
+  });
+  const immediateMount = new FakeMount(immediateRuntime.document);
+  const immediateController = immediateRuntime.app.advisor.bind({ querySelector: () => immediateMount });
+  immediateMount.click({ "data-advisor-launch": "" });
+  const immediatePortal = immediateRuntime.document.portal;
+  immediateController.close({ immediate: true });
+  assert.equal(immediateRuntime.visualViewport.listeners.size, 0);
+  assert.equal(immediatePortal.style.getPropertyValue("--advisor-viewport-height"), "");
+  assert.equal(immediatePortal.style.getPropertyValue("--advisor-viewport-top"), "");
+  assert.equal(immediateRuntime.document.portal, null);
+  assert.equal(immediateMount.host.innerHTML, "");
+
+  const cleanupRuntime = loadAdvisor({
+    deferTimers: true,
+    visualViewport: { height: 440, offsetTop: 84 },
+  });
+  const cleanupMount = new FakeMount(cleanupRuntime.document);
+  const cleanupController = cleanupRuntime.app.advisor.bind({ querySelector: () => cleanupMount });
+  cleanupMount.click({ "data-advisor-launch": "" });
+  cleanupMount.click({ "data-advisor-close": "" });
+  assert.equal(cleanupRuntime.timers.size, 1);
+  cleanupController.cleanup();
+  assert.equal(cleanupRuntime.timers.size, 0);
+  assert.equal(cleanupRuntime.visualViewport.listeners.size, 0);
+  assert.equal(cleanupRuntime.document.portal, null);
+  assert.ok(!cleanupRuntime.document.body.classList.contains("has-advisor-sheet"));
+});
+
+test("visualViewport fallback uses window height and removes its resize listener", () => {
+  const runtime = loadAdvisor({ innerHeight: 701 });
+  const mount = new FakeMount(runtime.document);
+  const controller = runtime.app.advisor.bind({ querySelector: () => mount });
+  mount.click({ "data-advisor-launch": "" });
+  assert.equal(runtime.document.portal.style.getPropertyValue("--advisor-viewport-height"), "701px");
+  assert.deepEqual(Array.from(runtime.window.listeners.keys()), ["resize"]);
+  runtime.window.innerHeight = 640;
+  runtime.window.emit("resize");
+  assert.equal(runtime.document.portal.style.getPropertyValue("--advisor-viewport-height"), "640px");
+  controller.cleanup();
+  assert.equal(runtime.window.listeners.size, 0);
+});
+
+test("sheet shell opens once while steps and Catalog refresh update in place", () => {
+  const runtime = loadAdvisor({ catalog: { status: "loading", items: [] } });
+  const mount = new FakeMount(runtime.document);
+  const container = { querySelector: () => mount };
+  const controller = runtime.app.advisor.bind(container);
+
+  mount.click({ "data-advisor-launch": "" });
+  const openingPortal = runtime.document.portal;
+  const openingShell = mount.host.innerHTML;
+  assert.equal(mount.shellWrites, 1);
+  assert.match(openingShell, /advisor-sheet-layer is-opening/);
+  assert.ok(mount.layer.classList.contains("is-opening"));
+
+  mount.click({ "data-advisor-ac": "wall" });
+  assert.equal(mount.shellWrites, 1);
+  assert.equal(mount.host.innerHTML, openingShell);
+  assert.ok(!mount.layer.classList.contains("is-opening"));
+  assert.ok(mount.body.classList.contains("is-step-forward"));
+
+  mount.click({ "data-advisor-back": "" });
+  assert.equal(mount.shellWrites, 1);
+  assert.ok(mount.body.classList.contains("is-step-back"));
+
+  mount.click({ "data-advisor-ac": "wall" });
+  mount.click({ "data-advisor-months": "m4_5" });
+  mount.click({ "data-advisor-symptom": "routine" });
+  mount.click({ "data-advisor-repair": "none" });
+  assert.equal(controller.state().step, 4);
+  assert.equal(mount.shellWrites, 1);
+
+  const focusedBeforeRefresh = new FakeElement();
+  runtime.document.activeElement = focusedBeforeRefresh;
+  mount.scroll.scrollTop = 173;
+  const resultFocuses = mount.resultFocuses;
+  runtime.app.state.catalog.status = "success";
+  runtime.app.state.catalog.items = [catalogItem(1)];
+  runtime.app.advisor.refreshCatalog(container);
+  assert.equal(mount.shellWrites, 1);
+  assert.equal(mount.host.innerHTML, openingShell);
+  assert.equal(mount.scroll.scrollTop, 173);
+  assert.equal(runtime.document.activeElement, focusedBeforeRefresh);
+  assert.equal(mount.resultFocuses, resultFocuses);
+  assert.match(mount.catalog.innerHTML, /data-advisor-product="1"/);
+
+  mount.click({ "data-advisor-close": "" });
+  assert.equal(mount.host.innerHTML, "");
+  mount.click({ "data-advisor-launch": "" });
+  assert.notEqual(runtime.document.portal, openingPortal);
+  assert.equal(mount.shellWrites, 1);
+  assert.ok(mount.layer.classList.contains("is-opening"));
+});
+
+test("multi-select exclusive choices and Back preserve the existing answers", () => {
+  const runtime = loadAdvisor();
+  const mount = new FakeMount(runtime.document);
+  const controller = runtime.app.advisor.bind({ querySelector: () => mount });
+  mount.click({ "data-advisor-launch": "" });
+  mount.click({ "data-advisor-ac": "wall" });
+  mount.click({ "data-advisor-months": "m6_8" });
+  mount.click({ "data-advisor-symptom": "heavy_use" });
+  mount.click({ "data-advisor-symptom": "pets" });
+  assert.deepEqual(Array.from(controller.state().symptoms), ["heavy_use", "pets"]);
+  assert.equal(controller.state().step, 2);
+  assert.match(mount.actions.innerHTML, /data-advisor-symptoms-done/);
+  mount.click({ "data-advisor-symptoms-done": "" });
+  assert.equal(controller.state().step, 3);
+  mount.click({ "data-advisor-back": "" });
+  assert.equal(controller.state().step, 2);
+  assert.deepEqual(Array.from(controller.state().symptoms), ["heavy_use", "pets"]);
+  assert.equal(mount.scroll.scrollTop, 0);
+});
+
+test("Escape, backdrop, focus trap and cleanup close the sheet without leaking listeners", () => {
+  const runtime = loadAdvisor();
+  const mount = new FakeMount(runtime.document);
+  const controller = runtime.app.advisor.bind({ querySelector: () => mount });
+  mount.click({ "data-advisor-launch": "" });
+  assert.equal(runtime.document.listeners.size, 1);
+  runtime.document.activeElement = mount.nextButton;
+  assert.equal(runtime.document.keydown("Tab"), true);
+  assert.equal(runtime.document.activeElement, mount.closeButton);
+  assert.equal(runtime.document.keydown("Escape"), true);
+  assert.equal(controller.state().isOpen, false);
+  assert.equal(runtime.document.listeners.size, 0);
+
+  mount.click({ "data-advisor-launch": "" });
+  mount.clickBackdrop();
+  assert.equal(controller.state().isOpen, false);
+  mount.click({ "data-advisor-launch": "" });
+  controller.cleanup();
+  assert.equal(runtime.document.listeners.size, 0);
+  assert.ok(!runtime.document.body.classList.contains("has-advisor-sheet"));
+  assert.equal(mount.listeners.size, 0);
+});
+
+test("closed result stays compact and never exposes Catalog cards on Home", () => {
+  const runtime = loadAdvisor({ catalog: { status: "success", items: [catalogItem(1)] } });
+  const mount = new FakeMount(runtime.document);
+  const controller = runtime.app.advisor.bind({ querySelector: () => mount });
+  completeWallStandardAdvisor(mount);
+  assert.equal(controller.state().recommendation.verdict, "standard_clean");
+  assert.match(mount.html(), /advisor-result-products/);
+  mount.click({ "data-advisor-close": "" });
+  assert.match(mount.launcher.innerHTML, /à¸œà¸¥à¸¥à¹ˆà¸²à¸ªà¸¸à¸”/);
+  assert.match(mount.launcher.innerHTML, /à¸”à¸¹à¸œà¸¥à¸›à¸£à¸°à¹€à¸¡à¸´à¸™/);
+  assert.doesNotMatch(mount.launcher.innerHTML, /advisor-product|data-advisor-item-action/);
+  assert.equal(mount.host.innerHTML, "");
+  mount.click({ "data-advisor-reset-launcher": "" });
+  assert.equal(controller.state().recommendation, null);
+  assert.equal(controller.state().step, 0);
+  assert.equal(controller.state().isOpen, true);
+  assert.match(mount.html(), /data-advisor-ac=/);
+});
+
+test("booking handoff routes only after both existing adapters succeed and otherwise contacts", () => {
+  const item = catalogItem(8);
+  const success = loadAdvisor({ catalog: { status: "success", items: [item] } });
+  const mount = new FakeMount(success.document);
+  const container = { querySelector: (selector) => selector === "[data-smart-advisor]" ? mount : null };
+  success.app.advisor.bind(container);
+  completeWallStandardAdvisor(mount);
+  mount.click({ "data-advisor-item-action": "8" });
+  assert.deepEqual(success.routes, ["scheduled"]);
+  assert.equal(success.applied.length, 1);
+  assert.equal(success.contacts.length, 0);
+
+  const denied = loadAdvisor({ catalog: { status: "success", items: [item] }, adapter: () => null });
+  const deniedMount = new FakeMount(denied.document);
+  denied.app.advisor.bind({ querySelector: () => deniedMount });
+  completeWallStandardAdvisor(deniedMount);
+  deniedMount.click({ "data-advisor-item-action": "8" });
+  assert.equal(denied.routes.length, 0);
+  assert.equal(denied.contacts.length, 1);
+
+  const applyDenied = loadAdvisor({ catalog: { status: "success", items: [item] }, apply: () => false });
+  const applyMount = new FakeMount(applyDenied.document);
+  applyDenied.app.advisor.bind({ querySelector: () => applyMount });
+  completeWallStandardAdvisor(applyMount);
+  applyMount.click({ "data-advisor-item-action": "8" });
+  assert.equal(applyDenied.routes.length, 0);
+  assert.equal(applyDenied.contacts.length, 1);
+});
+
+test("manipulated unrelated Catalog item id is rejected before booking adapters run", () => {
+  let adapterCalls = 0;
+  let applyCalls = 0;
+  const unrelated = catalogItem(9, { booking_ac_type: "à¸ªà¸µà¹ˆà¸—à¸´à¸¨à¸—à¸²à¸‡", booking_wash_variant: null });
+  const runtime = loadAdvisor({
+    catalog: { status: "success", items: [unrelated] },
+    adapter: () => { adapterCalls += 1; return { draft: {} }; },
+    apply: () => { applyCalls += 1; return true; },
+  });
+  const mount = new FakeMount(runtime.document);
+  runtime.app.advisor.bind({ querySelector: () => mount });
+  completeWallStandardAdvisor(mount);
+  mount.click({ "data-advisor-item-action": "9" });
+  assert.equal(adapterCalls, 0);
+  assert.equal(applyCalls, 0);
+  assert.equal(runtime.routes.length, 0);
+  assert.equal(runtime.contacts.length, 1);
+});
+
+test("repair result always opens Contact Sheet even when a repair item has adapter-compatible metadata", () => {
+  const repairItem = catalogItem(9, { item_name: "à¸•à¸£à¸§à¸ˆà¹€à¸Šà¹‡à¸„à¹à¸­à¸£à¹Œ", job_category: "à¸•à¸£à¸§à¸ˆà¹€à¸Šà¹‡à¸„" });
+  const runtime = loadAdvisor({
+    catalog: { status: "success", items: [repairItem] },
+    visualViewport: { height: 520, offsetTop: 32 },
+  });
+  const mount = new FakeMount(runtime.document);
+  const container = { querySelector: () => mount };
+  const controller = runtime.app.advisor.bind(container);
+  mount.click({ "data-advisor-launch": "" });
+  mount.click({ "data-advisor-ac": "wall" });
+  mount.click({ "data-advisor-months": "m4_5" });
+  mount.click({ "data-advisor-symptom": "routine" });
+  mount.click({ "data-advisor-repair": "error_code" });
+  assert.equal(controller.state().recommendation.verdict, "repair_check");
+  mount.click({ "data-advisor-item-action": "9" });
+  assert.equal(runtime.routes.length, 0);
+  assert.equal(runtime.applied.length, 0);
+  assert.equal(runtime.contacts.length, 1);
+  assert.equal(runtime.visualViewport.listeners.size, 0);
+  assert.equal(runtime.document.portal, null);
+});
+
+test("advisor render contract is accessible, compact, motion-safe, and has no autoplay timer", () => {
+  const { app } = loadAdvisor();
+  const html = app.advisor.renderSection({ status: "success", items: [] });
+  assert.match(html, /data-smart-advisor/);
+  assert.match(html, /à¹„à¸¡à¹ˆà¹à¸™à¹ˆà¹ƒà¸ˆà¸§à¹ˆà¸²à¸„à¸§à¸£à¸¥à¹‰à¸²à¸‡à¸«à¸£à¸·à¸­à¸‹à¹ˆà¸­à¸¡/);
+  assert.match(html, /data-advisor-launch/);
+  assert.match(html, /aria-expanded="false"/);
+  assert.doesNotMatch(html, /data-advisor-sheet-host|data-advisor-portal/);
+  assert.doesNotMatch(html, /data-icon="play"/);
+  assert.doesNotMatch(SOURCE, /data-advisor-next|>à¸‚à¸±à¹‰à¸™à¸•à¹ˆà¸­à¹„à¸›<|>à¸”à¸¹à¸œà¸¥à¸›à¸£à¸°à¹€à¸¡à¸´à¸™</);
+  assert.doesNotMatch(html, /data-advisor-ac|data-advisor-months|data-advisor-symptom|data-advisor-repair/);
+  assert.doesNotMatch(html, /à¸„à¸§à¸²à¸¡à¸„à¸·à¸šà¸«à¸™à¹‰à¸²à¸à¸²à¸£à¸›à¸£à¸°à¹€à¸¡à¸´à¸™|à¸‚à¸±à¹‰à¸™à¸—à¸µà¹ˆ 1 à¸ˆà¸²à¸ 4/);
+  assert.doesNotMatch(html, /à¸”à¸¹à¸šà¸£à¸´à¸à¸²à¸£à¸ˆà¸£à¸´à¸‡à¸ˆà¸²à¸ Catalog/);
+  assert.match(CSS_SOURCE, /@media \(prefers-reduced-motion: reduce\)/);
+  assert.match(CSS_SOURCE, /\.advisor-sheet[\s\S]*?max-height: 90dvh/);
+  assert.match(CSS_SOURCE, /\.advisor-sheet-actions[\s\S]*?safe-area-inset-bottom/);
+  assert.match(CSS_SOURCE, /\.advisor-portal-root \{[\s\S]*?position: fixed[\s\S]*?z-index: 10000[\s\S]*?isolation: isolate/);
+  assert.match(CSS_SOURCE, /\.advisor-sheet \.advisor-chip-grid[\s\S]*?grid-template-columns: minmax\(0, 1fr\)/);
+  assert.match(CSS_SOURCE, /@media \(max-width: 380px\)[\s\S]*?\.advisor-sheet \.advisor-choice-grid \{ grid-template-columns: minmax\(0, 1fr\)/);
+  assert.match(CSS_SOURCE, /@media \(max-width: 600px\)[\s\S]*?height: var\(--advisor-viewport-height, 100dvh\)/);
+  assert.match(CSS_SOURCE, /@media \(max-width: 600px\)[\s\S]*?max-height: none[\s\S]*?border-radius: 0/);
+  assert.match(CSS_SOURCE, /body\.has-advisor-sheet \{ overflow: hidden/);
+  assert.match(CSS_SOURCE, /\.smart-advisor-section \{[\s\S]*?min-height: 96px[\s\S]*?padding: 10px/);
+  assert.match(CSS_SOURCE, /\.advisor-launcher-orb \{[\s\S]*?width: 34px[\s\S]*?height: 34px/);
+  assert.match(CSS_SOURCE, /\.advisor-launcher-copy h2 \{[\s\S]*?white-space: nowrap/);
+  assert.match(CSS_SOURCE, /\.advisor-launcher-actions \.primary-btn \{[\s\S]*?justify-content: center[\s\S]*?min-height: 38px/);
+  assert.match(CSS_SOURCE, /@media \(max-width: 600px\)[\s\S]*?\.advisor-launcher-copy p \{ display: none; \}/);
+  assert.match(CSS_SOURCE, /\.advisor-sheet-scroll \{[\s\S]*?overflow-y: auto[\s\S]*?overscroll-behavior: contain/);
+  assert.match(CSS_SOURCE, /\.advisor-sheet-actions \{[\s\S]*?safe-area-inset-bottom/);
+  assert.match(CSS_SOURCE, /@keyframes advisor-orbit/);
+  assert.match(CSS_SOURCE, /@keyframes advisor-orb-breathe/);
+  assert.match(CSS_SOURCE, /@keyframes advisor-launcher-sheen/);
+  assert.match(CSS_SOURCE, /@keyframes advisor-choice-sweep/);
+  assert.match(CSS_SOURCE, /@keyframes advisor-check-spring/);
+  assert.match(CSS_SOURCE, /@keyframes advisor-confidence-pop/);
+  assert.match(CSS_SOURCE, /@keyframes advisor-sheet-up/);
+  assert.match(CSS_SOURCE, /@keyframes advisor-question-forward/);
+  assert.match(CSS_SOURCE, /@keyframes advisor-result-reveal/);
+  assert.match(CSS_SOURCE, /\.advisor-sheet-layer\.is-opening \{ animation: advisor-backdrop-in/);
+  assert.match(CSS_SOURCE, /\.advisor-sheet-layer\.is-opening \.advisor-sheet \{ animation: advisor-sheet-up/);
+  assert.doesNotMatch(CSS_SOURCE.match(/\.advisor-sheet-layer \{[\s\S]*?\}/)?.[0] || "", /animation:/);
+  assert.doesNotMatch(CSS_SOURCE.match(/\.advisor-sheet \{[\s\S]*?\}/)?.[0] || "", /animation:/);
+  assert.match(CSS_SOURCE, /\.advisor-sheet-body\.is-step-forward > \.advisor-step/);
+  assert.match(CSS_SOURCE, /\.advisor-sheet-body\.is-step-back > \.advisor-step/);
+  assert.match(CSS_SOURCE, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.advisor-sheet-layer[\s\S]*?animation: none !important/);
+  assert.doesNotMatch(SOURCE, /setInterval\s*\(/);
+  assert.match(SOURCE, /document\.body\.appendChild\(portalRoot\)/);
+  assert.match(SOURCE, /matchMedia\?\.\("\(prefers-reduced-motion: reduce\)"\)/);
+  assert.match(SOURCE, /window\.visualViewport/);
+  const reduced = loadAdvisor({ reducedMotion: true });
+  const mount = new FakeMount(reduced.document);
+  assert.equal(reduced.app.advisor.bind({ querySelector: () => mount }).reducedMotion, true);
+});
+
+test("Home places built-in advisor after Quick Actions and before Featured Services", () => {
+  const app = {
+    state: {
+      homepage: { config: { sections: [
+        { id: "hero", type: "hero", enabled: true, sort_order: 10, title: "Hero", items: [] },
+        { id: "quick", type: "quick", enabled: true, sort_order: 20, items: [] },
+        { id: "featured", type: "featured_services", enabled: true, sort_order: 30, title: "Featured", items: [] },
+      ] } },
+      catalog: { status: "success", items: [] },
+    },
+    advisor: { renderSection: () => `<section data-smart-advisor>Advisor</section>` },
+    utils: { escapeHtml, icon: () => "", formatBaht: () => "-", stateBox: () => "" },
+    services: { quickServices: [], WALL_AC: "à¸œà¸™à¸±à¸‡" },
+  };
+  vm.runInNewContext(UI_SOURCE, {
+    window: { CWFCustomerAppV2: app },
+    document: { body: { classList: { add() {}, remove() {} } }, getElementById: () => null },
+    URL,
+    WeakMap,
+    Set,
+    console,
+  });
+  const html = app.ui._test.renderHomepageSectionsWithAdvisor();
+  assert.ok(html.indexOf("data-home-section=\"quick\"") < html.indexOf("data-smart-advisor"));
+  assert.ok(html.indexOf("data-smart-advisor") < html.indexOf("data-home-featured-section"));
+});
+
+test("advisor module is loaded before ui.js and precached under the shared build id", () => {
+  const build = "20260726_urgent_direct_auto_offer_v1";
+  assert.ok(INDEX_SOURCE.indexOf(`modules/advisor.js?v=${build}`) < INDEX_SOURCE.indexOf(`modules/ui.js?v=${build}`));
+  assert.match(SW_SOURCE, new RegExp(`BUILD_ID = "${build}"`));
+  assert.match(SW_SOURCE, /modules\/advisor\.js\?v=\$\{BUILD_ID\}/);
+});
