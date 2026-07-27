@@ -14,6 +14,7 @@
   // silently downgraded to code-only access. A manual "ตรวจสอบสถานะ" replaces it
   // with whatever the customer explicitly typed.
   let activeCredential = "";
+  let activeCancelRequest = null;
   // Set when a deep-link credential is waiting for the first auto-lookup.
   let pendingAutoLookup = false;
 
@@ -106,6 +107,12 @@
     return !!(data && (data.can_use_token_actions === true
       || data.capabilities?.can_use_token_actions === true
       || isTokenAccess(data)));
+  }
+  function canCancelUrgent(data) {
+    return modeFromData(data || {}) === "urgent"
+      && canUseTokenActions(data)
+      && data?.can_cancel === true
+      && !!clean(data?.booking_token);
   }
   function isCodeOnly(data) { return !!(data && !canUseTokenActions(data)); }
 
@@ -1469,6 +1476,7 @@
           <button class="secondary-btn" type="button" data-action="track-refresh">รีเฟรช</button>
           <a class="secondary-btn" href="tel:${ADMIN_PHONE}">โทรหา CWF</a>
           <a class="secondary-btn" href="${LINE_URL}" target="_blank" rel="noopener">LINE หา CWF</a>
+          ${canCancelUrgent(data) ? `<button class="secondary-btn" type="button" data-action="cancel-urgent-request">ยกเลิกคำขอ</button>` : ""}
           ${canUseTokenActions(data) && mode === "urgent" && !hasAssignedTech(data) ? `<button class="secondary-btn" type="button" data-route="scheduled">เปลี่ยนเป็นจองล่วงหน้า</button>` : ""}
         </div>
         <p class="tracking-updated-at">อัปเดตล่าสุด <time>${esc(new Date().toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" }))}</time></p>
@@ -1790,6 +1798,33 @@
     const retry = container.querySelector("[data-action='track-retry']");
     if (retry) retry.addEventListener("click", () => reloadCurrent(container), { once: true });
 
+    const cancelUrgent = container.querySelector("[data-action='cancel-urgent-request']");
+    if (cancelUrgent) {
+      cancelUrgent.addEventListener("click", async () => {
+        if (activeCancelRequest) return;
+        const data = root.state.tracking.data || {};
+        if (!canCancelUrgent(data)) return;
+        if (typeof window.confirm === "function" && !window.confirm("ยืนยันยกเลิกคำของานด่วนนี้หรือไม่")) return;
+        cancelUrgent.disabled = true;
+        activeCancelRequest = root.api.cancelUrgentRequest(data.booking_token);
+        try {
+          await activeCancelRequest;
+          await reloadCurrent(container);
+        } catch (error) {
+          root.state.setTracking({
+            status: "error",
+            data: null,
+            error: root.customerCopy.bookingError(error),
+            errorKind: "system",
+          });
+          const result = container.querySelector("[data-tracking-result]");
+          if (result) result.innerHTML = renderTrackingResult();
+        } finally {
+          activeCancelRequest = null;
+        }
+      }, { once: true });
+    }
+
     const copyCode = container.querySelector("[data-action='copy-tracking-code']");
     if (copyCode) {
       copyCode.addEventListener("click", async () => {
@@ -1952,6 +1987,7 @@
     _test: {
       canViewDetails,
       canUseTokenActions,
+      canCancelUrgent,
       isCanceled,
       jobPhase,
       paymentStatusLabel,

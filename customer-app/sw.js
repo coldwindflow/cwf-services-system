@@ -1,6 +1,6 @@
 "use strict";
 
-const BUILD_ID = "20260727_urgent_direct_auto_offer_blockers_v2";
+const BUILD_ID = "20260727_urgent_company_cancel_hotfix_v1";
 const CACHE_NAME = `cwf-customer-app-v2-${BUILD_ID}`;
 const APP_SHELL = [
   `./index.html?v=${BUILD_ID}`,

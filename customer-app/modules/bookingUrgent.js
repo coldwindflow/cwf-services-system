@@ -355,7 +355,171 @@
     try {
       return new Intl.DateTimeFormat("th-TH", {
         timeZone: "Asia/Bangkok",
-       …2973 tokens truncated…าน</p>
+        dateStyle: "medium",
+        timeStyle: "short",
+      }).format(new Date(`${d.date}T${d.time}:00+07:00`));
+    } catch (_) {
+      return `${d.date} ${d.time}`;
+    }
+  }
+
+  function timePreferenceLabel() {
+    return draft().allow_time_proposal === true
+      ? "สามารถเสนอเวลาใหม่ให้ฉันได้"
+      : "ต้องการตามเวลานี้";
+  }
+
+  function renderReview() {
+    const d = sanitizeUrgentDraft();
+    const flow = root.state.urgentFlow || {};
+    const submitting = flow.status === "submitting";
+    const gps = validGpsPair(d);
+    return `
+      <section class="card review-card urgent-card-fx" data-urgent-step-panel="review">
+        <div class="section-head">
+          <span class="section-kicker">ขั้นตอน 3 จาก 3</span>
+          <h2>ตรวจสอบและส่งคำขอ</h2>
+        </div>
+        ${renderServiceReviewList()}
+        ${renderPricingSummary()}
+        <div class="data-list">
+          <div class="data-row"><strong>วันที่และเวลา</strong><span class="muted">${root.utils.escapeHtml(formatAppointment())}</span></div>
+          <div class="data-row"><strong>เงื่อนไขเวลา</strong><span class="muted">${root.utils.escapeHtml(timePreferenceLabel())}</span></div>
+          <div class="data-row"><strong>ผู้ติดต่อ</strong><span class="muted">${root.utils.escapeHtml(d.customer_name || "-")} / ${root.utils.escapeHtml(d.customer_phone || "-")}</span></div>
+          <div class="data-row"><strong>ที่อยู่</strong><span class="muted">${root.utils.escapeHtml(d.address_text || "-")}</span></div>
+          ${d.job_zone ? `<div class="data-row"><strong>พื้นที่</strong><span class="muted">${root.utils.escapeHtml(d.job_zone)}</span></div>` : ""}
+          ${d.maps_url ? `<div class="data-row"><strong>แผนที่</strong><span class="muted">${root.utils.escapeHtml(d.maps_url)}</span></div>` : ""}
+          ${gps ? `<div class="data-row"><strong>GPS</strong><span class="muted">${root.utils.escapeHtml(`${gps.latitude}, ${gps.longitude}`)}</span></div>` : ""}
+          ${String(d.symptom || "").trim() ? `<div class="data-row"><strong>หมายเหตุ</strong><span class="muted">${root.utils.escapeHtml(d.symptom)}</span></div>` : ""}
+        </div>
+        <div class="notice is-urgent">แอดมินจะตรวจสอบรายละเอียดก่อนส่งต่อให้ช่างที่ว่าง</div>
+        ${flow.error ? `<div class="state-box is-error" role="alert">${root.utils.escapeHtml(flow.error)}</div>` : ""}
+        <div class="button-row">
+          ${flow.disabled_line_url
+            ? `<a class="primary-btn line-fallback-btn" href="${ADMIN_LINE_URL}" target="_blank" rel="noopener noreferrer">ติดต่อแอดมินทาง LINE</a>`
+            : `<button class="primary-btn btn-shine" type="button" data-urgent-action="confirm" ${submitting ? "disabled" : ""}>${submitting ? "กำลังส่งคำขอ..." : "ส่งคำขอ"}</button>`}
+          <button class="secondary-btn" type="button" data-urgent-action="back-details" ${submitting ? "disabled" : ""}>กลับไปแก้ไข</button>
+        </div>
+      </section>
+    `;
+  }
+
+  function validateServices() {
+    if (!servicePayload() || !services().length) return "กรุณาเลือกข้อมูลบริการให้ครบ";
+    const pricing = root.state.urgentFlow?.pricing || {};
+    if (pricing.status === "loading") return "กรุณารอระบบคำนวณราคา";
+    if (pricing.status !== "success" || !pricing.data) return "กรุณาคำนวณราคาอีกครั้ง";
+    return "";
+  }
+
+  function validateDetails() {
+    const d = sanitizeUrgentDraft();
+    const phoneDigits = String(d.customer_phone || "").replace(/\D/g, "");
+    if (!String(d.customer_name || "").trim()) return "กรุณากรอกชื่อผู้ติดต่อ";
+    if (phoneDigits.length < 9 || phoneDigits.length > 10) return "กรุณากรอกเบอร์โทร 9-10 หลัก";
+    if (!String(d.address_text || "").trim()) return "กรุณากรอกที่อยู่หน้างาน";
+    if (!String(d.date || "").trim()) return "กรุณาเลือกวันที่ต้องการ";
+    if (!String(d.time || "").trim()) return "กรุณาเลือกเวลาที่ต้องการ";
+    const appointment = appointmentDatetime();
+    if (!appointment || Number.isNaN(new Date(appointment).getTime())) return "กรุณาเลือกวันที่และเวลาให้ถูกต้อง";
+    if (new Date(appointment).getTime() <= Date.now()) return "วันและเวลาที่เลือกย้อนหลังไม่ได้ กรุณาเลือกเวลาใหม่";
+    if (d.allow_time_proposal !== true && d.allow_time_proposal !== false) return "กรุณาเลือกเงื่อนไขเวลา";
+    const latProvided = d.gps_latitude !== undefined && d.gps_latitude !== null && String(d.gps_latitude).trim() !== "";
+    const lngProvided = d.gps_longitude !== undefined && d.gps_longitude !== null && String(d.gps_longitude).trim() !== "";
+    if (latProvided !== lngProvided) return "ข้อมูลตำแหน่งไม่ครบ กรุณากดใช้ตำแหน่งปัจจุบันอีกครั้ง";
+    if (latProvided) {
+      const lat = Number(d.gps_latitude);
+      const lng = Number(d.gps_longitude);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180 || (lat === 0 && lng === 0)) {
+        return "ข้อมูลตำแหน่งไม่ถูกต้อง กรุณากดใช้ตำแหน่งปัจจุบันอีกครั้ง";
+      }
+    }
+    return "";
+  }
+
+  async function refreshPricing(container) {
+    const payload = servicePayload();
+    if (!payload) return;
+    const requestEpoch = ++pricingEpoch;
+    root.state.setUrgentFlow({ pricing: { status: "loading", data: null, error: "" } });
+    if (container) paint(container);
+    try {
+      const data = await root.api.previewPricing(payload);
+      if (requestEpoch !== pricingEpoch || root.state.currentRoute !== "urgent") return;
+      root.state.setUrgentFlow({ pricing: { status: "success", data, error: "" } });
+    } catch (error) {
+      if (requestEpoch !== pricingEpoch || root.state.currentRoute !== "urgent") return;
+      root.state.setUrgentFlow({
+        pricing: { status: "error", data: null, error: root.customerCopy.bookingError(error) },
+      });
+    }
+    if (container && requestEpoch === pricingEpoch) paint(container);
+  }
+
+  function invalidatePricing() {
+    pricingEpoch += 1;
+    root.state.setUrgentFlow({ pricing: { status: "idle", data: null, error: "" }, error: "" });
+    markPayloadChanged();
+  }
+
+  function requestCurrentLocation() {
+    if (!navigator.geolocation || typeof navigator.geolocation.getCurrentPosition !== "function") {
+      root.state.setUrgentFlow({
+        locationStatus: "error",
+        locationMessage: "เบราว์เซอร์นี้ไม่รองรับการอ่านตำแหน่ง กรุณาวางลิงก์ Google Maps เอง",
+      });
+      return Promise.resolve(false);
+    }
+    root.state.setUrgentFlow({ locationStatus: "loading", locationMessage: "กำลังอ่านตำแหน่งปัจจุบัน..." });
+    return new Promise((resolve) => {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const latitude = Number(position?.coords?.latitude);
+          const longitude = Number(position?.coords?.longitude);
+          if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180 || (latitude === 0 && longitude === 0)) {
+            root.state.setUrgentFlow({ locationStatus: "error", locationMessage: "อ่านตำแหน่งไม่สำเร็จ กรุณาลองอีกครั้ง" });
+            resolve(false);
+            return;
+          }
+          markPayloadChanged();
+          root.state.updateDraft("urgent", {
+            gps_latitude: latitude,
+            gps_longitude: longitude,
+            maps_url: `https://www.google.com/maps?q=${latitude},${longitude}`,
+          });
+          root.state.setUrgentFlow({ locationStatus: "success", locationMessage: "บันทึกตำแหน่งปัจจุบันสำเร็จ" });
+          resolve(true);
+        },
+        (error) => {
+          const message = Number(error?.code) === 1
+            ? "คุณปฏิเสธสิทธิ์ตำแหน่ง กรุณาอนุญาตสิทธิ์หรือวางลิงก์ Google Maps เอง"
+            : Number(error?.code) === 3
+              ? "อ่านตำแหน่งหมดเวลา กรุณาลองอีกครั้ง"
+              : "อ่านตำแหน่งไม่สำเร็จ กรุณาลองอีกครั้ง";
+          root.state.setUrgentFlow({ locationStatus: "error", locationMessage: message });
+          resolve(false);
+        },
+        { enableHighAccuracy: false, timeout: 10000, maximumAge: 0 }
+      );
+    });
+  }
+
+  function trackingKeyFromResult(result) {
+    return result ? (result.token || result.booking_token || result.booking_code || "") : "";
+  }
+
+  function privateTrackingTokenFromResult(result) {
+    return result ? String(result.token || result.booking_token || "").trim() : "";
+  }
+
+  function hero() {
+    return `
+      <div class="hero urgent-hero urgent-hero-fx">
+        <div class="urgent-aurora" aria-hidden="true"></div>
+        <div class="urgent-spark" aria-hidden="true"></div>
+        <div class="hero-badge">บริการงานล้าง</div>
+        <h2>จองล้างแอร์ด่วน</h2>
+        <p>เลือกบริการและเวลาที่ต้องการ ระบบจะส่งงานให้ช่างที่พร้อมรับงาน</p>
       </div>
     `;
   }

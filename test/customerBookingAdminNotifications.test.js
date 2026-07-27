@@ -312,10 +312,10 @@ test("admin/customer frontend cache versions are bumped for booking notification
   assert.doesNotMatch(adminReviewHtml, /admin-review-v2\.js\?v=20260707_customer_booking_notify_v2/);
   assert.match(adminReviewHtml, /admin-review-ai-intake\.js\?v=ai-booking-intake-customer-cards-v11-admin-alert-gate/);
   assert.doesNotMatch(adminReviewHtml, /admin-review-ai-intake\.js\?v=ai-booking-intake-customer-cards-v10/);
-  assert.match(customerIndex, /bookingScheduled\.js\?v=20260727_urgent_direct_auto_offer_blockers_v2/);
-  assert.match(customerIndex, /state\.js\?v=20260727_urgent_direct_auto_offer_blockers_v2/);
-  assert.match(customerSw, /const BUILD_ID = "20260727_urgent_direct_auto_offer_blockers_v2"/);
-  assert.match(customerManifest, /20260727_urgent_direct_auto_offer_blockers_v2/);
+  assert.match(customerIndex, /bookingScheduled\.js\?v=20260727_urgent_company_cancel_hotfix_v1/);
+  assert.match(customerIndex, /state\.js\?v=20260727_urgent_company_cancel_hotfix_v1/);
+  assert.match(customerSw, /const BUILD_ID = "20260727_urgent_company_cancel_hotfix_v1"/);
+  assert.match(customerManifest, /20260727_urgent_company_cancel_hotfix_v1/);
 });
 
 test("behavior: review queue only includes customer urgent waiting rows while preserving review statuses", () => {
@@ -490,8 +490,14 @@ test("behavior: missing scheduled request key for Customer App V2 is rejected", 
   assert.equal(store.jobsByToken.size, 0);
 });
 
-test("behavior: urgent waiting modal is viewable but all mutation paths are read-only", async () => {
-  const sandbox = createAdminReviewSandbox();
+test("behavior: urgent waiting modal keeps only cancellation enabled", async () => {
+  const mutations = [];
+  const sandbox = createAdminReviewSandbox({
+    apiFetch: async (url, options = {}) => {
+      if (options.method) mutations.push({ url, method: options.method });
+      return {};
+    },
+  });
   const hooks = sandbox.window.__CWF_ADMIN_REVIEW_TEST__;
   hooks.setRowMap([{
     job_id: 7,
@@ -503,15 +509,17 @@ test("behavior: urgent waiting modal is viewable but all mutation paths are read
   }]);
   await hooks.openJob(7);
   assert.equal(hooks.getCurrent().job_id, 7);
-  for (const id of ["btnSave", "btnDispatch", "btnRebroadcast", "btnCancel", "btnLoadSlots", "mCustomerName", "mAppt", "mTechType", "mPrimaryTech", "mDispatchMode"]) {
+  for (const id of ["btnSave", "btnDispatch", "btnRebroadcast", "btnLoadSlots", "mCustomerName", "mAppt", "mTechType", "mPrimaryTech", "mDispatchMode"]) {
     assert.equal(sandbox.__elements.get(id).disabled, true, `${id} should be disabled`);
   }
+  assert.equal(sandbox.__elements.get("btnCancel").disabled, false, "btnCancel should stay enabled");
   assert.equal(sandbox.__elements.get("mReadOnlyNotice").style.display, "block");
   await hooks.saveJob();
   await hooks.dispatchJob();
   await hooks.rebroadcastOffer();
   await hooks.rebroadcastOfferQuick(7);
   await hooks.cancelJob();
+  assert.deepEqual(mutations, [{ url: "/jobs/7/admin-cancel", method: "POST" }]);
 });
 
 test("behavior: Existing Admin Review/Edit renders urgent preferred time, preference, address, map, GPS, and note from job detail", async () => {

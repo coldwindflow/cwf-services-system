@@ -16879,16 +16879,65 @@ app.post("/jobs/:job_id/admin-set-promo", async (req, res) => {
   }
 });
 
-app.post("/jobs/:job_id/admin-cancel", async (req, res) => {
-  const job_id = Number(req.params.job_id);
-  if (!job_id) return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
+const URGENT_CANCELLED_STATUS = "ยกเลิก";
+const URGENT_CANCEL_BLOCKED_STATUSES = new Set([
+  "เสร็จแล้ว", "เสร็จสิ้น", "ปิดงาน", "done", "completed", "closed", "paid",
+]);
 
-  const reason = String(req.body?.reason || "admin_cancel").trim();
-  let cancelTeam = [];
+function urgentCancelError(code, message, statusCode = 409) {
+  const error = new Error(message);
+  error.code = code;
+  error.statusCode = statusCode;
+  return error;
+}
 
+async function cancelUrgentJob({
+  jobId = null,
+  bookingToken = "",
+  reason = "customer_cancel",
+  actorUsername = null,
+  actorRole = "customer",
+} = {}) {
   const client = await pool.connect();
+  let cancelTeam = [];
   try {
     await client.query("BEGIN");
+    const byToken = Boolean(String(bookingToken || "").trim());
+    const jobR = await client.query(
+      `SELECT job_id, booking_mode, job_status, canceled_at, travel_started_at,
+              checkin_at, started_at, finished_at, technician_username, technician_team
+         FROM public.jobs
+        WHERE ${byToken ? "booking_token=$1 AND COALESCE(booking_mode,'')='urgent'" : "job_id=$1"}
+        FOR UPDATE`,
+      [byToken ? String(bookingToken).trim() : Number(jobId)]
+    );
+    const job = jobR.rows[0];
+    if (!job) throw urgentCancelError("URGENT_CANCEL_NOT_FOUND", "ไม่พบคำขอนี้", 404);
+
+    const isUrgent = String(job.booking_mode || "").trim().toLowerCase() === "urgent";
+    if (byToken && !isUrgent) {
+      throw urgentCancelError("URGENT_CANCEL_NOT_FOUND", "ไม่พบคำขอนี้", 404);
+    }
+    if (job.canceled_at || String(job.job_status || "").trim() === URGENT_CANCELLED_STATUS) {
+      await client.query("COMMIT");
+      return { success: true, job_id: Number(job.job_id), already_cancelled: true, cancelTeam: [] };
+    }
+
+    const normalizedStatus = String(job.job_status || "").trim().toLowerCase();
+    if (isUrgent && (
+      job.travel_started_at
+      || job.checkin_at
+      || job.started_at
+      || job.finished_at
+      || URGENT_CANCEL_BLOCKED_STATUSES.has(normalizedStatus)
+    )) {
+      throw urgentCancelError(
+        "URGENT_CANCEL_CUTOFF_PASSED",
+        "ไม่สามารถยกเลิกคำขอได้ เนื่องจากช่างเริ่มดำเนินงานแล้ว",
+        409
+      );
+    }
+
     const cancelTeamRows = await client.query(
       `SELECT technician_username
          FROM public.job_assignments
@@ -16897,41 +16946,130 @@ app.post("/jobs/:job_id/admin-cancel", async (req, res) => {
        SELECT technician_username
          FROM public.jobs
         WHERE job_id=$1 AND technician_username IS NOT NULL`,
-      [job_id]
+      [job.job_id]
     );
-    cancelTeam = (cancelTeamRows.rows || []).map(r => String(r.technician_username || '').trim()).filter(Boolean);
+    cancelTeam = (cancelTeamRows.rows || [])
+      .map((row) => String(row.technician_username || "").trim())
+      .filter(Boolean);
 
-    // expire offers ที่ค้าง
-    await client.query(`UPDATE public.job_offers SET status='expired', responded_at=NOW() WHERE job_id=$1 AND status='pending'`, [job_id]);
-
-    // ยกเลิกงาน + เคลียร์คนรับ
     await client.query(
-      `
-      UPDATE public.jobs
-      SET job_status='ยกเลิก',
-          canceled_at=NOW(),
-          cancel_reason=$1,
-          technician_username=NULL,
-          technician_team=NULL,
-          dispatch_mode='offer'
-      WHERE job_id=$2
-      `,
-      [reason, job_id]
+      `UPDATE public.job_offers
+          SET status='expired', responded_at=COALESCE(responded_at,NOW())
+        WHERE job_id=$1 AND status='pending'`,
+      [job.job_id]
     );
+
+    if (isUrgent) {
+      await client.query(
+        `UPDATE public.job_offer_time_proposals
+            SET status='superseded', decided_at=COALESCE(decided_at,NOW())
+          WHERE job_id=$1 AND status='pending'`,
+        [job.job_id]
+      );
+      await client.query(`DELETE FROM public.job_assignments WHERE job_id=$1`, [job.job_id]);
+      await client.query(`DELETE FROM public.job_team_members WHERE job_id=$1`, [job.job_id]);
+    }
+
+    await client.query(
+      `UPDATE public.jobs
+          SET job_status=$1,
+              canceled_at=NOW(),
+              cancel_reason=$2,
+              technician_username=NULL,
+              technician_team=NULL,
+              dispatch_mode='offer'
+        WHERE job_id=$3`,
+      [URGENT_CANCELLED_STATUS, String(reason || "customer_cancel").trim().slice(0, 500), job.job_id]
+    );
+
+    if (isUrgent) {
+      await client.query(
+        `INSERT INTO public.job_updates_v2
+          (job_id, actor_username, actor_role, action, message, payload_json)
+         VALUES ($1,$2,$3,'urgent_cancelled',$4,$5)`,
+        [
+          job.job_id,
+          actorUsername || null,
+          actorRole,
+          actorRole === "admin" ? "แอดมินยกเลิกงานด่วน" : "ลูกค้ายกเลิกคำของานด่วน",
+          JSON.stringify({ reason: String(reason || "customer_cancel").trim().slice(0, 500) }),
+        ]
+      );
+    }
 
     await client.query("COMMIT");
-    try {
-      await _syncDisplayForJobState({ job_id, job_status: 'cancelled', canceled_at: new Date(), cancel_reason: reason }, cancelTeam, { context: 'history' });
-    } catch (e) {
-      try { console.warn('[tech_income_display] cancel sync failed', { job_id, error: e.message }); } catch {}
-    }
-    res.json({ success: true });
-  } catch (e) {
-    await client.query("ROLLBACK");
-    console.error(e);
-    res.status(500).json({ error: "ยกเลิกงานไม่สำเร็จ" });
+    return { success: true, job_id: Number(job.job_id), already_cancelled: false, cancelTeam };
+  } catch (error) {
+    try { await client.query("ROLLBACK"); } catch (_) {}
+    throw error;
   } finally {
     client.release();
+  }
+}
+
+app.post("/public/urgent-cancel", async (req, res) => {
+  const bookingToken = String(req.body?.token || req.body?.booking_token || "").trim();
+  if (!bookingToken) {
+    return res.status(403).json({ error: "ต้องเปิดจากลิงก์ติดตามงานเพื่อยกเลิกคำขอ", code: "URGENT_CANCEL_TOKEN_REQUIRED" });
+  }
+  try {
+    const result = await cancelUrgentJob({
+      bookingToken,
+      reason: "customer_cancel",
+      actorRole: "customer",
+    });
+    if (!result.already_cancelled) {
+      try {
+        await _syncDisplayForJobState(
+          { job_id: result.job_id, job_status: "cancelled", canceled_at: new Date(), cancel_reason: "customer_cancel" },
+          result.cancelTeam,
+          { context: "history" }
+        );
+      } catch (error) {
+        try { console.warn("[urgent_cancel] post-commit sync failed", { job_id: result.job_id, error: error.message }); } catch (_) {}
+      }
+    }
+    return res.json({ success: true, cancelled: true, already_cancelled: result.already_cancelled });
+  } catch (error) {
+    const statusCode = Number(error?.statusCode || 500);
+    return res.status(statusCode).json({
+      error: statusCode >= 500 ? "ยกเลิกคำขอไม่สำเร็จ กรุณาลองอีกครั้ง" : error.message,
+      code: error.code || "URGENT_CANCEL_FAILED",
+    });
+  }
+});
+
+app.post("/jobs/:job_id/admin-cancel", requireAdminSession, async (req, res) => {
+  const job_id = Number(req.params.job_id);
+  if (!job_id) return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
+
+  const reason = String(req.body?.reason || "admin_cancel").trim();
+  try {
+    const result = await cancelUrgentJob({
+      jobId: job_id,
+      reason,
+      actorUsername: _authUsername(req) || "admin",
+      actorRole: "admin",
+    });
+    if (!result.already_cancelled) {
+      try {
+        await _syncDisplayForJobState(
+          { job_id, job_status: "cancelled", canceled_at: new Date(), cancel_reason: reason },
+          result.cancelTeam,
+          { context: "history" }
+        );
+      } catch (e) {
+        try { console.warn('[tech_income_display] cancel sync failed', { job_id, error: e.message }); } catch {}
+      }
+    }
+    res.json({ success: true, already_cancelled: result.already_cancelled });
+  } catch (e) {
+    const statusCode = Number(e?.statusCode || 500);
+    console.error(e);
+    res.status(statusCode).json({
+      error: statusCode >= 500 ? "ยกเลิกงานไม่สำเร็จ" : e.message,
+      code: e.code || "ADMIN_CANCEL_FAILED",
+    });
   }
 });
 
@@ -18264,6 +18402,8 @@ async function loadPendingOffersForSessionTechnician(username) {
     WHERE o.technician_username = ANY($1::text[])
       AND o.status='pending'
       AND o.expires_at >= NOW()
+      AND j.canceled_at IS NULL
+      AND COALESCE(j.job_status,'') <> 'ยกเลิก'
     ORDER BY o.expires_at ASC
     `,
     [aliases]
@@ -18355,28 +18495,45 @@ app.post("/offers/:offer_id/accept", requireTechnicianSession, async (req, res) 
     await client.query("BEGIN");
     await expireTechnicianAcceptStatuses(client, username);
 
-    const offerR = await client.query(
-      `SELECT offer_id, job_id, technician_username, status, expires_at
-       FROM public.job_offers
-       WHERE offer_id=$1
-       FOR UPDATE`,
+    // Resolve the parent first, then lock job -> offer. Cancellation uses the
+    // same lock order, preventing a cancel/accept deadlock and making the final
+    // state deterministic under concurrent requests.
+    const offerRefR = await client.query(
+      `SELECT job_id FROM public.job_offers WHERE offer_id=$1`,
       [offer_id]
     );
-    if (offerR.rows.length === 0) throw new Error("ไม่พบ offer");
-
-    const offer = offerR.rows[0];
-    if (offer.status !== "pending") throw new Error("offer นี้ถูกตอบไปแล้ว");
-    if (new Date(offer.expires_at) < new Date()) throw new Error("หมดเวลารับงานแล้ว");
-    await assertOfferOwnedBySessionTechnician(username, offer.technician_username);
+    if (offerRefR.rows.length === 0) throw new Error("ไม่พบข้อเสนองาน");
 
     const jobR = await client.query(
-      `SELECT job_id, technician_team, job_type, booking_code,
-              appointment_datetime, job_zone
+      `SELECT job_id, technician_team, technician_username, job_type, booking_code,
+              appointment_datetime, job_zone, job_status, canceled_at,
+              travel_started_at, checkin_at, started_at, finished_at
          FROM public.jobs WHERE job_id=$1 FOR UPDATE`,
-      [offer.job_id]
+      [offerRefR.rows[0].job_id]
     );
     if (jobR.rows.length === 0) throw new Error("ไม่พบงาน");
-    if (jobR.rows[0].technician_team) throw new Error("งานนี้ถูกช่างคนอื่นรับไปแล้ว");
+    const lockedJob = jobR.rows[0];
+    const lockedStatus = String(lockedJob.job_status || "").trim().toLowerCase();
+    if (lockedJob.canceled_at || lockedStatus === "ยกเลิก"
+      || URGENT_CANCEL_BLOCKED_STATUSES.has(lockedStatus)) {
+      throw urgentCancelError("URGENT_JOB_NOT_ACCEPTABLE", "งานนี้ไม่สามารถรับได้แล้ว", 409);
+    }
+    if (lockedJob.technician_team || lockedJob.technician_username) {
+      throw urgentCancelError("URGENT_JOB_ALREADY_ASSIGNED", "งานนี้ถูกช่างคนอื่นรับไปแล้ว", 409);
+    }
+
+    const offerR = await client.query(
+      `SELECT offer_id, job_id, technician_username, status, expires_at
+         FROM public.job_offers
+        WHERE offer_id=$1 AND job_id=$2
+        FOR UPDATE`,
+      [offer_id, lockedJob.job_id]
+    );
+    if (offerR.rows.length === 0) throw new Error("ไม่พบข้อเสนองาน");
+    const offer = offerR.rows[0];
+    if (offer.status !== "pending") throw new Error("ข้อเสนองานนี้ถูกตอบไปแล้ว");
+    if (new Date(offer.expires_at) < new Date()) throw new Error("หมดเวลารับงานแล้ว");
+    await assertOfferOwnedBySessionTechnician(username, offer.technician_username);
     // COLLISION_CHECK_V2
     const jobInfoR = await client.query(
       `SELECT appointment_datetime, COALESCE(duration_min,60) AS duration_min FROM public.jobs WHERE job_id=$1`,
@@ -24003,6 +24160,7 @@ app.get("/public/urgent-status", async (req, res) => {
       `
       SELECT job_id, booking_code, booking_token, job_status, booking_mode,
              technician_username, technician_team,
+             travel_started_at, checkin_at, started_at, finished_at, canceled_at,
              COALESCE(allow_time_proposal,FALSE) AS allow_time_proposal
       FROM public.jobs
       WHERE booking_token=$1 OR booking_code=$1
@@ -24029,6 +24187,14 @@ app.get("/public/urgent-status", async (req, res) => {
     const hasAccepted = Boolean(job.technician_username || job.technician_team || offers.has_accepted_offer);
     const hasPending = Boolean(offers.has_pending_offer);
     const terminal = ["เสร็จแล้ว", "ยกเลิก"].includes(String(job.job_status || ""));
+    const hasExactToken = Boolean(job.booking_token) && q === String(job.booking_token);
+    const canCancel = hasExactToken
+      && !terminal
+      && !job.canceled_at
+      && !job.travel_started_at
+      && !job.checkin_at
+      && !job.started_at
+      && !job.finished_at;
     const phase = terminal
       ? "terminal"
       : hasAccepted
@@ -24042,6 +24208,7 @@ app.get("/public/urgent-status", async (req, res) => {
       phase,
       confirmed: hasAccepted,
       terminal,
+      can_cancel: canCancel,
       server_now: jobTiming.getBangkokNow().iso,
       allow_time_proposal: Boolean(job.allow_time_proposal),
     });
@@ -24405,9 +24572,25 @@ if (FLAG_SHOW_TECH_TEAM_ON_TRACKING && canShowPublicTechnician) {
         can_use_token_actions: fullAccess,
         can_view_documents: fullAccess,
         can_submit_review: fullAccess,
+        can_cancel_urgent: fullAccess
+          && String(row.booking_mode || "").trim().toLowerCase() === "urgent"
+          && !row.canceled_at
+          && !row.travel_started_at
+          && !row.checkin_at
+          && !row.started_at
+          && !row.finished_at
+          && !URGENT_CANCEL_BLOCKED_STATUSES.has(String(row.job_status || "").trim().toLowerCase()),
       },
       can_view_full_tracking: true,
       can_use_token_actions: fullAccess,
+      can_cancel: fullAccess
+        && String(row.booking_mode || "").trim().toLowerCase() === "urgent"
+        && !row.canceled_at
+        && !row.travel_started_at
+        && !row.checkin_at
+        && !row.started_at
+        && !row.finished_at
+        && !URGENT_CANCEL_BLOCKED_STATUSES.has(String(row.job_status || "").trim().toLowerCase()),
       legacy_review_eligible: legacyReviewEligible,
       job_id: row.job_id,
       booking_code: row.booking_code || null,

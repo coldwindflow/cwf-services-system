@@ -5,7 +5,7 @@ const path = require("node:path");
 const vm = require("node:vm");
 
 const ROOT = path.resolve(__dirname, "..");
-const BUILD = "20260727_urgent_direct_auto_offer_blockers_v2";
+const BUILD = "20260727_urgent_company_cancel_hotfix_v1";
 
 function read(relativePath) {
   return fs.readFileSync(path.join(ROOT, relativePath), "utf8");
@@ -305,13 +305,58 @@ test("Scheduled keeps pending-admin copy while Urgent uses technician-first sear
   assert.doesNotMatch(scheduled, /Booking Code|จองสำเร็จ|ยืนยันคิวแล้ว|ได้ช่างแล้ว|reserved-tech-secret|technician_username/);
 
   root.state.updateDraft("urgent", { customer_name: "สมชาย", job_zone: "บางนา" });
-  root.state.setUrgentFlow({ result: { booking_code: "CWF456", technician_username: "urgent-tech-secret" }, liveStatus: null, liveStatusError: "" });
+  root.state.setUrgentFlow({
+    result: { booking_code: "CWF456", token: "private-cancel-token", technician_username: "urgent-tech-secret" },
+    liveStatus: { phase: "searching", can_cancel: true },
+    liveStatusError: "",
+  });
   const urgent = root.bookingUrgent._test.renderSubmitted();
   assert.match(urgent, /ส่งคำขอแล้ว/);
   assert.match(urgent, /กำลังค้นหาช่างที่พร้อมรับงาน/);
   assert.match(urgent, /กำลังค้นหาช่าง/);
   assert.match(urgent, /รหัสการจอง/);
-  assert.doesNotMatch(urgent, /Booking Code|urgent-tech-secret|technician_username|Partner-first|Waiting Room|Live status|offer|radar|รอแอดมิน|แอดมินกำลังตรวจสอบ/);
+  assert.match(urgent, /data-urgent-search-animation/);
+  assert.match(urgent, /ยกเลิกคำขอ/);
+  assert.doesNotMatch(urgent, /private-cancel-token|Booking Code|urgent-tech-secret|technician_username|Partner-first|Waiting Room|Live status|offer|รอแอดมิน|แอดมินกำลังตรวจสอบ/);
+
+  root.state.setUrgentFlow({ liveStatus: { phase: "fallback", can_cancel: true } });
+  const fallback = root.bookingUrgent._test.renderSubmitted();
+  assert.doesNotMatch(fallback, /data-urgent-search-animation/);
+  assert.match(fallback, /ยกเลิกคำขอ/);
+
+  root.state.setUrgentFlow({ liveStatus: { phase: "terminal", terminal: true, can_cancel: false } });
+  const terminal = root.bookingUrgent._test.renderSubmitted();
+  assert.doesNotMatch(terminal, /data-urgent-search-animation|ยกเลิกคำขอ/);
+});
+
+test("urgent submitted cancellation uses the in-memory private token and becomes terminal", async () => {
+  const { context, root } = loadBookingModules();
+  const calls = [];
+  context.window.confirm = () => true;
+  root.api = {
+    async cancelUrgentRequest(token) {
+      calls.push(token);
+      return { success: true, cancelled: true };
+    },
+  };
+  root.state.currentRoute = "urgent";
+  root.state.setUrgentFlow({
+    step: "submitted",
+    status: "success",
+    result: { booking_code: "CWF456", token: "private-cancel-token" },
+    liveStatus: { phase: "searching", can_cancel: true },
+    liveStatusError: "",
+  });
+  const container = {
+    innerHTML: "",
+    querySelectorAll() { return []; },
+    querySelector() { return null; },
+  };
+  assert.equal(await root.bookingUrgent._test.cancelUrgent(container), true);
+  assert.deepEqual(calls, ["private-cancel-token"]);
+  assert.equal(root.state.urgentFlow.liveStatus.phase, "terminal");
+  assert.equal(root.state.urgentFlow.liveStatus.can_cancel, false);
+  assert.doesNotMatch(container.innerHTML, /private-cancel-token/);
 });
 
 test("repair, install, move, and inspection gateway stays contact-only and never creates booking payloads", () => {
@@ -401,7 +446,7 @@ test("booking presentation sources do not render raw errors or retired pre-appro
   const urgent = read("customer-app/modules/bookingUrgent.js");
   const presentation = `${scheduled}\n${urgent}`;
   assert.doesNotMatch(presentation, /error\.message|data\.error/);
-  assert.doesNotMatch(urgent, /Partner-first|Urgent request|Waiting Room|Final check|Live status|Next best action|offer countdown|radar|รอพาร์ทเนอร์|กดรับหรือปฏิเสธ/);
+  assert.doesNotMatch(urgent, /Partner-first|Urgent request|Waiting Room|Final check|Live status|Next best action|offer countdown|รอพาร์ทเนอร์|กดรับหรือปฏิเสธ/);
   assert.doesNotMatch(presentation, /console\.info/);
   assert.doesNotMatch(presentation, /Booking Code/);
 });

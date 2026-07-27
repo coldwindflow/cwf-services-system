@@ -1528,10 +1528,16 @@ function createBookingJobService(dependencies = {}) {
           address_text,
           maps_url,
           job_zone,
-        }, { db: client, criteriaList, techType: "partner" });
-        const availablePartners = dispatch.available;
+        }, {
+          db: client,
+          criteriaList,
+          // Server-owned public policy. Customer payload tech_type is never
+          // consulted; all still passes the canonical eligibility predicates.
+          techType: "all",
+        });
+        const availableTechnicians = dispatch.available;
 
-        if (!availablePartners.length) {
+        if (!availableTechnicians.length) {
           await client.query(
             `UPDATE public.jobs
                 SET job_status='${JOB_STATUS.URGENT_NO_TECHNICIAN}'
@@ -1541,16 +1547,16 @@ function createBookingJobService(dependencies = {}) {
           console.warn("[public_book] urgent_no_offer_targets", { job_id, booking_code });
         } else {
           // ✅ safety: จำกัดไม่เกิน 30 ช่าง/ทีมที่ส่ง offer
-          for (const u of availablePartners) {
+          for (const u of availableTechnicians) {
             await client.query(
               `INSERT INTO public.job_offers (job_id, technician_username, status, expires_at)
                VALUES ($1,$2,'${OFFER_STATUS.PENDING}', NOW() + INTERVAL '10 minutes')`,
               [job_id, u]
             );
           }
-          urgentOffersCount = availablePartners.length;
-          urgentPushTargets = availablePartners;
-          console.log("[public_book] urgent_offers", { job_id, booking_code, count: availablePartners.length });
+          urgentOffersCount = availableTechnicians.length;
+          urgentPushTargets = availableTechnicians;
+          console.log("[public_book] urgent_offers", { job_id, booking_code, count: availableTechnicians.length });
         }
       }
 

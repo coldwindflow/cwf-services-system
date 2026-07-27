@@ -486,14 +486,15 @@ async function main() {
   await seedTechnician("tech_solo", { date: [raceDay, staleDay, retryDay], maxJobs: 1, maxUnits: 5 });
   await seedTechnician("tech_partner", { employment: "partner", date: [today, tomorrow], urgentOk: true, maxJobs: 5, maxUnits: 10 });
   await seedTechnician("tech_partner2", { employment: "partner", date: [today, tomorrow], urgentOk: true, maxJobs: 5, maxUnits: 10 });
-  await seedTechnician("tech_company", { employment: "company", date: [today, tomorrow], urgentOk: true, maxJobs: 5, maxUnits: 10 });
+  await seedTechnician("A2MKUNG", { employment: "company", date: [today, tomorrow], urgentOk: true, maxJobs: 5, maxUnits: 10 });
   await seedTechnician("tech_custom", { employment: "custom", date: [today, tomorrow], urgentOk: true, maxJobs: 5, maxUnits: 10 });
   await seedTechnician("tech_special", { employment: "special_only", date: [today, tomorrow], urgentOk: true, maxJobs: 5, maxUnits: 10 });
-  // Zone A covers เขตสวนหลวง — the urgent offer engine targets partners by zone.
+  // Zone A covers เขตสวนหลวง — public urgent targets every canonical
+  // employment group, including the production company technician fixture.
   await pool.query(
     `UPDATE public.technician_profiles
         SET home_service_zone_code='A'
-      WHERE username IN ('tech_partner','tech_partner2','tech_company','tech_custom','tech_special')`
+      WHERE username IN ('tech_partner','tech_partner2','A2MKUNG','tech_custom','tech_special')`
   ).catch(() => {});
 
   async function seedSessionFor(username, role) {
@@ -559,10 +560,22 @@ async function main() {
         [acceptedJobId]
       );
       assert(jobCount === 1 && items.rows[0].n >= 1, "job/items were not atomic");
-      assert(offers.rows.length >= 2, "eligible partners did not receive offers");
-      assert(offers.rows.every((row) => row.employment_type === "partner"),
-        `public urgent targeted non-partners: ${JSON.stringify(offers.rows)}`);
+      assert(offers.rows.length >= 5, "canonical public urgent candidates did not receive offers");
+      const employmentTypes = [...new Set(offers.rows.map((row) => row.employment_type))].sort();
+      assert(JSON.stringify(employmentTypes) === JSON.stringify(["company", "custom", "partner", "special_only"]),
+        `public urgent lost an employment group: ${JSON.stringify(offers.rows)}`);
+      assert(offers.rows.some((row) => row.technician_username === "A2MKUNG"),
+        `A2MKUNG did not receive an offer: ${JSON.stringify(offers.rows)}`);
       assert(offers.rows.every((row) => Number(row.lifetime_min) >= 9.9), "offer lifetime is not 10 minutes");
+      const companySession = await seedSessionFor("A2MKUNG", "technician");
+      const companyOfferResponse = await fetch(`${BASE_A}/offers/tech/me`, {
+        headers: { cookie: `cwf_session=${companySession}` },
+      });
+      const companyOffers = await companyOfferResponse.json();
+      assert(companyOfferResponse.status === 200
+        && Array.isArray(companyOffers)
+        && companyOffers.some((row) => Number(row.job_id) === Number(acceptedJobId)),
+      `A2MKUNG offer API did not expose the urgent job: ${companyOfferResponse.status}/${JSON.stringify(companyOffers)}`);
     });
 
     await record("API2b concurrent duplicate urgent submissions create one job and one offer set", async () => {
@@ -581,6 +594,106 @@ async function main() {
       )).rows[0].count);
       assert(jobCount === 1, `concurrent duplicate created ${jobCount} jobs`);
       assert(offerCount >= 2, "concurrent duplicate lost its canonical offer set");
+    });
+
+    await record("API2c exact token cancels searching idempotently; booking code cannot cancel or accept later", async () => {
+      const response = await apiBook(BASE_A, urgentPayload(crypto.randomBytes(16).toString("hex"), "13:00"));
+      assert(response.status === 200 && response.body?.phase === "searching", "cancel fixture was not searching");
+      const offers = await pool.query(
+        `SELECT offer_id, technician_username FROM public.job_offers WHERE job_id=$1 ORDER BY offer_id`,
+        [response.body.job_id]
+      );
+      assert(offers.rows.length >= 1, "cancel fixture has no pending offer");
+
+      const codeOnly = await fetch(`${BASE_A}/public/urgent-cancel`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ token: response.body.booking_code }),
+      });
+      assert(codeOnly.status === 404 || codeOnly.status === 403, `booking code cancelled a job: ${codeOnly.status}`);
+
+      const cancel = async () => {
+        const reply = await fetch(`${BASE_A}/public/urgent-cancel`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ token: response.body.token }),
+        });
+        return { status: reply.status, body: await reply.json() };
+      };
+      const first = await cancel();
+      const replay = await cancel();
+      assert(first.status === 200 && first.body?.cancelled === true && first.body?.already_cancelled === false,
+        `first token cancel failed: ${first.status}/${JSON.stringify(first.body)}`);
+      assert(replay.status === 200 && replay.body?.already_cancelled === true,
+        `repeated cancel was not idempotent: ${replay.status}/${JSON.stringify(replay.body)}`);
+
+      const rows = await pool.query(
+        `SELECT j.job_status, j.canceled_at,
+                (SELECT COUNT(*)::int FROM public.job_assignments a WHERE a.job_id=j.job_id) AS assignments,
+                (SELECT COUNT(*)::int FROM public.job_team_members tm WHERE tm.job_id=j.job_id) AS team_members,
+                (SELECT COUNT(*)::int FROM public.job_offers o WHERE o.job_id=j.job_id AND o.status='pending') AS pending_offers,
+                (SELECT COUNT(*)::int FROM public.job_updates_v2 u WHERE u.job_id=j.job_id AND u.action='urgent_cancelled') AS cancel_history
+           FROM public.jobs j WHERE j.job_id=$1`,
+        [response.body.job_id]
+      );
+      const state = rows.rows[0];
+      assert(state.job_status === "ยกเลิก" && state.canceled_at, "cancel did not persist canonical status");
+      assert(state.assignments === 0 && state.team_members === 0, "cancel left an active assignment/team");
+      assert(state.pending_offers === 0, "cancel left pending offers");
+      assert(state.cancel_history === 1, `idempotent cancel wrote ${state.cancel_history} history rows`);
+
+      const status = await (await fetch(
+        `${BASE_A}/public/urgent-status?token=${encodeURIComponent(response.body.token)}`
+      )).json();
+      assert(status.phase === "terminal" && status.can_cancel === false, "tracking did not become terminal");
+
+      const technicianSession = await seedSessionFor(offers.rows[0].technician_username, "technician");
+      const acceptAfterCancel = await fetch(`${BASE_A}/offers/${offers.rows[0].offer_id}/accept`, {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: `cwf_session=${technicianSession}` },
+        body: "{}",
+      });
+      assert(acceptAfterCancel.status === 409, `cancelled offer remained acceptable: ${acceptAfterCancel.status}`);
+    });
+
+    await record("API2d cancellation history failure rolls back job and offers; clean retry succeeds", async () => {
+      const response = await apiBook(BASE_A, urgentPayload(crypto.randomBytes(16).toString("hex"), "13:30"));
+      assert(response.status === 200 && response.body?.phase === "searching", "cancel rollback fixture failed");
+      await pool.query(`
+        CREATE OR REPLACE FUNCTION public.cwf_test_fail_urgent_cancel_history()
+        RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN
+          IF NEW.action='urgent_cancelled' THEN
+            RAISE EXCEPTION 'fixture cancel history failure';
+          END IF;
+          RETURN NEW;
+        END $$;
+        CREATE TRIGGER cwf_test_fail_urgent_cancel_history
+        BEFORE INSERT ON public.job_updates_v2
+        FOR EACH ROW EXECUTE FUNCTION public.cwf_test_fail_urgent_cancel_history()
+      `);
+      const cancel = async () => fetch(`${BASE_A}/public/urgent-cancel`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ token: response.body.token }),
+      });
+      const failed = await cancel();
+      assert(failed.status === 500, `injected cancellation failure returned ${failed.status}`);
+      const rolledBack = (await pool.query(
+        `SELECT canceled_at,
+                (SELECT COUNT(*)::int FROM public.job_offers o
+                  WHERE o.job_id=j.job_id AND o.status='pending') AS pending_offers,
+                (SELECT COUNT(*)::int FROM public.job_updates_v2 u
+                  WHERE u.job_id=j.job_id AND u.action='urgent_cancelled') AS cancel_history
+           FROM public.jobs j WHERE j.job_id=$1`,
+        [response.body.job_id]
+      )).rows[0];
+      assert(!rolledBack.canceled_at && rolledBack.pending_offers >= 1 && rolledBack.cancel_history === 0,
+        `cancel rollback left partial state: ${JSON.stringify(rolledBack)}`);
+      await pool.query(`DROP TRIGGER cwf_test_fail_urgent_cancel_history ON public.job_updates_v2`);
+      await pool.query(`DROP FUNCTION public.cwf_test_fail_urgent_cancel_history()`);
+      const retried = await cancel();
+      assert(retried.status === 200, `clean retry after rollback failed: ${retried.status}`);
     });
 
     await record("API3 concurrent technician acceptance has exactly one winner and one assignment", async () => {
@@ -604,10 +717,63 @@ async function main() {
         [acceptedJobId]
       );
       assert(assignment.rows.length === 1, `expected one assignment, got ${assignment.rows.length}`);
-      const status = await (await fetch(`${BASE_A}/public/urgent-status?q=${encodeURIComponent((await pool.query(
+      const acceptedToken = (await pool.query(
         `SELECT booking_token FROM public.jobs WHERE job_id=$1`, [acceptedJobId]
-      )).rows[0].booking_token)}`)).json();
+      )).rows[0].booking_token;
+      const status = await (await fetch(`${BASE_A}/public/urgent-status?q=${encodeURIComponent(acceptedToken)}`)).json();
       assert(status.phase === "assigned" && status.confirmed === true, "customer status did not become assigned");
+      assert(status.can_cancel === true, "assigned-before-travel should remain customer cancellable");
+      const cancelled = await fetch(`${BASE_A}/public/urgent-cancel`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ token: acceptedToken }),
+      });
+      assert(cancelled.status === 200, `assigned-before-start cancel failed: ${cancelled.status}`);
+      const afterCancel = (await pool.query(
+        `SELECT canceled_at,
+                (SELECT COUNT(*)::int FROM public.job_assignments a WHERE a.job_id=j.job_id) AS assignments
+           FROM public.jobs j WHERE j.job_id=$1`,
+        [acceptedJobId]
+      )).rows[0];
+      assert(afterCancel.canceled_at && afterCancel.assignments === 0,
+        "assigned-before-start cancel left assignment state");
+    });
+
+    await record("API3b concurrent cancel vs accept leaves exactly one consistent final outcome", async () => {
+      const response = await apiBook(BASE_A, urgentPayload(crypto.randomBytes(16).toString("hex"), "12:30"));
+      assert(response.status === 200 && response.body?.job_id, "cancel/accept race fixture failed");
+      const offer = (await pool.query(
+        `SELECT offer_id, technician_username FROM public.job_offers WHERE job_id=$1 ORDER BY offer_id LIMIT 1`,
+        [response.body.job_id]
+      )).rows[0];
+      const session = await seedSessionFor(offer.technician_username, "technician");
+      await Promise.all([
+        fetch(`${BASE_A}/offers/${offer.offer_id}/accept`, {
+          method: "POST",
+          headers: { "content-type": "application/json", cookie: `cwf_session=${session}` },
+          body: "{}",
+        }),
+        fetch(`${BASE_A}/public/urgent-cancel`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ token: response.body.token }),
+        }),
+      ]);
+      const final = (await pool.query(
+        `SELECT canceled_at, technician_username,
+                (SELECT COUNT(*)::int FROM public.job_assignments a WHERE a.job_id=j.job_id) AS assignments,
+                (SELECT COUNT(*)::int FROM public.job_offers o WHERE o.job_id=j.job_id AND o.status='pending') AS pending_offers
+           FROM public.jobs j WHERE j.job_id=$1`,
+        [response.body.job_id]
+      )).rows[0];
+      const cancelled = Boolean(final.canceled_at);
+      if (cancelled) {
+        assert(!final.technician_username && final.assignments === 0 && final.pending_offers === 0,
+          `cancelled race left assignment state: ${JSON.stringify(final)}`);
+      } else {
+        assert(final.technician_username && final.assignments === 1 && final.pending_offers === 0,
+          `accepted race did not have exactly one assignment: ${JSON.stringify(final)}`);
+      }
     });
 
     let fallbackJobId = null;
@@ -697,6 +863,65 @@ async function main() {
         `invalid rebroadcast type was not rejected: ${invalid.status}/${invalid.body?.code}`);
       assert(JSON.stringify(await pendingEmployment()) === JSON.stringify(beforeInvalid),
         "invalid type mutated pending offers");
+    });
+
+    await record("API4c admin can cancel searching and fallback urgent jobs idempotently", async () => {
+      const unauthenticated = await fetch(`${BASE_A}/jobs/${fallbackJobId}/admin-cancel`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ reason: "must_not_apply" }),
+      });
+      assert(unauthenticated.status === 401,
+        `admin cancel accepted an unauthenticated request: ${unauthenticated.status}`);
+
+      const adminCancel = async (jobId) => {
+        const response = await fetch(`${BASE_A}/jobs/${jobId}/admin-cancel`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            cookie: `cwf_session=${adminSession}`,
+            "x-user-role": "admin",
+          },
+          body: JSON.stringify({ reason: "incident_hotfix_test" }),
+        });
+        return { status: response.status, body: await response.json() };
+      };
+
+      const searching = await adminCancel(fallbackJobId);
+      const searchingReplay = await adminCancel(fallbackJobId);
+      assert(searching.status === 200 && searching.body?.already_cancelled === false,
+        `admin searching cancel failed: ${searching.status}/${JSON.stringify(searching.body)}`);
+      assert(searchingReplay.status === 200 && searchingReplay.body?.already_cancelled === true,
+        "admin searching cancel was not idempotent");
+      const searchingState = (await pool.query(
+        `SELECT canceled_at,
+                (SELECT COUNT(*)::int FROM public.job_offers o WHERE o.job_id=j.job_id AND o.status='pending') AS pending_offers
+           FROM public.jobs j WHERE j.job_id=$1`,
+        [fallbackJobId]
+      )).rows[0];
+      assert(searchingState.canceled_at && searchingState.pending_offers === 0,
+        "admin searching cancel left pending offers");
+
+      const urgentTechs = ["tech_partner", "tech_partner2", "A2MKUNG", "tech_custom", "tech_special"];
+      await pool.query(
+        `UPDATE public.technician_profiles SET accept_status='paused' WHERE username=ANY($1::text[])`,
+        [urgentTechs]
+      );
+      const fallback = await apiBook(BASE_A, urgentPayload(crypto.randomBytes(16).toString("hex"), "15:30"));
+      await pool.query(
+        `UPDATE public.technician_profiles
+            SET accept_status='ready', accept_status_expires_at=NOW()+INTERVAL '12 hours'
+          WHERE username=ANY($1::text[])`,
+        [urgentTechs]
+      );
+      assert(fallback.status === 200 && fallback.body?.phase === "fallback",
+        `zero-candidate fixture was not fallback: ${fallback.status}/${JSON.stringify(fallback.body)}`);
+      const fallbackCancel = await adminCancel(fallback.body.job_id);
+      assert(fallbackCancel.status === 200, `admin fallback cancel failed: ${fallbackCancel.status}`);
+      const fallbackTracking = await (await fetch(
+        `${BASE_A}/public/urgent-status?token=${encodeURIComponent(fallback.body.token)}`
+      )).json();
+      assert(fallbackTracking.phase === "terminal", "admin fallback cancel did not update customer tracking");
     });
 
     await record("API5 all offers expired enters truthful admin fallback and remains trackable", async () => {
@@ -907,9 +1132,9 @@ async function main() {
     await p.close();
   });
 
-  // 8) Urgent booking with an available partner -> offer created + waiting room.
+  // 8) Urgent booking with canonical urgent technicians -> offers + waiting room.
   let urgentToken = "";
-  await record("S8 urgent booking creates one job + partner offer, waiting room live", async () => {
+  await record("S8 urgent booking creates one job + all canonical offers, waiting room live", async () => {
     const p = await ctx.newPage();
     await p.goto(`${APP_URL_A}#urgent`, { waitUntil: "domcontentloaded" });
     await p.waitForSelector('[data-urgent-field="customer_name"]', { timeout: 20000 });
@@ -936,8 +1161,8 @@ async function main() {
     assert(r.rows.length === 1, "urgent job not found");
     urgentToken = r.rows[0].booking_token;
     const offers = await pool.query(`SELECT offer_id, technician_username, status FROM public.job_offers WHERE job_id=$1`, [r.rows[0].job_id]);
-    assert(offers.rows.length >= 1, "no partner offer created");
-    assert(offers.rows.every((o) => ["tech_partner", "tech_partner2"].includes(o.technician_username)), "offer sent to wrong technician");
+    assert(offers.rows.length >= 5, "canonical urgent offers were not created");
+    assert(offers.rows.some((o) => o.technician_username === "A2MKUNG"), "company technician A2MKUNG did not receive an offer");
 
     // Both partners race to accept — exactly one may win, and the job must be
     // assigned to the winner (single-winner guarantee, real HTTP + real DB).
@@ -1411,8 +1636,11 @@ async function main() {
     assert(row.rows[0].dispatch_mode === "offer", "attacker dispatch_mode must be overridden to offer");
     assert(!row.rows[0].technician_username, "attacker-supplied technician must be stripped (offer engine assigns)");
     const offers = await pool.query(`SELECT technician_username FROM public.job_offers WHERE job_id=$1`, [jobId]);
-    assert(offers.rows.every((o) => ["tech_partner", "tech_partner2"].includes(o.technician_username)),
-      "offers must target zoned partners via the engine, not an attacker choice");
+    const offeredUsernames = offers.rows.map((row) => row.technician_username);
+    assert(offeredUsernames.includes("tech_partner") && offeredUsernames.includes("A2MKUNG"),
+      "server-owned all policy must include partner and company technicians");
+    assert(offeredUsernames.length >= 5,
+      "client tech_type must not narrow the canonical public urgent candidate set");
     // Dedup on the request key: replaying the same forged request makes no 2nd job.
     await apiBook(BASE_A, attack);
     const cnt = await pool.query(

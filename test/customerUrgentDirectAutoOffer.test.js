@@ -268,10 +268,12 @@ test("urgent creation, offer expiry, post-commit notification, first-wins locks 
   assert.match(booking, /const urgentOfferEnabled = bm === "urgent"/);
   assert.match(booking, /JOB_STATUS\.ADMIN_URGENT_WAITING/);
   assert.match(booking, /JOB_STATUS\.URGENT_NO_TECHNICIAN/);
+  assert.match(booking, /techType:\s*"all"/);
+  assert.doesNotMatch(booking, /techType:\s*payloadV2\.tech_type/);
   assert.match(index, /FROM public\.job_offers[\s\S]*FOR UPDATE/);
   assert.match(index, /FROM public\.jobs WHERE job_id=\$1 FOR UPDATE/);
   assert.match(index, /INSERT INTO public\.job_assignments[\s\S]*ON CONFLICT/);
-  assert.match(index, /UPDATE public\.job_offers SET status='expired' WHERE job_id=\$1 AND status='pending'/);
+  assert.match(index, /UPDATE public\.job_offers[\s\S]*SET status='expired'[\s\S]*WHERE job_id=\$1 AND status='pending'/);
   const acceptRoute = index.slice(
     index.indexOf('app.post("/offers/:offer_id/accept"'),
     index.indexOf('app.post("/offers/:offer_id/time-proposal"'),
@@ -280,6 +282,12 @@ test("urgent creation, offer expiry, post-commit notification, first-wins locks 
     acceptRoute.indexOf('client.query("COMMIT")') < acceptRoute.indexOf("await _notifyDirectJobAssigned"),
     "accept notification must happen after commit",
   );
+  assert.ok(
+    acceptRoute.indexOf("FROM public.jobs WHERE job_id=$1 FOR UPDATE")
+      < acceptRoute.indexOf("FROM public.job_offers", acceptRoute.indexOf("FROM public.jobs WHERE job_id=$1 FOR UPDATE")),
+    "accept must lock the job before the offer so cancellation uses the same order",
+  );
+  assert.match(acceptRoute, /canceled_at[\s\S]*URGENT_JOB_NOT_ACCEPTABLE/);
   assert.match(finalizer, /status='pending'[\s\S]*expires_at >= NOW\(\)/);
   assert.match(finalizer, /status='accepted'/);
 });
