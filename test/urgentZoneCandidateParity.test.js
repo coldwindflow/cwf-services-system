@@ -117,10 +117,10 @@ function diagnosticFixture(overrides = {}) {
   return { service, db };
 }
 
-async function runDiagnostic(overrides = {}) {
+async function runDiagnostic(overrides = {}, appointment = "2026-07-27T10:00:00+07:00") {
   const fixture = diagnosticFixture(overrides);
   return fixture.service.findEligibleTechnicians({
-    appointment_datetime: "2026-07-27T10:00:00+07:00",
+    appointment_datetime: appointment,
     duration_min: 60,
     address_text: "บางนา",
   }, {
@@ -129,6 +129,71 @@ async function runDiagnostic(overrides = {}) {
     criteriaList: [{ job: "ล้าง", ac: "ผนัง", btu: 12000, wash: "ล้างธรรมดา" }],
   });
 }
+
+test("job #521 exact 07:55 trace proves multiple legacy gates and blocks until a ready time", async () => {
+  const fixture = diagnosticFixture();
+  const criteriaList = [{ job: "ล้าง", ac: "ผนัง", btu: 12000, wash: "ล้างธรรมดา" }];
+  const base = {
+    appointment_datetime: "2026-07-28T07:55:00+07:00",
+    duration_min: 60,
+    effective_block_min: 90,
+    address_text: "55/5 ถนนสุขุมวิท กรุงเทพฯ",
+    maps_url: "https://www.google.com/maps?q=13.668,100.604",
+    gps_latitude: 13.668,
+    gps_longitude: 100.604,
+    service_zone_code: "F",
+    service_zone_source: "maps_coordinate",
+  };
+  const legacy = await fixture.service.findEligibleTechnicians(base, {
+    db: fixture.db,
+    techType: "all",
+    criteriaList,
+  });
+  const legacyA2 = legacy.diagnostics.technicians.find((row) => row.username === "A2MKUNG");
+  assert.equal(legacy.diagnostics.duration_min, 60);
+  assert.equal(legacy.diagnostics.effective_block_min, 90);
+  assert.deepEqual(legacyA2.failed_gates, ["zone_mismatch", "outside_work_window"]);
+  assert.equal(legacyA2.checks.account_profile_active, true);
+  assert.equal(legacyA2.checks.ready, true);
+  assert.equal(legacyA2.checks.ready_expiry, true);
+  assert.equal(legacyA2.checks.service_matrix, true);
+  assert.equal(legacyA2.checks.calendar_exists, true);
+  assert.equal(legacyA2.checks.calendar_working, true);
+  assert.equal(legacyA2.checks.urgent_enabled_for_day, true);
+  assert.equal(legacyA2.checks.capacity, true);
+  assert.equal(legacyA2.checks.zone, false);
+  assert.equal(legacyA2.checks.day_override, true);
+  assert.equal(legacyA2.checks.weekly_off, true);
+  assert.equal(legacyA2.checks.work_window, false);
+  assert.equal(legacyA2.checks.special_slot, false);
+  assert.equal(legacyA2.checks.collision_travel, true);
+
+  const canonical = { ...base, service_zone_code: "A", service_zone_source: "maps_coordinate" };
+  const early = await fixture.service.preflightUrgentDispatch(canonical, {
+    db: fixture.db,
+    techType: "all",
+    criteriaList,
+    includeNearbyTimes: true,
+  });
+  assert.equal(early.can_dispatch, false);
+  assert.equal(early.reason, "time_unavailable");
+  assert.ok(early.nearby_times.includes("2026-07-28T09:00:00+07:00"));
+  assert.deepEqual(
+    early.internal.diagnostics.technicians.find((row) => row.username === "A2MKUNG").failed_gates,
+    ["outside_work_window"],
+  );
+
+  const ready = await fixture.service.preflightUrgentDispatch({
+    ...canonical,
+    appointment_datetime: "2026-07-28T09:00:00+07:00",
+  }, {
+    db: fixture.db,
+    techType: "all",
+    criteriaList,
+  });
+  assert.equal(ready.can_dispatch, true);
+  assert.deepEqual(ready.internal.available, ["A2MKUNG"]);
+});
 
 test("A2MKUNG production-like fixture passes canonical all-policy candidate gates", async () => {
   const result = await runDiagnostic();

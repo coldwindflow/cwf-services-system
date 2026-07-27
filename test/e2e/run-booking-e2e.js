@@ -203,6 +203,7 @@ function bootApp(port, extraEnv = {}) {
       // Both API-only and browser scenarios use the same isolated local
       // PostgreSQL cluster, which intentionally has TLS disabled.
       NODE_OPTIONS: `--require=${path.join(__dirname, "local-postgres-preload.js")}`,
+      CWF_E2E_NOW_BANGKOK: "2026-07-28T07:30:00+07:00",
       ENABLE_CUSTOMER_SCHEDULED_BOOKING: "true",
       // Customer urgent must ignore this legacy ENV and use the persisted CMS switch.
       ENABLE_CUSTOMER_URGENT_BOOKING: "false",
@@ -470,6 +471,8 @@ async function main() {
   const tomorrow = ymdBangkok(1);
   const dayAfter = ymdBangkok(2);
   const today = ymdBangkok(0);
+  const productionIncidentDate = "2026-07-28";
+  const urgentCalendarDates = [...new Set([productionIncidentDate, today, tomorrow])];
 
   // Capacity note: tech_a works tomorrow+dayAfter (1 job/day). tech_race works
   // dayAfter only — scenario 4 uses dayAfter where both techs are free but each
@@ -484,11 +487,11 @@ async function main() {
 
   await seedTechnician("tech_a", { date: [tomorrow, dayAfter, multiDay, reloadDay, r2Day], maxJobs: 3, maxUnits: 9 });
   await seedTechnician("tech_solo", { date: [raceDay, staleDay, retryDay], maxJobs: 1, maxUnits: 5 });
-  await seedTechnician("tech_partner", { employment: "partner", date: [today, tomorrow], urgentOk: true, maxJobs: 5, maxUnits: 10 });
-  await seedTechnician("tech_partner2", { employment: "partner", date: [today, tomorrow], urgentOk: true, maxJobs: 5, maxUnits: 10 });
-  await seedTechnician("A2MKUNG", { employment: "company", date: [today, tomorrow], urgentOk: true, maxJobs: 5, maxUnits: 10 });
-  await seedTechnician("tech_custom", { employment: "custom", date: [today, tomorrow], urgentOk: true, maxJobs: 5, maxUnits: 10 });
-  await seedTechnician("tech_special", { employment: "special_only", date: [today, tomorrow], urgentOk: true, maxJobs: 5, maxUnits: 10 });
+  await seedTechnician("tech_partner", { employment: "partner", date: urgentCalendarDates, urgentOk: true, maxJobs: 5, maxUnits: 10 });
+  await seedTechnician("tech_partner2", { employment: "partner", date: urgentCalendarDates, urgentOk: true, maxJobs: 5, maxUnits: 10 });
+  await seedTechnician("A2MKUNG", { employment: "company", date: urgentCalendarDates, urgentOk: true, maxJobs: 5, maxUnits: 10 });
+  await seedTechnician("tech_custom", { employment: "custom", date: urgentCalendarDates, urgentOk: true, maxJobs: 5, maxUnits: 10 });
+  await seedTechnician("tech_special", { employment: "special_only", date: urgentCalendarDates, urgentOk: true, maxJobs: 5, maxUnits: 10 });
   // Zone A covers เขตสวนหลวง — public urgent targets every canonical
   // employment group, including the production company technician fixture.
   await pool.query(
@@ -511,11 +514,11 @@ async function main() {
   }
 
   if (process.env.E2E_API_ONLY === "1") {
-    const urgentPayload = (key, time = "10:00") => ({
+    const urgentPayload = (key, time = "07:55") => ({
       customer_name: "ลูกค้า API ด่วน",
       customer_phone: "0822222222",
       job_type: "ล้าง",
-      appointment_datetime: `${tomorrow}T${time}:00+07:00`,
+      appointment_datetime: `${productionIncidentDate}T${time}:00+07:00`,
       // Production-like A/F overlap: the legacy F-first bounding-box chain
       // classified these Bang Na coordinates as F. A2MKUNG is a Zone A
       // company technician and must remain eligible after canonical resolution.
@@ -544,14 +547,14 @@ async function main() {
 
     let acceptedJobId = null;
     let initialPublicCandidates = [];
-    await record("API2 ENV-false urgent submit creates one job/items and 10-minute offers", async () => {
+    await record("API2 exact job #521 time is blocked before mutation; 09:00 creates atomic offers for A2MKUNG", async () => {
       await publishUrgentSwitch(BASE_A, adminSession, true);
       const key = crypto.randomBytes(16).toString("hex");
-      const payload = urgentPayload(key);
+      const incidentPayload = urgentPayload(key, "07:55");
       const zonePrecheckResponse = await fetch(`${BASE_A}/public/service-zones/detect`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ ...payload, service_zone_code: "F" }),
+        body: JSON.stringify({ ...incidentPayload, service_zone_code: "F" }),
       });
       const zonePrecheck = await zonePrecheckResponse.json();
       assert(zonePrecheckResponse.status === 200
@@ -561,6 +564,39 @@ async function main() {
         && !Object.hasOwn(zonePrecheck.detected || {}, "coordinate_matches")
         && !Object.hasOwn(zonePrecheck.detected || {}, "resolution_rule"),
       `public precheck leaked internal diagnostics: ${JSON.stringify(zonePrecheck)}`);
+
+      const beforeIncident = await jobCountWhere("TRUE");
+      const incidentPreflightResponse = await fetch(`${BASE_A}/public/urgent-dispatch-preflight`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(incidentPayload),
+      });
+      const incidentPreflight = await incidentPreflightResponse.json();
+      assert(incidentPreflightResponse.status === 200
+        && incidentPreflight.can_dispatch === false
+        && incidentPreflight.reason === "time_unavailable",
+      `07:55 preflight was not safely blocked: ${incidentPreflightResponse.status}/${JSON.stringify(incidentPreflight)}`);
+      assert((incidentPreflight.nearby_times || []).includes("2026-07-28T09:00:00+07:00"),
+        `07:55 preflight did not offer 09:00: ${JSON.stringify(incidentPreflight)}`);
+      assert(!/A2MKUNG|username|matrix|calendar|diagnostic|sql/i.test(JSON.stringify(incidentPreflight)),
+        `public preflight leaked internal candidate data: ${JSON.stringify(incidentPreflight)}`);
+      const blockedDirect = await apiBook(BASE_A, incidentPayload);
+      assert(blockedDirect.status === 409
+        && blockedDirect.body?.code === "URGENT_DISPATCH_UNAVAILABLE",
+      `07:55 direct submit did not fail closed: ${blockedDirect.status}/${JSON.stringify(blockedDirect.body)}`);
+      assert(await jobCountWhere("TRUE") === beforeIncident, "07:55 preflight/direct submit created a job");
+
+      const payload = urgentPayload(key, "09:00");
+      const readyPreflightResponse = await fetch(`${BASE_A}/public/urgent-dispatch-preflight`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const readyPreflight = await readyPreflightResponse.json();
+      assert(readyPreflightResponse.status === 200
+        && readyPreflight.can_dispatch === true
+        && readyPreflight.resolved_zone?.service_zone_code === "A",
+      `09:00 preflight did not pass: ${readyPreflightResponse.status}/${JSON.stringify(readyPreflight)}`);
       const first = await apiBook(BASE_A, payload);
       const replay = await apiBook(BASE_A, payload);
       assert(first.status === 200 && first.body?.phase === "searching", `urgent submit failed ${first.status}`);
@@ -573,6 +609,7 @@ async function main() {
         [acceptedJobId]
       )).rows[0];
       const items = await pool.query(`SELECT COUNT(*)::int AS n FROM public.job_items WHERE job_id=$1`, [acceptedJobId]);
+      const history = await pool.query(`SELECT COUNT(*)::int AS n FROM public.job_updates_v2 WHERE job_id=$1`, [acceptedJobId]);
       const offers = await pool.query(
         `SELECT o.offer_id, o.technician_username, p.employment_type,
                 EXTRACT(EPOCH FROM (expires_at-NOW()))/60 AS lifetime_min
@@ -581,7 +618,8 @@ async function main() {
           WHERE o.job_id=$1 ORDER BY o.offer_id`,
         [acceptedJobId]
       );
-      assert(jobCount === 1 && items.rows[0].n >= 1, "job/items were not atomic");
+      assert(jobCount === 1 && items.rows[0].n >= 1 && history.rows[0].n >= 1,
+        "job/items/tracking history were not atomic");
       assert(jobZone.service_zone_code === "A", `urgent job persisted wrong zone: ${JSON.stringify(jobZone)}`);
       assert(offers.rows.length >= 5, "canonical public urgent candidates did not receive offers");
       const employmentTypes = [...new Set(offers.rows.map((row) => row.employment_type))].sort();
@@ -752,12 +790,15 @@ async function main() {
       assert(retried.status === 200, `clean retry after rollback failed: ${retried.status}`);
     });
 
-    await record("API3 concurrent technician acceptance has exactly one winner and one assignment", async () => {
+    await record("API3 A2MKUNG accepts the 09:00 offer; competitor is rejected and exactly one assignment remains", async () => {
       const offers = await pool.query(
         `SELECT offer_id, technician_username FROM public.job_offers WHERE job_id=$1 ORDER BY offer_id`,
         [acceptedJobId]
       );
-      const attempts = await Promise.all(offers.rows.slice(0, 2).map(async (offer) => {
+      const a2Offer = offers.rows.find((offer) => offer.technician_username === "A2MKUNG");
+      const competitorOffer = offers.rows.find((offer) => offer.technician_username !== "A2MKUNG");
+      assert(a2Offer && competitorOffer, `missing A2MKUNG/competitor offers: ${JSON.stringify(offers.rows)}`);
+      const accept = async (offer) => {
         const session = await seedSessionFor(offer.technician_username, "technician");
         const response = await fetch(`${BASE_A}/offers/${offer.offer_id}/accept`, {
           method: "POST",
@@ -765,14 +806,17 @@ async function main() {
           body: "{}",
         });
         return { status: response.status, tech: offer.technician_username };
-      }));
-      const winners = attempts.filter((result) => result.status === 200);
-      assert(winners.length === 1, `expected one winner, got ${JSON.stringify(attempts)}`);
+      };
+      const winner = await accept(a2Offer);
+      const loser = await accept(competitorOffer);
+      assert(winner.status === 200 && loser.status !== 200,
+        `A2MKUNG first-wins contract failed: ${JSON.stringify({ winner, loser })}`);
       const assignment = await pool.query(
         `SELECT technician_username FROM public.job_assignments WHERE job_id=$1`,
         [acceptedJobId]
       );
-      assert(assignment.rows.length === 1, `expected one assignment, got ${assignment.rows.length}`);
+      assert(assignment.rows.length === 1 && assignment.rows[0].technician_username === "A2MKUNG",
+        `expected one A2MKUNG assignment, got ${JSON.stringify(assignment.rows)}`);
       const acceptedToken = (await pool.query(
         `SELECT booking_token FROM public.jobs WHERE job_id=$1`, [acceptedJobId]
       )).rows[0].booking_token;
@@ -896,6 +940,43 @@ async function main() {
         [fallbackJobId]
       )).rows.map((row) => row.employment_type);
 
+      await pool.query(
+        `UPDATE public.jobs
+            SET service_zone_code='F',
+                service_zone_source='maps_coordinate',
+                gps_latitude=13.668,
+                gps_longitude=100.604
+          WHERE job_id=$1`,
+        [fallbackJobId]
+      );
+      const repaired = await call("all");
+      assert(repaired.status === 200, `legacy #521 rebroadcast failed: ${repaired.status}/${JSON.stringify(repaired.body)}`);
+      const repairedJob = (await pool.query(
+        `SELECT service_zone_code, service_zone_source FROM public.jobs WHERE job_id=$1`,
+        [fallbackJobId]
+      )).rows[0];
+      assert(repairedJob.service_zone_code === "A"
+        && repairedJob.service_zone_source !== "admin_override"
+        && repairedJob.service_zone_source !== "admin_confirmed_override",
+      `legacy persisted F was not repaired to canonical A: ${JSON.stringify(repairedJob)}`);
+      const repairedA2Offer = (await pool.query(
+        `SELECT offer_id, expires_at
+           FROM public.job_offers
+          WHERE job_id=$1 AND technician_username='A2MKUNG' AND status='pending'`,
+        [fallbackJobId]
+      )).rows[0];
+      assert(repairedA2Offer
+        && new Date(repairedA2Offer.expires_at).getTime() > Date.now() + (9 * 60 * 1000),
+      `legacy #521 rebroadcast did not create a 10-minute A2MKUNG offer: ${JSON.stringify(repairedA2Offer)}`);
+      const a2Session = await seedSessionFor("A2MKUNG", "technician");
+      const a2OffersResponse = await fetch(`${BASE_A}/offers/tech/me`, {
+        headers: { cookie: `cwf_session=${a2Session}` },
+      });
+      const a2Offers = await a2OffersResponse.json();
+      assert(a2OffersResponse.status === 200
+        && a2Offers.some((offer) => Number(offer.job_id) === Number(fallbackJobId)),
+      `A2MKUNG did not see the repaired legacy offer: ${a2OffersResponse.status}/${JSON.stringify(a2Offers)}`);
+
       const partner = await call("partner");
       assert(partner.status === 200, `partner rebroadcast failed: ${partner.status}`);
       assert(JSON.stringify(await pendingEmployment()) === JSON.stringify(["partner"]),
@@ -932,6 +1013,21 @@ async function main() {
         `invalid rebroadcast type was not rejected: ${invalid.status}/${invalid.body?.code}`);
       assert(JSON.stringify(await pendingEmployment()) === JSON.stringify(beforeInvalid),
         "invalid type mutated pending offers");
+
+      await pool.query(
+        `UPDATE public.jobs
+            SET service_zone_code='F', service_zone_source='admin_override'
+          WHERE job_id=$1`,
+        [fallbackJobId]
+      );
+      const explicitOverride = await call("all");
+      assert(explicitOverride.status === 409, "explicit authenticated admin override was silently replaced");
+      const preserved = (await pool.query(
+        `SELECT service_zone_code, service_zone_source FROM public.jobs WHERE job_id=$1`,
+        [fallbackJobId]
+      )).rows[0];
+      assert(preserved.service_zone_code === "F" && preserved.service_zone_source === "admin_override",
+        `explicit admin override changed without confirmation: ${JSON.stringify(preserved)}`);
     });
 
     await record("API4c admin can cancel searching and fallback urgent jobs idempotently", async () => {
@@ -971,20 +1067,27 @@ async function main() {
       assert(searchingState.canceled_at && searchingState.pending_offers === 0,
         "admin searching cancel left pending offers");
 
-      const urgentTechs = ["tech_partner", "tech_partner2", "A2MKUNG", "tech_custom", "tech_special"];
-      await pool.query(
-        `UPDATE public.technician_profiles SET accept_status='paused' WHERE username=ANY($1::text[])`,
-        [urgentTechs]
-      );
       const fallback = await apiBook(BASE_A, urgentPayload(crypto.randomBytes(16).toString("hex"), "15:30"));
-      await pool.query(
-        `UPDATE public.technician_profiles
-            SET accept_status='ready', accept_status_expires_at=NOW()+INTERVAL '12 hours'
-          WHERE username=ANY($1::text[])`,
-        [urgentTechs]
-      );
-      assert(fallback.status === 200 && fallback.body?.phase === "fallback",
-        `zero-candidate fixture was not fallback: ${fallback.status}/${JSON.stringify(fallback.body)}`);
+      assert(fallback.status === 200 && fallback.body?.phase === "searching",
+        `admin fallback fixture was not searching first: ${fallback.status}/${JSON.stringify(fallback.body)}`);
+      const fallbackOffers = (await pool.query(
+        `SELECT offer_id, technician_username FROM public.job_offers WHERE job_id=$1 ORDER BY offer_id`,
+        [fallback.body.job_id]
+      )).rows;
+      for (const offer of fallbackOffers) {
+        const session = await seedSessionFor(offer.technician_username, "technician");
+        const declined = await fetch(`${BASE_A}/offers/${offer.offer_id}/decline`, {
+          method: "POST",
+          headers: { "content-type": "application/json", cookie: `cwf_session=${session}` },
+          body: "{}",
+        });
+        assert(declined.status === 200, `fallback decline failed: ${declined.status}`);
+      }
+      const fallbackBeforeCancel = await (await fetch(
+        `${BASE_A}/public/urgent-status?token=${encodeURIComponent(fallback.body.token)}`
+      )).json();
+      assert(fallbackBeforeCancel.phase === "fallback",
+        `last decline did not enter fallback: ${JSON.stringify(fallbackBeforeCancel)}`);
       const fallbackCancel = await adminCancel(fallback.body.job_id);
       assert(fallbackCancel.status === 200, `admin fallback cancel failed: ${fallbackCancel.status}`);
       const fallbackTracking = await (await fetch(
@@ -1031,6 +1134,17 @@ async function main() {
   const executablePath = chromiumCandidates.find((p) => { try { fs.accessSync(p); return true; } catch (_) { return false; } });
   const browser = await chromium.launch(executablePath ? { executablePath } : {});
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  await ctx.addInitScript(({ fixedNow }) => {
+    const NativeDate = Date;
+    class IncidentDate extends NativeDate {
+      constructor(...args) {
+        super(...(args.length ? args : [fixedNow]));
+      }
+      static now() { return fixedNow; }
+    }
+    Object.setPrototypeOf(IncidentDate, NativeDate);
+    globalThis.Date = IncidentDate;
+  }, { fixedNow: Date.parse("2026-07-28T07:30:00+07:00") });
   const page = await ctx.newPage();
   lastPages.add(page);
   ctx.on("page", (p) => { lastPages.add(p); p.on("close", () => lastPages.delete(p)); });
@@ -1203,7 +1317,7 @@ async function main() {
 
   // 8) Urgent booking with canonical urgent technicians -> offers + waiting room.
   let urgentToken = "";
-  await record("S8 urgent booking creates one job + all canonical offers, waiting room live", async () => {
+  await record("S8 exact 07:55 blocks with no job; 09:00 preflight creates searching offer and A2MKUNG accepts", async () => {
     const p = await ctx.newPage();
     await p.goto(`${APP_URL_A}#urgent`, { waitUntil: "domcontentloaded" });
     // Service taxonomy: ล้าง -> ผนัง -> ล้างธรรมดา -> 12000 BTU.
@@ -1221,11 +1335,23 @@ async function main() {
     await p.locator('[data-urgent-field="customer_phone"]').fill("0822222222");
     await p.locator('[data-urgent-field="address_text"]').fill("55/5 ถนนสุขุมวิท กรุงเทพฯ");
     await p.locator('[data-urgent-field="maps_url"]').fill("https://www.google.com/maps?q=13.668,100.604");
-    await p.locator('[data-urgent-field="date"]').fill(tomorrow);
-    await p.locator('[data-urgent-field="time"]').fill("15:30");
+    await p.locator('[data-urgent-field="date"]').fill(productionIncidentDate);
+    await p.locator('[data-urgent-field="time"]').fill("07:55");
     await tap(p.locator('[data-urgent-time-proposal="false"]'));
     const symptom = p.locator('[data-urgent-field="symptom"]');
     if (await symptom.count()) await symptom.fill("แอร์ไม่เย็น ต้องการช่างด่วน");
+    const jobsBeforeEarlyPreflight = await jobCountWhere("TRUE");
+    await tap(p.locator('[data-urgent-action="to-review"]'));
+    await p.waitForSelector('[data-urgent-preflight-result]', { timeout: 30000 });
+    const unavailableCopy = await p.locator("[data-urgent-preflight-result]").textContent();
+    assert(/เวลานี้ยังไม่มีช่างพร้อมรับงาน/.test(unavailableCopy || ""),
+      `07:55 UI did not show the safe unavailable copy: ${unavailableCopy}`);
+    assert(await jobCountWhere("TRUE") === jobsBeforeEarlyPreflight,
+      "07:55 browser preflight created a job");
+    await tap(p.locator('[data-urgent-suggested-time="09:00"]'));
+    await p.waitForFunction(() => (
+      window.CWFCustomerAppV2.state.urgentFlow?.dispatchPreflight?.status === "success"
+    ), null, { timeout: 30000 });
     await tap(p.locator('[data-urgent-action="to-review"]'));
     await p.waitForSelector('[data-urgent-action="confirm"]', { timeout: 15000 });
     const zoneText = await p.locator("[data-urgent-zone-result]").textContent();
@@ -1239,30 +1365,42 @@ async function main() {
     assert(offers.rows.length >= 5, "canonical urgent offers were not created");
     assert(offers.rows.some((o) => o.technician_username === "A2MKUNG"), "company technician A2MKUNG did not receive an offer");
 
-    // Both partners race to accept — exactly one may win, and the job must be
-    // assigned to the winner (single-winner guarantee, real HTTP + real DB).
+    // Production company technician sees the real offer feed and accepts it;
+    // the database must retain exactly one canonical assignment.
+    const searchingUi = await p.locator("[data-urgent-search-animation]").count();
+    assert(searchingUi === 1, "searching animation was not visible while a pending offer existed");
+    const searchingStatus = await (await fetch(
+      `${BASE_A}/public/urgent-status?token=${encodeURIComponent(urgentToken)}`
+    )).json();
+    assert(searchingStatus.phase === "searching",
+      `pending offer status was not searching: ${JSON.stringify(searchingStatus)}`);
+
+    const a2Session = await seedSessionFor("A2MKUNG", "technician");
+    const a2OfferFeedResponse = await fetch(`${BASE_A}/offers/tech/me`, {
+      headers: { cookie: `cwf_session=${a2Session}` },
+    });
+    const a2OfferFeed = await a2OfferFeedResponse.json();
+    assert(a2OfferFeedResponse.status === 200
+      && a2OfferFeed.some((offer) => Number(offer.job_id) === Number(r.rows[0].job_id)),
+    `A2MKUNG offer feed did not contain the browser-created job: ${JSON.stringify(a2OfferFeed)}`);
+
     const offerByTech = new Map(offers.rows.map((o) => [o.technician_username, o.offer_id]));
-    const attempts = [];
-    for (const tech of ["tech_partner", "tech_partner2"]) {
-      const offerId = offerByTech.get(tech);
-      if (!offerId) continue;
-      const session = await seedSessionFor(tech, "technician");
-      attempts.push(
-        fetch(`${BASE_A}/offers/${offerId}/accept`, {
-          method: "POST",
-          headers: { "content-type": "application/json", cookie: `cwf_session=${session}` },
-          body: "{}",
-        }).then(async (resp) => ({ tech, status: resp.status, body: await resp.json().catch(() => null) }))
-      );
-    }
-    const raceResults = await Promise.all(attempts);
-    const winners = raceResults.filter((x) => x.status === 200);
-    assert(winners.length === 1, `expected exactly 1 accepted offer, got ${winners.length} (${JSON.stringify(raceResults.map((x) => x.status))})`);
+    const a2Accept = await fetch(`${BASE_A}/offers/${offerByTech.get("A2MKUNG")}/accept`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: `cwf_session=${a2Session}` },
+      body: "{}",
+    });
+    assert(a2Accept.status === 200, `A2MKUNG could not accept the browser-created offer: ${a2Accept.status}`);
     const assigned = await pool.query(`SELECT technician_username FROM public.jobs WHERE job_id=$1`, [r.rows[0].job_id]);
-    assert(assigned.rows[0].technician_username === winners[0].tech, "job not assigned to the accepting technician");
+    const assignments = await pool.query(`SELECT technician_username FROM public.job_assignments WHERE job_id=$1`, [r.rows[0].job_id]);
+    assert(assigned.rows[0].technician_username === "A2MKUNG"
+      && assignments.rows.length === 1
+      && assignments.rows[0].technician_username === "A2MKUNG",
+    `job was not assigned exactly once to A2MKUNG: ${JSON.stringify({ assigned: assigned.rows, assignments: assignments.rows })}`);
     // The customer's waiting room flips to accepted via the public status feed.
     const statusRes = await (await fetch(`${BASE_A}/public/urgent-status?token=${encodeURIComponent(urgentToken)}`)).json();
     assert(statusRes.phase === "assigned" && statusRes.confirmed === true, `urgent status should be assigned, got ${statusRes.phase}`);
+    await p.waitForFunction(() => document.body.textContent.includes("ช่างรับงานแล้ว"), null, { timeout: 30000 });
     await p.close();
   });
 
@@ -1271,7 +1409,7 @@ async function main() {
     // A fresh urgent request via the public API (S8's job is already accepted).
     const api = await apiBook(BASE_A, {
       customer_name: "ลูกค้า ด่วนสอง", customer_phone: "0833333333",
-      job_type: "ล้าง", appointment_datetime: `${tomorrow}T17:00:00+07:00`,
+      job_type: "ล้าง", appointment_datetime: `${productionIncidentDate}T16:00:00+07:00`,
       address_text: "77/7 เขตสวนหลวง กรุงเทพฯ", maps_url: "https://www.google.com/maps?q=13.668,100.604", booking_mode: "urgent",
       client_app: "customer_app_v2", allow_time_proposal: true,
       urgent_request_key: crypto.randomBytes(16).toString("hex"),
@@ -1418,6 +1556,10 @@ async function main() {
   // reopen a closed lane, an unknown mode must be rejected outright, and zero
   // jobs may be created on the disabled instance across every attempt.
   await record("S14 kill switch cannot be bypassed by forging/omitting client_app", async () => {
+    // Urgent is controlled solely by the persisted CMS switch. Both test
+    // servers share that row, so an ENV-disabled server is not an urgent-off
+    // fixture. Exercise the real authenticated publish path instead.
+    await publishUrgentSwitch(BASE_A, adminSession, false);
     const before = await jobCountWhere("TRUE");
     const forgedApps = ["admin_console", "internal", "", "customer_app_v2", "cwf_admin"];
     for (const app of forgedApps) {
@@ -1426,8 +1568,9 @@ async function main() {
         `scheduled lane bypassed with client_app=${JSON.stringify(app)} (HTTP ${sched.status})`);
       const urgent = await apiBook(BASE_B, {
         customer_name: "bypass", customer_phone: "0810000000", job_type: "ล้างแอร์",
-        appointment_datetime: new Date().toISOString(), address_text: "z",
+        appointment_datetime: `${productionIncidentDate}T09:30:00+07:00`, address_text: "z",
         booking_mode: "urgent", client_app: app,
+        allow_time_proposal: false,
         urgent_request_key: crypto.randomBytes(16).toString("hex"),
         ac_type: "ผนัง", btu: 12000, machine_count: 1, wash_variant: "ล้างธรรมดา",
       });
@@ -1447,6 +1590,7 @@ async function main() {
       `unknown booking_mode must 400 on the open instance too, got ${bogusOpen.status}`);
     const after = await jobCountWhere("TRUE");
     assert(after === before, `bypass probes leaked ${after - before} job(s)`);
+    await publishUrgentSwitch(BASE_A, adminSession, true);
   });
 
   // S15) The public-lookup rate limiter must key off the proxy-derived req.ip
@@ -1695,6 +1839,7 @@ async function main() {
       customer_name: "ด่วนปลอม", customer_phone: "0844444444",
       job_type: "ล้าง", appointment_datetime: `${tomorrow}T16:30:00+07:00`,
       address_text: "88/8 เขตสวนหลวง กรุงเทพฯ", maps_url: "https://www.google.com/maps?q=13.668,100.604", booking_mode: "urgent",
+      allow_time_proposal: false,
       // NO client_app — the sanitiser must still engage on the canonical mode.
       urgent_request_key: urgentKey,
       ac_type: "ผนัง", btu: 12000, machine_count: 1, wash_variant: "ล้างธรรมดา",

@@ -86,6 +86,85 @@ test("closed authoritative urgent switch rejects before database mutation and ig
   assert.equal(connects, 0);
 });
 
+test("public urgent preflight serializes only safe dispatch fields and never candidate diagnostics", async () => {
+  const service = createBookingJobService({
+    pool: {},
+    urgentPublicAdapter,
+    resolveCustomerUrgentCapability: async () => ({ enabled: true }),
+    isServiceZoneFilterEnabled: () => true,
+    isCustomerScheduledBookingEnabled: () => true,
+    computeDurationMinMulti: () => 60,
+    effectiveBlockMin: (duration) => Number(duration) + 30,
+    detectServiceZoneFromText: async () => ({
+      service_zone_code: "A",
+      service_zone_label: "Zone A",
+      service_zone_source: "maps_coordinate",
+      matched_area: "บางนา",
+      coordinate_matches: ["A", "F"],
+    }),
+    expireTechnicianAcceptStatuses: async () => {},
+    availabilityEngine: {
+      buildCriteriaList: () => [{ job: "wash", ac: "wall", wash: "normal" }],
+    },
+    urgentDispatchService: {
+      preflightUrgentDispatch: async () => ({
+        can_dispatch: false,
+        reason: "time_unavailable",
+        nearby_times: ["2099-08-01T09:00:00+07:00"],
+        internal: {
+          available: [],
+          diagnostics: {
+            technicians: [{
+              username: "A2MKUNG",
+              failed_gates: ["outside_work_window"],
+              checks: { service_matrix: true, calendar_exists: true },
+            }],
+          },
+        },
+      }),
+    },
+  });
+  const reply = { statusCode: 200, body: null };
+  const res = {
+    status(code) { reply.statusCode = code; return this; },
+    json(value) { reply.body = value; return value; },
+  };
+  await service.handlePublicUrgentPreflight({ body: {
+    booking_mode: "urgent",
+    job_type: "ล้าง",
+    appointment_datetime: "2099-08-01T07:55:00+07:00",
+    address_text: "บางนา",
+    maps_url: "https://www.google.com/maps?q=13.668,100.604",
+    allow_time_proposal: false,
+    ac_type: "ผนัง",
+    btu: 12000,
+    machine_count: 1,
+    wash_variant: "ล้างธรรมดา",
+    services: [{
+      job_type: "ล้าง",
+      ac_type: "ผนัง",
+      btu: 12000,
+      machine_count: 1,
+      wash_variant: "ล้างธรรมดา",
+    }],
+  } }, res);
+
+  assert.equal(reply.statusCode, 200);
+  assert.deepEqual(Object.keys(reply.body).sort(), [
+    "can_dispatch",
+    "nearby_times",
+    "reason",
+    "resolved_zone",
+  ]);
+  assert.equal(reply.body.can_dispatch, false);
+  assert.equal(reply.body.reason, "time_unavailable");
+  assert.equal(reply.body.resolved_zone.service_zone_code, "A");
+  assert.doesNotMatch(
+    JSON.stringify(reply.body),
+    /A2MKUNG|username|diagnostic|matrix|calendar|coordinate_matches|service_zone_source|filter_enabled/i,
+  );
+});
+
 function dispatchFixture(overrides = {}) {
   const rows = overrides.rows || [{
     username: "ready-partner",

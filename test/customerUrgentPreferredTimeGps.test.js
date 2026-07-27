@@ -194,6 +194,90 @@ test("urgent pre-submit uses the server zone resolver and shows the detected are
   assert.equal(calls.length, 2, "changed location must be checked again");
 });
 
+test("urgent dispatch preflight blocks 07:55, exposes only safe nearby times, then allows the selected ready time", async () => {
+  const { root } = loadUrgent();
+  futureDraft(root);
+  root.state.currentRoute = "urgent";
+  root.state.updateDraft("urgent", {
+    date: "2026-07-28",
+    time: "07:55",
+    address_text: "55/5 ถนนสุขุมวิท บางนา กรุงเทพฯ",
+    maps_url: "https://www.google.com/maps?q=13.668,100.604",
+    gps_latitude: 13.668,
+    gps_longitude: 100.604,
+  });
+  root.state.setUrgentFlow({
+    zoneCheck: {
+      status: "success",
+      fingerprint: root.bookingUrgent._test.zoneFingerprint(),
+      detected: { service_zone_code: "A", matched_area: "บางนา" },
+      filter_enabled: true,
+      error: "",
+    },
+  });
+  const calls = [];
+  root.api = {
+    async preflightUrgentDispatch(payload) {
+      calls.push(payload);
+      if (payload.appointment_datetime.includes("T07:55:")) {
+        return {
+          can_dispatch: false,
+          resolved_zone: { service_zone_code: "A", matched_area: "บางนา" },
+          reason: "time_unavailable",
+          nearby_times: ["2026-07-28T09:00:00+07:00"],
+          filter_enabled: true,
+        };
+      }
+      return {
+        can_dispatch: true,
+        resolved_zone: { service_zone_code: "A", matched_area: "บางนา" },
+        reason: null,
+        nearby_times: [],
+        filter_enabled: true,
+      };
+    },
+  };
+
+  assert.equal(await root.bookingUrgent._test.ensureUrgentDispatchPreflight(), null);
+  const blocked = root.bookingUrgent._test.renderDetailsStep();
+  assert.match(blocked, /data-urgent-preflight-result/);
+  assert.match(blocked, /เวลานี้ยังไม่มีช่างพร้อมรับงาน/);
+  assert.match(blocked, /data-urgent-suggested-time="09:00"/);
+  assert.doesNotMatch(blocked, /A2MKUNG|username|matrix|diagnostic|calendar/i);
+  assert.equal(calls[0].appointment_datetime, "2026-07-28T07:55:00+07:00");
+  assert.equal(Object.hasOwn(calls[0], "service_zone_code"), false);
+
+  root.state.updateDraft("urgent", { time: "09:00" });
+  assert.equal((await root.bookingUrgent._test.ensureUrgentDispatchPreflight()).can_dispatch, true);
+  assert.equal(calls[1].appointment_datetime, "2026-07-28T09:00:00+07:00");
+});
+
+test("urgent unknown zone blocks only while the service-zone filter is enabled", async () => {
+  for (const filterEnabled of [true, false]) {
+    const { root } = loadUrgent();
+    futureDraft(root);
+    root.state.currentRoute = "urgent";
+    root.api = {
+      async detectUrgentServiceZone() {
+        return {
+          ok: !filterEnabled,
+          filter_enabled: filterEnabled,
+          detected: null,
+          error: filterEnabled ? "ไม่พบพื้นที่ให้บริการ" : null,
+        };
+      },
+    };
+    const result = await root.bookingUrgent._test.ensureUrgentZone();
+    if (filterEnabled) {
+      assert.equal(result, null);
+      assert.equal(root.state.urgentFlow.zoneCheck.status, "error");
+    } else {
+      assert.equal(result?.filter_enabled, false);
+      assert.equal(root.state.urgentFlow.zoneCheck.status, "success");
+    }
+  }
+});
+
 test("urgent validation requires contact/date/time but allows an empty note and rejects a past time", () => {
   const { root } = loadUrgent();
   futureDraft(root);

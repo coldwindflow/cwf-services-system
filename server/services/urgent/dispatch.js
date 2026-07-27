@@ -77,6 +77,45 @@ function weeklyOff(weeklyOffDays, dateText) {
     .some((value) => value === day);
 }
 
+function shiftBangkokAppointment(value, minutes) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  const shifted = new Date(date.getTime() + (Number(minutes) * 60 * 1000));
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Bangkok",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(shifted).reduce((out, part) => {
+    out[part.type] = part.value;
+    return out;
+  }, {});
+  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:00+07:00`;
+}
+
+function publicReasonForDiagnostics(diagnostics) {
+  if (Number(diagnostics?.counts?.eligible || 0) > 0) return null;
+  const failures = (diagnostics?.technicians || [])
+    .flatMap((row) => Array.isArray(row.failed_gates) ? row.failed_gates : [row.gate])
+    .filter(Boolean);
+  const timeGates = new Set([
+    "calendar_missing",
+    "calendar_not_working",
+    "urgent_disabled_for_day",
+    "capacity_full",
+    "explicit_day_off",
+    "weekly_off",
+    "outside_work_window",
+    "collision_or_travel",
+  ]);
+  return failures.length > 0 && failures.every((gate) => timeGates.has(gate))
+    ? "time_unavailable"
+    : "no_technician_available";
+}
+
 function createUrgentDispatchService(dependencies = {}) {
   const {
     pool,
@@ -92,13 +131,26 @@ function createUrgentDispatchService(dependencies = {}) {
     const appointment = bangkokDateAndMinute(job.appointment_datetime);
     const diagnostics = {
       dispatch_policy: techType,
+      appointment_datetime: job.appointment_datetime || null,
+      duration_min: Number(job.duration_min || 60),
+      effective_block_min: Math.max(
+        Number(job.duration_min || 60),
+        Number(job.effective_block_min || job.duration_min || 60),
+      ),
       zone: null,
       counts: {},
       technicians: [],
     };
-    const reject = (row, reason) => {
-      diagnostics.counts[reason] = Number(diagnostics.counts[reason] || 0) + 1;
-      diagnostics.technicians.push({ username: row.username, gate: reason });
+    const reject = (row, failedGates, checks) => {
+      for (const reason of failedGates) {
+        diagnostics.counts[reason] = Number(diagnostics.counts[reason] || 0) + 1;
+      }
+      diagnostics.technicians.push({
+        username: row.username,
+        gate: failedGates[0],
+        failed_gates: failedGates,
+        checks,
+      });
     };
     if (!appointment) {
       diagnostics.counts.outside_work_window = 1;
@@ -142,6 +194,8 @@ function createUrgentDispatchService(dependencies = {}) {
 
     const candidates = await db.query(
       `SELECT u.username,
+              u.role AS account_role,
+              p.username AS profile_username,
               COALESCE(p.employment_type,'company') AS employment_type,
               p.home_service_zone_code,
               p.secondary_service_zone_code,
@@ -167,6 +221,7 @@ function createUrgentDispatchService(dependencies = {}) {
 
     const candidateRows = (candidates.rows || [])
       .filter((row) => isUrgentEmploymentEligible(row.employment_type, techType));
+    diagnostics.counts.input_employment = candidateRows.length;
     const usernames = candidateRows.map((row) => row.username);
     const [calendars, overrides, specialSlots] = await Promise.all([
       usernames.length
@@ -219,74 +274,80 @@ function createUrgentDispatchService(dependencies = {}) {
     const zone = String(zoneCode || "").toUpperCase();
     const filtered = [];
     for (const row of candidateRows) {
-      if (String(row.accept_status || "").trim().toLowerCase() !== "ready"
-        || !row.accept_status_expires_at
-        || new Date(row.accept_status_expires_at).getTime() <= Date.now()) {
-        reject(row, "ready_expired");
-        continue;
-      }
-      if (!row.matrix_json || !availabilityEngine.techMatchesAllCriteriaStrict(row.matrix_json, criteriaList)) {
-        reject(row, "matrix_mismatch");
-        continue;
-      }
       const calendar = calendarMap.get(row.username);
-      if (!calendar) {
-        reject(row, "calendar_missing");
-        continue;
-      }
-      if (String(calendar.day_status || "").trim().toLowerCase() !== "working") {
-        reject(row, "calendar_not_working");
-        continue;
-      }
-      if (calendar.can_accept_urgent_job !== true) {
-        reject(row, "urgent_disabled_for_day");
-        continue;
-      }
-      if (capacityMap.get(row.username) !== true) {
-        reject(row, "capacity_full");
-        continue;
-      }
-      if (dependencies.isServiceZoneFilterEnabled()) {
-        const home = String(row.home_service_zone_code || "").toUpperCase();
-        const secondary = String(row.secondary_service_zone_code || "").toUpperCase();
-        if (home !== zone && secondary !== zone && row.allow_out_of_zone !== true) {
-          reject(row, "zone_mismatch");
-          continue;
-        }
-      }
       const explicitOff = offMap.get(row.username);
-      if (explicitOff === true) {
-        reject(row, "explicit_day_off");
-        continue;
-      }
-      if (explicitOff === undefined && weeklyOff(row.weekly_off_days, appointment.date)) {
-        reject(row, "weekly_off");
-        continue;
-      }
-      const normalStart = parseMinute(calendar.start_time || row.work_start);
-      const normalEnd = parseMinute(calendar.end_time || row.work_end);
+      const normalStart = parseMinute(calendar?.start_time || row.work_start);
+      const normalEnd = parseMinute(calendar?.end_time || row.work_end);
       const duration = Math.max(1, Number(job.duration_min || 60));
+      const windowBlockDuration = Math.max(duration, Number(job.effective_block_min || duration));
+      const specialWindows = specialMap.get(row.username) || [];
       const windows = [
         { start: normalStart, end: normalEnd },
-        ...(specialMap.get(row.username) || []),
+        ...specialWindows,
       ];
       const insideWindow = windows.some((window) =>
         Number.isFinite(window.start)
         && Number.isFinite(window.end)
         && appointment.minute >= window.start
-        && appointment.minute + duration <= window.end
+        && appointment.minute + windowBlockDuration <= window.end
       );
-      if (!insideWindow) {
-        reject(row, "outside_work_window");
-        continue;
-      }
-      if (!await isTechFree(row.username, job.appointment_datetime, duration, job.job_id || null, db)) {
-        reject(row, "collision_or_travel");
+      const home = String(row.home_service_zone_code || "").toUpperCase();
+      const secondary = String(row.secondary_service_zone_code || "").toUpperCase();
+      const zonePass = !dependencies.isServiceZoneFilterEnabled()
+        || home === zone
+        || secondary === zone
+        || row.allow_out_of_zone === true;
+      const collisionPass = await isTechFree(
+        row.username,
+        job.appointment_datetime,
+        duration,
+        job.job_id || null,
+        db,
+      );
+      const checks = {
+        account_profile_active: String(row.account_role || "technician") === "technician"
+          && Boolean(row.profile_username || row.username),
+        ready: String(row.accept_status || "").trim().toLowerCase() === "ready",
+        ready_expiry: Boolean(row.accept_status_expires_at)
+          && new Date(row.accept_status_expires_at).getTime() > Date.now(),
+        service_matrix: Boolean(row.matrix_json)
+          && availabilityEngine.techMatchesAllCriteriaStrict(row.matrix_json, criteriaList),
+        calendar_exists: Boolean(calendar),
+        calendar_working: String(calendar?.day_status || "").trim().toLowerCase() === "working",
+        urgent_enabled_for_day: calendar?.can_accept_urgent_job === true,
+        capacity: capacityMap.get(row.username) === true,
+        zone: zonePass,
+        day_override: explicitOff !== true,
+        weekly_off: explicitOff !== undefined || !weeklyOff(row.weekly_off_days, appointment.date),
+        work_window: insideWindow,
+        special_slot: specialWindows.some((window) =>
+          Number.isFinite(window.start)
+          && Number.isFinite(window.end)
+          && appointment.minute >= window.start
+          && appointment.minute + windowBlockDuration <= window.end
+        ),
+        collision_travel: collisionPass,
+      };
+      const failedGates = [];
+      if (!checks.account_profile_active) failedGates.push("account_profile_inactive");
+      if (!checks.ready || !checks.ready_expiry) failedGates.push("ready_expired");
+      if (!checks.service_matrix) failedGates.push("matrix_mismatch");
+      if (!checks.calendar_exists) failedGates.push("calendar_missing");
+      else if (!checks.calendar_working) failedGates.push("calendar_not_working");
+      if (checks.calendar_exists && !checks.urgent_enabled_for_day) failedGates.push("urgent_disabled_for_day");
+      if (!checks.capacity) failedGates.push("capacity_full");
+      if (!checks.zone) failedGates.push("zone_mismatch");
+      if (!checks.day_override) failedGates.push("explicit_day_off");
+      if (!checks.weekly_off) failedGates.push("weekly_off");
+      if (!checks.work_window) failedGates.push("outside_work_window");
+      if (!checks.collision_travel) failedGates.push("collision_or_travel");
+      if (failedGates.length) {
+        reject(row, failedGates, checks);
         continue;
       }
       filtered.push(row);
       diagnostics.counts.eligible = Number(diagnostics.counts.eligible || 0) + 1;
-      diagnostics.technicians.push({ username: row.username, gate: "eligible" });
+      diagnostics.technicians.push({ username: row.username, gate: "eligible", failed_gates: [], checks });
     }
 
     const ranked = rankTechniciansForServiceZone(filtered, zoneCode)
@@ -295,13 +356,44 @@ function createUrgentDispatchService(dependencies = {}) {
     return { available: ranked, zoneCode, totalCandidates: filtered.length, techType, diagnostics };
   }
 
-  return { findEligibleTechnicians };
+  async function preflightUrgentDispatch(job, options = {}) {
+    const result = await findEligibleTechnicians(job, options);
+    const response = {
+      can_dispatch: result.available.length > 0,
+      reason: publicReasonForDiagnostics(result.diagnostics),
+      zoneCode: result.zoneCode,
+      nearby_times: [],
+      internal: result,
+    };
+    if (response.can_dispatch || options.includeNearbyTimes !== true) return response;
+
+    const appointment = bangkokDateAndMinute(job.appointment_datetime);
+    if (!appointment) return response;
+    const remainder = appointment.minute % 15;
+    const firstShift = remainder === 0 ? 15 : 15 - remainder;
+    for (let offset = firstShift; offset <= 360 && response.nearby_times.length < 3; offset += 15) {
+      const candidateAppointment = shiftBangkokAppointment(job.appointment_datetime, offset);
+      if (!candidateAppointment || candidateAppointment.slice(0, 10) !== appointment.date) break;
+      const nearby = await findEligibleTechnicians(
+        { ...job, appointment_datetime: candidateAppointment },
+        { ...options, includeNearbyTimes: false },
+      );
+      if (nearby.available.length > 0) {
+        response.nearby_times.push(candidateAppointment);
+      }
+    }
+    if (response.nearby_times.length > 0) response.reason = "time_unavailable";
+    return response;
+  }
+
+  return { findEligibleTechnicians, preflightUrgentDispatch };
 }
 
 module.exports = {
   bangkokDateAndMinute,
   bangkokWeekday,
   weeklyOff,
+  publicReasonForDiagnostics,
   normalizeUrgentTechType,
   isUrgentEmploymentEligible,
   createUrgentDispatchService,

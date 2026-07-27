@@ -1,6 +1,6 @@
 "use strict";
 
-const BUILD_ID = "20260727_urgent_zone_candidate_parity_v1";
+const BUILD_ID = "20260728_urgent_dispatch_preflight_v2";
 const CACHE_NAME = `cwf-customer-app-v2-${BUILD_ID}`;
 const APP_SHELL = [
   `./index.html?v=${BUILD_ID}`,

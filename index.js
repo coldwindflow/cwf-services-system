@@ -13421,7 +13421,10 @@ const urgentDispatchService = createUrgentDispatchService({
 
 async function buildUrgentOfferCandidatesForJob(job, techType='partner', db=pool) {
   await expireTechnicianAcceptStatuses(db);
-  return urgentDispatchService.findEligibleTechnicians(job, { db, techType });
+  return urgentDispatchService.findEligibleTechnicians({
+    ...job,
+    effective_block_min: effectiveBlockMin(job?.duration_min),
+  }, { db, techType });
 }
 
 app.post('/jobs/:job_id/rebroadcast_offer_v2', requireAdminSession, async (req, res) => {
@@ -13438,7 +13441,8 @@ app.post('/jobs/:job_id/rebroadcast_offer_v2', requireAdminSession, async (req, 
     await client.query('BEGIN');
     const jobR = await client.query(
       `SELECT job_id, job_type, booking_code, appointment_datetime, COALESCE(duration_min,60) AS duration_min,
-              address_text, maps_url, job_zone, service_zone_code, job_status, technician_username, technician_team
+              address_text, maps_url, job_zone, gps_latitude, gps_longitude,
+              service_zone_code, service_zone_source, job_status, technician_username, technician_team
          FROM public.jobs WHERE job_id=$1 FOR UPDATE`,
       [job_id]
     );
@@ -13447,6 +13451,43 @@ app.post('/jobs/:job_id/rebroadcast_offer_v2', requireAdminSession, async (req, 
     const canClearAssignedForRebroadcast = ['ตีกลับ','ไม่พบช่างรับงาน','รอพิจารณาเวลาใหม่','รอช่างยืนยัน'].includes(String(job.job_status || '').trim());
     if ((job.technician_username || job.technician_team) && !canClearAssignedForRebroadcast) {
       throw new Error('งานนี้มีช่างรับไปแล้ว ไม่สามารถยิงข้อเสนอซ้ำได้');
+    }
+
+    const confirmedZoneCode = String(req.body?.confirm_service_zone_code || "").trim().toUpperCase();
+    const explicitPersistedZone = ["admin_override", "admin_confirmed_override"]
+      .includes(String(job.service_zone_source || "").trim().toLowerCase());
+    let resolvedZone = null;
+    if (confirmedZoneCode) {
+      resolvedZone = await detectServiceZoneFromText(
+        { service_zone_code: confirmedZoneCode },
+        { allowAdminOverride: true },
+      );
+      if (!resolvedZone) {
+        const error = new Error("service_zone_code ที่ยืนยันไม่ถูกต้อง");
+        error.statusCode = 400;
+        error.code = "INVALID_SERVICE_ZONE";
+        throw error;
+      }
+      resolvedZone.service_zone_source = "admin_confirmed_override";
+    } else if (!explicitPersistedZone) {
+      resolvedZone = await detectServiceZoneFromText({
+        address_text: job.address_text,
+        job_zone: job.job_zone,
+        maps_url: job.maps_url,
+        gps_latitude: job.gps_latitude,
+        gps_longitude: job.gps_longitude,
+      });
+    }
+    if (resolvedZone?.service_zone_code) {
+      const nextSource = resolvedZone.service_zone_source || "rebroadcast_resolved";
+      await client.query(
+        `UPDATE public.jobs
+            SET service_zone_code=$2, service_zone_source=$3
+          WHERE job_id=$1`,
+        [job_id, resolvedZone.service_zone_code, nextSource],
+      );
+      job.service_zone_code = resolvedZone.service_zone_code;
+      job.service_zone_source = nextSource;
     }
 
     await client.query(`UPDATE public.job_offers SET status='expired', responded_at=COALESCE(responded_at,NOW()) WHERE job_id=$1 AND status='pending'`, [job_id]);

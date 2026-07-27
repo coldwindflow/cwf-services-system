@@ -175,6 +175,14 @@
       });
     },
 
+    async preflightUrgentDispatch(payload) {
+      return requestJson("/public/urgent-dispatch-preflight", {
+        method: "POST",
+        body: payload || {},
+        cache: "no-store",
+      });
+    },
+
     async loadHomepage() {
       return requestJson("/public/homepage", { cache: "no-store" });
     },
