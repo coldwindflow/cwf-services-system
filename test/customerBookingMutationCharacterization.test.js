@@ -70,10 +70,10 @@ test("public/admin/internal routes and urgent alias preserve registration and no
     async handleAdminBookV2(req, res) { calls.push(["admin", req.body]); return res.json({ ok: true }); },
     async handleInternalBookFromAi(req, res) { calls.push(["internal", req.body]); return res.json({ ok: true }); },
   };
-  const requireAdminSoft = () => {};
+  const requireAdminSession = () => {};
   const requireInternalApiKeyOnly = () => {};
   registerPublicCustomerBookingRoutes(app, { service });
-  registerAdminBookingRoutes(app, { service, requireAdminSoft, requireInternalApiKeyOnly });
+  registerAdminBookingRoutes(app, { service, requireAdminSession, requireInternalApiKeyOnly });
 
   assert.deepEqual(registrations.map((row) => row.route), [
     "/public/book",
@@ -81,8 +81,8 @@ test("public/admin/internal routes and urgent alias preserve registration and no
     "/admin/urgent_broadcast_v2",
     "/internal/book_from_ai",
   ]);
-  assert.equal(registrations[1].handlers[0], requireAdminSoft);
-  assert.equal(registrations[2].handlers[0], requireAdminSoft);
+  assert.equal(registrations[1].handlers[0], requireAdminSession);
+  assert.equal(registrations[2].handlers[0], requireAdminSession);
   assert.equal(registrations[3].handlers[0], requireInternalApiKeyOnly);
 
   const res = responseHarness();

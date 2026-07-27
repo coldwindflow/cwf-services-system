@@ -90,7 +90,7 @@ test("Every public scheduled booking requests tech_type=all server-side (canonic
   // Canonical: tech_type is "all" for every scheduled booking, mirroring the
   // public slot list — no longer narrowed to "company" for non-customer_app_v2
   // callers, which made client_app a capacity boundary.
-  assert.match(booking, /bm === "urgent" \? "partner" : "all"/);
+  assert.match(booking, /const requestedTechType = "all"/);
   assert.doesNotMatch(booking, /clientApp === "customer_app_v2" \? "all" : "company"/);
 });
 

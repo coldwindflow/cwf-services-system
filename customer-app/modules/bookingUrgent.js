@@ -9,6 +9,7 @@
   let pollInFlight = null;
   let pollEpoch = 0;
   let pricingEpoch = 0;
+  let zoneEpoch = 0;
   let activeContainer = null;
   let visibilityRefresh = null;
 
@@ -135,6 +136,69 @@
       ...payload,
       services: cleaningLines,
     };
+  }
+
+  function zoneFingerprint(source = draft()) {
+    const gps = validGpsPair(source);
+    return JSON.stringify({
+      address_text: String(source.address_text || "").trim(),
+      job_zone: String(source.job_zone || "").trim(),
+      maps_url: String(source.maps_url || "").trim(),
+      gps_latitude: gps?.latitude ?? null,
+      gps_longitude: gps?.longitude ?? null,
+    });
+  }
+
+  function invalidateZoneCheck() {
+    root.state.setUrgentFlow({
+      zoneCheck: { status: "idle", fingerprint: "", detected: null, error: "" },
+    });
+  }
+
+  async function ensureUrgentZone(container) {
+    const currentFingerprint = zoneFingerprint();
+    const requestEpoch = zoneEpoch;
+    const current = root.state.urgentFlow?.zoneCheck || {};
+    if (current.status === "success" && current.fingerprint === currentFingerprint && current.detected?.service_zone_code) {
+      return current.detected;
+    }
+    root.state.setUrgentFlow({
+      zoneCheck: { status: "loading", fingerprint: currentFingerprint, detected: null, error: "" },
+    });
+    if (container) paint(container);
+    try {
+      const result = await root.api.detectUrgentServiceZone(draft());
+      if (requestEpoch !== zoneEpoch || zoneFingerprint() !== currentFingerprint) return null;
+      const detected = result?.detected || null;
+      if (result?.filter_enabled !== false && !detected?.service_zone_code) {
+        root.state.setUrgentFlow({
+          zoneCheck: {
+            status: "error",
+            fingerprint: currentFingerprint,
+            detected: null,
+            error: "ไม่สามารถตรวจสอบพื้นที่ให้บริการได้ กรุณาตรวจสอบที่อยู่หรือพิกัดแล้วลองใหม่",
+          },
+        });
+        return null;
+      }
+      root.state.setUrgentFlow({
+        zoneCheck: { status: "success", fingerprint: currentFingerprint, detected, error: "" },
+      });
+      return detected;
+    } catch (_) {
+      if (requestEpoch !== zoneEpoch || zoneFingerprint() !== currentFingerprint) return null;
+      root.state.setUrgentFlow({
+        zoneCheck: {
+          status: "error",
+          fingerprint: currentFingerprint,
+          detected: null,
+          error: "ตรวจสอบพื้นที่ไม่สำเร็จ กรุณาลองอีกครั้ง",
+        },
+      });
+      return null;
+    } finally {
+      if (container && requestEpoch === zoneEpoch) paint(container);
+    }
   }
 
   function markPayloadChanged() {
@@ -330,6 +394,10 @@
               ${flow.locationStatus === "loading" ? "กำลังอ่านตำแหน่ง..." : "ใช้ตำแหน่งปัจจุบัน"}
             </button>
             ${flow.locationMessage ? `<small class="${flow.locationStatus === "success" ? "muted" : "danger-text"}" role="status">${root.utils.escapeHtml(flow.locationMessage)}</small>` : ""}
+            ${flow.zoneCheck?.status === "success" && flow.zoneCheck.detected
+              ? `<small class="muted" data-urgent-zone-result>ตรวจพบพื้นที่: ${root.utils.escapeHtml(flow.zoneCheck.detected.matched_area || flow.zoneCheck.detected.service_zone_label || "-")} (Zone ${root.utils.escapeHtml(flow.zoneCheck.detected.service_zone_code || "-")})</small>`
+              : ""}
+            ${flow.zoneCheck?.status === "error" ? `<small class="danger-text" role="alert">${root.utils.escapeHtml(flow.zoneCheck.error || "")}</small>` : ""}
           </div>
           <div class="field">
             <label for="urgent-zone">พื้นที่ / โซน (ถ้ามี)</label>
@@ -374,6 +442,7 @@
     const flow = root.state.urgentFlow || {};
     const submitting = flow.status === "submitting";
     const gps = validGpsPair(d);
+    const detectedZone = flow.zoneCheck?.detected || null;
     return `
       <section class="card review-card urgent-card-fx" data-urgent-step-panel="review">
         <div class="section-head">
@@ -388,11 +457,12 @@
           <div class="data-row"><strong>ผู้ติดต่อ</strong><span class="muted">${root.utils.escapeHtml(d.customer_name || "-")} / ${root.utils.escapeHtml(d.customer_phone || "-")}</span></div>
           <div class="data-row"><strong>ที่อยู่</strong><span class="muted">${root.utils.escapeHtml(d.address_text || "-")}</span></div>
           ${d.job_zone ? `<div class="data-row"><strong>พื้นที่</strong><span class="muted">${root.utils.escapeHtml(d.job_zone)}</span></div>` : ""}
+          ${detectedZone ? `<div class="data-row" data-urgent-zone-result><strong>พื้นที่ที่ระบบตรวจพบ</strong><span class="muted">${root.utils.escapeHtml(detectedZone.matched_area || detectedZone.service_zone_label || "-")} (Zone ${root.utils.escapeHtml(detectedZone.service_zone_code || "-")})</span></div>` : ""}
           ${d.maps_url ? `<div class="data-row"><strong>แผนที่</strong><span class="muted">${root.utils.escapeHtml(d.maps_url)}</span></div>` : ""}
           ${gps ? `<div class="data-row"><strong>GPS</strong><span class="muted">${root.utils.escapeHtml(`${gps.latitude}, ${gps.longitude}`)}</span></div>` : ""}
           ${String(d.symptom || "").trim() ? `<div class="data-row"><strong>หมายเหตุ</strong><span class="muted">${root.utils.escapeHtml(d.symptom)}</span></div>` : ""}
         </div>
-        <div class="notice is-urgent">แอดมินจะตรวจสอบรายละเอียดก่อนส่งต่อให้ช่างที่ว่าง</div>
+        <div class="notice is-urgent">เมื่อส่งคำขอ ระบบจะค้นหาช่างที่พร้อมรับงานในพื้นที่นี้ทันที</div>
         ${flow.error ? `<div class="state-box is-error" role="alert">${root.utils.escapeHtml(flow.error)}</div>` : ""}
         <div class="button-row">
           ${flow.disabled_line_url
@@ -601,6 +671,11 @@
 
   async function submitUrgent(container) {
     if (activeSubmit || root.state.urgentFlow.status === "submitting") return;
+    const detectedZone = await ensureUrgentZone(container);
+    if (!detectedZone?.service_zone_code) return;
+    // A second tap can enter while the asynchronous zone check is in flight.
+    // Recheck at the mutation boundary so only one booking request starts.
+    if (activeSubmit || root.state.urgentFlow.status === "submitting") return;
     const submitEpoch = pollEpoch;
     const submitAttempt = { epoch: submitEpoch };
     activeSubmit = submitAttempt;
@@ -792,6 +867,7 @@
             root.state.setUrgentFlow({ locationStatus: "idle", locationMessage: "" });
           }
         }
+        if (["address_text", "maps_url", "job_zone"].includes(field)) invalidateZoneCheck();
         markPayloadChanged();
         root.state.updateDraft("urgent", patch);
         if (root.state.urgentFlow.error) root.state.setUrgentFlow({ error: "" });
@@ -860,13 +936,18 @@
         } else if (action === "to-review") {
           const error = validateDetails();
           if (error) setStep("details", error);
-          else setStep("review");
+          else {
+            const detectedZone = await ensureUrgentZone(container);
+            if (detectedZone?.service_zone_code) setStep("review");
+            else setStep("details", root.state.urgentFlow?.zoneCheck?.error || "กรุณาตรวจสอบพื้นที่ให้บริการ");
+          }
           paint(container);
         } else if (action === "back-details") {
           setStep("details");
           paint(container);
         } else if (action === "use-location") {
           await requestCurrentLocation();
+          invalidateZoneCheck();
           paint(container);
         } else if (action === "confirm") {
           await submitUrgent(container);
@@ -916,6 +997,7 @@
   render.onLeave = () => {
     pollEpoch += 1;
     pricingEpoch += 1;
+    zoneEpoch += 1;
     pollInFlight = null;
     activeSubmit = null;
     activeCancel = null;
@@ -939,6 +1021,8 @@
       renderReview,
       renderSubmitted,
       requestCurrentLocation,
+      ensureUrgentZone,
+      zoneFingerprint,
       refreshPricing,
       isUrgentDisabledError,
       cancelUrgent,

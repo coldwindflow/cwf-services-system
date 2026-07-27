@@ -90,17 +90,40 @@ function createUrgentDispatchService(dependencies = {}) {
     const db = options.db || pool;
     const techType = normalizeUrgentTechType(options.techType, "partner");
     const appointment = bangkokDateAndMinute(job.appointment_datetime);
-    if (!appointment) return { available: [], zoneCode: null, totalCandidates: 0 };
+    const diagnostics = {
+      dispatch_policy: techType,
+      zone: null,
+      counts: {},
+      technicians: [],
+    };
+    const reject = (row, reason) => {
+      diagnostics.counts[reason] = Number(diagnostics.counts[reason] || 0) + 1;
+      diagnostics.technicians.push({ username: row.username, gate: reason });
+    };
+    if (!appointment) {
+      diagnostics.counts.outside_work_window = 1;
+      return { available: [], zoneCode: null, totalCandidates: 0, techType, diagnostics };
+    }
 
     const detected = await detectServiceZoneFromText({
       address_text: job.address_text,
       job_zone: job.job_zone,
       service_zone_code: job.service_zone_code,
+      service_zone_source: job.service_zone_source,
       maps_url: job.maps_url,
-    });
+      gps_latitude: job.gps_latitude,
+      gps_longitude: job.gps_longitude,
+    }, { trustedPersistedZone: Boolean(job.service_zone_code) });
     const zoneCode = detected?.service_zone_code || job.service_zone_code || null;
+    diagnostics.zone = {
+      service_zone_code: zoneCode,
+      service_zone_source: detected?.service_zone_source || null,
+      coordinate_matches: detected?.coordinate_matches || [],
+      resolution_rule: detected?.resolution_rule || null,
+    };
     if (dependencies.isServiceZoneFilterEnabled() && !zoneCode) {
-      return { available: [], zoneCode: null, totalCandidates: 0 };
+      diagnostics.counts.zone_mismatch = 1;
+      return { available: [], zoneCode: null, totalCandidates: 0, techType, diagnostics };
     }
 
     let criteriaList;
@@ -113,7 +136,8 @@ function createUrgentDispatchService(dependencies = {}) {
       criteriaList = availabilityEngine.buildCriteriaList(job);
     }
     if (!availabilityEngine.validateCriteriaList(criteriaList)) {
-      return { available: [], zoneCode, totalCandidates: 0 };
+      diagnostics.counts.matrix_mismatch = 1;
+      return { available: [], zoneCode, totalCandidates: 0, techType, diagnostics };
     }
 
     const candidates = await db.query(
@@ -125,6 +149,8 @@ function createUrgentDispatchService(dependencies = {}) {
               COALESCE(p.work_start,'09:00') AS work_start,
               COALESCE(p.work_end,'18:00') AS work_end,
               COALESCE(p.weekly_off_days,'') AS weekly_off_days,
+              COALESCE(p.accept_status,'paused') AS accept_status,
+              p.accept_status_expires_at,
               m.matrix_json
          FROM public.users u
          JOIN public.technician_profiles p ON p.username=u.username
@@ -135,9 +161,6 @@ function createUrgentDispatchService(dependencies = {}) {
              OR ($1::text = 'company' AND COALESCE(p.employment_type,'company') IN ('company','custom','special_only'))
              OR ($1::text = 'partner' AND COALESCE(p.employment_type,'company') = 'partner')
           )
-          AND COALESCE(p.accept_status,'paused')='ready'
-          AND p.accept_status_expires_at IS NOT NULL
-          AND p.accept_status_expires_at > NOW()
         ORDER BY u.username`,
       [techType]
     );
@@ -196,19 +219,50 @@ function createUrgentDispatchService(dependencies = {}) {
     const zone = String(zoneCode || "").toUpperCase();
     const filtered = [];
     for (const row of candidateRows) {
-      if (!row.matrix_json || !availabilityEngine.techMatchesAllCriteriaStrict(row.matrix_json, criteriaList)) continue;
+      if (String(row.accept_status || "").trim().toLowerCase() !== "ready"
+        || !row.accept_status_expires_at
+        || new Date(row.accept_status_expires_at).getTime() <= Date.now()) {
+        reject(row, "ready_expired");
+        continue;
+      }
+      if (!row.matrix_json || !availabilityEngine.techMatchesAllCriteriaStrict(row.matrix_json, criteriaList)) {
+        reject(row, "matrix_mismatch");
+        continue;
+      }
       const calendar = calendarMap.get(row.username);
-      if (!calendar
-        || String(calendar.day_status || "").trim().toLowerCase() !== "working"
-        || calendar.can_accept_urgent_job !== true
-        || capacityMap.get(row.username) !== true) continue;
+      if (!calendar) {
+        reject(row, "calendar_missing");
+        continue;
+      }
+      if (String(calendar.day_status || "").trim().toLowerCase() !== "working") {
+        reject(row, "calendar_not_working");
+        continue;
+      }
+      if (calendar.can_accept_urgent_job !== true) {
+        reject(row, "urgent_disabled_for_day");
+        continue;
+      }
+      if (capacityMap.get(row.username) !== true) {
+        reject(row, "capacity_full");
+        continue;
+      }
       if (dependencies.isServiceZoneFilterEnabled()) {
         const home = String(row.home_service_zone_code || "").toUpperCase();
         const secondary = String(row.secondary_service_zone_code || "").toUpperCase();
-        if (home !== zone && secondary !== zone && row.allow_out_of_zone !== true) continue;
+        if (home !== zone && secondary !== zone && row.allow_out_of_zone !== true) {
+          reject(row, "zone_mismatch");
+          continue;
+        }
       }
       const explicitOff = offMap.get(row.username);
-      if (explicitOff === true || (explicitOff === undefined && weeklyOff(row.weekly_off_days, appointment.date))) continue;
+      if (explicitOff === true) {
+        reject(row, "explicit_day_off");
+        continue;
+      }
+      if (explicitOff === undefined && weeklyOff(row.weekly_off_days, appointment.date)) {
+        reject(row, "weekly_off");
+        continue;
+      }
       const normalStart = parseMinute(calendar.start_time || row.work_start);
       const normalEnd = parseMinute(calendar.end_time || row.work_end);
       const duration = Math.max(1, Number(job.duration_min || 60));
@@ -222,15 +276,23 @@ function createUrgentDispatchService(dependencies = {}) {
         && appointment.minute >= window.start
         && appointment.minute + duration <= window.end
       );
-      if (!insideWindow) continue;
-      if (!await isTechFree(row.username, job.appointment_datetime, duration, job.job_id || null, db)) continue;
+      if (!insideWindow) {
+        reject(row, "outside_work_window");
+        continue;
+      }
+      if (!await isTechFree(row.username, job.appointment_datetime, duration, job.job_id || null, db)) {
+        reject(row, "collision_or_travel");
+        continue;
+      }
       filtered.push(row);
+      diagnostics.counts.eligible = Number(diagnostics.counts.eligible || 0) + 1;
+      diagnostics.technicians.push({ username: row.username, gate: "eligible" });
     }
 
     const ranked = rankTechniciansForServiceZone(filtered, zoneCode)
       .map((row) => row.username)
       .slice(0, 30);
-    return { available: ranked, zoneCode, totalCandidates: filtered.length, techType };
+    return { available: ranked, zoneCode, totalCandidates: filtered.length, techType, diagnostics };
   }
 
   return { findEligibleTechnicians };

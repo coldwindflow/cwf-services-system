@@ -271,7 +271,7 @@ class FakeInput {
 }
 
 function loadCustomerFrontend(context = makeContext()) {
-  return load(context, [
+  const root = load(context, [
     "customer-app/modules/utils.js",
     "customer-app/modules/customerCopy.js",
     "customer-app/modules/analytics.js",
@@ -286,6 +286,17 @@ function loadCustomerFrontend(context = makeContext()) {
     "customer-app/modules/bookingUrgent.js",
     "customer-app/modules/router.js",
   ]);
+  root.api.detectUrgentServiceZone = async () => ({
+    ok: true,
+    filter_enabled: true,
+    detected: {
+      service_zone_code: "A",
+      service_zone_label: "กรุงเทพตะวันออกแกนหลัก",
+      service_zone_source: "auto_detect",
+      matched_area: "บางนา",
+    },
+  });
+  return root;
 }
 
 test("Customer App build id is consistent across shell and service worker", () => {
@@ -293,7 +304,7 @@ test("Customer App build id is consistent across shell and service worker", () =
   const sw = read("customer-app/sw.js");
   const app = read("customer-app/assets/customer-app.js");
   const manifest = read("customer-app/manifest.webmanifest");
-  const build = "20260727_urgent_company_cancel_hotfix_v1";
+  const build = "20260727_urgent_zone_candidate_parity_v1";
 
   assert.match(index, new RegExp(`customer-app\\.css\\?v=${build}`));
   assert.match(index, new RegExp(`modules\\/api\\.js\\?v=${build}`));
@@ -311,7 +322,7 @@ test("Customer App build id is consistent across shell and service worker", () =
 test("store module is loaded in index.html and precached in the service worker app shell", () => {
   const index = read("customer-app/index.html");
   const sw = read("customer-app/sw.js");
-  const build = "20260727_urgent_company_cancel_hotfix_v1";
+  const build = "20260727_urgent_zone_candidate_parity_v1";
 
   assert.match(index, new RegExp(`modules/store\\.js\\?v=${build}`));
   assert.match(sw, /`\.\/modules\/store\.js\?v=\$\{BUILD_ID\}`/);
@@ -1006,6 +1017,9 @@ test("urgent unresolved submit can leave and retry with the same key while the o
   root.bookingUrgent.render(firstContainer);
   const firstSubmit = firstContainer.querySelectorAll("[data-urgent-action]")
     .find((button) => button.getAttribute("data-urgent-action") === "confirm").click();
+  await Promise.resolve();
+  await Promise.resolve();
+  await new Promise((resolve) => setImmediate(resolve));
   assert.equal(requests.length, 1);
   const requestKey = requests[0].payload.urgent_request_key;
 
@@ -1016,6 +1030,9 @@ test("urgent unresolved submit can leave and retry with the same key while the o
   root.bookingUrgent.render(retryContainer);
   const retrySubmit = retryContainer.querySelectorAll("[data-urgent-action]")
     .find((button) => button.getAttribute("data-urgent-action") === "confirm").click();
+  await Promise.resolve();
+  await Promise.resolve();
+  await new Promise((resolve) => setImmediate(resolve));
   assert.equal(requests.length, 2);
   assert.equal(requests[1].payload.urgent_request_key, requestKey);
 
@@ -1148,6 +1165,9 @@ test("urgent double submit sends one request and a terminal new request gets a n
 
   const firstSubmit = confirm.click();
   const secondSubmit = confirm.click();
+  await Promise.resolve();
+  await Promise.resolve();
+  await new Promise((resolve) => setImmediate(resolve));
   assert.equal(submitCalls, 1);
   const firstKey = root.state.draft.urgent.urgent_request_key;
   resolveSubmit({ success: true, booking_code: "BK-ONCE", token: "TOKEN-ONCE" });

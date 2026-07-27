@@ -200,9 +200,9 @@ function bootApp(port, extraEnv = {}) {
       DB_PASSWORD: PG.password, DB_NAME,
       PORT: String(port),
       CWF_JWT_SECRET: "e2e-test-secret",
-      ...(process.env.E2E_API_ONLY === "1"
-        ? { NODE_OPTIONS: `--require=${path.join(__dirname, "local-postgres-preload.js")}` }
-        : {}),
+      // Both API-only and browser scenarios use the same isolated local
+      // PostgreSQL cluster, which intentionally has TLS disabled.
+      NODE_OPTIONS: `--require=${path.join(__dirname, "local-postgres-preload.js")}`,
       ENABLE_CUSTOMER_SCHEDULED_BOOKING: "true",
       // Customer urgent must ignore this legacy ENV and use the persisted CMS switch.
       ENABLE_CUSTOMER_URGENT_BOOKING: "false",
@@ -516,7 +516,11 @@ async function main() {
       customer_phone: "0822222222",
       job_type: "ล้าง",
       appointment_datetime: `${tomorrow}T${time}:00+07:00`,
-      address_text: "55/5 เขตสวนหลวง กรุงเทพฯ",
+      // Production-like A/F overlap: the legacy F-first bounding-box chain
+      // classified these Bang Na coordinates as F. A2MKUNG is a Zone A
+      // company technician and must remain eligible after canonical resolution.
+      address_text: "55/5 ถนนสุขุมวิท กรุงเทพฯ",
+      maps_url: "https://www.google.com/maps?q=13.668,100.604",
       booking_mode: "urgent",
       client_app: "customer_app_v2",
       allow_time_proposal: false,
@@ -539,10 +543,24 @@ async function main() {
     });
 
     let acceptedJobId = null;
+    let initialPublicCandidates = [];
     await record("API2 ENV-false urgent submit creates one job/items and 10-minute offers", async () => {
       await publishUrgentSwitch(BASE_A, adminSession, true);
       const key = crypto.randomBytes(16).toString("hex");
       const payload = urgentPayload(key);
+      const zonePrecheckResponse = await fetch(`${BASE_A}/public/service-zones/detect`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ...payload, service_zone_code: "F" }),
+      });
+      const zonePrecheck = await zonePrecheckResponse.json();
+      assert(zonePrecheckResponse.status === 200
+        && zonePrecheck.detected?.service_zone_code === "A",
+      `public precheck did not resolve Bang Na as A: ${JSON.stringify(zonePrecheck)}`);
+      assert(!JSON.stringify(zonePrecheck).includes("A2MKUNG")
+        && !Object.hasOwn(zonePrecheck.detected || {}, "coordinate_matches")
+        && !Object.hasOwn(zonePrecheck.detected || {}, "resolution_rule"),
+      `public precheck leaked internal diagnostics: ${JSON.stringify(zonePrecheck)}`);
       const first = await apiBook(BASE_A, payload);
       const replay = await apiBook(BASE_A, payload);
       assert(first.status === 200 && first.body?.phase === "searching", `urgent submit failed ${first.status}`);
@@ -550,6 +568,10 @@ async function main() {
       assert(first.body.job_id === replay.body.job_id, "retry returned a different job");
       acceptedJobId = first.body.job_id;
       const jobCount = await jobCountWhere("job_id=$1", [acceptedJobId]);
+      const jobZone = (await pool.query(
+        `SELECT service_zone_code, service_zone_source FROM public.jobs WHERE job_id=$1`,
+        [acceptedJobId]
+      )).rows[0];
       const items = await pool.query(`SELECT COUNT(*)::int AS n FROM public.job_items WHERE job_id=$1`, [acceptedJobId]);
       const offers = await pool.query(
         `SELECT o.offer_id, o.technician_username, p.employment_type,
@@ -560,12 +582,14 @@ async function main() {
         [acceptedJobId]
       );
       assert(jobCount === 1 && items.rows[0].n >= 1, "job/items were not atomic");
+      assert(jobZone.service_zone_code === "A", `urgent job persisted wrong zone: ${JSON.stringify(jobZone)}`);
       assert(offers.rows.length >= 5, "canonical public urgent candidates did not receive offers");
       const employmentTypes = [...new Set(offers.rows.map((row) => row.employment_type))].sort();
       assert(JSON.stringify(employmentTypes) === JSON.stringify(["company", "custom", "partner", "special_only"]),
         `public urgent lost an employment group: ${JSON.stringify(offers.rows)}`);
       assert(offers.rows.some((row) => row.technician_username === "A2MKUNG"),
         `A2MKUNG did not receive an offer: ${JSON.stringify(offers.rows)}`);
+      initialPublicCandidates = offers.rows.map((row) => row.technician_username).sort();
       assert(offers.rows.every((row) => Number(row.lifetime_min) >= 9.9), "offer lifetime is not 10 minutes");
       const companySession = await seedSessionFor("A2MKUNG", "technician");
       const companyOfferResponse = await fetch(`${BASE_A}/offers/tech/me`, {
@@ -576,6 +600,38 @@ async function main() {
         && Array.isArray(companyOffers)
         && companyOffers.some((row) => Number(row.job_id) === Number(acceptedJobId)),
       `A2MKUNG offer API did not expose the urgent job: ${companyOfferResponse.status}/${JSON.stringify(companyOffers)}`);
+    });
+
+    await record("API2a Admin Add urgent uses the same zone resolver and canonical candidate engine", async () => {
+      const payload = {
+        ...urgentPayload(crypto.randomBytes(16).toString("hex"), "11:00"),
+        tech_type: "all",
+        dispatch_mode: "offer",
+        assign_mode: "auto",
+        service_zone_code: null,
+      };
+      delete payload.client_app;
+      delete payload.urgent_request_key;
+      const response = await fetch(`${BASE_A}/admin/book_v2`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          cookie: `cwf_session=${adminSession}`,
+        },
+        body: JSON.stringify(payload),
+      });
+      const body = await response.json();
+      assert(response.status === 200 && body?.job_id, `Admin Add urgent failed: ${response.status}/${JSON.stringify(body)}`);
+      const candidates = (await pool.query(
+        `SELECT technician_username
+           FROM public.job_offers
+          WHERE job_id=$1
+          ORDER BY technician_username`,
+        [body.job_id]
+      )).rows.map((row) => row.technician_username);
+      assert(JSON.stringify(candidates) === JSON.stringify(initialPublicCandidates),
+        `Customer/Admin Add candidates differ: public=${JSON.stringify(initialPublicCandidates)} admin=${JSON.stringify(candidates)}`);
+      assert(body.service_zone_code === "A", `Admin Add persisted wrong zone: ${JSON.stringify(body)}`);
     });
 
     await record("API2b concurrent duplicate urgent submissions create one job and one offer set", async () => {
@@ -856,6 +912,19 @@ async function main() {
       assert(allTypes.includes("partner") && allTypes.includes("company")
         && allTypes.includes("custom") && allTypes.includes("special_only"),
       `all rebroadcast lost an employment group: ${JSON.stringify(allTypes)}`);
+      const pendingUsernames = (await pool.query(
+        `SELECT technician_username
+           FROM public.job_offers
+          WHERE job_id=$1 AND status='pending'
+          ORDER BY technician_username`,
+        [fallbackJobId]
+      )).rows.map((row) => row.technician_username);
+      const diagnosticUsernames = (all.body?.diagnostics?.technicians || [])
+        .filter((row) => row.gate === "eligible")
+        .map((row) => row.username)
+        .sort();
+      assert(JSON.stringify(diagnosticUsernames) === JSON.stringify(pendingUsernames),
+        `initial/admin/rebroadcast candidate parity failed: ${JSON.stringify(all.body?.diagnostics)}`);
 
       const beforeInvalid = await pendingEmployment();
       const invalid = await call("customer-forged");
@@ -1137,24 +1206,30 @@ async function main() {
   await record("S8 urgent booking creates one job + all canonical offers, waiting room live", async () => {
     const p = await ctx.newPage();
     await p.goto(`${APP_URL_A}#urgent`, { waitUntil: "domcontentloaded" });
-    await p.waitForSelector('[data-urgent-field="customer_name"]', { timeout: 20000 });
-    await p.locator('[data-urgent-field="customer_name"]').fill("ลูกค้า ด่วน");
-    await p.locator('[data-urgent-field="customer_phone"]').fill("0822222222");
-    await p.locator('[data-urgent-field="address_text"]').fill("55/5 หมู่บ้านทดสอบ เขตสวนหลวง กรุงเทพฯ 10250");
     // Service taxonomy: ล้าง -> ผนัง -> ล้างธรรมดา -> 12000 BTU.
     const choose = async (field, value) => {
       const btn = p.locator(`[data-urgent-choice="${field}"][data-choice-value="${value}"]`).first();
       await tap(btn);
       await p.waitForTimeout(250);
     };
-    await choose("service_kind", "clean");
     await choose("ac_type", "ผนัง");
     await choose("wash_variant", "ล้างธรรมดา");
     await choose("btu", "12000");
+    await tap(p.locator('[data-urgent-action="to-details"]'));
+    await p.waitForSelector('[data-urgent-field="customer_name"]', { timeout: 20000 });
+    await p.locator('[data-urgent-field="customer_name"]').fill("ลูกค้า ด่วน");
+    await p.locator('[data-urgent-field="customer_phone"]').fill("0822222222");
+    await p.locator('[data-urgent-field="address_text"]').fill("55/5 ถนนสุขุมวิท กรุงเทพฯ");
+    await p.locator('[data-urgent-field="maps_url"]').fill("https://www.google.com/maps?q=13.668,100.604");
+    await p.locator('[data-urgent-field="date"]').fill(tomorrow);
+    await p.locator('[data-urgent-field="time"]').fill("15:30");
+    await tap(p.locator('[data-urgent-time-proposal="false"]'));
     const symptom = p.locator('[data-urgent-field="symptom"]');
     if (await symptom.count()) await symptom.fill("แอร์ไม่เย็น ต้องการช่างด่วน");
     await tap(p.locator('[data-urgent-action="to-review"]'));
     await p.waitForSelector('[data-urgent-action="confirm"]', { timeout: 15000 });
+    const zoneText = await p.locator("[data-urgent-zone-result]").textContent();
+    assert(/Zone A/.test(zoneText || ""), `customer did not see the resolved Zone A: ${zoneText}`);
     await tap(p.locator('[data-urgent-action="confirm"]'));
     await p.waitForSelector(".waiting-room, [data-urgent-live-status]", { timeout: 30000 });
     const r = await pool.query(`SELECT job_id, booking_token FROM public.jobs WHERE booking_mode='urgent' ORDER BY job_id DESC LIMIT 1`);
@@ -1196,8 +1271,8 @@ async function main() {
     // A fresh urgent request via the public API (S8's job is already accepted).
     const api = await apiBook(BASE_A, {
       customer_name: "ลูกค้า ด่วนสอง", customer_phone: "0833333333",
-      job_type: "ล้าง", appointment_datetime: new Date().toISOString(),
-      address_text: "77/7 เขตสวนหลวง กรุงเทพฯ", booking_mode: "urgent",
+      job_type: "ล้าง", appointment_datetime: `${tomorrow}T17:00:00+07:00`,
+      address_text: "77/7 เขตสวนหลวง กรุงเทพฯ", maps_url: "https://www.google.com/maps?q=13.668,100.604", booking_mode: "urgent",
       client_app: "customer_app_v2", allow_time_proposal: true,
       urgent_request_key: crypto.randomBytes(16).toString("hex"),
       ac_type: "ผนัง", btu: 12000, machine_count: 1, wash_variant: "ล้างธรรมดา",
@@ -1618,8 +1693,8 @@ async function main() {
     const urgentKey = crypto.randomBytes(16).toString("hex");
     const attack = {
       customer_name: "ด่วนปลอม", customer_phone: "0844444444",
-      job_type: "ล้าง", appointment_datetime: new Date().toISOString(),
-      address_text: "88/8 เขตสวนหลวง กรุงเทพฯ", booking_mode: "urgent",
+      job_type: "ล้าง", appointment_datetime: `${tomorrow}T16:30:00+07:00`,
+      address_text: "88/8 เขตสวนหลวง กรุงเทพฯ", maps_url: "https://www.google.com/maps?q=13.668,100.604", booking_mode: "urgent",
       // NO client_app — the sanitiser must still engage on the canonical mode.
       urgent_request_key: urgentKey,
       ac_type: "ผนัง", btu: 12000, machine_count: 1, wash_variant: "ล้างธรรมดา",

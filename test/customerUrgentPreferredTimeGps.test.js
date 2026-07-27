@@ -158,6 +158,42 @@ test("urgent submit payload persists preferred time, preference, GPS, optional n
   assert.ok(payload.services.every((line) => line.job_type === "ล้าง" && !line.repair_variant));
 });
 
+test("urgent pre-submit uses the server zone resolver and shows the detected area without submitting a zone override", async () => {
+  const { root } = loadUrgent();
+  futureDraft(root);
+  root.state.currentRoute = "urgent";
+  const calls = [];
+  root.api = {
+    async detectUrgentServiceZone(payload) {
+      calls.push(payload);
+      return {
+        ok: true,
+        filter_enabled: true,
+        detected: {
+          service_zone_code: "A",
+          service_zone_label: "กรุงเทพตะวันออกแกนหลัก",
+          service_zone_source: "maps_coordinate",
+          matched_area: "บางนา",
+        },
+      };
+    },
+  };
+
+  const detected = await root.bookingUrgent._test.ensureUrgentZone();
+  assert.equal(detected.service_zone_code, "A");
+  assert.equal(calls.length, 1);
+  const review = root.bookingUrgent._test.renderReview();
+  assert.match(review, /data-urgent-zone-result/);
+  assert.match(review, /Zone A/);
+  assert.equal(Object.hasOwn(root.bookingUrgent._test.buildSubmitPayload(), "service_zone_code"), false);
+
+  await root.bookingUrgent._test.ensureUrgentZone();
+  assert.equal(calls.length, 1, "unchanged location should reuse its zone check");
+  root.state.updateDraft("urgent", { address_text: "ที่อยู่ใหม่" });
+  await root.bookingUrgent._test.ensureUrgentZone();
+  assert.equal(calls.length, 2, "changed location must be checked again");
+});
+
 test("urgent validation requires contact/date/time but allows an empty note and rejects a past time", () => {
   const { root } = loadUrgent();
   futureDraft(root);

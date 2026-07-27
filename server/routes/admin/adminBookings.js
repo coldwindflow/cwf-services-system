@@ -2,14 +2,14 @@
 
 function registerAdminBookingRoutes(app, options = {}) {
   const service = options.service;
-  const requireAdminSoft = options.requireAdminSoft;
+  const requireAdminSession = options.requireAdminSession;
   const requireInternalApiKeyOnly = options.requireInternalApiKeyOnly;
   if (!service || typeof service.handleAdminBookV2 !== "function" || typeof service.handleInternalBookFromAi !== "function") {
     throw new TypeError("admin booking service is required");
   }
 
-  app.post("/admin/book_v2", requireAdminSoft, service.handleAdminBookV2);
-  app.post("/admin/urgent_broadcast_v2", requireAdminSoft, (req, res) => {
+  app.post("/admin/book_v2", requireAdminSession, service.handleAdminBookV2);
+  app.post("/admin/urgent_broadcast_v2", requireAdminSession, (req, res) => {
     req.body = {
       ...(req.body || {}),
       booking_mode: "urgent",

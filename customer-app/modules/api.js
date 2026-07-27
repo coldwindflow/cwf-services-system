@@ -156,6 +156,25 @@
       return requestJson("/service_zones");
     },
 
+    async detectUrgentServiceZone(payload) {
+      const source = payload || {};
+      return requestJson("/public/service-zones/detect", {
+        method: "POST",
+        body: {
+          address_text: String(source.address_text || "").trim(),
+          job_zone: String(source.job_zone || "").trim(),
+          maps_url: String(source.maps_url || "").trim(),
+          ...(source.gps_latitude !== null && source.gps_latitude !== undefined && String(source.gps_latitude).trim() !== ""
+            ? { gps_latitude: source.gps_latitude }
+            : {}),
+          ...(source.gps_longitude !== null && source.gps_longitude !== undefined && String(source.gps_longitude).trim() !== ""
+            ? { gps_longitude: source.gps_longitude }
+            : {}),
+        },
+        cache: "no-store",
+      });
+    },
+
     async loadHomepage() {
       return requestJson("/public/homepage", { cache: "no-store" });
     },
