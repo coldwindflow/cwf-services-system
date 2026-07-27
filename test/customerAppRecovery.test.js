@@ -293,7 +293,7 @@ test("Customer App build id is consistent across shell and service worker", () =
   const sw = read("customer-app/sw.js");
   const app = read("customer-app/assets/customer-app.js");
   const manifest = read("customer-app/manifest.webmanifest");
-  const build = "20260726_urgent_preferred_time_gps_v2";
+  const build = "20260727_urgent_direct_auto_offer_blockers_v2";
 
   assert.match(index, new RegExp(`customer-app\\.css\\?v=${build}`));
   assert.match(index, new RegExp(`modules\\/api\\.js\\?v=${build}`));
@@ -311,7 +311,7 @@ test("Customer App build id is consistent across shell and service worker", () =
 test("store module is loaded in index.html and precached in the service worker app shell", () => {
   const index = read("customer-app/index.html");
   const sw = read("customer-app/sw.js");
-  const build = "20260726_urgent_preferred_time_gps_v2";
+  const build = "20260727_urgent_direct_auto_offer_blockers_v2";
 
   assert.match(index, new RegExp(`modules/store\\.js\\?v=${build}`));
   assert.match(sw, /`\.\/modules\/store\.js\?v=\$\{BUILD_ID\}`/);
@@ -834,7 +834,7 @@ test("urgent route is registered and renders distinct urgent screen", () => {
   assert.match(container.innerHTML, /จองล้างแอร์ด่วน/);
 });
 
-test("customer urgent booking uses the preferred-time pending-approval contract", () => {
+test("customer urgent booking uses preferred time with direct technician offers", () => {
   const urgent = read("customer-app/modules/bookingUrgent.js");
   const api = read("customer-app/modules/api.js");
   const server = read("server/services/booking/createBookingJob.js");
@@ -849,7 +849,8 @@ test("customer urgent booking uses the preferred-time pending-approval contract"
   assert.match(urgent, /gps_latitude/);
   assert.match(server, /function handlePublicCustomerUrgentBook/);
   assert.match(server, /req\.cwfBookSource = "customer"/);
-  assert.match(server, /const urgentOfferEnabled = false/);
+  assert.match(server, /const urgentOfferEnabled = bm === "urgent"/);
+  assert.doesNotMatch(server, /const urgentOfferEnabled = false/);
 });
 
 test("customer urgent submitted state polls status without rendering backend phase", () => {
@@ -877,18 +878,17 @@ test("urgent submitted pending DOM contains only pending-state copy", async () =
     liveStatus: null, liveStatusError: "",
   });
   root.api.loadUrgentStatus = async () => ({
-    success: true, booking_code: "BK0", phase: "admin_review", confirmed: false, terminal: false,
+    success: true, booking_code: "BK0", phase: "searching", confirmed: false, terminal: false,
   });
 
   const container = new WizardContainer(root);
   root.bookingUrgent.render(container);
   await new Promise((resolve) => setTimeout(resolve, 0));
 
-  assert.match(container.innerHTML, /แอดมินกำลังตรวจสอบรายละเอียดคำขอ/);
-  assert.match(container.innerHTML, /รอแอดมินตรวจสอบ/);
-  assert.match(container.innerHTML, /รอแอดมิน/);
-  assert.doesNotMatch(container.innerHTML, /คำขอได้รับการยืนยันแล้ว|พร้อมติดตามงาน|คำขอสิ้นสุดแล้ว|คำขอนี้สิ้นสุดแล้ว|สิ้นสุดแล้ว/);
-  assert.doesNotMatch(container.innerHTML, /phase|admin_review/);
+  assert.match(container.innerHTML, /กำลังค้นหาช่างที่พร้อมรับงาน/);
+  assert.match(container.innerHTML, /รับคำขอแล้ว กำลังส่งงานให้ช่างที่พร้อมรับงาน/);
+  assert.doesNotMatch(container.innerHTML, /รอแอดมิน|แอดมินกำลังตรวจสอบ|คำขอสิ้นสุดแล้ว|คำขอนี้สิ้นสุดแล้ว|สิ้นสุดแล้ว/);
+  assert.doesNotMatch(container.innerHTML, /phase|searching/);
   root.bookingUrgent.render.onLeave();
 });
 
@@ -913,9 +913,9 @@ test("urgent submitted state maps approved status to safe Thai copy without auto
   await new Promise((resolve) => setTimeout(resolve, 0));
 
   assert.deepEqual(routeCalls, []);
-  assert.match(container.innerHTML, /แอดมินยืนยันคำขอแล้ว และกำลังจัดทีมช่างให้คุณ/);
-  assert.match(container.innerHTML, /คำขอได้รับการยืนยันแล้ว|พร้อมติดตามงาน/);
-  assert.doesNotMatch(container.innerHTML, /แอดมินกำลังตรวจสอบรายละเอียดคำขอ|รอแอดมินตรวจสอบ|รอแอดมิน|คำขอสิ้นสุดแล้ว|คำขอนี้สิ้นสุดแล้ว|สิ้นสุดแล้ว/);
+  assert.match(container.innerHTML, /ช่างรับงานแล้ว/);
+  assert.match(container.innerHTML, /พร้อมติดตามงาน|ติดตามงาน/);
+  assert.doesNotMatch(container.innerHTML, /แอดมินกำลังตรวจสอบรายละเอียดคำขอ|รอแอดมินตรวจสอบ|รอแอดมิน|กำลังจัดทีมช่าง|คำขอสิ้นสุดแล้ว|คำขอนี้สิ้นสุดแล้ว|สิ้นสุดแล้ว/);
   assert.doesNotMatch(container.innerHTML, /phase|accepted/);
   root.bookingUrgent.render.onLeave();
 });

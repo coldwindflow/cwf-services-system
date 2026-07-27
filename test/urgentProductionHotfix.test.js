@@ -40,7 +40,7 @@ test("customer urgent zero-target commits job/items into admin review without ch
   assert.match(response, /admin_review: true/);
 });
 
-test("public urgent adapter sanitizes into pending-review creation and public urgent status is read-only", () => {
+test("public urgent adapter sanitizes into direct-offer creation and public urgent status is read-only", () => {
   const index = read("index.js");
   const service = read("server/services/booking/createBookingJob.js");
   const publicAdapter = section(service, "function handlePublicCustomerUrgentBook", "async function handlePublicBook");
@@ -53,7 +53,7 @@ test("public urgent adapter sanitizes into pending-review creation and public ur
 
   const statusRoute = section(index, "app.get(\"/public/urgent-status\"", "app.get(\"/public/track\"");
   assert.doesNotMatch(statusRoute, /\bUPDATE\b|\bINSERT\b|\bDELETE\b/i);
-  assert.match(statusRoute, /phase[\s\S]*"admin_review"/);
+  assert.match(statusRoute, /phase[\s\S]*"searching"[\s\S]*"fallback"/);
   assert.match(statusRoute, /Cache-Control", "no-store/);
 });
 

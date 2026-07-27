@@ -5,7 +5,7 @@ const path = require("node:path");
 const vm = require("node:vm");
 
 const ROOT = path.resolve(__dirname, "..");
-const BUILD = "20260726_urgent_preferred_time_gps_v2";
+const BUILD = "20260727_urgent_direct_auto_offer_blockers_v2";
 
 function read(relativePath) {
   return fs.readFileSync(path.join(ROOT, relativePath), "utf8");
@@ -70,6 +70,10 @@ test("central customer copy maps booking failures without exposing raw backend d
   assert.equal(copy.bookingError({ status: 409, data: { code: "SLOT_UNAVAILABLE" } }), "ช่วงเวลานี้เพิ่งมีผู้จอง กรุณาเลือกเวลาใหม่");
   assert.equal(copy.bookingError({ data: { code: "NO_OPEN_SLOTS" } }), "ยังไม่มีคิวว่างในวันที่เลือก กรุณาเลือกวันอื่น");
   assert.equal(copy.bookingError({ status: 503, data: { code: "URGENT_BOOKING_DISABLED" } }), "ขณะนี้ยังไม่เปิดรับจองออนไลน์ กรุณาติดต่อแอดมิน");
+  assert.equal(copy.bookingError({ status: 503, data: {} }), "ระบบขัดข้องชั่วคราว กรุณาลองใหม่หรือติดต่อแอดมิน");
+  assert.equal(copy.bookingError({ status: 409, data: { code: "IDEMPOTENCY_KEY_REUSED" } }), "ระบบขัดข้องชั่วคราว กรุณาลองใหม่หรือติดต่อแอดมิน");
+  assert.equal(copy.bookingError(Object.assign(new Error("timeout"), { name: "AbortError" })), "เชื่อมต่อระบบไม่สำเร็จ กรุณาลองอีกครั้ง");
+  assert.equal(copy.bookingError({ status: 503, data: { code: "SCHEDULED_BOOKING_DISABLED" } }), "ขณะนี้ยังไม่เปิดรับจองออนไลน์ กรุณาติดต่อแอดมิน");
   assert.equal(copy.bookingError(new TypeError("Failed to fetch https://secret.example")), "เชื่อมต่อระบบไม่สำเร็จ กรุณาลองอีกครั้ง");
 
   const hostile = Object.assign(new Error("relation jobs does not exist"), {
@@ -81,16 +85,26 @@ test("central customer copy maps booking failures without exposing raw backend d
   assert.doesNotMatch(output, /SQL|jobs|\/public\/book|INTERNAL|relation/i);
 });
 
+test("urgent submit classifies disabled only from an explicit stable code", () => {
+  const { root } = loadBookingModules();
+  const isDisabled = root.bookingUrgent._test.isUrgentDisabledError;
+  assert.equal(isDisabled({ status: 503, data: { code: "URGENT_BOOKING_DISABLED" } }), true);
+  assert.equal(isDisabled({ status: 503, data: {} }), false);
+  assert.equal(isDisabled({ status: 503, data: { code: "DATABASE_UNAVAILABLE" } }), false);
+});
+
 test("central urgent submitted view model classifies pending, actionable, and terminal states", () => {
   const { root } = loadFrontend(["customer-app/modules/customerCopy.js"]);
   const viewFor = root.customerCopy.urgentSubmittedView;
 
   assert.equal(viewFor(null).state, "pending");
   assert.equal(viewFor({ phase: "admin_review", confirmed: false, terminal: false }).state, "pending");
-  for (const phase of ["approved", "assigned", "accepted", "in_progress"]) {
+  assert.equal(viewFor({ phase: "approved", confirmed: true, terminal: false }).state, "pending");
+  for (const phase of ["assigned", "accepted", "in_progress"]) {
     assert.equal(viewFor({ phase, confirmed: false, terminal: false }).state, "actionable");
   }
-  assert.equal(viewFor({ phase: "waiting", confirmed: true, terminal: false }).state, "actionable");
+  assert.equal(viewFor({ phase: "waiting", confirmed: true, terminal: false }).state, "pending");
+  assert.equal(viewFor({ phase: "fallback", confirmed: false, terminal: false }).state, "fallback");
   for (const phase of ["terminal", "rejected", "cancelled", "canceled", "closed"]) {
     assert.equal(viewFor({ phase, confirmed: false, terminal: false }).state, "terminal");
   }
@@ -105,15 +119,15 @@ test("central booking approval view maps deployed pending, actionable, and termi
   assert.equal(scheduledPending.state, "pending");
   assert.equal(scheduledPending.statusLabel, "รอแอดมินยืนยัน");
 
-  const urgentPending = viewFor({ booking_mode: "urgent", phase: "admin_review", confirmed: false, terminal: false });
+  const urgentPending = viewFor({ booking_mode: "urgent", phase: "searching", job_status: "รอช่างยืนยัน", confirmed: false, terminal: false });
   assert.equal(urgentPending.state, "pending");
-  assert.equal(urgentPending.statusLabel, "รอแอดมินตรวจสอบ");
+  assert.equal(urgentPending.statusLabel, "กำลังค้นหาช่าง");
 
   const ambiguousWaiting = viewFor({ booking_mode: "urgent", phase: "waiting", confirmed: false, terminal: false });
   assert.equal(ambiguousWaiting.state, "pending");
-  assert.equal(ambiguousWaiting.statusLabel, "รอแอดมินตรวจสอบ");
+  assert.equal(ambiguousWaiting.statusLabel, "กำลังค้นหาช่าง");
 
-  const urgentApproved = viewFor({ booking_mode: "urgent", phase: "waiting", confirmed: true, terminal: false });
+  const urgentApproved = viewFor({ booking_mode: "urgent", phase: "assigned", confirmed: true, terminal: false });
   assert.equal(urgentApproved.state, "actionable");
   assert.equal(urgentApproved.statusLabel, "พร้อมติดตามงาน");
 
@@ -187,15 +201,15 @@ test("customer lifecycle view preserves actual job progress before approval pres
     },
     {
       name: "approval pending",
-      source: { booking_mode: "urgent", job_status: "admin_review" },
+      source: { booking_mode: "urgent", job_status: "รอช่างยืนยัน" },
       state: "pending",
-      label: "รอแอดมินตรวจสอบ",
+      label: "กำลังค้นหาช่าง",
     },
     {
-      name: "approval actionable",
-      source: { booking_mode: "urgent", job_status: "approved" },
-      state: "actionable",
-      label: "พร้อมติดตามงาน",
+      name: "urgent assigned",
+      source: { booking_mode: "urgent", phase: "assigned", job_status: "assigned" },
+      state: "assigned",
+      label: "ช่างรับงานแล้ว",
     },
   ];
 
@@ -272,7 +286,7 @@ test("urgent API boundary forces cleaning on every line and preserves structured
   });
 });
 
-test("Scheduled and Urgent success screens use pending-admin copy and hide reserved technician identity", () => {
+test("Scheduled keeps pending-admin copy while Urgent uses technician-first searching copy", () => {
   const { root } = loadBookingModules();
   root.state.updateDraft("scheduled", { selectedSlot: { date: "2026-07-20", start: "09:00", end: "10:00" } });
   root.state.setScheduledSubmit({ result: {
@@ -294,10 +308,10 @@ test("Scheduled and Urgent success screens use pending-admin copy and hide reser
   root.state.setUrgentFlow({ result: { booking_code: "CWF456", technician_username: "urgent-tech-secret" }, liveStatus: null, liveStatusError: "" });
   const urgent = root.bookingUrgent._test.renderSubmitted();
   assert.match(urgent, /ส่งคำขอแล้ว/);
-  assert.match(urgent, /แอดมินกำลังตรวจสอบรายละเอียดคำขอ/);
-  assert.match(urgent, /รอแอดมินตรวจสอบ/);
+  assert.match(urgent, /กำลังค้นหาช่างที่พร้อมรับงาน/);
+  assert.match(urgent, /กำลังค้นหาช่าง/);
   assert.match(urgent, /รหัสการจอง/);
-  assert.doesNotMatch(urgent, /Booking Code|urgent-tech-secret|technician_username|Partner-first|Waiting Room|Live status|offer|radar/);
+  assert.doesNotMatch(urgent, /Booking Code|urgent-tech-secret|technician_username|Partner-first|Waiting Room|Live status|offer|radar|รอแอดมิน|แอดมินกำลังตรวจสอบ/);
 });
 
 test("repair, install, move, and inspection gateway stays contact-only and never creates booking payloads", () => {
@@ -338,12 +352,12 @@ test("homepage active booking card maps internal status to customer-safe approva
   });
   root.state.setCollection("homeActiveJob", {
     status: "success",
-    data: { booking_mode: "urgent", job_status: "admin_review", job_type: "ล้าง", booking_code: "CWFSAFE1" },
+    data: { booking_mode: "urgent", job_status: "รอช่างยืนยัน", job_type: "ล้าง", booking_code: "CWFSAFE1" },
   });
 
   const html = root.ui._test.renderHomepageSectionsWithAdvisor();
-  assert.match(html, /รอแอดมินตรวจสอบ/);
-  assert.doesNotMatch(html, /admin_review|job_status/);
+  assert.match(html, /กำลังค้นหาช่าง/);
+  assert.doesNotMatch(html, /รอแอดมิน|admin_review|job_status/);
 });
 
 test("homepage active booking card preserves every customer lifecycle state in priority order", () => {
@@ -367,8 +381,8 @@ test("homepage active booking card preserves every customer lifecycle state in p
     [{ checkin_at: "checkin", travel_started_at: "travel" }, "ช่างถึงหน้างานแล้ว"],
     [{ travel_started_at: "travel", assigned_at: "assigned" }, "ช่างกำลังเดินทาง"],
     [{ assigned_at: "assigned", job_status: "รอดำเนินการ" }, "ยืนยันคิวแล้ว"],
-    [{ booking_mode: "urgent", job_status: "admin_review" }, "รอแอดมินตรวจสอบ"],
-    [{ booking_mode: "urgent", job_status: "approved" }, "พร้อมติดตามงาน"],
+    [{ booking_mode: "urgent", job_status: "รอช่างยืนยัน" }, "กำลังค้นหาช่าง"],
+    [{ booking_mode: "urgent", phase: "assigned", job_status: "assigned" }, "ช่างรับงานแล้ว"],
   ];
 
   for (const [source, label] of cases) {

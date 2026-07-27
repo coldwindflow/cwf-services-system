@@ -26,7 +26,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const { Pool, Client } = require("pg");
-const { chromium } = require("playwright");
+const chromium = process.env.E2E_API_ONLY === "1" ? null : require("playwright").chromium;
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const PG = {
@@ -91,7 +91,7 @@ function assert(cond, msg) { if (!cond) throw new Error(msg); }
 // under test is exactly the schema the app declares.
 function extractCreateTableStatements(src) {
   const out = [];
-  const re = /CREATE TABLE IF NOT EXISTS public\.([a-z_]+)\s*\(/g;
+  const re = /CREATE TABLE IF NOT EXISTS public\.([a-z0-9_]+)\s*\(/g;
   let m;
   while ((m = re.exec(src))) {
     let i = re.lastIndex;
@@ -200,8 +200,12 @@ function bootApp(port, extraEnv = {}) {
       DB_PASSWORD: PG.password, DB_NAME,
       PORT: String(port),
       CWF_JWT_SECRET: "e2e-test-secret",
+      ...(process.env.E2E_API_ONLY === "1"
+        ? { NODE_OPTIONS: `--require=${path.join(__dirname, "local-postgres-preload.js")}` }
+        : {}),
       ENABLE_CUSTOMER_SCHEDULED_BOOKING: "true",
-      ENABLE_CUSTOMER_URGENT_BOOKING: "true",
+      // Customer urgent must ignore this legacy ENV and use the persisted CMS switch.
+      ENABLE_CUSTOMER_URGENT_BOOKING: "false",
       ...extraEnv,
     },
     stdio: ["ignore", out, out],
@@ -229,7 +233,7 @@ async function assertCoreSchema() {
     "jobs", "job_offers", "job_items", "job_promotions",
     "technician_service_matrix", "technician_monthly_work_calendar",
     "catalog_items", "customer_service_price_rules", "auth_sessions",
-    "users", "technician_profiles",
+    "users", "technician_profiles", "job_updates_v2",
   ];
   const r = await pool.query(
     `SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_name = ANY($1::text[])`,
@@ -395,6 +399,38 @@ async function apiBook(base, payload) {
   return { status: res.status, body };
 }
 
+async function publishUrgentSwitch(base, adminSession, enabled) {
+  const headers = {
+    "content-type": "application/json",
+    cookie: `cwf_session=${adminSession}`,
+  };
+  const loaded = await fetch(`${base}/admin/homepage-cms/config`, { headers, cache: "no-store" });
+  const current = await loaded.json();
+  assert(loaded.status === 200 && current?.draft_config, `admin CMS config load failed: ${loaded.status}`);
+
+  const config = JSON.parse(JSON.stringify(current.draft_config));
+  config.page_availability = {
+    ...(config.page_availability || {}),
+    urgent: enabled === true,
+  };
+  const saved = await fetch(`${base}/admin/homepage-cms/draft`, {
+    method: "PUT",
+    headers,
+    body: JSON.stringify({ config }),
+  });
+  const savedBody = await saved.json();
+  assert(saved.status === 200 && savedBody?.ok === true, `admin CMS draft save failed: ${saved.status}`);
+
+  const published = await fetch(`${base}/admin/homepage-cms/publish`, {
+    method: "POST",
+    headers,
+  });
+  const publishedBody = await published.json();
+  assert(published.status === 200 && publishedBody?.ok === true, `admin CMS publish failed: ${published.status}`);
+  assert(publishedBody.published_config?.page_availability?.urgent === (enabled === true),
+    "admin CMS publish did not persist the requested urgent switch");
+}
+
 function scheduledPayload(ymd, start, overrides = {}) {
   return {
     customer_name: "ลูกค้า API", customer_phone: "0899999999",
@@ -423,9 +459,12 @@ async function main() {
 
   log("booting app A (booking enabled) + app B (booking disabled)...");
   bootApp(PORT_A, {});
-  bootApp(PORT_B, { ENABLE_CUSTOMER_SCHEDULED_BOOKING: "false", ENABLE_CUSTOMER_URGENT_BOOKING: "false" });
+  if (process.env.E2E_API_ONLY !== "1") {
+    bootApp(PORT_B, { ENABLE_CUSTOMER_SCHEDULED_BOOKING: "false", ENABLE_CUSTOMER_URGENT_BOOKING: "false" });
+  }
   await waitForReady(BASE_A);
-  await waitForReady(BASE_B);
+  if (process.env.E2E_API_ONLY !== "1") await waitForReady(BASE_B);
+  else await new Promise((resolve) => setTimeout(resolve, 5000));
   log("apps ready.");
 
   const tomorrow = ymdBangkok(1);
@@ -445,10 +484,17 @@ async function main() {
 
   await seedTechnician("tech_a", { date: [tomorrow, dayAfter, multiDay, reloadDay, r2Day], maxJobs: 3, maxUnits: 9 });
   await seedTechnician("tech_solo", { date: [raceDay, staleDay, retryDay], maxJobs: 1, maxUnits: 5 });
-  await seedTechnician("tech_partner", { employment: "partner", date: [today, tomorrow], urgentOk: true });
-  await seedTechnician("tech_partner2", { employment: "partner", date: [today, tomorrow], urgentOk: true });
+  await seedTechnician("tech_partner", { employment: "partner", date: [today, tomorrow], urgentOk: true, maxJobs: 5, maxUnits: 10 });
+  await seedTechnician("tech_partner2", { employment: "partner", date: [today, tomorrow], urgentOk: true, maxJobs: 5, maxUnits: 10 });
+  await seedTechnician("tech_company", { employment: "company", date: [today, tomorrow], urgentOk: true, maxJobs: 5, maxUnits: 10 });
+  await seedTechnician("tech_custom", { employment: "custom", date: [today, tomorrow], urgentOk: true, maxJobs: 5, maxUnits: 10 });
+  await seedTechnician("tech_special", { employment: "special_only", date: [today, tomorrow], urgentOk: true, maxJobs: 5, maxUnits: 10 });
   // Zone A covers เขตสวนหลวง — the urgent offer engine targets partners by zone.
-  await pool.query(`UPDATE public.technician_profiles SET home_service_zone_code='A' WHERE username IN ('tech_partner','tech_partner2')`).catch(() => {});
+  await pool.query(
+    `UPDATE public.technician_profiles
+        SET home_service_zone_code='A'
+      WHERE username IN ('tech_partner','tech_partner2','tech_company','tech_custom','tech_special')`
+  ).catch(() => {});
 
   async function seedSessionFor(username, role) {
     const token = crypto.randomBytes(24).toString("hex");
@@ -459,6 +505,227 @@ async function main() {
     return token;
   }
   const adminSession = await seedAdminSession();
+  if (process.env.E2E_API_ONLY !== "1") {
+    await publishUrgentSwitch(BASE_A, adminSession, true);
+  }
+
+  if (process.env.E2E_API_ONLY === "1") {
+    const urgentPayload = (key, time = "10:00") => ({
+      customer_name: "ลูกค้า API ด่วน",
+      customer_phone: "0822222222",
+      job_type: "ล้าง",
+      appointment_datetime: `${tomorrow}T${time}:00+07:00`,
+      address_text: "55/5 เขตสวนหลวง กรุงเทพฯ",
+      booking_mode: "urgent",
+      client_app: "customer_app_v2",
+      allow_time_proposal: false,
+      urgent_request_key: key,
+      ac_type: "ผนัง",
+      btu: 12000,
+      machine_count: 1,
+      wash_variant: "ล้างธรรมดา",
+    });
+
+    await record("API1 persisted urgent switch closes config + mutation immediately", async () => {
+      await publishUrgentSwitch(BASE_A, adminSession, false);
+      const config = await (await fetch(`${BASE_A}/public/customer-app-config`, { cache: "no-store" })).json();
+      assert(config.page_availability?.urgent === false, "config did not close urgent");
+      const before = await jobCountWhere("TRUE");
+      const response = await apiBook(BASE_A, urgentPayload(crypto.randomBytes(16).toString("hex")));
+      assert(response.status === 503 && response.body?.code === "URGENT_BOOKING_DISABLED",
+        `closed urgent request returned ${response.status}/${response.body?.code}`);
+      assert(await jobCountWhere("TRUE") === before, "closed urgent request mutated jobs");
+    });
+
+    let acceptedJobId = null;
+    await record("API2 ENV-false urgent submit creates one job/items and 10-minute offers", async () => {
+      await publishUrgentSwitch(BASE_A, adminSession, true);
+      const key = crypto.randomBytes(16).toString("hex");
+      const payload = urgentPayload(key);
+      const first = await apiBook(BASE_A, payload);
+      const replay = await apiBook(BASE_A, payload);
+      assert(first.status === 200 && first.body?.phase === "searching", `urgent submit failed ${first.status}`);
+      assert(replay.status === 200 && replay.body?.replayed === true, `identical retry did not replay: first=${JSON.stringify(first.body)} replay=${replay.status} ${JSON.stringify(replay.body)}`);
+      assert(first.body.job_id === replay.body.job_id, "retry returned a different job");
+      acceptedJobId = first.body.job_id;
+      const jobCount = await jobCountWhere("job_id=$1", [acceptedJobId]);
+      const items = await pool.query(`SELECT COUNT(*)::int AS n FROM public.job_items WHERE job_id=$1`, [acceptedJobId]);
+      const offers = await pool.query(
+        `SELECT o.offer_id, o.technician_username, p.employment_type,
+                EXTRACT(EPOCH FROM (expires_at-NOW()))/60 AS lifetime_min
+           FROM public.job_offers o
+           JOIN public.technician_profiles p ON p.username=o.technician_username
+          WHERE o.job_id=$1 ORDER BY o.offer_id`,
+        [acceptedJobId]
+      );
+      assert(jobCount === 1 && items.rows[0].n >= 1, "job/items were not atomic");
+      assert(offers.rows.length >= 2, "eligible partners did not receive offers");
+      assert(offers.rows.every((row) => row.employment_type === "partner"),
+        `public urgent targeted non-partners: ${JSON.stringify(offers.rows)}`);
+      assert(offers.rows.every((row) => Number(row.lifetime_min) >= 9.9), "offer lifetime is not 10 minutes");
+    });
+
+    await record("API2b concurrent duplicate urgent submissions create one job and one offer set", async () => {
+      const key = crypto.randomBytes(16).toString("hex");
+      const payload = urgentPayload(key, "12:00");
+      const [left, right] = await Promise.all([
+        apiBook(BASE_A, payload),
+        apiBook(BASE_A, payload),
+      ]);
+      assert(left.status === 200 && right.status === 200, `concurrent submit failed ${left.status}/${right.status}`);
+      assert(left.body.job_id === right.body.job_id, "concurrent duplicate returned different jobs");
+      const jobCount = await jobCountWhere("job_id=$1", [left.body.job_id]);
+      const offerCount = Number((await pool.query(
+        `SELECT COUNT(*) FROM public.job_offers WHERE job_id=$1`,
+        [left.body.job_id]
+      )).rows[0].count);
+      assert(jobCount === 1, `concurrent duplicate created ${jobCount} jobs`);
+      assert(offerCount >= 2, "concurrent duplicate lost its canonical offer set");
+    });
+
+    await record("API3 concurrent technician acceptance has exactly one winner and one assignment", async () => {
+      const offers = await pool.query(
+        `SELECT offer_id, technician_username FROM public.job_offers WHERE job_id=$1 ORDER BY offer_id`,
+        [acceptedJobId]
+      );
+      const attempts = await Promise.all(offers.rows.slice(0, 2).map(async (offer) => {
+        const session = await seedSessionFor(offer.technician_username, "technician");
+        const response = await fetch(`${BASE_A}/offers/${offer.offer_id}/accept`, {
+          method: "POST",
+          headers: { "content-type": "application/json", cookie: `cwf_session=${session}` },
+          body: "{}",
+        });
+        return { status: response.status, tech: offer.technician_username };
+      }));
+      const winners = attempts.filter((result) => result.status === 200);
+      assert(winners.length === 1, `expected one winner, got ${JSON.stringify(attempts)}`);
+      const assignment = await pool.query(
+        `SELECT technician_username FROM public.job_assignments WHERE job_id=$1`,
+        [acceptedJobId]
+      );
+      assert(assignment.rows.length === 1, `expected one assignment, got ${assignment.rows.length}`);
+      const status = await (await fetch(`${BASE_A}/public/urgent-status?q=${encodeURIComponent((await pool.query(
+        `SELECT booking_token FROM public.jobs WHERE job_id=$1`, [acceptedJobId]
+      )).rows[0].booking_token)}`)).json();
+      assert(status.phase === "assigned" && status.confirmed === true, "customer status did not become assigned");
+    });
+
+    let fallbackJobId = null;
+    await record("API4 partial decline stays searching; last decline enters trackable admin fallback", async () => {
+      const response = await apiBook(BASE_A, urgentPayload(crypto.randomBytes(16).toString("hex"), "14:00"));
+      assert(response.status === 200 && response.body?.job_id, "fallback fixture booking failed");
+      fallbackJobId = response.body.job_id;
+      const offers = await pool.query(
+        `SELECT offer_id, technician_username FROM public.job_offers WHERE job_id=$1 ORDER BY offer_id`,
+        [response.body.job_id]
+      );
+      assert(offers.rows.length >= 2, "decline fixture requires at least two offers");
+      for (let index = 0; index < offers.rows.length; index += 1) {
+        const offer = offers.rows[index];
+        const session = await seedSessionFor(offer.technician_username, "technician");
+        const declined = await fetch(`${BASE_A}/offers/${offer.offer_id}/decline`, {
+          method: "POST",
+          headers: { "content-type": "application/json", cookie: `cwf_session=${session}` },
+          body: "{}",
+        });
+        assert(declined.status === 200, `decline ${index + 1} returned ${declined.status}`);
+        if (index < offers.rows.length - 1) {
+          const status = await (await fetch(`${BASE_A}/public/urgent-status?q=${encodeURIComponent(response.body.token)}`)).json();
+          assert(status.phase === "searching", `partial decline entered fallback early: ${status.phase}`);
+        }
+      }
+      await pool.query(`UPDATE public.job_offers SET expires_at=NOW()-INTERVAL '1 minute' WHERE job_id=$1`, [response.body.job_id]);
+      const finalizer = require(path.join(REPO_ROOT, "server", "services", "urgent", "finalizer"));
+      await finalizer.autoFinalizeUrgentJobs(pool);
+      const row = (await pool.query(
+        `SELECT job_status, booking_token, booking_code FROM public.jobs WHERE job_id=$1`,
+        [response.body.job_id]
+      )).rows[0];
+      assert(row.job_status === "ไม่พบช่างรับงาน", `unexpected fallback status ${row.job_status}`);
+      const status = await (await fetch(`${BASE_A}/public/urgent-status?q=${encodeURIComponent(row.booking_token)}`)).json();
+      assert(status.phase === "fallback", `tracking did not report fallback: ${status.phase}`);
+      const queue = await (await fetch(`${BASE_A}/admin/review_queue_v2?status=all&limit=500`, {
+        headers: { cookie: `cwf_session=${adminSession}` },
+      })).json();
+      assert(queue.rows?.some((job) => job.booking_code === row.booking_code), "fallback job missing from admin queue");
+    });
+
+    await record("API4b admin rebroadcast preserves partner/company/all and rejects invalid type", async () => {
+      assert(fallbackJobId, "missing fallback fixture for rebroadcast");
+      const call = async (techType) => {
+        const response = await fetch(`${BASE_A}/jobs/${fallbackJobId}/rebroadcast_offer_v2`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            cookie: `cwf_session=${adminSession}`,
+          },
+          body: JSON.stringify({ tech_type: techType }),
+        });
+        let body = null;
+        try { body = await response.json(); } catch (_) {}
+        return { status: response.status, body };
+      };
+      const pendingEmployment = async () => (await pool.query(
+        `SELECT DISTINCT p.employment_type
+           FROM public.job_offers o
+           JOIN public.technician_profiles p ON p.username=o.technician_username
+          WHERE o.job_id=$1 AND o.status='pending'
+          ORDER BY p.employment_type`,
+        [fallbackJobId]
+      )).rows.map((row) => row.employment_type);
+
+      const partner = await call("partner");
+      assert(partner.status === 200, `partner rebroadcast failed: ${partner.status}`);
+      assert(JSON.stringify(await pendingEmployment()) === JSON.stringify(["partner"]),
+        "partner rebroadcast included a non-partner");
+
+      const company = await call("company");
+      assert(company.status === 200, `company rebroadcast failed: ${company.status}`);
+      assert(JSON.stringify(await pendingEmployment()) === JSON.stringify(["company", "custom", "special_only"]),
+        "company rebroadcast did not preserve the company-compatible set");
+
+      const all = await call("all");
+      assert(all.status === 200, `all rebroadcast failed: ${all.status}`);
+      const allTypes = await pendingEmployment();
+      assert(allTypes.includes("partner") && allTypes.includes("company")
+        && allTypes.includes("custom") && allTypes.includes("special_only"),
+      `all rebroadcast lost an employment group: ${JSON.stringify(allTypes)}`);
+
+      const beforeInvalid = await pendingEmployment();
+      const invalid = await call("customer-forged");
+      assert(invalid.status === 400 && invalid.body?.code === "INVALID_URGENT_TECH_TYPE",
+        `invalid rebroadcast type was not rejected: ${invalid.status}/${invalid.body?.code}`);
+      assert(JSON.stringify(await pendingEmployment()) === JSON.stringify(beforeInvalid),
+        "invalid type mutated pending offers");
+    });
+
+    await record("API5 all offers expired enters truthful admin fallback and remains trackable", async () => {
+      const response = await apiBook(BASE_A, urgentPayload(crypto.randomBytes(16).toString("hex"), "16:00"));
+      assert(response.status === 200 && response.body?.job_id, "expiry fixture booking failed");
+      await pool.query(`UPDATE public.job_offers SET expires_at=NOW()-INTERVAL '1 minute' WHERE job_id=$1`, [response.body.job_id]);
+      const finalizer = require(path.join(REPO_ROOT, "server", "services", "urgent", "finalizer"));
+      await finalizer.autoFinalizeUrgentJobs(pool);
+      const row = (await pool.query(
+        `SELECT job_status, booking_token FROM public.jobs WHERE job_id=$1`,
+        [response.body.job_id]
+      )).rows[0];
+      assert(row.job_status === "ไม่พบช่างรับงาน", `unexpected expiry fallback status ${row.job_status}`);
+      const status = await (await fetch(`${BASE_A}/public/urgent-status?q=${encodeURIComponent(row.booking_token)}`)).json();
+      assert(status.phase === "fallback", `expiry tracking did not report fallback: ${status.phase}`);
+    });
+
+    await record("API6 Admin CMS publish closes the next urgent request without restart", async () => {
+      await publishUrgentSwitch(BASE_A, adminSession, false);
+      const config = await (await fetch(`${BASE_A}/public/customer-app-config`, { cache: "no-store" })).json();
+      assert(config.page_availability?.urgent === false, "config did not close urgent again");
+      const before = await jobCountWhere("TRUE");
+      const response = await apiBook(BASE_A, urgentPayload(crypto.randomBytes(16).toString("hex"), "17:00"));
+      assert(response.status === 503 && response.body?.code === "URGENT_BOOKING_DISABLED",
+        `next urgent request was not closed: ${response.status}/${response.body?.code}`);
+      assert(await jobCountWhere("TRUE") === before, "second switch close mutated jobs");
+    });
+    return;
+  }
 
   // The sandbox pre-installs Chromium at a pinned build; point Playwright at
   // it explicitly so a version-mismatched registry lookup can't fail the run.
@@ -695,7 +962,7 @@ async function main() {
     assert(assigned.rows[0].technician_username === winners[0].tech, "job not assigned to the accepting technician");
     // The customer's waiting room flips to accepted via the public status feed.
     const statusRes = await (await fetch(`${BASE_A}/public/urgent-status?token=${encodeURIComponent(urgentToken)}`)).json();
-    assert(statusRes.phase === "accepted" && statusRes.confirmed === true, `urgent status should be accepted, got ${statusRes.phase}`);
+    assert(statusRes.phase === "assigned" && statusRes.confirmed === true, `urgent status should be assigned, got ${statusRes.phase}`);
     await p.close();
   });
 
@@ -799,42 +1066,18 @@ async function main() {
     await p.close();
   });
 
-  // 13) Kill switch: booking disabled -> 503 + LINE fallback, zero jobs created.
-  await record("S13 kill switch shows LINE fallback and never creates a job", async () => {
+  // 13) Persisted urgent switch is live without ENV/restart and blocks UI + API.
+  await record("S13 CMS urgent switch applies immediately without ENV or restart", async () => {
     const before = await jobCountWhere("TRUE");
+    await publishUrgentSwitch(BASE_A, adminSession, false);
+    const closedConfig = await (await fetch(`${BASE_A}/public/customer-app-config`, { cache: "no-store" })).json();
+    assert(closedConfig.page_availability?.urgent === false, "config must report urgent closed");
     const p = await ctx.newPage();
-    await completeScheduledWizard(p, APP_URL_B, tomorrow);
-    // Earlier scenarios shift live capacity, so the first submit may bounce on
-    // slot revalidation — re-pick and resubmit until the 503 gate answers.
-    let lineShown = false;
-    for (let attempt = 0; attempt < 3 && !lineShown; attempt += 1) {
-      if (await p.locator('[data-action="submit-scheduled"]').count()) {
-        await tap(p.locator('[data-action="submit-scheduled"]'));
-      }
-      try {
-        await p.waitForSelector(".line-fallback-btn", { timeout: 12000 });
-        lineShown = true;
-        break;
-      } catch (_) { /* bounced — re-pick a slot */ }
-      if (await p.locator("[data-calendar-date]").count()) {
-        const day = p.locator("[data-calendar-date]").first();
-        await tap(day);
-        const slot = p.locator("[data-real-slot-key]").first();
-        await slot.waitFor({ state: "attached", timeout: 20000 }).catch(() => {});
-        if (await slot.count()) await tap(slot);
-        await chooseTimeProposal(p, "false");
-        if (await p.locator('[data-action="wizard-next"]').count()) await nextStep(p);
-      }
-    }
-    assert(lineShown, "LINE fallback button never appeared");
-    const href = await p.locator(".line-fallback-btn").getAttribute("href");
-    assert(href && href.startsWith("https://lin.ee/"), "LINE fallback link missing");
-    // Direct API double-check for both lanes.
-    const sched = await apiBook(BASE_B, scheduledPayload(tomorrow, "13:00"));
-    assert(sched.status === 503 && sched.body?.code === "SCHEDULED_BOOKING_DISABLED", "scheduled lane not closed");
-    const urgent = await apiBook(BASE_B, {
+    await p.goto(`${APP_URL_A}#urgent`, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector(".maintenance-screen", { timeout: 15000 });
+    const urgent = await apiBook(BASE_A, {
       customer_name: "x", customer_phone: "0811111111", job_type: "ล้างแอร์",
-      appointment_datetime: new Date().toISOString(), address_text: "y",
+      appointment_datetime: `${tomorrow}T15:00:00+07:00`, address_text: "y",
       booking_mode: "urgent", client_app: "customer_app_v2",
       urgent_request_key: crypto.randomBytes(16).toString("hex"),
       ac_type: "ผนัง", btu: 12000, machine_count: 1, wash_variant: "ล้างธรรมดา",
@@ -842,6 +1085,9 @@ async function main() {
     assert(urgent.status === 503 && urgent.body?.code === "URGENT_BOOKING_DISABLED", "urgent lane not closed");
     const after = await jobCountWhere("TRUE");
     assert(after === before, `kill switch leaked ${after - before} job(s)`);
+    await publishUrgentSwitch(BASE_A, adminSession, true);
+    const openConfig = await (await fetch(`${BASE_A}/public/customer-app-config`, { cache: "no-store" })).json();
+    assert(openConfig.page_availability?.urgent === true, "config must report urgent open immediately");
     await p.close();
   });
 

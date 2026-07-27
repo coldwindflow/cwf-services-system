@@ -47,10 +47,17 @@
       if (!this.initialized) return;
       this.render({ focus: false, refresh: true });
     },
-    render(options = {}) {
+    async render(options = {}) {
       const requestedRoute = root.state.readRouteFromHash();
       const pa = root.pageAvailability;
       const paReady = !!pa && typeof pa.isReady === "function" && pa.isReady();
+      // Urgent is a live operational switch, not a startup snapshot. Re-read it
+      // before entering the route; the server independently rechecks it before
+      // any mutation. The refresh is de-duplicated by pageAvailability.
+      if (paReady && pa.availabilityKey(requestedRoute) === "urgent" && typeof pa.refreshUrgent === "function") {
+        await pa.refreshUrgent();
+        if (root.state.readRouteFromHash() !== requestedRoute) return;
+      }
 
       // Central availability guard. Runs before canonicalisation and before any
       // route handler, so a disabled page can never call its handler or fire its

@@ -29,6 +29,8 @@ const pricingHelpers = require("./server/pricing");
 const jobTiming = require("./server/services/jobTiming");
 const urgentPublicAdapter = require("./server/services/urgentPublicAdapter");
 const urgentFinalizer = require("./server/services/urgent/finalizer");
+const urgentCapability = require("./server/services/urgent/capability");
+const { createUrgentDispatchService, normalizeUrgentTechType } = require("./server/services/urgent/dispatch");
 const trackingPrivacy = require("./server/services/public/trackingPrivacy");
 const customerPricingHelpers = require("./server/customerPricing");
 const customerAuth = require("./server/customerAuth");
@@ -13523,56 +13525,29 @@ app.put("/jobs/:job_id/assign", async (req, res) => {
 });
 
 
+const urgentDispatchService = createUrgentDispatchService({
+  pool,
+  availabilityEngine: customerAvailability,
+  detectServiceZoneFromText,
+  rankTechniciansForServiceZone,
+  isTechFree,
+  isServiceZoneFilterEnabled: () => ENABLE_SERVICE_ZONE_FILTER,
+});
+
 async function buildUrgentOfferCandidatesForJob(job, techType='partner', db=pool) {
   await expireTechnicianAcceptStatuses(db);
-  const ttype = String(techType || 'partner').trim().toLowerCase();
-  const detected = await detectServiceZoneFromText({
-    address_text: job.address_text,
-    job_zone: job.job_zone,
-    service_zone_code: job.service_zone_code,
-    maps_url: job.maps_url,
-  });
-  const zoneCode = detected?.service_zone_code || job.service_zone_code || null;
-  if (ENABLE_SERVICE_ZONE_FILTER && !zoneCode) {
-    const err = new Error('ยังไม่พบพื้นที่บริการ กรุณาระบุย่าน/เขตให้ชัดเจนก่อนยิงข้อเสนอใหม่');
-    err.statusCode = 409;
-    err.code = 'NO_SERVICE_ZONE_FOR_URGENT_OFFER';
-    throw err;
-  }
-  const partners = await db.query(
-    `SELECT u.username, p.home_service_zone_code, p.secondary_service_zone_code, COALESCE(p.allow_out_of_zone,FALSE) AS allow_out_of_zone
-       FROM public.users u
-       LEFT JOIN public.technician_profiles p ON p.username=u.username
-      WHERE u.role='technician'
-        AND COALESCE(p.accept_status,'paused')='ready' AND p.accept_status_expires_at IS NOT NULL AND p.accept_status_expires_at > NOW()
-        AND (
-              $1::text = 'all'
-           OR ($1::text = 'company' AND COALESCE(p.employment_type,'company') IN ('company','custom','special_only'))
-           OR ($1::text <> 'company' AND COALESCE(p.employment_type,'company') = $1::text)
-        )
-      ORDER BY u.username`,
-    [ttype]
-  );
-  let candidateRows = partners.rows || [];
-  if (ENABLE_SERVICE_ZONE_FILTER && zoneCode) {
-    const code = String(zoneCode).toUpperCase();
-    const primary = candidateRows.filter(r => String(r.home_service_zone_code || '').toUpperCase() === code);
-    const secondary = candidateRows.filter(r => String(r.home_service_zone_code || '').toUpperCase() !== code && String(r.secondary_service_zone_code || '').toUpperCase() === code);
-    const outOfZone = candidateRows.filter(r => !primary.includes(r) && !secondary.includes(r) && r.allow_out_of_zone === true);
-    candidateRows = [...primary, ...secondary, ...outOfZone];
-  }
-  const ranked = rankTechniciansForServiceZone(candidateRows, zoneCode).map(r => r.username).slice(0, 30);
-  const available = [];
-  for (const u of ranked) {
-    if (await isTechFree(u, job.appointment_datetime, Number(job.duration_min || 60), job.job_id)) available.push(u);
-  }
-  return { available, zoneCode, totalCandidates: candidateRows.length };
+  return urgentDispatchService.findEligibleTechnicians(job, { db, techType });
 }
 
 app.post('/jobs/:job_id/rebroadcast_offer_v2', requireAdminSoft, async (req, res) => {
   const job_id = Number(req.params.job_id);
   if (!Number.isInteger(job_id) || job_id <= 0) return res.status(400).json({ error: 'job_id ไม่ถูกต้อง' });
-  const techType = String(req.body?.tech_type || 'all').trim().toLowerCase();
+  let techType;
+  try {
+    techType = normalizeUrgentTechType(req.body?.tech_type, 'all');
+  } catch (error) {
+    return res.status(400).json({ error: error.message, code: error.code });
+  }
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -14216,10 +14191,12 @@ const bookingJobService = createBookingJobService({
   customerAvailability,
   publicCustomerAvailabilityDeps,
   findBestCustomerPromotion,
+  availabilityEngine: customerAvailability,
+  urgentDispatchService,
+  resolveCustomerUrgentCapability: () => urgentCapability.resolveUrgentCapability(pool),
+  logJobUpdate,
   isServiceZoneFilterEnabled: () => ENABLE_SERVICE_ZONE_FILTER,
-  isCustomerUrgentBookingEnabled: () => ENABLE_CUSTOMER_URGENT_BOOKING,
   isCustomerScheduledBookingEnabled: () => ENABLE_CUSTOMER_SCHEDULED_BOOKING,
-  isUrgentFlowEnabled: () => ENABLE_URGENT_FLOW,
   lineContactUrl: CWF_LINE_CONTACT_URL,
   travelBufferMin: TRAVEL_BUFFER_MIN,
   getInvalidJobSiteCoordinatesMessage: () => INVALID_JOB_SITE_COORDINATES_MSG,
@@ -18393,7 +18370,9 @@ app.post("/offers/:offer_id/accept", requireTechnicianSession, async (req, res) 
     await assertOfferOwnedBySessionTechnician(username, offer.technician_username);
 
     const jobR = await client.query(
-      `SELECT job_id, technician_team FROM public.jobs WHERE job_id=$1 FOR UPDATE`,
+      `SELECT job_id, technician_team, job_type, booking_code,
+              appointment_datetime, job_zone
+         FROM public.jobs WHERE job_id=$1 FOR UPDATE`,
       [offer.job_id]
     );
     if (jobR.rows.length === 0) throw new Error("ไม่พบงาน");
@@ -18446,8 +18425,31 @@ app.post("/offers/:offer_id/accept", requireTechnicianSession, async (req, res) 
        ON CONFLICT (job_id, username) DO NOTHING`,
       [offer.job_id, offer.technician_username]
     );
+    await client.query(
+      `INSERT INTO public.job_assignments (job_id, technician_username, status)
+       VALUES ($1,$2,'in_progress')
+       ON CONFLICT (job_id, technician_username)
+       DO UPDATE SET status='in_progress', done_at=NULL`,
+      [offer.job_id, offer.technician_username]
+    );
 
     await client.query("COMMIT");
+
+    try {
+      await _notifyDirectJobAssigned({
+        usernames: [offer.technician_username],
+        job_id: offer.job_id,
+        booking_code: jobR.rows[0].booking_code,
+        job_type: jobR.rows[0].job_type,
+        appointment_datetime: jobR.rows[0].appointment_datetime,
+        job_zone: jobR.rows[0].job_zone,
+      });
+    } catch (notifyError) {
+      console.warn("[urgent_accept] post-commit notification failed", {
+        job_id: offer.job_id,
+        message: notifyError && notifyError.message,
+      });
+    }
 
     // best effort: ถ้าเป็น urgent และไม่มี offer ค้างแล้ว ให้สรุปสถานะ
     await autoFinalizeUrgentJobs();
@@ -24023,26 +24025,17 @@ app.get("/public/urgent-status", async (req, res) => {
       `,
       [job.job_id]
     );
-    const proposalR = await pool.query(
-      `
-      SELECT BOOL_OR(status='pending') AS has_pending_time_proposal
-      FROM public.job_offer_time_proposals
-      WHERE job_id=$1
-      `,
-      [job.job_id]
-    );
     const offers = offerR.rows[0] || {};
     const hasAccepted = Boolean(job.technician_username || job.technician_team || offers.has_accepted_offer);
-    const hasProposal = Boolean(proposalR.rows[0]?.has_pending_time_proposal) || String(job.job_status || "") === "รอพิจารณาเวลาใหม่";
     const hasPending = Boolean(offers.has_pending_offer);
     const terminal = ["เสร็จแล้ว", "ยกเลิก"].includes(String(job.job_status || ""));
-    const phase = hasAccepted
-      ? "accepted"
-      : hasProposal
-        ? "time_proposed"
+    const phase = terminal
+      ? "terminal"
+      : hasAccepted
+        ? "assigned"
         : hasPending
-          ? "waiting"
-          : "admin_review";
+          ? "searching"
+          : "fallback";
     return res.json({
       success: true,
       booking_code: job.booking_code || null,
@@ -24050,7 +24043,6 @@ app.get("/public/urgent-status", async (req, res) => {
       confirmed: hasAccepted,
       terminal,
       server_now: jobTiming.getBangkokNow().iso,
-      next_offer_expires_at: offers.next_offer_expires_at || null,
       allow_time_proposal: Boolean(job.allow_time_proposal),
     });
   } catch (e) {

@@ -3,9 +3,9 @@
 
   const root = window.CWFCustomerAppV2 = window.CWFCustomerAppV2 || {};
 
-  // Customer App page-availability (admin rollout control, NOT a server kill
-  // switch). Source of truth is the published Homepage CMS config, read via the
-  // lightweight /public/customer-app-config endpoint. This module never becomes
+  // Customer App page-availability. The urgent field mirrors the authoritative
+  // server runtime switch. Source of truth is the published Homepage CMS config, read via the
+  // lightweight customer capability response. This module never becomes
   // the source of truth; localStorage is only a last-known-good cache.
   const PAGE_KEYS = ["home", "store", "booking", "scheduled", "urgent", "tracking", "profile"];
   const DEFAULT_ALL_ENABLED = Object.freeze({
@@ -35,6 +35,7 @@
   // before load() resolves, we never accidentally treat a page as enabled.
   let flags = { ...DEGRADED };
   let ready = false;
+  let urgentRefreshInFlight = null;
 
   function isPlainObject(value) {
     return !!value && typeof value === "object" && !Array.isArray(value);
@@ -140,11 +141,36 @@
       writeCache(serverFlags); // cache only a valid, non-degraded server response
     } else {
       const cached = readCache();
-      flags = cached || { ...DEGRADED };
+      // A stale cache may preserve the non-transactional page rollout flags, but
+      // it must never reopen urgent booking when the live server capability
+      // cannot be confirmed. The server independently rechecks the same switch.
+      flags = cached ? { ...cached, urgent: false } : { ...DEGRADED };
     }
     ready = true;
     applyToDom(document);
     return getFlags();
+  }
+
+  async function refreshUrgent() {
+    if (urgentRefreshInFlight) return urgentRefreshInFlight;
+    urgentRefreshInFlight = (async () => {
+      try {
+        const resp = await withTimeout(root.api.loadCustomerAppConfig(), LOAD_TIMEOUT_MS);
+        if (!resp || resp.ok !== true || resp.degraded === true || !isValidFlags(resp.page_availability)) {
+          flags = { ...flags, urgent: false };
+          return false;
+        }
+        flags = { ...flags, urgent: resp.page_availability.urgent === true };
+        writeCache(flags);
+        return flags.urgent;
+      } catch (_) {
+        flags = { ...flags, urgent: false };
+        return false;
+      } finally {
+        urgentRefreshInFlight = null;
+      }
+    })();
+    return urgentRefreshInFlight;
   }
 
   // ---- disabled-route controls ---------------------------------------------
@@ -211,6 +237,7 @@
     DEFAULT_ALL_ENABLED,
     DEGRADED,
     load,
+    refreshUrgent,
     isReady,
     isEnabled,
     availabilityKey,

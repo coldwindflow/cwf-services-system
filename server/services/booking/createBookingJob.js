@@ -41,15 +41,16 @@ function createBookingJobService(dependencies = {}) {
   } = dependencies;
 
   const ENABLE_SERVICE_ZONE_FILTER = Boolean(dependencies.isServiceZoneFilterEnabled());
-  const ENABLE_CUSTOMER_URGENT_BOOKING = Boolean(dependencies.isCustomerUrgentBookingEnabled());
   const ENABLE_CUSTOMER_SCHEDULED_BOOKING = Boolean(dependencies.isCustomerScheduledBookingEnabled());
-  const ENABLE_URGENT_FLOW = Boolean(dependencies.isUrgentFlowEnabled());
   const CWF_LINE_CONTACT_URL = dependencies.lineContactUrl;
   const TRAVEL_BUFFER_MIN = dependencies.travelBufferMin;
   const getInvalidJobSiteCoordinatesMessage = dependencies.getInvalidJobSiteCoordinatesMessage;
   const _refreshTechnicianIncomePreviewForJob = dependencies.refreshTechnicianIncomePreviewForJob;
   const _notifyUrgentOffer = dependencies.notifyUrgentOffer;
   const _notifyDirectJobAssigned = dependencies.notifyDirectJobAssigned;
+  const resolveCustomerUrgentCapability = dependencies.resolveCustomerUrgentCapability;
+  const urgentDispatchService = dependencies.urgentDispatchService;
+  const logJobUpdate = dependencies.logJobUpdate;
 
   async function pickFirstAvailableTech(usernames, apptIso, durationMin) {
     for (const u of usernames) {
@@ -718,7 +719,6 @@ function createBookingJobService(dependencies = {}) {
 
       await ensureCanonicalBookingJobUnits(job_id, client);
       await client.query(`UPDATE public.jobs SET per_unit_evidence_enabled=TRUE WHERE job_id=$1`, [job_id]);
-
       await client.query("COMMIT");
 
       // ✅ Prepare technician income preview/cache right after job creation.
@@ -1049,7 +1049,10 @@ function createBookingJobService(dependencies = {}) {
     if (canonicalBookingMode !== "scheduled" && canonicalBookingMode !== "urgent") {
       return res.status(400).json({ error: "ประเภทการจองไม่ถูกต้อง", code: "UNKNOWN_BOOKING_MODE" });
     }
-    if (canonicalBookingMode === "urgent" && !ENABLE_CUSTOMER_URGENT_BOOKING) {
+    const urgentCapability = canonicalBookingMode === "urgent"
+      ? await resolveCustomerUrgentCapability()
+      : null;
+    if (canonicalBookingMode === "urgent" && urgentCapability?.enabled !== true) {
       return res.status(503).json({
         error: "ระบบจองด่วนออนไลน์ปิดให้บริการชั่วคราว กรุณาติดต่อแอดมินทาง LINE",
         code: "URGENT_BOOKING_DISABLED",
@@ -1136,9 +1139,7 @@ function createBookingJobService(dependencies = {}) {
     if (deterministicToken) token = deterministicToken;
     const allowAdminScheduleFallback = allow_admin_schedule_fallback === true || String(allow_admin_schedule_fallback || "").trim() === "true";
     const canUseAdminScheduleFallback = bm === "scheduled" && allowAdminScheduleFallback;
-    // Customer urgent jobs wait for admin approval. The existing offer flow is
-    // entered only by the authenticated approval route after commit.
-    const urgentOfferEnabled = false;
+    const urgentOfferEnabled = bm === "urgent";
     const allowTimeProposal = allow_time_proposal === true
       ? true
       : allow_time_proposal === false || allow_time_proposal == null
@@ -1467,7 +1468,7 @@ function createBookingJobService(dependencies = {}) {
         (customer_note || "").toString(),
         (maps_url || "").toString(),
         (job_zone || "").toString(),
-        JOB_STATUS.CUSTOMER_SCHEDULED_REVIEW,
+        bm === "urgent" ? JOB_STATUS.ADMIN_URGENT_WAITING : JOB_STATUS.CUSTOMER_SCHEDULED_REVIEW,
         duration_min_v2,
         (bm === 'urgent' ? 'urgent' : 'scheduled'),
         dispatchMode,
@@ -1515,27 +1516,20 @@ function createBookingJobService(dependencies = {}) {
 
       // CREATE_URGENT_OFFERS_V2
       let urgentOffersCount = 0;
+      let urgentPushTargets = [];
       if (bm === "urgent" && urgentOfferEnabled) {
         await expireTechnicianAcceptStatuses(client);
-        const partners = await client.query(
-          `
-          SELECT u.username
-          FROM public.users u
-          LEFT JOIN public.technician_profiles p ON p.username=u.username
-          WHERE u.role='technician'
-            AND COALESCE(p.accept_status,'paused')='ready' AND p.accept_status_expires_at IS NOT NULL AND p.accept_status_expires_at > NOW()
-            AND COALESCE(p.employment_type,'company') = 'partner'
-          ORDER BY u.username
-          `
-        );
-
-        const apptIso = appointment_datetime;
-        const availablePartners = [];
-        for (const row of partners.rows || []) {
-          const ok = await isTechFree(row.username, apptIso, duration_min_v2, null);
-          if (ok) availablePartners.push(row.username);
-          if (availablePartners.length >= 30) break; // limit scan
-        }
+        const criteriaList = dependencies.availabilityEngine.buildCriteriaList(payloadV2);
+        const dispatch = await urgentDispatchService.findEligibleTechnicians({
+          ...payloadV2,
+          job_id,
+          appointment_datetime,
+          duration_min: duration_min_v2,
+          address_text,
+          maps_url,
+          job_zone,
+        }, { db: client, criteriaList, techType: "partner" });
+        const availablePartners = dispatch.available;
 
         if (!availablePartners.length) {
           await client.query(
@@ -1555,6 +1549,7 @@ function createBookingJobService(dependencies = {}) {
             );
           }
           urgentOffersCount = availablePartners.length;
+          urgentPushTargets = availablePartners;
           console.log("[public_book] urgent_offers", { job_id, booking_code, count: availablePartners.length });
         }
       }
@@ -1590,9 +1585,45 @@ function createBookingJobService(dependencies = {}) {
       await ensureCanonicalBookingJobUnits(job_id, client);
       await client.query(`UPDATE public.jobs SET per_unit_evidence_enabled=TRUE WHERE job_id=$1`, [job_id]);
 
+      if (bm === "urgent" && typeof logJobUpdate === "function") {
+        await logJobUpdate(job_id, {
+          actor_username: "customer",
+          actor_role: "customer",
+          action: "customer_urgent_created",
+          message: urgentPushTargets.length
+            ? "รับคำขอแล้ว กำลังส่งงานให้ช่างที่พร้อมรับงาน"
+            : "ขณะนี้ยังไม่มีช่างรับงาน",
+          payload: { dispatch_mode: "offer" },
+        }, client);
+      }
       await client.query("COMMIT");
 
+      if (bm === "urgent" && urgentPushTargets.length && typeof _notifyUrgentOffer === "function") {
+        try {
+          await _notifyUrgentOffer({
+            usernames: urgentPushTargets,
+            job_id,
+            booking_code,
+            job_type,
+            appointment_datetime,
+            job_zone,
+          });
+        } catch (notifyError) {
+          console.error("[public_book] urgent notification failed after commit", {
+            job_id,
+            message: notifyError && notifyError.message,
+          });
+        }
+      }
       console.log('[public_book]', { job_id, booking_code, booking_mode: bm, requested_tech_type: requestedTechType, duration_min: duration_min_v2, effective_block_min: effectiveBlockMin(duration_min_v2) });
+      const urgentPublicStatus = bm === "urgent"
+        ? {
+          phase: urgentOffersCount > 0 ? "searching" : "fallback",
+          message: urgentOffersCount > 0
+            ? "รับคำขอแล้ว กำลังส่งงานให้ช่างที่พร้อมรับงาน"
+            : "ขณะนี้ยังไม่มีช่างรับงาน คุณสามารถติดตามสถานะหรือติดต่อแอดมินได้",
+        }
+        : {};
       res.json({
         success: true,
         job_id,
@@ -1600,8 +1631,9 @@ function createBookingJobService(dependencies = {}) {
         token: r.rows[0].booking_token,
         booking_mode: bm,
         dispatch_mode: dispatchMode,
-        offers_count: urgentOffersCount,
-        urgent_offer_enabled: urgentOfferEnabled,
+        ...(bm === "scheduled"
+          ? { offers_count: 0, urgent_offer_enabled: false }
+          : urgentPublicStatus),
         duration_min: duration_min_v2,
         effective_block_min: effectiveBlockMin(duration_min_v2),
         travel_buffer_min: TRAVEL_BUFFER_MIN,

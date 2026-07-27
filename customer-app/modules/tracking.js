@@ -769,8 +769,8 @@
     if (lifecycle.state === "checked_in") return "checked_in";
     if (lifecycle.state === "traveling") return "traveling";
     if (lifecycle.state === "assigned") return "assigned";
+    if (mode === "urgent" && (approval.state === "fallback" || noTech)) return "urgent_no_tech";
     if (approval.state === "pending") return mode === "urgent" ? "urgent_waiting" : "waiting";
-    if (mode === "urgent" && noTech) return "urgent_no_tech";
     if (approval.state === "actionable") return "approved";
     return mode === "urgent" ? "urgent_waiting" : "waiting";
   }
@@ -783,9 +783,9 @@
     if (phase === "checked_in") return "ช่างถึงหน้างานแล้ว";
     if (phase === "traveling") return "ช่างกำลังเดินทาง";
     if (phase === "assigned") return mode === "urgent" ? "ช่างรับงานแล้ว" : "ยืนยันคิวแล้ว";
-    if (phase === "approved") return "แอดมินยืนยันคำขอแล้ว";
-    if (phase === "urgent_no_tech") return "แอดมินกำลังช่วยตรวจสอบคิวด่วน";
-    if (phase === "urgent_waiting") return "ส่งคำขอแล้ว รอแอดมินตรวจสอบ";
+    if (phase === "approved") return mode === "urgent" ? "กำลังค้นหาช่างที่พร้อมรับงาน" : "แอดมินยืนยันคำขอแล้ว";
+    if (phase === "urgent_no_tech") return "ขณะนี้ยังไม่มีช่างรับงาน";
+    if (phase === "urgent_waiting") return "กำลังค้นหาช่างที่พร้อมรับงาน";
     return "รับคำขอจองแล้ว รอแอดมินตรวจสอบคิว";
   }
 
@@ -809,9 +809,9 @@
     if (phase === "checked_in") return "ทีมช่างถึงหน้างานแล้ว";
     if (phase === "traveling") return "ช่างกำลังเดินทางไปยังสถานที่นัดหมาย";
     if (phase === "assigned") return "มีทีมช่างรับผิดชอบงานนี้แล้ว";
-    if (phase === "approved") return "แอดมินยืนยันคำขอแล้ว และกำลังจัดทีมช่างให้คุณ";
-    if (phase === "urgent_no_tech") return "แอดมินกำลังช่วยตรวจสอบคิวด่วน คำขอยังไม่ถือว่ายืนยันงาน";
-    if (phase === "urgent_waiting") return "แอดมินกำลังตรวจสอบรายละเอียดคำขอ";
+    if (phase === "approved") return mode === "urgent" ? "รับคำขอแล้ว กำลังส่งงานให้ช่างที่พร้อมรับงาน" : "แอดมินยืนยันคำขอแล้ว และกำลังจัดทีมช่างให้คุณ";
+    if (phase === "urgent_no_tech") return "คุณสามารถติดตามสถานะหรือติดต่อแอดมินได้";
+    if (phase === "urgent_waiting") return "รับคำขอแล้ว กำลังส่งงานให้ช่างที่พร้อมรับงาน";
     return "แอดมินจะตรวจสอบคิวและมอบหมายทีมก่อนถึงเวลานัด";
   }
 
@@ -834,8 +834,8 @@
     if (phase === "traveling") return "รอรับทีมช่างที่กำลังเดินทางไปหน้างาน";
     if (phase === "assigned") return "รอถึงเวลานัด หรือเปิดแผนที่หากต้องการดูสถานที่งาน";
     if (phase === "approved") return "กำลังจัดทีมช่างให้คุณ";
-    if (phase === "urgent_no_tech") return "รอแอดมินช่วยตรวจสอบ หรือเปลี่ยนเป็นจองล่วงหน้าถ้าไม่รีบด่วน";
-    if (phase === "urgent_waiting") return "รอแอดมินตรวจสอบ";
+    if (phase === "urgent_no_tech") return "ติดตามสถานะหรือติดต่อแอดมิน";
+    if (phase === "urgent_waiting") return "กำลังค้นหาช่างที่พร้อมรับงาน";
     return "รอแอดมินยืนยันคิว หรือติดต่อ CWF หากต้องการเลื่อนนัด";
   }
 
@@ -931,22 +931,34 @@
   function renderTechnicianCard(data) {
     const approval = root.customerCopy.bookingApprovalView(data);
     if (approval.state === "pending") {
+      const urgent = modeFromData(data) === "urgent";
       return `
         <div class="tracking-tech-card is-empty" data-tech-pending>
           <div>
-            <strong>รอแอดมินตรวจสอบ</strong>
-            <span class="muted">แอดมินกำลังตรวจสอบรายละเอียดคำขอ</span>
+            <strong>${urgent ? "กำลังค้นหาช่าง" : "รอแอดมินตรวจสอบ"}</strong>
+            <span class="muted">${urgent ? "กำลังค้นหาช่างที่พร้อมรับงาน" : "แอดมินกำลังตรวจสอบรายละเอียดคำขอ"}</span>
+          </div>
+        </div>
+      `;
+    }
+    if (approval.state === "fallback") {
+      return `
+        <div class="tracking-tech-card is-empty">
+          <div>
+            <strong>ขณะนี้ยังไม่มีช่างรับงาน</strong>
+            <span class="muted">คุณสามารถติดตามสถานะหรือติดต่อแอดมินได้</span>
           </div>
         </div>
       `;
     }
     const list = techList(data);
     if (!list.length && root.customerCopy.customerLifecycleView(data).state === "actionable") {
+      const urgent = modeFromData(data) === "urgent";
       return `
         <div class="tracking-tech-card is-empty">
           <div>
-            <strong>แอดมินยืนยันคำขอแล้ว</strong>
-            <span class="muted">แอดมินยืนยันคำขอแล้ว และกำลังจัดทีมช่างให้คุณ</span>
+            <strong>${urgent ? "ช่างรับงานแล้ว" : "แอดมินยืนยันคำขอแล้ว"}</strong>
+            <span class="muted">${urgent ? "ติดตามรายละเอียดและความคืบหน้าได้ที่หน้านี้" : "แอดมินยืนยันคำขอแล้ว และกำลังจัดทีมช่างให้คุณ"}</span>
           </div>
         </div>
       `;
@@ -1537,9 +1549,12 @@
     const data = root.state.tracking.data || {};
     const mode = modeFromData(data);
     const approval = root.customerCopy.bookingApprovalView({ ...data, booking_mode: mode });
+    const lifecycle = root.customerCopy.customerLifecycleView({ ...data, booking_mode: mode });
     const canView = canViewDetails(data);
     const canUseActions = canUseTokenActions(data);
-    const assigned = approval.state !== "pending" && hasAssignedTech(data);
+    const assigned = mode === "urgent"
+      ? lifecycle.state === "assigned" || approval.state === "actionable"
+      : approval.state !== "pending" && hasAssignedTech(data);
     const travel = !!clean(data.travel_started_at);
     const checkin = !!clean(data.checkin_at);
     const started = !!clean(data.started_at);
@@ -1567,8 +1582,20 @@
     if (mode === "urgent" && approval.state === "pending") {
       steps[0].copy = "ระบบได้รับคำขอของคุณแล้ว";
       steps.push({
-        title: "รอแอดมินตรวจสอบ",
-        copy: "แอดมินกำลังตรวจสอบรายละเอียดคำขอ",
+        title: "กำลังค้นหาช่าง",
+        copy: "กำลังค้นหาช่างที่พร้อมรับงาน",
+        ok: false,
+      });
+      return root.utils.timeline(steps.map((step, index) => ({
+        title: step.title,
+        copy: step.copy,
+        kind: step.ok ? "" : timelineState(false, index === 1),
+      })));
+    }
+    if (mode === "urgent" && approval.state === "fallback") {
+      steps.push({
+        title: "ขณะนี้ยังไม่มีช่างรับงาน",
+        copy: "คุณสามารถติดตามสถานะหรือติดต่อแอดมินได้",
         ok: false,
       });
       return root.utils.timeline(steps.map((step, index) => ({
@@ -1580,10 +1607,10 @@
 
     if (canView) {
       steps.push({
-        title: mode === "urgent" ? "แอดมินยืนยันคำขอ" : "ยืนยันคิวและมอบหมายทีม",
+        title: mode === "urgent" ? "ช่างรับงานแล้ว" : "ยืนยันคิวและมอบหมายทีม",
         copy: assigned
           ? "มีทีมดูแลงานนี้แล้ว"
-          : (mode === "urgent" ? "แอดมินยืนยันคำขอแล้ว และกำลังจัดทีมช่างให้คุณ" : "แอดมินกำลังช่วยจัดคิวให้"),
+          : (mode === "urgent" ? "กำลังค้นหาช่างที่พร้อมรับงาน" : "แอดมินกำลังช่วยจัดคิวให้"),
         ok: assigned,
       });
     }

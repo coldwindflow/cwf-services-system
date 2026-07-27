@@ -806,7 +806,7 @@ test("phone multi-result list never renders a raw backend job status", () => {
     error: "",
   };
   const html = app.tracking._test.renderTrackingResult();
-  assert.match(html, /รอแอดมินตรวจสอบ/);
+  assert.match(html, /กำลังค้นหาช่าง/);
   assert.doesNotMatch(html, /admin_review|opaque-internal|job_status/);
 });
 
@@ -829,7 +829,7 @@ test("pending approval never renders reserved technician identity even if the ba
   assert.doesNotMatch(html, /ช่างลับก่อนอนุมัติ|ทีมลับก่อนอนุมัติ|reserved-secret|reserved-team|0899999999/);
 });
 
-test("urgent pending hero timeline and technician card only describe admin review for code and token access", () => {
+test("urgent searching hero timeline and technician card only describe technician search for code and token access", () => {
   const app = loadTrackingRuntime();
   for (const access of ["code", "token"]) {
     const data = {
@@ -847,13 +847,13 @@ test("urgent pending hero timeline and technician card only describe admin revie
     };
     app.state.tracking = { status: "success", data, error: "" };
     const dom = `${app.tracking._test.renderTrackingResult()}\n${app.tracking._test.renderTimeline()}`;
-    assert.match(dom, /รอแอดมินตรวจสอบ/, access);
-    assert.match(dom, /แอดมินกำลังตรวจสอบรายละเอียดคำขอ/, access);
-    assert.doesNotMatch(dom, /ช่างรับงาน|มีช่างรับ|แอดมินยืนยัน|กำลังจัดหาช่าง|ช่างลับ|ทีมลับ|reserved-/i, access);
+    assert.match(dom, /กำลังค้นหาช่างที่พร้อมรับงาน/, access);
+    assert.match(dom, /รับคำขอแล้ว กำลังส่งงานให้ช่างที่พร้อมรับงาน/, access);
+    assert.doesNotMatch(dom, /รอแอดมิน|แอดมินกำลังตรวจสอบ|ช่างรับงานแล้ว|ช่างลับ|ทีมลับ|reserved-/i, access);
   }
 });
 
-test("urgent approved without a technician consistently says admin confirmed and is arranging a technician", () => {
+test("legacy urgent approved without technician evidence remains a safe searching state", () => {
   const app = loadTrackingRuntime();
   for (const access of ["code", "token"]) {
     const data = {
@@ -871,16 +871,16 @@ test("urgent approved without a technician consistently says admin confirmed and
     };
     app.state.tracking = { status: "success", data, error: "" };
     const dom = `${app.tracking._test.renderTrackingResult()}\n${app.tracking._test.renderTimeline()}`;
-    assert.match(dom, /แอดมินยืนยันคำขอแล้ว/, access);
-    assert.match(dom, /กำลังจัดทีมช่างให้คุณ/, access);
-    assert.doesNotMatch(dom, /รอแอดมินตรวจสอบ|ช่างรับงาน|มีช่างรับ|งานจะยืนยันเมื่อ/i, access);
+    assert.match(dom, /กำลังค้นหาช่างที่พร้อมรับงาน/, access);
+    assert.doesNotMatch(dom, /รอแอดมิน|แอดมินยืนยัน|ช่างรับงานแล้ว|มีช่างรับ|งานจะยืนยันเมื่อ/i, access);
   }
 });
 
 test("tracking hero preserves pending and every actual customer lifecycle state", () => {
   const app = loadTrackingRuntime();
   const cases = [
-    [{ booking_mode: "urgent", job_status: "admin_review" }, "ส่งคำขอแล้ว รอแอดมินตรวจสอบ"],
+    [{ booking_mode: "urgent", job_status: "admin_review" }, "กำลังค้นหาช่างที่พร้อมรับงาน"],
+    [{ booking_mode: "urgent", job_status: "assigned", phase: "assigned" }, "ช่างรับงานแล้ว"],
     [{ assigned_at: "assigned", job_status: "รอดำเนินการ" }, "ยืนยันคิวแล้ว"],
     [{ travel_started_at: "travel", assigned_at: "assigned" }, "ช่างกำลังเดินทาง"],
     [{ checkin_at: "checkin", travel_started_at: "travel" }, "ช่างถึงหน้างานแล้ว"],
@@ -919,8 +919,9 @@ test("passport preserves every customer lifecycle state instead of flattening to
     [{ checkin_at: "checkin", travel_started_at: "travel" }, "ช่างถึงหน้างานแล้ว"],
     [{ travel_started_at: "travel", assigned_at: "assigned" }, "ช่างกำลังเดินทาง"],
     [{ assigned_at: "assigned", job_status: "รอดำเนินการ" }, "ยืนยันคิวแล้ว"],
-    [{ booking_mode: "urgent", job_status: "admin_review" }, "รอแอดมินตรวจสอบ"],
-    [{ booking_mode: "urgent", job_status: "approved" }, "พร้อมติดตามงาน"],
+    [{ booking_mode: "urgent", job_status: "admin_review" }, "กำลังค้นหาช่าง"],
+    [{ booking_mode: "urgent", job_status: "approved" }, "กำลังค้นหาช่าง"],
+    [{ booking_mode: "urgent", job_status: "assigned", phase: "assigned" }, "ช่างรับงานแล้ว"],
   ];
   for (const [source, label] of cases) {
     const html = app.tracking._test.renderPassport({
@@ -1158,7 +1159,7 @@ test("tracking UI exposes loading, not-found, rate-limit and offline states", ()
 });
 
 test("tracking assets share the full-read cache build id", () => {
-  const build = "20260726_urgent_preferred_time_gps_v2";
+  const build = "20260727_urgent_direct_auto_offer_blockers_v2";
   for (const file of [
     "customer-app/index.html",
     "customer-app/sw.js",

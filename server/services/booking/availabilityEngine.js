@@ -268,6 +268,32 @@ async function loadDailyUsageMap(db, date, usernames, ignoreJobId) {
   return map;
 }
 
+async function loadUrgentCapacityMap(db, date, usernames, calendarMap, options = {}) {
+  const names = (Array.isArray(usernames) ? usernames : [])
+    .map((username) => String(username || "").trim())
+    .filter(Boolean);
+  const usageMap = await loadDailyUsageMap(db, date, names, options.ignore_job_id);
+  const requestedUnits = serviceUnitCount(options);
+  const result = new Map();
+  for (const username of names) {
+    const calendar = calendarMap instanceof Map ? calendarMap.get(username) : null;
+    if (!calendar) {
+      result.set(username, false);
+      continue;
+    }
+    const usage = usageMap.get(username) || { jobs_count: 0, units_count: 0 };
+    const caps = resolveTechnicianCalendarCaps(calendar);
+    const jobsOk = !(Number.isFinite(caps.effective_max_jobs)
+      && caps.effective_max_jobs >= 1
+      && usage.jobs_count >= caps.effective_max_jobs);
+    const unitsOk = !(Number.isFinite(caps.effective_max_units)
+      && caps.effective_max_units >= 1
+      && usage.units_count + requestedUnits > caps.effective_max_units);
+    result.set(username, jobsOk && unitsOk);
+  }
+  return result;
+}
+
 function bangkokTodayYmd(nowParts) {
   if (nowParts && nowParts.ymd) return String(nowParts.ymd).slice(0, 10);
   if (nowParts && nowParts.dateStr) return String(nowParts.dateStr).slice(0, 10);
@@ -1180,5 +1206,6 @@ module.exports = {
   computeLegacyPublicAvailability,
   hasAvailableStart,
   reservePublicCustomerTechnician,
+  loadUrgentCapacityMap,
   makeDiagnostic,
 };

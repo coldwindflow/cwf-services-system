@@ -84,6 +84,11 @@
     return key;
   }
 
+  function isUrgentDisabledError(error) {
+    return ["URGENT_BOOKING_DISABLED", "CUSTOMER_BOOKING_DISABLED", "ONLINE_BOOKING_DISABLED"]
+      .includes(String(error?.data?.code || "").trim().toUpperCase());
+  }
+
   function appointmentDatetime() {
     const d = draft();
     if (!/^\d{4}-\d{2}-\d{2}$/.test(String(d.date || "")) || !/^\d{2}:\d{2}$/.test(String(d.time || ""))) return "";
@@ -509,7 +514,7 @@
         <div class="urgent-spark" aria-hidden="true"></div>
         <div class="hero-badge">บริการงานล้าง</div>
         <h2>จองล้างแอร์ด่วน</h2>
-        <p>เลือกบริการและเวลาที่ต้องการเพื่อให้แอดมินตรวจสอบและจัดงาน</p>
+        <p>เลือกบริการและเวลาที่ต้องการ ระบบจะส่งงานให้ช่างที่พร้อมรับงาน</p>
       </div>
     `;
   }
@@ -518,7 +523,7 @@
     const steps = [
       { key: "services", label: "บริการ" },
       { key: "details", label: "หน้างานและเวลา" },
-      { key: "review", label: active === "submitted" ? (submittedView?.railLabel || "รอแอดมิน") : "ตรวจสอบ" },
+      { key: "review", label: active === "submitted" ? (submittedView?.railLabel || "กำลังค้นหาช่าง") : "ตรวจสอบ" },
     ];
     const order = { services: 0, details: 1, review: 2, submitted: 2 };
     const activeIndex = order[active] ?? 0;
@@ -587,12 +592,11 @@
       root.state.setUrgentFlow({ step: "submitted", status: "success", error: "", result, liveStatus: null, liveStatusError: "" });
     } catch (error) {
       if (submitEpoch !== pollEpoch) return;
-      const disabled = ["URGENT_BOOKING_DISABLED", "CUSTOMER_BOOKING_DISABLED", "ONLINE_BOOKING_DISABLED"]
-        .includes(String(error?.data?.code || "").trim().toUpperCase());
+      const disabled = isUrgentDisabledError(error);
       root.state.setUrgentFlow({
         step: "review",
         status: "error",
-        error: root.customerCopy.bookingError(error),
+        error: root.customerCopy.bookingError(error, disabled ? "disabled" : undefined),
         result: null,
         disabled_line_url: disabled ? ADMIN_LINE_URL : "",
       });
@@ -875,6 +879,7 @@
       renderSubmitted,
       requestCurrentLocation,
       refreshPricing,
+      isUrgentDisabledError,
     },
   };
 })();

@@ -20,31 +20,31 @@
       { id: "social", type: "social", enabled: true, sort_order: 75, title: "ติดตามเราบนโซเชียล", body: "อัปเดตล่าสุดจาก Facebook และ YouTube ของ Coldwindflow", items: [] },
       { id: "trust", type: "trust", enabled: true, sort_order: 80, title: "มาตรฐานที่ลูกค้าวางใจ", body: "", items: [{ title: "แจ้งราคาก่อนทำ", body: "ระบบคำนวณจากข้อมูลบริการจริง" }, { title: "ช่างผ่านมาตรฐาน", body: "ทีมงานได้รับการตรวจสอบก่อนรับงาน" }, { title: "ติดตามงานได้", body: "ดูสถานะสำคัญด้วย Booking Code" }, { title: "ติดต่อแอดมินง่าย", body: "รองรับ LINE และโทรศัพท์" }] },
     ],
-    // Per-page rollout switches for Customer App V2. All-enabled by default; a
-    // page turned off here is hidden + unreachable in the app. This is a UI
-    // rollout control only — it never replaces the server booking kill switches.
-    page_availability: { home: true, store: true, booking: true, scheduled: true, urgent: true, tracking: true, profile: true },
+    // Customer App page switches. Urgent is intentionally closed until the
+    // owner explicitly publishes it and is the only runtime urgent kill switch.
+    page_availability: { home: true, store: true, booking: true, scheduled: true, urgent: false, tracking: true, profile: true },
   };
 
   // Customer App pages that can be toggled, in display order. Labels/hints are
-  // Thai. `scheduled`/`urgent` note the server kill-switch relationship.
+  // Thai labels describe the operational effect of each published switch.
   const PAGE_AVAILABILITY_KEYS = ["home", "store", "booking", "scheduled", "urgent", "tracking", "profile"];
   const PAGE_AVAILABILITY_META = {
     home: ["หน้าแรก", "หน้าแรกของแอป (แบนเนอร์ เมนูด่วน ทางลัด)"],
     store: ["ร้านค้า", "แคตตาล็อกสินค้า/บริการ และหน้ารายละเอียดสินค้า"],
     booking: ["เลือกประเภทการจอง", "หน้ารวมที่ให้ลูกค้าเลือกจองล่วงหน้าหรือคิวด่วน"],
     scheduled: ["จองล่วงหน้า", "ฟอร์มจองล้างแอร์ล่วงหน้า — ต้องเปิด kill switch ฝั่งเซิร์ฟเวอร์ด้วยจึงจะจองสำเร็จ"],
-    urgent: ["คิวด่วน", "ส่งคำขอด่วนให้ช่างกดรับ — ต้องเปิด kill switch ฝั่งเซิร์ฟเวอร์ด้วยจึงจะส่งได้"],
+    urgent: ["คิวด่วน", "สวิตช์หลักสำหรับเปิดหรือปิดการรับจองด่วนทั้งหน้าเว็บและระบบรับคำขอ"],
     tracking: ["ติดตามงาน", "หน้าติดตามงาน และเป็นปลายทางของลิงก์ยืนยันนัดหมายที่ส่งให้ลูกค้า"],
     profile: ["บัญชีลูกค้า", "หน้าโปรไฟล์และประวัติงานของลูกค้า"],
   };
 
-  // Legacy/missing → all enabled. Present keys coerced to booleans; a missing
-  // key defaults to enabled (never silently disable a page).
+  // Legacy pages keep their existing defaults; missing urgent stays closed.
   function normalizePageAvailability(raw) {
     const src = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
     const out = {};
-    PAGE_AVAILABILITY_KEYS.forEach((key) => { out[key] = key in src ? src[key] === true : true; });
+    PAGE_AVAILABILITY_KEYS.forEach((key) => {
+      out[key] = key in src ? src[key] === true : key !== "urgent";
+    });
     return out;
   }
 
@@ -811,7 +811,7 @@
             เปิด/ปิดแต่ละหน้าของแอปลูกค้า หน้าที่ปิดจะถูกซ่อนจากเมนู เข้าผ่านลิงก์ตรงไม่ได้ และจะแสดงหน้า “กำลังปรับปรุง”
             แทน · <strong>การเปลี่ยนแปลงมีผลหลังกด Publish เท่านั้น</strong>
           </p>
-          <div class="pa-callout">หมายเหตุ: นี่คือปุ่มควบคุมการเผยแพร่ (UI) เท่านั้น ไม่ได้แทนที่ kill switch ฝั่งเซิร์ฟเวอร์ของการจอง — การเปิดหน้า “จองล่วงหน้า/คิวด่วน” ยังต้องเปิด kill switch ที่เซิร์ฟเวอร์ด้วย</div>
+          <div class="pa-callout">สำหรับ “คิวด่วน” สวิตช์นี้เป็นจุดควบคุมหลักเพียงจุดเดียว เมื่อ Publish แล้วมีผลกับทั้งหน้าเว็บและระบบรับคำขอทันที</div>
           ${allDisabledHtml}
           ${trackingOffHtml}
           <div class="pa-list">${rows}</div>

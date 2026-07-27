@@ -9,6 +9,7 @@ const { Pool } = require("pg");
 const { createBookingJobService } = require("../server/services/booking/createBookingJob");
 const { createBookingApprovalService } = require("../server/services/booking/bookingApprovalService");
 const availabilityEngine = require("../server/services/booking/availabilityEngine");
+const { createUrgentDispatchService } = require("../server/services/urgent/dispatch");
 const pricingHelpers = require("../server/pricing");
 const { parseCanonicalServiceItem } = require("../server/services/booking/bookingJobUnits");
 const {
@@ -184,7 +185,8 @@ test.before(async () => {
   }
 
   await pool.query(`
-    DROP TABLE IF EXISTS public.technician_monthly_work_calendar, public.technician_service_matrix,
+    DROP TABLE IF EXISTS public.technician_special_slots_v2, public.technician_workdays_v2,
+      public.technician_monthly_work_calendar, public.technician_service_matrix,
       public.job_updates_v2, public.job_units, public.job_promotions, public.job_offers, public.job_assignments,
       public.job_team_members, public.job_items, public.catalog_items,
       public.technician_profiles, public.users, public.jobs CASCADE
@@ -279,15 +281,20 @@ test.before(async () => {
       secondary_service_zone_code TEXT,
       allow_out_of_zone BOOLEAN
       ,customer_slot_visible BOOLEAN DEFAULT FALSE
+      ,work_start TEXT DEFAULT '09:00'
+      ,work_end TEXT DEFAULT '18:00'
     )
   `);
   await pool.query(`CREATE TABLE public.technician_service_matrix (username TEXT PRIMARY KEY, matrix_json JSONB)`);
+  await pool.query(`CREATE TABLE public.technician_workdays_v2 (technician_username TEXT, work_date DATE, is_off BOOLEAN)`);
+  await pool.query(`CREATE TABLE public.technician_special_slots_v2 (technician_username TEXT, slot_date DATE, start_time TEXT, end_time TEXT)`);
   await pool.query(`
     CREATE TABLE public.technician_monthly_work_calendar (
       technician_username TEXT,
       work_date DATE,
       day_status TEXT,
       can_accept_advance_job BOOLEAN,
+      can_accept_urgent_job BOOLEAN,
       start_time TEXT,
       end_time TEXT,
       max_jobs_per_day INT,
@@ -301,7 +308,8 @@ test.before(async () => {
 test.after(async () => {
   if (!pool) return;
   await pool.query(`
-    DROP TABLE IF EXISTS public.technician_monthly_work_calendar, public.technician_service_matrix,
+    DROP TABLE IF EXISTS public.technician_special_slots_v2, public.technician_workdays_v2,
+      public.technician_monthly_work_calendar, public.technician_service_matrix,
       public.job_updates_v2, public.job_units, public.job_promotions, public.job_offers, public.job_assignments,
       public.job_team_members, public.job_items, public.catalog_items,
       public.technician_profiles, public.users, public.jobs CASCADE
@@ -311,7 +319,8 @@ test.after(async () => {
 
 test.beforeEach(async () => {
   if (!pool) return;
-  await pool.query(`TRUNCATE public.technician_monthly_work_calendar, public.technician_service_matrix,
+  await pool.query(`TRUNCATE public.technician_special_slots_v2, public.technician_workdays_v2,
+    public.technician_monthly_work_calendar, public.technician_service_matrix,
     public.job_updates_v2, public.job_units, public.job_promotions, public.job_offers, public.job_assignments,
     public.job_team_members, public.job_items, public.catalog_items,
     public.technician_profiles, public.users, public.jobs RESTART IDENTITY CASCADE`);
@@ -375,10 +384,18 @@ function makeDependencies(overrides = {}) {
     },
     publicCustomerAvailabilityDeps: () => ({}),
     findBestCustomerPromotion: async () => ({ promo: null, discount: 0 }),
+    availabilityEngine: {
+      buildCriteriaList: (payload) => [{ job: "wash", ac: payload.ac_type || "wall", wash: payload.wash_variant || "normal" }],
+      validateCriteriaList: () => true,
+      techMatchesAllCriteriaStrict: () => true,
+    },
+    urgentDispatchService: {
+      findEligibleTechnicians: async () => ({ available: [], zoneCode: null, totalCandidates: 0 }),
+    },
+    resolveCustomerUrgentCapability: async () => ({ enabled: true, degraded: false }),
+    logJobUpdate: async () => {},
     isServiceZoneFilterEnabled: () => false,
-    isCustomerUrgentBookingEnabled: () => true,
     isCustomerScheduledBookingEnabled: () => true,
-    isUrgentFlowEnabled: () => true,
     lineContactUrl: "https://lin.ee/test",
     travelBufferMin: 30,
     getInvalidJobSiteCoordinatesMessage: () => "พิกัดหน้างานไม่ถูกต้อง",
@@ -397,6 +414,31 @@ async function seedTechnicians() {
     VALUES
       ('tech-a','','ready',NOW() + INTERVAL '1 day','partner',FALSE,TRUE),
       ('tech-b','','ready',NOW() + INTERVAL '1 day','company',FALSE,TRUE)
+  `);
+  await pool.query(
+    `INSERT INTO public.technician_service_matrix (username, matrix_json)
+     VALUES ('tech-a',$1::jsonb),('tech-b',$1::jsonb)`,
+    [JSON.stringify({
+      job_types: { wash: true },
+      ac_types: { wall: true },
+      wash_wall_variants: { normal: true },
+    })]
+  );
+  await pool.query(`
+    INSERT INTO public.technician_monthly_work_calendar
+      (technician_username, work_date, day_status, can_accept_advance_job,
+       can_accept_urgent_job, start_time, end_time, max_jobs_per_day, max_units_per_day, source)
+    VALUES
+      ('tech-a','2026-08-01','working',TRUE,TRUE,'09:00','18:00',5,10,'test'),
+      ('tech-b','2026-08-01','working',TRUE,TRUE,'09:00','18:00',5,10,'test')
+    ON CONFLICT (technician_username, work_date) DO UPDATE
+      SET day_status=EXCLUDED.day_status,
+          can_accept_advance_job=EXCLUDED.can_accept_advance_job,
+          can_accept_urgent_job=EXCLUDED.can_accept_urgent_job,
+          start_time=EXCLUDED.start_time,
+          end_time=EXCLUDED.end_time,
+          max_jobs_per_day=EXCLUDED.max_jobs_per_day,
+          max_units_per_day=EXCLUDED.max_units_per_day
   `);
 }
 
@@ -466,7 +508,8 @@ async function seedRealAvailability() {
   };
   await pool.query(
     `INSERT INTO public.technician_service_matrix (username, matrix_json)
-     VALUES ('tech-a',$1::jsonb),('tech-b',$1::jsonb)`,
+     VALUES ('tech-a',$1::jsonb),('tech-b',$1::jsonb)
+     ON CONFLICT (username) DO UPDATE SET matrix_json=EXCLUDED.matrix_json`,
     [JSON.stringify(matrix)]
   );
   await pool.query(
@@ -474,7 +517,14 @@ async function seedRealAvailability() {
        (technician_username, work_date, day_status, can_accept_advance_job, start_time, end_time, max_jobs_per_day, max_units_per_day, source)
      VALUES
        ('tech-a','2026-08-01','working',TRUE,'09:00','18:00',5,10,'test'),
-       ('tech-b','2026-08-01','working',TRUE,'09:00','18:00',5,10,'test')`
+       ('tech-b','2026-08-01','working',TRUE,'09:00','18:00',5,10,'test')
+     ON CONFLICT (technician_username, work_date) DO UPDATE
+       SET day_status=EXCLUDED.day_status,
+           can_accept_advance_job=EXCLUDED.can_accept_advance_job,
+           start_time=EXCLUDED.start_time,
+           end_time=EXCLUDED.end_time,
+           max_jobs_per_day=EXCLUDED.max_jobs_per_day,
+           max_units_per_day=EXCLUDED.max_units_per_day`
   );
 }
 
@@ -573,13 +623,38 @@ dbTest("real PostgreSQL: scheduled rollback leaves no partial job or items", asy
   assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_items`)).rows[0].count), 0);
 });
 
-dbTest("real PostgreSQL: public urgent waits for admin with zero offers, assignments, income, or notification", async () => {
+dbTest("real PostgreSQL: public urgent creates one offer set and notifies only after commit", async () => {
   await seedTechnicians();
   const notifications = [];
   const income = [];
+  const baseDependencies = makeDependencies();
+  const realDispatch = createUrgentDispatchService({
+    pool,
+    availabilityEngine,
+    detectServiceZoneFromText: baseDependencies.detectServiceZoneFromText,
+    rankTechniciansForServiceZone: baseDependencies.rankTechniciansForServiceZone,
+    isTechFree: baseDependencies.isTechFree,
+    isServiceZoneFilterEnabled: () => false,
+  });
+  const probe = await realDispatch.findEligibleTechnicians({
+    ...publicUrgentBody(),
+    duration_min: 60,
+  }, {
+    db: pool,
+    criteriaList: availabilityEngine.buildCriteriaList(publicUrgentBody()),
+  });
+  assert.deepEqual(probe.available, ["tech-a"], "real PostgreSQL urgent eligibility fixture");
   const service = createBookingJobService(makeDependencies({
+    availabilityEngine,
     notifyUrgentOffer: async (payload) => { notifications.push(payload); },
     refreshTechnicianIncomePreviewForJob: async (...args) => { income.push(args); return {}; },
+    urgentDispatchService: {
+      findEligibleTechnicians: async (...args) => {
+        const result = await realDispatch.findEligibleTechnicians(...args);
+        assert.deepEqual(result.available, ["tech-a"], "transactional urgent eligibility");
+        return result;
+      },
+    },
   }));
   const body = publicUrgentBody();
   const first = await invoke(service.handlePublicBook, body);
@@ -587,18 +662,19 @@ dbTest("real PostgreSQL: public urgent waits for admin with zero offers, assignm
   assert.equal(first.statusCode, 200);
   assert.equal(first.body.booking_mode, "urgent");
   assert.equal(first.body.dispatch_mode, "offer");
-  assert.equal(first.body.offers_count, 0);
-  assert.equal(first.body.urgent_offer_enabled, false);
+  assert.equal(first.body.phase, "searching");
+  assert.equal(Object.hasOwn(first.body, "offers_count"), false);
   assert.equal(replay.body.replayed, true);
   assert.equal(replay.body.booking_code, first.body.booking_code);
   assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.jobs`)).rows[0].count), 1);
-  assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_offers`)).rows[0].count), 0);
+  assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_offers`)).rows[0].count), 1);
   assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_assignments`)).rows[0].count), 0);
   assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_team_members`)).rows[0].count), 0);
   const urgentJob = (await pool.query(`SELECT job_status, technician_username FROM public.jobs`)).rows[0];
-  assert.equal(urgentJob.job_status, JOB_STATUS.CUSTOMER_SCHEDULED_REVIEW);
+  assert.equal(urgentJob.job_status, JOB_STATUS.ADMIN_URGENT_WAITING);
   assert.equal(urgentJob.technician_username, null);
-  assert.equal(notifications.length, 0);
+  assert.equal(notifications.length, 1);
+  assert.deepEqual(notifications[0].usernames, ["tech-a"]);
   assert.equal(income.length, 0);
 });
 
@@ -664,7 +740,7 @@ dbTest("real PostgreSQL: urgent persists multiple cleaning lines, customer GPS, 
   assert.equal(Number(job.gps_longitude), body.gps_longitude);
   assert.equal(job.allow_time_proposal, true);
   assert.equal(job.technician_username, null);
-  assert.equal(job.job_status, JOB_STATUS.CUSTOMER_SCHEDULED_REVIEW);
+  assert.equal(job.job_status, JOB_STATUS.URGENT_NO_TECHNICIAN);
   assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_items WHERE job_id=$1`, [result.body.job_id])).rows[0].count), 2);
   assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_offers WHERE job_id=$1`, [result.body.job_id])).rows[0].count), 0);
   assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_assignments WHERE job_id=$1`, [result.body.job_id])).rows[0].count), 0);
@@ -899,7 +975,7 @@ dbTest("real PostgreSQL: approval fails closed when pending reservation already 
   assert.equal((await pool.query(`SELECT job_status FROM public.jobs WHERE job_id=$1`, [created.body.job_id])).rows[0].job_status, JOB_STATUS.CUSTOMER_SCHEDULED_REVIEW);
 });
 
-dbTest("real PostgreSQL: urgent approval creates only an offer and notifies after commit", async () => {
+dbTest("real PostgreSQL: public urgent fallback is not gated by the legacy admin-approval mutation", async () => {
   await seedTechnicians();
   const booking = createBookingJobService(makeDependencies());
   const created = await invoke(booking.handlePublicBook, publicUrgentBody());
@@ -912,11 +988,9 @@ dbTest("real PostgreSQL: urgent approval creates only an offer and notifies afte
     },
   });
   const first = await invokeApproval(approval.approve, created.body.job_id, { technician_username: "tech-a" });
-  const replay = await invokeApproval(approval.approve, created.body.job_id, { technician_username: "tech-a" });
-  assert.equal(first.statusCode, 200);
-  assert.equal(replay.body.replayed, true);
-  assert.equal(events.offers.length, 1);
-  assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_offers WHERE job_id=$1`, [created.body.job_id])).rows[0].count), 1);
+  assert.equal(first.statusCode, 409);
+  assert.equal(events.offers, undefined);
+  assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_offers WHERE job_id=$1`, [created.body.job_id])).rows[0].count), 0);
   assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_assignments WHERE job_id=$1`, [created.body.job_id])).rows[0].count), 0);
   assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_team_members WHERE job_id=$1`, [created.body.job_id])).rows[0].count), 0);
 });
@@ -976,7 +1050,8 @@ dbTest("real PostgreSQL: Admin Auto, Single, Team, and Forced preserve assignmen
   ];
   for (const entry of cases) {
     await pool.query(`TRUNCATE public.job_promotions, public.job_offers, public.job_assignments, public.job_team_members, public.job_items, public.jobs RESTART IDENTITY CASCADE`);
-    await pool.query(`TRUNCATE public.technician_profiles, public.users`);
+    await pool.query(`TRUNCATE public.technician_monthly_work_calendar,
+      public.technician_service_matrix, public.technician_profiles, public.users`);
     await seedTechnicians();
     const service = createBookingJobService(makeDependencies());
     const result = await invoke(service.handleAdminBookV2, {
