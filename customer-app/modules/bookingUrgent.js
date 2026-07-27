@@ -4,6 +4,7 @@
   const root = window.CWFCustomerAppV2 = window.CWFCustomerAppV2 || {};
   const ADMIN_LINE_URL = "https://lin.ee/fG1Oq7y";
   let activeSubmit = null;
+  let activeCancel = null;
   let pollTimer = null;
   let pollInFlight = null;
   let pollEpoch = 0;
@@ -507,6 +508,10 @@
     return result ? (result.token || result.booking_token || result.booking_code || "") : "";
   }
 
+  function privateTrackingTokenFromResult(result) {
+    return result ? String(result.token || result.booking_token || "").trim() : "";
+  }
+
   function hero() {
     return `
       <div class="hero urgent-hero urgent-hero-fx">
@@ -544,8 +549,31 @@
     const flow = root.state.urgentFlow || {};
     const result = flow.result || {};
     const trackingKey = trackingKeyFromResult(result);
+    const cancellationToken = privateTrackingTokenFromResult(result);
     const view = submittedView || root.customerCopy.urgentSubmittedView(flow.liveStatus);
+    const canCancel = Boolean(cancellationToken)
+      && ["pending", "fallback", "actionable"].includes(view.state)
+      && flow.liveStatus?.can_cancel !== false;
     return `
+      ${view.state === "pending" ? `
+        <section class="card waiting-room waiting-room-fx" data-urgent-search-animation>
+          <div class="radar-wrap" aria-hidden="true">
+            <div class="radar">
+              <span class="radar-ping"></span>
+              <span class="radar-ping d2"></span>
+              <span class="radar-ping d3"></span>
+              <span class="radar-sweep"></span>
+              <span class="radar-core">⚡</span>
+              <span class="radar-blip b1"></span>
+              <span class="radar-blip b2"></span>
+              <span class="radar-blip b3"></span>
+            </div>
+          </div>
+          <div class="pulse-row">
+            <span class="pulse-dot" aria-hidden="true"></span>
+            <span>กำลังค้นหาช่างที่พร้อมรับงาน</span>
+          </div>
+        </section>` : ""}
       <section class="card ${view.cardClass} booking-result-card urgent-card-fx">
         <div class="success-mark">${root.utils.escapeHtml(view.mark)}</div>
         <span class="section-kicker">${root.utils.escapeHtml(view.kicker)}</span>
@@ -561,7 +589,8 @@
         ${flow.liveStatusError ? `<div class="state-box is-error" role="alert">${root.utils.escapeHtml(flow.liveStatusError)}</div>` : ""}
         <div class="button-row">
           ${flow.liveStatusError ? `<button class="primary-btn" type="button" data-urgent-action="retry-status">ลองตรวจสอบสถานะอีกครั้ง</button>` : ""}
-          ${trackingKey ? `<button class="primary-btn" type="button" data-urgent-action="track-created" data-tracking-key="${root.utils.escapeHtml(trackingKey)}">ติดตามสถานะงาน</button>` : ""}
+          ${trackingKey ? `<button class="primary-btn" type="button" data-urgent-action="track-created">ติดตามสถานะงาน</button>` : ""}
+          ${canCancel ? `<button class="secondary-btn" type="button" data-urgent-action="cancel-request">ยกเลิกคำขอ</button>` : ""}
           ${view.showAdminContact ? `<a class="secondary-btn line-fallback-btn" href="${ADMIN_LINE_URL}" target="_blank" rel="noopener noreferrer">ติดต่อแอดมินทาง LINE</a>` : ""}
           ${view.state === "terminal" ? `<button class="secondary-btn" type="button" data-urgent-action="new-request">จองล้างแอร์ใหม่</button>` : ""}
           <button class="secondary-btn" type="button" data-route="home">กลับหน้าแรก</button>
@@ -604,6 +633,35 @@
       if (activeSubmit === submitAttempt) activeSubmit = null;
       if (submitEpoch === pollEpoch) paint(container);
     }
+  }
+
+  async function cancelUrgent(container) {
+    if (activeCancel) return activeCancel;
+    const token = privateTrackingTokenFromResult(root.state.urgentFlow?.result || null);
+    if (!token) return null;
+    if (typeof window.confirm === "function" && !window.confirm("ยืนยันยกเลิกคำของานด่วนนี้หรือไม่")) return null;
+    const requestEpoch = pollEpoch;
+    activeCancel = (async () => {
+      try {
+        await root.api.cancelUrgentRequest(token);
+        if (requestEpoch !== pollEpoch || !onSubmittedScreen()) return null;
+        stopPolling();
+        root.state.setUrgentFlow({
+          liveStatus: { phase: "terminal", terminal: true, can_cancel: false },
+          liveStatusError: "",
+        });
+        paint(container);
+        return true;
+      } catch (error) {
+        if (requestEpoch !== pollEpoch || !onSubmittedScreen()) return null;
+        root.state.setUrgentFlow({ liveStatusError: root.customerCopy.bookingError(error) });
+        paint(container);
+        return false;
+      } finally {
+        if (requestEpoch === pollEpoch) activeCancel = null;
+      }
+    })();
+    return activeCancel;
   }
 
   function stopPolling() {
@@ -820,10 +878,12 @@
           paint(container);
           refreshPricing(container);
         } else if (action === "track-created") {
-          const key = button.getAttribute("data-tracking-key") || "";
+          const key = trackingKeyFromResult(root.state.urgentFlow?.result || null);
           root.state.updateDraft("tracking", { trackingCode: key });
           root.state.setTracking({ status: "idle", data: null, error: "" });
           root.utils.routeTo("tracking");
+        } else if (action === "cancel-request") {
+          await cancelUrgent(container);
         }
       });
     });
@@ -858,6 +918,7 @@
     pricingEpoch += 1;
     pollInFlight = null;
     activeSubmit = null;
+    activeCancel = null;
     if (root.state.urgentFlow.status === "submitting") {
       root.state.setUrgentFlow({ step: "review", status: "idle", error: "" });
     }
@@ -880,6 +941,7 @@
       requestCurrentLocation,
       refreshPricing,
       isUrgentDisabledError,
+      cancelUrgent,
     },
   };
 })();

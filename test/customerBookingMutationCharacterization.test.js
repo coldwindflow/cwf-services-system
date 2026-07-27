@@ -642,8 +642,9 @@ dbTest("real PostgreSQL: public urgent creates one offer set and notifies only a
   }, {
     db: pool,
     criteriaList: availabilityEngine.buildCriteriaList(publicUrgentBody()),
+    techType: "all",
   });
-  assert.deepEqual(probe.available, ["tech-a"], "real PostgreSQL urgent eligibility fixture");
+  assert.deepEqual(probe.available, ["tech-a", "tech-b"], "real PostgreSQL urgent eligibility fixture");
   const service = createBookingJobService(makeDependencies({
     availabilityEngine,
     notifyUrgentOffer: async (payload) => { notifications.push(payload); },
@@ -651,7 +652,7 @@ dbTest("real PostgreSQL: public urgent creates one offer set and notifies only a
     urgentDispatchService: {
       findEligibleTechnicians: async (...args) => {
         const result = await realDispatch.findEligibleTechnicians(...args);
-        assert.deepEqual(result.available, ["tech-a"], "transactional urgent eligibility");
+        assert.deepEqual(result.available, ["tech-a", "tech-b"], "transactional urgent eligibility");
         return result;
       },
     },
@@ -667,14 +668,14 @@ dbTest("real PostgreSQL: public urgent creates one offer set and notifies only a
   assert.equal(replay.body.replayed, true);
   assert.equal(replay.body.booking_code, first.body.booking_code);
   assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.jobs`)).rows[0].count), 1);
-  assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_offers`)).rows[0].count), 1);
+  assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_offers`)).rows[0].count), 2);
   assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_assignments`)).rows[0].count), 0);
   assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_team_members`)).rows[0].count), 0);
   const urgentJob = (await pool.query(`SELECT job_status, technician_username FROM public.jobs`)).rows[0];
   assert.equal(urgentJob.job_status, JOB_STATUS.ADMIN_URGENT_WAITING);
   assert.equal(urgentJob.technician_username, null);
   assert.equal(notifications.length, 1);
-  assert.deepEqual(notifications[0].usernames, ["tech-a"]);
+  assert.deepEqual(notifications[0].usernames, ["tech-a", "tech-b"]);
   assert.equal(income.length, 0);
 });
 

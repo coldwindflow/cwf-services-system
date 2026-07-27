@@ -853,6 +853,38 @@ test("urgent searching hero timeline and technician card only describe technicia
   }
 });
 
+test("urgent cancellation control requires exact-token capability and never renders the token", () => {
+  const app = loadTrackingRuntime();
+  const codeOnly = {
+    ...codeReadPayload(),
+    booking_mode: "urgent",
+    can_cancel: false,
+  };
+  app.state.tracking = { status: "success", data: codeOnly, error: "" };
+  assert.doesNotMatch(app.tracking._test.renderTrackingResult(), /cancel-urgent-request|ยกเลิกคำขอ/);
+
+  const tokenAccess = {
+    ...codeOnly,
+    access_level: "token",
+    can_use_token_actions: true,
+    capabilities: {
+      can_view_full_tracking: true,
+      can_use_token_actions: true,
+      can_cancel_urgent: true,
+    },
+    can_cancel: true,
+    booking_token: "private-cancel-token",
+  };
+  app.state.tracking = { status: "success", data: tokenAccess, error: "" };
+  const html = app.tracking._test.renderTrackingResult();
+  assert.match(html, /data-action="cancel-urgent-request"/);
+  assert.match(html, /ยกเลิกคำขอ/);
+  assert.doesNotMatch(html, /private-cancel-token/);
+
+  app.state.tracking = { status: "success", data: { ...tokenAccess, can_cancel: false }, error: "" };
+  assert.doesNotMatch(app.tracking._test.renderTrackingResult(), /cancel-urgent-request|ยกเลิกคำขอ/);
+});
+
 test("legacy urgent approved without technician evidence remains a safe searching state", () => {
   const app = loadTrackingRuntime();
   for (const access of ["code", "token"]) {
@@ -1159,7 +1191,7 @@ test("tracking UI exposes loading, not-found, rate-limit and offline states", ()
 });
 
 test("tracking assets share the full-read cache build id", () => {
-  const build = "20260727_urgent_direct_auto_offer_blockers_v2";
+  const build = "20260727_urgent_company_cancel_hotfix_v1";
   for (const file of [
     "customer-app/index.html",
     "customer-app/sw.js",

@@ -115,7 +115,7 @@ function applyReadOnlyMode(readOnly){
     "mCustomerName", "mCustomerPhone", "mJobType", "mAppt", "mAddress",
     "mMaps", "mZone", "mNote", "mLat", "mLng", "mTimePreference", "mTechType",
     "mPrimaryTech", "mDispatchMode", "mTeamSearch", "btnLoadSlots",
-    "btnSave", "btnDispatch", "btnRebroadcast", "btnCancel",
+    "btnSave", "btnDispatch", "btnRebroadcast",
   ];
   ids.forEach((id) => {
     const el = $(id);
@@ -1026,7 +1026,6 @@ async function rebroadcastOffer(){
 
 async function cancelJob(){
   if (!CURRENT) return;
-  if (blockReadOnlyMutation()) return;
   if (!confirm("ยืนยันยกเลิกงานนี้?")) return;
   try{
     const isPendingCustomerBooking = String(CURRENT.job_source || "") === "customer"

@@ -140,6 +140,14 @@
       return requestJson("/public/urgent-status", { query: { q }, cache: "no-store" });
     },
 
+    async cancelUrgentRequest(token) {
+      return requestJson("/public/urgent-cancel", {
+        method: "POST",
+        body: { token: String(token || "").trim() },
+        cache: "no-store",
+      });
+    },
+
     async loadPromotions() {
       return requestJson("/promotions", { query: { customer: 1 } });
     },
