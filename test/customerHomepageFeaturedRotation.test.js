@@ -418,6 +418,6 @@ test("compact CSS and cache build remain consistent with six-card rotation", () 
   assert.match(css, /\.homepage-featured-page\s*\{[^}]*grid-area:\s*1\s*\/\s*1/s);
   assert.match(css, /transition:\s*opacity 350ms/);
   assert.match(css, /prefers-reduced-motion:\s*reduce/);
-  const build = "20260727_urgent_company_cancel_hotfix_v1";
+  const build = "20260728_urgent_dispatch_preflight_v2";
   for (const source of [html, sw, boot, manifest]) assert.match(source, new RegExp(build));
 });

@@ -86,6 +86,85 @@ test("closed authoritative urgent switch rejects before database mutation and ig
   assert.equal(connects, 0);
 });
 
+test("public urgent preflight serializes only safe dispatch fields and never candidate diagnostics", async () => {
+  const service = createBookingJobService({
+    pool: {},
+    urgentPublicAdapter,
+    resolveCustomerUrgentCapability: async () => ({ enabled: true }),
+    isServiceZoneFilterEnabled: () => true,
+    isCustomerScheduledBookingEnabled: () => true,
+    computeDurationMinMulti: () => 60,
+    effectiveBlockMin: (duration) => Number(duration) + 30,
+    detectServiceZoneFromText: async () => ({
+      service_zone_code: "A",
+      service_zone_label: "Zone A",
+      service_zone_source: "maps_coordinate",
+      matched_area: "บางนา",
+      coordinate_matches: ["A", "F"],
+    }),
+    expireTechnicianAcceptStatuses: async () => {},
+    availabilityEngine: {
+      buildCriteriaList: () => [{ job: "wash", ac: "wall", wash: "normal" }],
+    },
+    urgentDispatchService: {
+      preflightUrgentDispatch: async () => ({
+        can_dispatch: false,
+        reason: "time_unavailable",
+        nearby_times: ["2099-08-01T09:00:00+07:00"],
+        internal: {
+          available: [],
+          diagnostics: {
+            technicians: [{
+              username: "A2MKUNG",
+              failed_gates: ["outside_work_window"],
+              checks: { service_matrix: true, calendar_exists: true },
+            }],
+          },
+        },
+      }),
+    },
+  });
+  const reply = { statusCode: 200, body: null };
+  const res = {
+    status(code) { reply.statusCode = code; return this; },
+    json(value) { reply.body = value; return value; },
+  };
+  await service.handlePublicUrgentPreflight({ body: {
+    booking_mode: "urgent",
+    job_type: "ล้าง",
+    appointment_datetime: "2099-08-01T07:55:00+07:00",
+    address_text: "บางนา",
+    maps_url: "https://www.google.com/maps?q=13.668,100.604",
+    allow_time_proposal: false,
+    ac_type: "ผนัง",
+    btu: 12000,
+    machine_count: 1,
+    wash_variant: "ล้างธรรมดา",
+    services: [{
+      job_type: "ล้าง",
+      ac_type: "ผนัง",
+      btu: 12000,
+      machine_count: 1,
+      wash_variant: "ล้างธรรมดา",
+    }],
+  } }, res);
+
+  assert.equal(reply.statusCode, 200);
+  assert.deepEqual(Object.keys(reply.body).sort(), [
+    "can_dispatch",
+    "nearby_times",
+    "reason",
+    "resolved_zone",
+  ]);
+  assert.equal(reply.body.can_dispatch, false);
+  assert.equal(reply.body.reason, "time_unavailable");
+  assert.equal(reply.body.resolved_zone.service_zone_code, "A");
+  assert.doesNotMatch(
+    JSON.stringify(reply.body),
+    /A2MKUNG|username|diagnostic|matrix|calendar|coordinate_matches|service_zone_source|filter_enabled/i,
+  );
+});
+
 function dispatchFixture(overrides = {}) {
   const rows = overrides.rows || [{
     username: "ready-partner",
@@ -96,6 +175,8 @@ function dispatchFixture(overrides = {}) {
     work_start: "09:00",
     work_end: "18:00",
     weekly_off_days: "",
+    accept_status: "ready",
+    accept_status_expires_at: "2099-01-01T00:00:00.000Z",
     matrix_json: { ok: true },
   }];
   const db = {
@@ -137,8 +218,7 @@ function dispatchFixture(overrides = {}) {
 
 test("canonical urgent eligibility applies ready/partner SQL, strict zone, all-line matrix, workday/window and collision", async () => {
   const source = read("server/services/urgent/dispatch.js");
-  assert.match(source, /accept_status[\s\S]*='ready'/);
-  assert.match(source, /accept_status_expires_at > NOW\(\)/);
+  assert.match(source, /ready_expired/);
   assert.doesNotMatch(source, /can_accept_advance_job/);
   assert.match(source, /techMatchesAllCriteriaStrict/);
   assert.match(source, /technician_monthly_work_calendar/);
@@ -162,6 +242,7 @@ test("canonical urgent eligibility applies ready/partner SQL, strict zone, all-l
   const noMatrix = dispatchFixture({ rows: [{
     username: "x", employment_type: "partner", home_service_zone_code: "BKK",
     work_start: "09:00", work_end: "18:00", matrix_json: {},
+    accept_status: "ready", accept_status_expires_at: "2099-01-01T00:00:00.000Z",
   }] });
   assert.deepEqual((await noMatrix.service.findEligibleTechnicians(job, { db: noMatrix.db, criteriaList })).available, []);
   const off = dispatchFixture({ workdays: [{ technician_username: "ready-partner", is_off: true }] });
@@ -190,6 +271,8 @@ test("canonical dispatch preserves partner, company-compatible, all, and invalid
     work_start: "09:00",
     work_end: "18:00",
     weekly_off_days: "",
+    accept_status: "ready",
+    accept_status_expires_at: "2099-01-01T00:00:00.000Z",
     matrix_json: { ok: true },
   }));
   const fixture = dispatchFixture({ rows });
@@ -245,11 +328,13 @@ test("Bangkok weekly off is deterministic under UTC and Asia/Bangkok host timezo
   const criteriaList = [{ job: "wash", ac: "wall", wash: "normal" }];
   const mondayOff = dispatchFixture({ rows: [{
     username: "monday-off", employment_type: "partner", home_service_zone_code: "BKK",
-    work_start: "09:00", work_end: "18:00", weekly_off_days: "1", matrix_json: { ok: true },
+    work_start: "09:00", work_end: "18:00", weekly_off_days: "1",
+    accept_status: "ready", accept_status_expires_at: "2099-01-01T00:00:00.000Z", matrix_json: { ok: true },
   }] });
   const sundayOff = dispatchFixture({ rows: [{
     username: "sunday-off", employment_type: "partner", home_service_zone_code: "BKK",
-    work_start: "09:00", work_end: "18:00", weekly_off_days: "0", matrix_json: { ok: true },
+    work_start: "09:00", work_end: "18:00", weekly_off_days: "0",
+    accept_status: "ready", accept_status_expires_at: "2099-01-01T00:00:00.000Z", matrix_json: { ok: true },
   }] });
   assert.deepEqual((await mondayOff.service.findEligibleTechnicians(job, { db: mondayOff.db, criteriaList })).available, []);
   assert.deepEqual((await sundayOff.service.findEligibleTechnicians(job, { db: sundayOff.db, criteriaList })).available, ["sunday-off"]);

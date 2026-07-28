@@ -201,7 +201,10 @@ function createBookingJobService(dependencies = {}) {
     const publicBookingToken = createdBySource === "customer"
       ? (urgentDeterministicToken || genToken(12))
       : null;
-    const zoneDetected = await detectServiceZoneFromText({ address_text, job_zone, service_zone_code, maps_url });
+    const zoneDetected = await detectServiceZoneFromText(
+      { address_text, job_zone, service_zone_code, maps_url, gps_latitude: body.gps_latitude, gps_longitude: body.gps_longitude },
+      { allowAdminOverride: createdBySource === "admin" },
+    );
     const detectedZoneCode = zoneDetected?.service_zone_code || null;
     const detectedZoneLabel = zoneDetected?.service_zone_label || null;
     const detectedZoneSource = zoneDetected?.service_zone_source || (detectedZoneCode ? "auto_detect" : null);
@@ -636,43 +639,31 @@ function createBookingJobService(dependencies = {}) {
       const directPushTargets = isUrgentOffer ? [] : [...new Set([selectedTech, ...tmList].map(x => (x||"").toString().trim()).filter(Boolean))];
       let urgentPushTargets = [];
 
-      // urgent offers to partner (ถ้า bm=urgent และกลุ่ม partner)
+      // Admin urgent creation shares the exact candidate engine used by public
+      // urgent creation and rebroadcast. tech_type is validated server-side.
       if (isUrgentOffer) {
-        const partners = await client.query(
-          `
-          SELECT u.username, p.home_service_zone_code, p.secondary_service_zone_code, COALESCE(p.allow_out_of_zone,FALSE) AS allow_out_of_zone
-          FROM public.users u
-          LEFT JOIN public.technician_profiles p ON p.username=u.username
-          WHERE u.role='technician'
-            AND COALESCE(p.accept_status,'paused')='ready' AND p.accept_status_expires_at IS NOT NULL AND p.accept_status_expires_at > NOW()
-            AND (
-                  $1::text = 'all'
-               OR ($1::text = 'company' AND COALESCE(p.employment_type,'company') IN ('company','custom','special_only'))
-               OR ($1::text <> 'company' AND COALESCE(p.employment_type,'company') = $1::text)
-            )
-          ORDER BY u.username
-          `
-        , [ttype]);
-
-        const partnerRows = partners.rows || [];
-        let candidateRows = partnerRows;
-        if (ENABLE_SERVICE_ZONE_FILTER && detectedZoneCode) {
-          const primary = partnerRows.filter(r => String(r.home_service_zone_code || "").toUpperCase() === detectedZoneCode);
-          const secondary = partnerRows.filter(r => String(r.home_service_zone_code || "").toUpperCase() !== detectedZoneCode && String(r.secondary_service_zone_code || "").toUpperCase() === detectedZoneCode);
-          zone_filter_applied = true;
-          zone_matched_technicians_count = primary.length + secondary.length;
-          zone_fallback_used = false;
-          candidateRows = [...primary, ...secondary];
-        }
-        const list = rankTechniciansForServiceZone(candidateRows, detectedZoneCode).map((r) => r.username);
-        // จำกัด 30 ทีม
-        const maxTeams = 30;
-        const shuffled = list.slice(0, maxTeams);
-        const available = [];
-        for (const u of shuffled) {
-          const ok = await isTechFree(u, apptIso, duration_min, null);
-          if (ok) available.push(u);
-        }
+        await expireTechnicianAcceptStatuses(client);
+        const criteriaList = dependencies.availabilityEngine.buildCriteriaList(payloadV2);
+        const dispatch = await urgentDispatchService.findEligibleTechnicians({
+          ...payloadV2,
+          job_id,
+          appointment_datetime: apptIso,
+          duration_min,
+          effective_block_min: effectiveBlockMin(duration_min),
+          address_text,
+          maps_url,
+          job_zone,
+          service_zone_code: detectedZoneCode,
+          service_zone_source: detectedZoneSource,
+        }, {
+          db: client,
+          criteriaList,
+          techType: ttype,
+        });
+        const available = dispatch.available;
+        zone_filter_applied = ENABLE_SERVICE_ZONE_FILTER;
+        zone_matched_technicians_count = Number(dispatch.totalCandidates || 0);
+        zone_fallback_used = false;
 
         if (!available.length) {
           if (createdBySource === "customer" && bm === "urgent" && mode === "offer") {
@@ -689,19 +680,14 @@ function createBookingJobService(dependencies = {}) {
               job_id,
               booking_code,
               service_zone_code: detectedZoneCode || null,
+              dispatch_policy: dispatch.techType,
+              diagnostics: dispatch.diagnostics,
             });
           } else {
           const err = new Error('ยิงงานด่วนไม่สำเร็จ: ตอนนี้ไม่มีช่างที่เปิดรับงาน ว่างจริง และอยู่ในโซนนี้ ระบบจึงยังไม่ได้ส่งงานออกไปให้ช่างรับ');
           err.statusCode = 409;
           err.code = 'NO_URGENT_OFFER_TARGETS';
-          err.debug = {
-            partner_count: partnerRows.length,
-            candidate_count: candidateRows.length,
-            service_zone_code: detectedZoneCode || null,
-            zone_filter_applied,
-            zone_matched_technicians_count,
-            zone_fallback_used,
-          };
+          err.debug = dispatch.diagnostics;
           throw err;
           }
         }
@@ -975,7 +961,7 @@ function createBookingJobService(dependencies = {}) {
       appointment_datetime: appointment,
       booking_mode: "urgent",
       dispatch_mode: "offer",
-      tech_type: "partner",
+      tech_type: "all",
       assign_mode: "auto",
       technician_username: "",
       team_members: [],
@@ -985,6 +971,123 @@ function createBookingJobService(dependencies = {}) {
     };
 
     return handlePublicBook(req, res);
+  }
+
+  async function evaluatePublicUrgentDispatch(rawBody, options = {}) {
+    const incoming = urgentPublicAdapter.sanitizeCustomerUrgentBody(rawBody || {});
+    if (!urgentPublicAdapter.isStrictUrgentCleaningPayload(incoming)) {
+      return { status: 400, error: "URGENT_CLEANING_ONLY", code: "URGENT_CLEANING_ONLY" };
+    }
+    const appointment = urgentPublicAdapter.normalizeCustomerUrgentAppointment(incoming.appointment_datetime);
+    if (!appointment) {
+      return { status: 400, error: "วันและเวลาที่ต้องการไม่ถูกต้อง", code: "INVALID_APPOINTMENT_DATETIME" };
+    }
+    if (urgentPublicAdapter.isCustomerUrgentAppointmentPast(appointment)) {
+      return { status: 409, error: "วันและเวลาที่เลือกย้อนหลังไม่ได้ กรุณาเลือกเวลาใหม่", code: "APPOINTMENT_IN_PAST" };
+    }
+    if (incoming.allow_time_proposal !== true && incoming.allow_time_proposal !== false) {
+      return { status: 400, error: "กรุณาเลือกเงื่อนไขการเสนอเวลา", code: "INVALID_TIME_PROPOSAL_PREFERENCE" };
+    }
+    const gps = urgentPublicAdapter.validateCustomerUrgentGps(incoming.gps_latitude, incoming.gps_longitude);
+    if (!gps.ok) {
+      return { status: 400, error: "ข้อมูล GPS ไม่ถูกต้อง", code: "INVALID_GPS" };
+    }
+    const payload = {
+      job_type: incoming.job_type,
+      ac_type: incoming.ac_type,
+      btu: Number(incoming.btu || 0),
+      machine_count: Number(incoming.machine_count || 1),
+      wash_variant: incoming.wash_variant,
+      repair_variant: incoming.repair_variant,
+      services: incoming.services,
+      admin_override_duration_min: 0,
+    };
+    const durationMin = computeDurationMinMulti(payload, {
+      source: "public_urgent_preflight",
+      conservative: true,
+    });
+    if (durationMin <= 0) {
+      return { status: 400, error: "ข้อมูลบริการไม่ครบสำหรับตรวจสอบช่าง", code: "INVALID_SERVICE_DURATION" };
+    }
+    const zone = await detectServiceZoneFromText({
+      address_text: incoming.address_text,
+      job_zone: incoming.job_zone,
+      maps_url: incoming.maps_url,
+      gps_latitude: gps.latitude,
+      gps_longitude: gps.longitude,
+    });
+    if (ENABLE_SERVICE_ZONE_FILTER && !zone?.service_zone_code) {
+      return {
+        status: 200,
+        can_dispatch: false,
+        reason: "area_unavailable",
+        filter_enabled: true,
+        zone: null,
+        nearby_times: [],
+      };
+    }
+    await expireTechnicianAcceptStatuses(pool);
+    const criteriaList = dependencies.availabilityEngine.buildCriteriaList(payload);
+    const preflight = await urgentDispatchService.preflightUrgentDispatch({
+      ...payload,
+      appointment_datetime: appointment,
+      duration_min: durationMin,
+      effective_block_min: effectiveBlockMin(durationMin),
+      address_text: incoming.address_text,
+      maps_url: incoming.maps_url,
+      job_zone: incoming.job_zone,
+      gps_latitude: gps.latitude,
+      gps_longitude: gps.longitude,
+      service_zone_code: zone?.service_zone_code || null,
+      service_zone_source: zone?.service_zone_source || null,
+    }, {
+      db: pool,
+      criteriaList,
+      techType: "all",
+      includeNearbyTimes: options.includeNearbyTimes === true,
+    });
+    return {
+      status: 200,
+      can_dispatch: preflight.can_dispatch,
+      reason: preflight.reason,
+      filter_enabled: ENABLE_SERVICE_ZONE_FILTER,
+      zone: zone ? {
+        service_zone_code: zone.service_zone_code || null,
+        service_zone_label: zone.service_zone_label || null,
+        matched_area: zone.matched_area || zone.matched_district || null,
+      } : null,
+      nearby_times: preflight.nearby_times,
+      duration_min: durationMin,
+      internal: preflight.internal,
+    };
+  }
+
+  async function handlePublicUrgentPreflight(req, res) {
+    const capability = await resolveCustomerUrgentCapability();
+    if (capability?.enabled !== true) {
+      return res.status(503).json({
+        error: "ขณะนี้ยังไม่เปิดรับจองด่วน",
+        code: "URGENT_BOOKING_DISABLED",
+      });
+    }
+    try {
+      const result = await evaluatePublicUrgentDispatch(req.body || {}, { includeNearbyTimes: true });
+      if (result.status !== 200) {
+        return res.status(result.status).json({ error: result.error, code: result.code });
+      }
+      return res.json({
+        can_dispatch: result.can_dispatch,
+        resolved_zone: result.zone,
+        reason: result.reason,
+        nearby_times: result.nearby_times,
+      });
+    } catch (error) {
+      console.error("[public_urgent_preflight] failed", { message: error?.message });
+      return res.status(503).json({
+        error: "ระบบตรวจสอบช่างขัดข้องชั่วคราว กรุณาลองอีกครั้ง",
+        code: "URGENT_PREFLIGHT_UNAVAILABLE",
+      });
+    }
   }
 
   // ✅ Fail-safe capability check: jobs.catalog_item_id / jobs.customer_sub are
@@ -1165,6 +1268,22 @@ function createBookingJobService(dependencies = {}) {
         return res.status(400).json({ error: "URGENT_CLEANING_ONLY", code: "URGENT_CLEANING_ONLY" });
       }
     }
+    const publicUrgentZone = bm === "urgent"
+      ? await detectServiceZoneFromText({
+        address_text,
+        job_zone,
+        maps_url,
+        gps_latitude: persistedGpsLatitude,
+        gps_longitude: persistedGpsLongitude,
+        // Deliberately omit service_zone_code: a public caller cannot select it.
+      })
+      : null;
+    if (bm === "urgent" && ENABLE_SERVICE_ZONE_FILTER && !publicUrgentZone?.service_zone_code) {
+      return res.status(422).json({
+        error: "ไม่สามารถตรวจสอบพื้นที่ให้บริการได้ กรุณาตรวจสอบที่อยู่หรือพิกัดแล้วลองใหม่",
+        code: "URGENT_SERVICE_ZONE_REQUIRED",
+      });
+    }
     // CWF Spec: conservative duration for schedule/collision
     const duration_min_v2 = computeDurationMinMulti(payloadV2, { source: "public_book", conservative: true });
     if (duration_min_v2 <= 0) return res.status(400).json({ error: "งานประเภทนี้ต้องให้แอดมินกำหนดเวลา (duration)" });
@@ -1272,7 +1391,38 @@ function createBookingJobService(dependencies = {}) {
       }
     }
 
-    const requestedTechType = bm === "urgent" ? "partner" : "all";
+    const requestedTechType = "all";
+    if (bm === "urgent") {
+      const preflight = await urgentDispatchService.preflightUrgentDispatch({
+        ...payloadV2,
+        appointment_datetime,
+        duration_min: duration_min_v2,
+        effective_block_min: effectiveBlockMin(duration_min_v2),
+        address_text,
+        maps_url,
+        job_zone,
+        gps_latitude: persistedGpsLatitude,
+        gps_longitude: persistedGpsLongitude,
+        service_zone_code: publicUrgentZone?.service_zone_code || null,
+        service_zone_source: publicUrgentZone?.service_zone_source || null,
+      }, {
+        db: pool,
+        criteriaList: dependencies.availabilityEngine.buildCriteriaList(payloadV2),
+        techType: "all",
+      });
+      if (!preflight.can_dispatch) {
+        console.warn("[public_book] urgent_preflight_blocked", {
+          dispatch_policy: "all",
+          service_zone_code: preflight.zoneCode,
+          diagnostics: preflight.internal?.diagnostics,
+        });
+        return res.status(409).json({
+          error: "เวลานี้ยังไม่มีช่างพร้อมรับงาน กรุณาเลือกเวลาอื่น",
+          code: "URGENT_DISPATCH_UNAVAILABLE",
+          reason: preflight.reason || "no_technician_available",
+        });
+      }
+    }
     try {
       if (bm === "scheduled") {
         const startIso = normalizeAppointmentDatetime(appointment_datetime);
@@ -1454,9 +1604,9 @@ function createBookingJobService(dependencies = {}) {
         "address_text", "technician_team", "technician_username", "job_status",
         "booking_token", "job_source", "dispatch_mode", "customer_note",
         "maps_url", "job_zone", "duration_min", "booking_mode", "allow_time_proposal",
-        "gps_latitude", "gps_longitude",
+        "gps_latitude", "gps_longitude", "service_zone_code", "service_zone_source",
       ];
-      const jobInsertValuesSql = ["$1", "$2", "$3", "$4", "$5", "$6", "NULL", "$16", "$11", "$7", "'customer'", "$14", "$8", "$9", "$10", "$12", "$13", "$15", "$17", "$18"];
+      const jobInsertValuesSql = ["$1", "$2", "$3", "$4", "$5", "$6", "NULL", "$16", "$11", "$7", "'customer'", "$14", "$8", "$9", "$10", "$12", "$13", "$15", "$17", "$18", "$19", "$20"];
       const jobInsertParams = [
         String(customer_name).trim(),
         (customer_phone || "").toString().trim(),
@@ -1476,6 +1626,8 @@ function createBookingJobService(dependencies = {}) {
         draftReservationTech ? draftReservationTech.username : null,
         persistedGpsLatitude,
         persistedGpsLongitude,
+        publicUrgentZone?.service_zone_code || null,
+        publicUrgentZone?.service_zone_source || null,
       ];
       if (catalogLinkReady) {
         jobInsertColumns.push("catalog_item_id", "customer_sub");
@@ -1525,9 +1677,14 @@ function createBookingJobService(dependencies = {}) {
           job_id,
           appointment_datetime,
           duration_min: duration_min_v2,
+          effective_block_min: effectiveBlockMin(duration_min_v2),
           address_text,
           maps_url,
           job_zone,
+          service_zone_code: publicUrgentZone?.service_zone_code || null,
+          service_zone_source: publicUrgentZone?.service_zone_source || null,
+          gps_latitude: persistedGpsLatitude,
+          gps_longitude: persistedGpsLongitude,
         }, {
           db: client,
           criteriaList,
@@ -1536,15 +1693,19 @@ function createBookingJobService(dependencies = {}) {
           techType: "all",
         });
         const availableTechnicians = dispatch.available;
+        console.log("[public_book] urgent_candidate_diagnostics", {
+          job_id,
+          dispatch_policy: dispatch.techType,
+          service_zone_code: dispatch.zoneCode,
+          candidate_usernames: availableTechnicians,
+          diagnostics: dispatch.diagnostics,
+        });
 
         if (!availableTechnicians.length) {
-          await client.query(
-            `UPDATE public.jobs
-                SET job_status='${JOB_STATUS.URGENT_NO_TECHNICIAN}'
-              WHERE job_id=$1`,
-            [job_id]
-          );
-          console.warn("[public_book] urgent_no_offer_targets", { job_id, booking_code });
+          const error = new Error("เวลานี้ยังไม่มีช่างพร้อมรับงาน กรุณาเลือกเวลาอื่น");
+          error.statusCode = 409;
+          error.code = "URGENT_DISPATCH_UNAVAILABLE";
+          throw error;
         } else {
           // ✅ safety: จำกัดไม่เกิน 30 ช่าง/ทีมที่ส่ง offer
           for (const u of availableTechnicians) {
@@ -1621,7 +1782,14 @@ function createBookingJobService(dependencies = {}) {
           });
         }
       }
-      console.log('[public_book]', { job_id, booking_code, booking_mode: bm, requested_tech_type: requestedTechType, duration_min: duration_min_v2, effective_block_min: effectiveBlockMin(duration_min_v2) });
+      console.log('[public_book]', {
+        job_id,
+        booking_code,
+        booking_mode: bm,
+        dispatch_policy: bm === "urgent" ? "all" : "scheduled_availability",
+        duration_min: duration_min_v2,
+        effective_block_min: effectiveBlockMin(duration_min_v2),
+      });
       const urgentPublicStatus = bm === "urgent"
         ? {
           phase: urgentOffersCount > 0 ? "searching" : "fallback",
@@ -1669,6 +1837,7 @@ function createBookingJobService(dependencies = {}) {
     handleAdminBookV2,
     handleInternalBookFromAi,
     handlePublicCustomerUrgentBook,
+    handlePublicUrgentPreflight,
     handlePublicBook,
   };
 }

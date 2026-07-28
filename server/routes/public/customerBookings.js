@@ -6,6 +6,7 @@ function registerPublicCustomerBookingRoutes(app, options = {}) {
     throw new TypeError("customer booking service is required");
   }
 
+  app.post("/public/urgent-dispatch-preflight", service.handlePublicUrgentPreflight);
   app.post("/public/book", service.handlePublicBook);
 }
 

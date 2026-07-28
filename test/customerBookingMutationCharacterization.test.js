@@ -66,32 +66,34 @@ test("public/admin/internal routes and urgent alias preserve registration and no
   };
   const calls = [];
   const service = {
+    async handlePublicUrgentPreflight(req, res) { calls.push(["preflight", req.body]); return res.json({ can_dispatch: true }); },
     async handlePublicBook(req, res) { calls.push(["public", req.body]); return res.json({ ok: true }); },
     async handleAdminBookV2(req, res) { calls.push(["admin", req.body]); return res.json({ ok: true }); },
     async handleInternalBookFromAi(req, res) { calls.push(["internal", req.body]); return res.json({ ok: true }); },
   };
-  const requireAdminSoft = () => {};
+  const requireAdminSession = () => {};
   const requireInternalApiKeyOnly = () => {};
   registerPublicCustomerBookingRoutes(app, { service });
-  registerAdminBookingRoutes(app, { service, requireAdminSoft, requireInternalApiKeyOnly });
+  registerAdminBookingRoutes(app, { service, requireAdminSession, requireInternalApiKeyOnly });
 
   assert.deepEqual(registrations.map((row) => row.route), [
+    "/public/urgent-dispatch-preflight",
     "/public/book",
     "/admin/book_v2",
     "/admin/urgent_broadcast_v2",
     "/internal/book_from_ai",
   ]);
-  assert.equal(registrations[1].handlers[0], requireAdminSoft);
-  assert.equal(registrations[2].handlers[0], requireAdminSoft);
-  assert.equal(registrations[3].handlers[0], requireInternalApiKeyOnly);
+  assert.equal(registrations[2].handlers[0], requireAdminSession);
+  assert.equal(registrations[3].handlers[0], requireAdminSession);
+  assert.equal(registrations[4].handlers[0], requireInternalApiKeyOnly);
 
   const res = responseHarness();
-  await registrations[2].handlers.at(-1)({ body: { customer_name: "Alias" } }, res);
+  await registrations[3].handlers.at(-1)({ body: { customer_name: "Alias" } }, res);
   assert.equal(calls.at(-1)[0], "admin");
   assert.equal(calls.at(-1)[1].booking_mode, "urgent");
   assert.equal(calls.at(-1)[1].dispatch_mode, "offer");
 
-  await registrations[3].handlers.at(-1)({ body: { customer_name: "AI" } }, res);
+  await registrations[4].handlers.at(-1)({ body: { customer_name: "AI" } }, res);
   assert.equal(calls.at(-1)[0], "internal");
 });
 
@@ -390,7 +392,14 @@ function makeDependencies(overrides = {}) {
       techMatchesAllCriteriaStrict: () => true,
     },
     urgentDispatchService: {
-      findEligibleTechnicians: async () => ({ available: [], zoneCode: null, totalCandidates: 0 }),
+      findEligibleTechnicians: async () => ({ available: ["tech-a"], zoneCode: null, totalCandidates: 1 }),
+      preflightUrgentDispatch: async () => ({
+        can_dispatch: true,
+        reason: null,
+        zoneCode: null,
+        nearby_times: [],
+        internal: { available: ["tech-a"], zoneCode: null, totalCandidates: 1 },
+      }),
     },
     resolveCustomerUrgentCapability: async () => ({ enabled: true, degraded: false }),
     logJobUpdate: async () => {},
@@ -655,6 +664,11 @@ dbTest("real PostgreSQL: public urgent creates one offer set and notifies only a
         assert.deepEqual(result.available, ["tech-a", "tech-b"], "transactional urgent eligibility");
         return result;
       },
+      preflightUrgentDispatch: async (...args) => {
+        const result = await realDispatch.preflightUrgentDispatch(...args);
+        assert.deepEqual(result.internal.available, ["tech-a", "tech-b"], "preflight urgent eligibility");
+        return result;
+      },
     },
   }));
   const body = publicUrgentBody();
@@ -741,9 +755,9 @@ dbTest("real PostgreSQL: urgent persists multiple cleaning lines, customer GPS, 
   assert.equal(Number(job.gps_longitude), body.gps_longitude);
   assert.equal(job.allow_time_proposal, true);
   assert.equal(job.technician_username, null);
-  assert.equal(job.job_status, JOB_STATUS.URGENT_NO_TECHNICIAN);
+  assert.equal(job.job_status, JOB_STATUS.ADMIN_URGENT_WAITING);
   assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_items WHERE job_id=$1`, [result.body.job_id])).rows[0].count), 2);
-  assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_offers WHERE job_id=$1`, [result.body.job_id])).rows[0].count), 0);
+  assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_offers WHERE job_id=$1`, [result.body.job_id])).rows[0].count), 1);
   assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_assignments WHERE job_id=$1`, [result.body.job_id])).rows[0].count), 0);
   assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_team_members WHERE job_id=$1`, [result.body.job_id])).rows[0].count), 0);
 });
@@ -976,24 +990,36 @@ dbTest("real PostgreSQL: approval fails closed when pending reservation already 
   assert.equal((await pool.query(`SELECT job_status FROM public.jobs WHERE job_id=$1`, [created.body.job_id])).rows[0].job_status, JOB_STATUS.CUSTOMER_SCHEDULED_REVIEW);
 });
 
-dbTest("real PostgreSQL: public urgent fallback is not gated by the legacy admin-approval mutation", async () => {
+dbTest("real PostgreSQL: no-candidate direct urgent preflight blocks before job mutation", async () => {
   await seedTechnicians();
-  const booking = createBookingJobService(makeDependencies());
-  const created = await invoke(booking.handlePublicBook, publicUrgentBody());
-  const events = {};
-  const approval = makeApprovalService(events, {
-    notifyUrgentOffer: async (payload) => {
-      const committed = await pool.query(`SELECT job_status FROM public.jobs WHERE job_id=$1`, [payload.job_id]);
-      assert.equal(committed.rows[0].job_status, JOB_STATUS.ADMIN_URGENT_WAITING);
-      events.offers = (events.offers || []).concat([payload]);
+  const booking = createBookingJobService(makeDependencies({
+    urgentDispatchService: {
+      findEligibleTechnicians: async () => ({
+        available: [],
+        zoneCode: null,
+        totalCandidates: 0,
+        diagnostics: { counts: { outside_work_window: 2 }, technicians: [] },
+      }),
+      preflightUrgentDispatch: async () => ({
+        can_dispatch: false,
+        reason: "time_unavailable",
+        zoneCode: null,
+        nearby_times: [],
+        internal: {
+          available: [],
+          zoneCode: null,
+          totalCandidates: 0,
+          diagnostics: { counts: { outside_work_window: 2 }, technicians: [] },
+        },
+      }),
     },
-  });
-  const first = await invokeApproval(approval.approve, created.body.job_id, { technician_username: "tech-a" });
-  assert.equal(first.statusCode, 409);
-  assert.equal(events.offers, undefined);
-  assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_offers WHERE job_id=$1`, [created.body.job_id])).rows[0].count), 0);
-  assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_assignments WHERE job_id=$1`, [created.body.job_id])).rows[0].count), 0);
-  assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_team_members WHERE job_id=$1`, [created.body.job_id])).rows[0].count), 0);
+  }));
+  const created = await invoke(booking.handlePublicBook, publicUrgentBody());
+  assert.equal(created.statusCode, 409);
+  assert.equal(created.body.code, "URGENT_DISPATCH_UNAVAILABLE");
+  for (const table of ["jobs", "job_items", "job_offers", "job_assignments", "job_team_members"]) {
+    assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.${table}`)).rows[0].count), 0, table);
+  }
 });
 
 dbTest("real PostgreSQL: reject clears hidden reservation and releases scheduled load", async () => {

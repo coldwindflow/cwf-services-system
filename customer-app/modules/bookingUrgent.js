@@ -9,6 +9,8 @@
   let pollInFlight = null;
   let pollEpoch = 0;
   let pricingEpoch = 0;
+  let zoneEpoch = 0;
+  let preflightEpoch = 0;
   let activeContainer = null;
   let visibilityRefresh = null;
 
@@ -135,6 +137,144 @@
       ...payload,
       services: cleaningLines,
     };
+  }
+
+  function zoneFingerprint(source = draft()) {
+    const gps = validGpsPair(source);
+    return JSON.stringify({
+      address_text: String(source.address_text || "").trim(),
+      job_zone: String(source.job_zone || "").trim(),
+      maps_url: String(source.maps_url || "").trim(),
+      gps_latitude: gps?.latitude ?? null,
+      gps_longitude: gps?.longitude ?? null,
+    });
+  }
+
+  function invalidateZoneCheck() {
+    preflightEpoch += 1;
+    root.state.setUrgentFlow({
+      zoneCheck: { status: "idle", fingerprint: "", detected: null, error: "" },
+      dispatchPreflight: { status: "idle", fingerprint: "", data: null, error: "" },
+    });
+  }
+
+  function invalidateDispatchPreflight() {
+    preflightEpoch += 1;
+    root.state.setUrgentFlow({
+      dispatchPreflight: { status: "idle", fingerprint: "", data: null, error: "" },
+    });
+  }
+
+  async function ensureUrgentZone(container) {
+    const currentFingerprint = zoneFingerprint();
+    const requestEpoch = zoneEpoch;
+    const current = root.state.urgentFlow?.zoneCheck || {};
+    if (
+      current.status === "success"
+      && current.fingerprint === currentFingerprint
+      && (current.detected?.service_zone_code || current.filter_enabled === false)
+    ) {
+      return current.detected || { filter_enabled: false };
+    }
+    root.state.setUrgentFlow({
+      zoneCheck: { status: "loading", fingerprint: currentFingerprint, detected: null, error: "" },
+    });
+    if (container) paint(container);
+    try {
+      const result = await root.api.detectUrgentServiceZone(draft());
+      if (requestEpoch !== zoneEpoch || zoneFingerprint() !== currentFingerprint) return null;
+      const detected = result?.detected || null;
+      if (result?.filter_enabled !== false && !detected?.service_zone_code) {
+        root.state.setUrgentFlow({
+          zoneCheck: {
+            status: "error",
+            fingerprint: currentFingerprint,
+            detected: null,
+            error: "ไม่สามารถตรวจสอบพื้นที่ให้บริการได้ กรุณาตรวจสอบที่อยู่หรือพิกัดแล้วลองใหม่",
+          },
+        });
+        return null;
+      }
+      root.state.setUrgentFlow({
+        zoneCheck: {
+          status: "success",
+          fingerprint: currentFingerprint,
+          detected,
+          filter_enabled: result?.filter_enabled !== false,
+          error: "",
+        },
+      });
+      return detected || { filter_enabled: false };
+    } catch (_) {
+      if (requestEpoch !== zoneEpoch || zoneFingerprint() !== currentFingerprint) return null;
+      root.state.setUrgentFlow({
+        zoneCheck: {
+          status: "error",
+          fingerprint: currentFingerprint,
+          detected: null,
+          error: "ตรวจสอบพื้นที่ไม่สำเร็จ กรุณาลองอีกครั้ง",
+        },
+      });
+      return null;
+    } finally {
+      if (container && requestEpoch === zoneEpoch) paint(container);
+    }
+  }
+
+  function dispatchFingerprint() {
+    return JSON.stringify({
+      zone: zoneFingerprint(),
+      appointment_datetime: appointmentDatetime(),
+      allow_time_proposal: draft().allow_time_proposal === true,
+      services: services().map((line) => root.services.normalizeServiceLine(line)),
+    });
+  }
+
+  async function ensureUrgentDispatchPreflight(container) {
+    const fingerprint = dispatchFingerprint();
+    const requestEpoch = preflightEpoch;
+    const current = root.state.urgentFlow?.dispatchPreflight || {};
+    if (current.status === "success" && current.fingerprint === fingerprint && current.data?.can_dispatch === true) {
+      return current.data;
+    }
+    root.state.setUrgentFlow({
+      dispatchPreflight: { status: "loading", fingerprint, data: null, error: "" },
+    });
+    if (container) paint(container);
+    try {
+      const payload = buildSubmitPayload();
+      delete payload.urgent_request_key;
+      const result = await root.api.preflightUrgentDispatch(payload);
+      if (requestEpoch !== preflightEpoch || dispatchFingerprint() !== fingerprint) return null;
+      const canDispatch = result?.can_dispatch === true;
+      const error = canDispatch
+        ? ""
+        : result?.reason === "time_unavailable"
+          ? "เวลานี้ยังไม่มีช่างพร้อมรับงาน กรุณาเลือกเวลาอื่น"
+          : "ขณะนี้ยังไม่มีช่างพร้อมรับงานในพื้นที่นี้ กรุณาเปลี่ยนเวลาหรือติดต่อแอดมิน";
+      root.state.setUrgentFlow({
+        dispatchPreflight: {
+          status: canDispatch ? "success" : "unavailable",
+          fingerprint,
+          data: result,
+          error,
+        },
+      });
+      return canDispatch ? result : null;
+    } catch (_) {
+      if (requestEpoch !== preflightEpoch || dispatchFingerprint() !== fingerprint) return null;
+      root.state.setUrgentFlow({
+        dispatchPreflight: {
+          status: "error",
+          fingerprint,
+          data: null,
+          error: "ตรวจสอบช่างไม่สำเร็จ กรุณาลองอีกครั้ง",
+        },
+      });
+      return null;
+    } finally {
+      if (container && requestEpoch === preflightEpoch) paint(container);
+    }
   }
 
   function markPayloadChanged() {
@@ -330,6 +470,20 @@
               ${flow.locationStatus === "loading" ? "กำลังอ่านตำแหน่ง..." : "ใช้ตำแหน่งปัจจุบัน"}
             </button>
             ${flow.locationMessage ? `<small class="${flow.locationStatus === "success" ? "muted" : "danger-text"}" role="status">${root.utils.escapeHtml(flow.locationMessage)}</small>` : ""}
+            ${flow.zoneCheck?.status === "success" && flow.zoneCheck.detected
+              ? `<small class="muted" data-urgent-zone-result>ตรวจพบพื้นที่: ${root.utils.escapeHtml(flow.zoneCheck.detected.matched_area || flow.zoneCheck.detected.service_zone_label || "-")} (Zone ${root.utils.escapeHtml(flow.zoneCheck.detected.service_zone_code || "-")})</small>`
+              : ""}
+            ${flow.zoneCheck?.status === "error" ? `<small class="danger-text" role="alert">${root.utils.escapeHtml(flow.zoneCheck.error || "")}</small>` : ""}
+            ${flow.dispatchPreflight?.status === "unavailable" || flow.dispatchPreflight?.status === "error"
+              ? `<div class="state-box is-error" data-urgent-preflight-result>${root.utils.escapeHtml(flow.dispatchPreflight.error || "")}
+                  ${(flow.dispatchPreflight.data?.nearby_times || []).length
+                    ? `<div class="button-row">${flow.dispatchPreflight.data.nearby_times.map((value) => {
+                      const time = String(value || "").slice(11, 16);
+                      return `<button type="button" class="secondary-btn" data-urgent-suggested-time="${root.utils.escapeHtml(time)}">เลือกเวลา ${root.utils.escapeHtml(time)} น.</button>`;
+                    }).join("")}</div>`
+                    : ""}
+                </div>`
+              : ""}
           </div>
           <div class="field">
             <label for="urgent-zone">พื้นที่ / โซน (ถ้ามี)</label>
@@ -374,6 +528,7 @@
     const flow = root.state.urgentFlow || {};
     const submitting = flow.status === "submitting";
     const gps = validGpsPair(d);
+    const detectedZone = flow.zoneCheck?.detected || null;
     return `
       <section class="card review-card urgent-card-fx" data-urgent-step-panel="review">
         <div class="section-head">
@@ -388,11 +543,12 @@
           <div class="data-row"><strong>ผู้ติดต่อ</strong><span class="muted">${root.utils.escapeHtml(d.customer_name || "-")} / ${root.utils.escapeHtml(d.customer_phone || "-")}</span></div>
           <div class="data-row"><strong>ที่อยู่</strong><span class="muted">${root.utils.escapeHtml(d.address_text || "-")}</span></div>
           ${d.job_zone ? `<div class="data-row"><strong>พื้นที่</strong><span class="muted">${root.utils.escapeHtml(d.job_zone)}</span></div>` : ""}
+          ${detectedZone ? `<div class="data-row" data-urgent-zone-result><strong>พื้นที่ที่ระบบตรวจพบ</strong><span class="muted">${root.utils.escapeHtml(detectedZone.matched_area || detectedZone.service_zone_label || "-")} (Zone ${root.utils.escapeHtml(detectedZone.service_zone_code || "-")})</span></div>` : ""}
           ${d.maps_url ? `<div class="data-row"><strong>แผนที่</strong><span class="muted">${root.utils.escapeHtml(d.maps_url)}</span></div>` : ""}
           ${gps ? `<div class="data-row"><strong>GPS</strong><span class="muted">${root.utils.escapeHtml(`${gps.latitude}, ${gps.longitude}`)}</span></div>` : ""}
           ${String(d.symptom || "").trim() ? `<div class="data-row"><strong>หมายเหตุ</strong><span class="muted">${root.utils.escapeHtml(d.symptom)}</span></div>` : ""}
         </div>
-        <div class="notice is-urgent">แอดมินจะตรวจสอบรายละเอียดก่อนส่งต่อให้ช่างที่ว่าง</div>
+        <div class="notice is-urgent">เมื่อส่งคำขอ ระบบจะค้นหาช่างที่พร้อมรับงานในพื้นที่นี้ทันที</div>
         ${flow.error ? `<div class="state-box is-error" role="alert">${root.utils.escapeHtml(flow.error)}</div>` : ""}
         <div class="button-row">
           ${flow.disabled_line_url
@@ -601,6 +757,13 @@
 
   async function submitUrgent(container) {
     if (activeSubmit || root.state.urgentFlow.status === "submitting") return;
+    const detectedZone = await ensureUrgentZone(container);
+    if (!detectedZone?.service_zone_code && detectedZone?.filter_enabled !== false) return;
+    const preflight = await ensureUrgentDispatchPreflight(container);
+    if (!preflight?.can_dispatch) return;
+    // A second tap can enter while the asynchronous zone check is in flight.
+    // Recheck at the mutation boundary so only one booking request starts.
+    if (activeSubmit || root.state.urgentFlow.status === "submitting") return;
     const submitEpoch = pollEpoch;
     const submitAttempt = { epoch: submitEpoch };
     activeSubmit = submitAttempt;
@@ -792,6 +955,8 @@
             root.state.setUrgentFlow({ locationStatus: "idle", locationMessage: "" });
           }
         }
+        if (["address_text", "maps_url", "job_zone"].includes(field)) invalidateZoneCheck();
+        else if (["date", "time"].includes(field)) invalidateDispatchPreflight();
         markPayloadChanged();
         root.state.updateDraft("urgent", patch);
         if (root.state.urgentFlow.error) root.state.setUrgentFlow({ error: "" });
@@ -826,6 +991,7 @@
       button.addEventListener("click", () => {
         markPayloadChanged();
         root.state.updateDraft("urgent", { allow_time_proposal: button.getAttribute("data-urgent-time-proposal") === "true" });
+        invalidateDispatchPreflight();
         root.state.setUrgentFlow({ error: "" });
         paint(container);
       });
@@ -860,13 +1026,23 @@
         } else if (action === "to-review") {
           const error = validateDetails();
           if (error) setStep("details", error);
-          else setStep("review");
+          else {
+            const detectedZone = await ensureUrgentZone(container);
+            if (!detectedZone?.service_zone_code && detectedZone?.filter_enabled !== false) {
+              setStep("details", root.state.urgentFlow?.zoneCheck?.error || "กรุณาตรวจสอบพื้นที่ให้บริการ");
+            } else {
+              const dispatch = await ensureUrgentDispatchPreflight(container);
+              if (dispatch?.can_dispatch) setStep("review");
+              else setStep("details", root.state.urgentFlow?.dispatchPreflight?.error || "กรุณาเลือกเวลาอื่น");
+            }
+          }
           paint(container);
         } else if (action === "back-details") {
           setStep("details");
           paint(container);
         } else if (action === "use-location") {
           await requestCurrentLocation();
+          invalidateZoneCheck();
           paint(container);
         } else if (action === "confirm") {
           await submitUrgent(container);
@@ -885,6 +1061,15 @@
         } else if (action === "cancel-request") {
           await cancelUrgent(container);
         }
+      });
+    });
+
+    container.querySelectorAll("[data-urgent-suggested-time]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        root.state.updateDraft("urgent", { time: button.getAttribute("data-urgent-suggested-time") || "" });
+        invalidateDispatchPreflight();
+        await ensureUrgentDispatchPreflight(container);
+        paint(container);
       });
     });
   }
@@ -916,6 +1101,8 @@
   render.onLeave = () => {
     pollEpoch += 1;
     pricingEpoch += 1;
+    zoneEpoch += 1;
+    preflightEpoch += 1;
     pollInFlight = null;
     activeSubmit = null;
     activeCancel = null;
@@ -939,6 +1126,10 @@
       renderReview,
       renderSubmitted,
       requestCurrentLocation,
+      ensureUrgentZone,
+      ensureUrgentDispatchPreflight,
+      dispatchFingerprint,
+      zoneFingerprint,
       refreshPricing,
       isUrgentDisabledError,
       cancelUrgent,

@@ -31,6 +31,12 @@ const urgentPublicAdapter = require("./server/services/urgentPublicAdapter");
 const urgentFinalizer = require("./server/services/urgent/finalizer");
 const urgentCapability = require("./server/services/urgent/capability");
 const { createUrgentDispatchService, normalizeUrgentTechType } = require("./server/services/urgent/dispatch");
+const {
+  SERVICE_ZONE_SEEDS,
+  SERVICE_ZONE_BY_CODE,
+  detectServiceZoneFromText,
+  publicServiceZoneView,
+} = require("./server/services/serviceZoneResolver");
 const trackingPrivacy = require("./server/services/public/trackingPrivacy");
 const customerPricingHelpers = require("./server/customerPricing");
 const customerAuth = require("./server/customerAuth");
@@ -161,27 +167,6 @@ if (WEB_PUSH_READY) {
 }
 const TRAVEL_BUFFER_MIN = jobTiming.TURNAROUND_BUFFER_MIN; // นาที/งาน (Travel Buffer)
 
-const SERVICE_ZONE_SEEDS = [
-  { code: "A", name: "bangkok_east_core", label: "กรุงเทพตะวันออกแกนหลัก", group: "bangkok", color: "#0B4BB3", order: 10, districts: ["พระโขนง", "บางนา", "สวนหลวง", "ประเวศ", "บางกะปิ", "สะพานสูง", "ลาดกระบัง"] },
-  { code: "B", name: "bangkok_north_east", label: "กรุงเทพเหนือ-ตะวันออก", group: "bangkok", color: "#2563EB", order: 20, districts: ["ดอนเมือง", "สายไหม", "บางเขน", "หลักสี่", "จตุจักร", "บางซื่อ", "ลาดพร้าว", "วังทองหลาง", "บึงกุ่ม", "คันนายาว", "คลองสามวา", "มีนบุรี", "หนองจอก"] },
-  { code: "C", name: "bangkok_inner", label: "กรุงเทพชั้นใน", group: "bangkok", color: "#06B6D4", order: 30, districts: ["ปทุมวัน", "ราชเทวี", "พญาไท", "ดุสิต", "พระนคร", "ป้อมปราบศัตรูพ่าย", "สัมพันธวงศ์", "บางรัก", "สาทร", "ยานนาวา", "ห้วยขวาง", "ดินแดง", "วัฒนา", "คลองเตย", "บางคอแหลม"] },
-  { code: "D", name: "thonburi_inner", label: "ธนบุรีตอนใน", group: "bangkok_west", color: "#10B981", order: 40, districts: ["คลองสาน", "ธนบุรี", "บางกอกใหญ่", "บางกอกน้อย", "บางพลัด", "ตลิ่งชัน"] },
-  { code: "E", name: "west_southwest_river_side", label: "ฝั่งตะวันตกตอนล่าง / ข้ามฝั่งแม่น้ำ", group: "bangkok_west", color: "#F59E0B", order: 50, districts: ["ภาษีเจริญ", "บางแค", "หนองแขม", "ทวีวัฒนา", "จอมทอง", "ราษฎร์บูรณะ", "ทุ่งครุ", "บางขุนเทียน", "บางบอน", "พระประแดง", "พระสมุทรเจดีย์"] },
-  { code: "F", name: "samut_prakan_east", label: "สมุทรปราการฝั่งตะวันออก", group: "samut_prakan", color: "#EF4444", order: 60, districts: ["เมืองสมุทรปราการ", "บางพลี", "บางเสาธง", "บางบ่อ"] },
-  { code: "G", name: "nonthaburi", label: "นนทบุรี", group: "nonthaburi", color: "#8B5CF6", order: 70, districts: ["เมืองนนทบุรี", "ปากเกร็ด", "บางกรวย", "บางใหญ่", "บางบัวทอง", "ไทรน้อย"] },
-  { code: "H", name: "pathum_thani", label: "ปทุมธานี", group: "pathum_thani", color: "#EC4899", order: 80, districts: ["เมืองปทุมธานี", "คลองหลวง", "ธัญบุรี", "ลำลูกกา", "หนองเสือ", "ลาดหลุมแก้ว", "สามโคก"] },
-];
-const SERVICE_ZONE_BY_CODE = new Map(SERVICE_ZONE_SEEDS.map(z => [z.code, z]));
-
-function normalizeThaiAreaText(v) {
-  return String(v || "")
-    .normalize("NFC")
-    .toLowerCase()
-    .replace(/[\u200B-\u200D\uFEFF]/g, "")
-    .replace(/[^\p{L}\p{N}]+/gu, "")
-    .replace(/^(เขต|อำเภอ|อําเภอ|อ\.)/u, "");
-}
-
 async function getServiceZones() {
   try {
     const r = await pool.query(
@@ -201,106 +186,6 @@ async function getServiceZones() {
     is_active: true,
     sort_order: z.order,
   }));
-}
-
-function safeDecodeText(v) {
-  const raw = String(v || "");
-  try { return decodeURIComponent(raw.replace(/\+/g, " ")); } catch (_) { return raw; }
-}
-
-function extractLatLngFromMapsText(v) {
-  const raw = safeDecodeText(v);
-  const patterns = [
-    /@(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/,
-    /[?&](?:q|query|ll)=(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/,
-    /!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/,
-    /(?:^|[^\d-])(-?\d{1,2}\.\d{4,})\s*,\s*(100\.\d{4,})(?:[^\d]|$)/
-  ];
-  for (const re of patterns) {
-    const m = raw.match(re);
-    if (!m) continue;
-    const lat = Number(m[1]);
-    const lng = Number(m[2]);
-    if (Number.isFinite(lat) && Number.isFinite(lng) && lat >= 13.35 && lat <= 14.35 && lng >= 99.75 && lng <= 101.25) return { lat, lng };
-  }
-  return null;
-}
-
-function detectServiceZoneFromLatLng(lat, lng) {
-  const la = Number(lat), ln = Number(lng);
-  if (!Number.isFinite(la) || !Number.isFinite(ln)) return null;
-  let code = null;
-  if (la >= 13.50 && la <= 13.77 && ln >= 100.58 && ln <= 100.92) code = "F";
-  else if (la >= 13.49 && la <= 13.72 && ln >= 100.34 && ln < 100.58) code = "E";
-  else if (la >= 13.70 && la <= 13.90 && ln >= 100.36 && ln < 100.52) code = "D";
-  else if (la >= 13.78 && la <= 14.16 && ln >= 100.15 && ln <= 100.78) code = "G";
-  else if (la >= 13.88 && la <= 14.25 && ln >= 100.35 && ln <= 100.95) code = "H";
-  else if (la >= 13.68 && la <= 13.82 && ln >= 100.48 && ln < 100.62) code = "C";
-  else if (la >= 13.62 && la <= 13.86 && ln >= 100.58 && ln <= 100.86) code = "A";
-  else if (la >= 13.76 && la <= 14.02 && ln >= 100.50 && ln <= 100.95) code = "B";
-  if (!code) return null;
-  const z = SERVICE_ZONE_BY_CODE.get(code);
-  return z ? { service_zone_code: z.code, service_zone_label: z.label, service_zone_source: "maps_coordinate", matched_district: null, matched_lat: la, matched_lng: ln } : null;
-}
-
-
-const SERVICE_AREA_ALIAS_SEEDS = [
-  { code: "A", aliases: ["อ่อนนุช", "อุดมสุข", "บางจาก", "ปุณณวิถี", "สุขุมวิท101", "สุขุมวิท 101", "สุขุมวิท103", "สุขุมวิท 103", "บางนา", "ศรีนครินทร์", "พัฒนาการ"] },
-  { code: "B", aliases: ["รามคำแหง", "ลาดพร้าว", "วังทองหลาง", "บางกะปิ", "หัวหมาก"] },
-];
-
-function detectServiceZoneFromAreaAlias(hay) {
-  const matches = [];
-  const normalizedHay = normalizeThaiAreaText(hay);
-  if (!normalizedHay) return null;
-  for (const seed of SERVICE_AREA_ALIAS_SEEDS) {
-    const z = SERVICE_ZONE_BY_CODE.get(seed.code);
-    if (!z) continue;
-    for (const alias of seed.aliases || []) {
-      const a = normalizeThaiAreaText(alias);
-      if (a && normalizedHay.includes(a)) matches.push({ z, alias, len: a.length });
-    }
-  }
-  matches.sort((a, b) => b.len - a.len || a.z.order - b.z.order);
-  const best = matches[0];
-  return best ? {
-    service_zone_code: best.z.code,
-    service_zone_label: best.z.label,
-    service_zone_source: "area_alias_detect",
-    matched_district: null,
-    matched_area: best.alias,
-  } : null;
-}
-
-async function detectServiceZoneFromText({ address_text, job_zone, service_zone_code, home_province, home_district, maps_url } = {}) {
-  const explicit = String(service_zone_code || "").trim().toUpperCase();
-  if (explicit && SERVICE_ZONE_BY_CODE.has(explicit)) {
-    const z = SERVICE_ZONE_BY_CODE.get(explicit);
-    return { service_zone_code: z.code, service_zone_label: z.label, service_zone_source: "admin_override", matched_district: null };
-  }
-  const decodedMapText = safeDecodeText(maps_url);
-  const hay = normalizeThaiAreaText([home_district, job_zone, address_text, home_province, decodedMapText].filter(Boolean).join(" "));
-  const matches = [];
-  if (hay) {
-    for (const z of SERVICE_ZONE_SEEDS) {
-      for (const district of z.districts) {
-        const d = normalizeThaiAreaText(district);
-        if (d && hay.includes(d)) matches.push({ z, district, len: d.length });
-      }
-    }
-  }
-  matches.sort((a, b) => b.len - a.len || a.z.order - b.z.order);
-  const best = matches[0];
-  if (best) return { service_zone_code: best.z.code, service_zone_label: best.z.label, service_zone_source: "auto_detect", matched_district: best.district };
-
-  // Area/neighborhood fallback only after real district detection.
-  // This prevents aliases such as “รามคำแหง” from overriding a real district like “สวนหลวง”.
-  const aliasDetected = detectServiceZoneFromAreaAlias(hay);
-  if (aliasDetected) return aliasDetected;
-
-  const ll = extractLatLngFromMapsText(maps_url || address_text || job_zone || "");
-  if (ll) return detectServiceZoneFromLatLng(ll.lat, ll.lng);
-  return null;
 }
 
 async function getTechnicianPrimaryZone(username) {
@@ -13536,10 +13421,13 @@ const urgentDispatchService = createUrgentDispatchService({
 
 async function buildUrgentOfferCandidatesForJob(job, techType='partner', db=pool) {
   await expireTechnicianAcceptStatuses(db);
-  return urgentDispatchService.findEligibleTechnicians(job, { db, techType });
+  return urgentDispatchService.findEligibleTechnicians({
+    ...job,
+    effective_block_min: effectiveBlockMin(job?.duration_min),
+  }, { db, techType });
 }
 
-app.post('/jobs/:job_id/rebroadcast_offer_v2', requireAdminSoft, async (req, res) => {
+app.post('/jobs/:job_id/rebroadcast_offer_v2', requireAdminSession, async (req, res) => {
   const job_id = Number(req.params.job_id);
   if (!Number.isInteger(job_id) || job_id <= 0) return res.status(400).json({ error: 'job_id ไม่ถูกต้อง' });
   let techType;
@@ -13553,7 +13441,8 @@ app.post('/jobs/:job_id/rebroadcast_offer_v2', requireAdminSoft, async (req, res
     await client.query('BEGIN');
     const jobR = await client.query(
       `SELECT job_id, job_type, booking_code, appointment_datetime, COALESCE(duration_min,60) AS duration_min,
-              address_text, maps_url, job_zone, service_zone_code, job_status, technician_username, technician_team
+              address_text, maps_url, job_zone, gps_latitude, gps_longitude,
+              service_zone_code, service_zone_source, job_status, technician_username, technician_team
          FROM public.jobs WHERE job_id=$1 FOR UPDATE`,
       [job_id]
     );
@@ -13564,13 +13453,50 @@ app.post('/jobs/:job_id/rebroadcast_offer_v2', requireAdminSoft, async (req, res
       throw new Error('งานนี้มีช่างรับไปแล้ว ไม่สามารถยิงข้อเสนอซ้ำได้');
     }
 
+    const confirmedZoneCode = String(req.body?.confirm_service_zone_code || "").trim().toUpperCase();
+    const explicitPersistedZone = ["admin_override", "admin_confirmed_override"]
+      .includes(String(job.service_zone_source || "").trim().toLowerCase());
+    let resolvedZone = null;
+    if (confirmedZoneCode) {
+      resolvedZone = await detectServiceZoneFromText(
+        { service_zone_code: confirmedZoneCode },
+        { allowAdminOverride: true },
+      );
+      if (!resolvedZone) {
+        const error = new Error("service_zone_code ที่ยืนยันไม่ถูกต้อง");
+        error.statusCode = 400;
+        error.code = "INVALID_SERVICE_ZONE";
+        throw error;
+      }
+      resolvedZone.service_zone_source = "admin_confirmed_override";
+    } else if (!explicitPersistedZone) {
+      resolvedZone = await detectServiceZoneFromText({
+        address_text: job.address_text,
+        job_zone: job.job_zone,
+        maps_url: job.maps_url,
+        gps_latitude: job.gps_latitude,
+        gps_longitude: job.gps_longitude,
+      });
+    }
+    if (resolvedZone?.service_zone_code) {
+      const nextSource = resolvedZone.service_zone_source || "rebroadcast_resolved";
+      await client.query(
+        `UPDATE public.jobs
+            SET service_zone_code=$2, service_zone_source=$3
+          WHERE job_id=$1`,
+        [job_id, resolvedZone.service_zone_code, nextSource],
+      );
+      job.service_zone_code = resolvedZone.service_zone_code;
+      job.service_zone_source = nextSource;
+    }
+
     await client.query(`UPDATE public.job_offers SET status='expired', responded_at=COALESCE(responded_at,NOW()) WHERE job_id=$1 AND status='pending'`, [job_id]);
-    const { available, zoneCode, totalCandidates } = await buildUrgentOfferCandidatesForJob(job, techType, client);
+    const { available, zoneCode, totalCandidates, diagnostics } = await buildUrgentOfferCandidatesForJob(job, techType, client);
     if (!available.length) {
       const err = new Error('ไม่พบช่างที่เปิดรับงาน ว่างจริง และอยู่ในพื้นที่นี้');
       err.statusCode = 409;
       err.code = 'NO_URGENT_OFFER_TARGETS';
-      err.debug = { service_zone_code: zoneCode || null, candidate_count: totalCandidates };
+      err.debug = diagnostics || { service_zone_code: zoneCode || null, candidate_count: totalCandidates };
       throw err;
     }
     for (const u of available) {
@@ -13586,7 +13512,13 @@ app.post('/jobs/:job_id/rebroadcast_offer_v2', requireAdminSoft, async (req, res
     );
     await client.query('COMMIT');
     try { _notifyUrgentOffer({ usernames: available, job_id, booking_code: job.booking_code, job_type: job.job_type, appointment_datetime: job.appointment_datetime, job_zone: job.job_zone }).catch(()=>{}); } catch (_) {}
-    return res.json({ success:true, job_id, offers_count: available.length, message:`ส่งข้อเสนอใหม่ให้ช่าง ${available.length} คนแล้ว` });
+    return res.json({
+      success: true,
+      job_id,
+      offers_count: available.length,
+      diagnostics,
+      message: `ส่งข้อเสนอใหม่ให้ช่าง ${available.length} คนแล้ว`,
+    });
   } catch (e) {
     await client.query('ROLLBACK');
     const status = Number(e.statusCode || e.status || 500);
@@ -14207,7 +14139,7 @@ const bookingJobService = createBookingJobService({
 
 registerAdminBookingRoutes(app, {
   service: bookingJobService,
-  requireAdminSoft,
+  requireAdminSession,
   requireInternalApiKeyOnly,
 });
 
@@ -20586,10 +20518,31 @@ app.use(createServiceZoneRoutes({
   ENABLE_SERVICE_ZONE_FILTER
 }));
 
-app.post("/service_zones/detect", async (req, res) => {
+app.post("/public/service-zones/detect", async (req, res) => {
   try {
-    const detected = await detectServiceZoneFromText(req.body || {});
-    res.json({ ok: true, detected });
+    const body = req.body || {};
+    const detected = await detectServiceZoneFromText({
+      address_text: body.address_text,
+      job_zone: body.job_zone,
+      maps_url: body.maps_url,
+      gps_latitude: body.gps_latitude,
+      gps_longitude: body.gps_longitude,
+    });
+    res.json({
+      ok: true,
+      filter_enabled: ENABLE_SERVICE_ZONE_FILTER,
+      detected: publicServiceZoneView(detected),
+    });
+  } catch (e) {
+    console.error("POST /public/service-zones/detect", e);
+    res.status(500).json({ error: "DETECT_SERVICE_ZONE_FAILED" });
+  }
+});
+
+app.post("/service_zones/detect", requireAdminSession, async (req, res) => {
+  try {
+    const detected = await detectServiceZoneFromText(req.body || {}, { allowAdminOverride: true });
+    res.json({ ok: true, detected, filter_enabled: ENABLE_SERVICE_ZONE_FILTER });
   } catch (e) {
     console.error("POST /service_zones/detect", e);
     res.status(500).json({ error: "DETECT_SERVICE_ZONE_FAILED" });
