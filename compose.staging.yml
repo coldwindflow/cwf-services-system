@@ -1,0 +1,63 @@
+services:
+  db:
+    image: postgres:17-alpine
+    container_name: cwf-staging-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: cwf_staging
+      POSTGRES_USER: cwf_staging
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      TZ: Asia/Bangkok
+    volumes:
+      - cwf_staging_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cwf_staging -d cwf_staging"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - cwf_staging
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.staging
+    container_name: cwf-staging-app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - .env.staging
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: cwf_staging
+      DB_USER: cwf_staging
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_SSL: "false"
+      PUBLIC_APP_URL: http://192.168.1.113:8781
+      TZ: Asia/Bangkok
+      PUPPETEER_EXECUTABLE_PATH: /usr/bin/chromium
+    ports:
+      - "8781:3000"
+    volumes:
+      - cwf_staging_files:/app/storage
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 45s
+    networks:
+      - cwf_staging
+
+volumes:
+  cwf_staging_db:
+  cwf_staging_files:
+
+networks:
+  cwf_staging:
+    name: cwf_staging_network
