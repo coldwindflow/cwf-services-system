@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#07111f">
+  <title>FindFix Server Control — Mobile Demo</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand" aria-label="FindFix"></div>
+      <div class="online"><span class="dot"></span>ออนไลน์</div>
+    </header>
+
+    <main>
+      <div class="demo"><b>DEMO</b><span>ต้นแบบมือถือ ข้อมูลจำลอง ยังไม่เชื่อมเซิร์ฟเวอร์จริง</span></div>
+
+      <section class="page active" id="page-home">
+        <div class="hero">
+          <div><small>FINDFIX INFRASTRUCTURE</small><h1>Server Control</h1><p>Home Server · Bangkok · อัปเดตเมื่อสักครู่</p></div>
+          <button class="icon" onclick="refreshStats()">↻</button>
+        </div>
+
+        <div class="metrics">
+          <article><label>CPU <em>6 Core</em></label><strong id="cpu">18%</strong><p>i5-9400F · 54°C</p><i><span id="cpuBar" style="width:18%"></span></i></article>
+          <article><label>RAM <em>32 GB</em></label><strong>9.8 GB</strong><p>ใช้งาน 31% · เหลือ 22.2</p><i><span style="width:31%"></span></i></article>
+          <article><label>NVMe <em>1 TB</em></label><strong>286 GB</strong><p>ใช้งาน 29% · ปกติ</p><i><span style="width:29%"></span></i></article>
+          <article><label>Uptime <em>99.98%</em></label><strong>18 วัน</strong><p>ไม่มีเหตุขัดข้อง</p><i><span style="width:99%"></span></i></article>
+        </div>
+
+        <div class="section-title"><h2>บริการที่กำลังทำงาน</h2><button onclick="openPage('apps')">ดูทั้งหมด</button></div>
+        <div class="services">
+          <article class="service"><b class="appicon">CWF</b><div><strong>CWF Services System</strong><small>app.cwf-air.com · 4 containers</small></div><span class="badge">Running</span></article>
+          <article class="service"><b class="appicon purple">PG</b><div><strong>PostgreSQL Production</strong><small>Database · 2.4 GB · Healthy</small></div><span class="badge">Running</span></article>
+          <article class="service"><b class="appicon orange">n8n</b><div><strong>Automation & AI Office</strong><small>14 workflows · Last run 2 min</small></div><span class="badge warning">1 Warning</span></article>
+        </div>
+
+        <div class="section-title"><h2>คำสั่งด่วน</h2></div>
+        <div class="quick">
+          <button onclick="quickDeploy()"><b>🚀 Deploy ล่าสุด</b><small>ดึงโค้ดจาก GitHub</small></button>
+          <button onclick="runBackup()"><b>🗄️ สำรองข้อมูล</b><small>Database + Config</small></button>
+          <button onclick="restart('CWF Services System')"><b>↻ Restart แอป</b><small>รีสตาร์ตแบบปลอดภัย</small></button>
+          <button onclick="toast('ไม่พบข้อผิดพลาดใหม่')"><b>📋 Error Log</b><small>ตรวจสอบย้อนหลัง</small></button>
+        </div>
+
+        <div class="section-title"><h2>กิจกรรมล่าสุด</h2><button onclick="toast('รีเฟรชกิจกรรมแล้ว')">รีเฟรช</button></div>
+        <div class="activity" id="activity">
+          <div><b>✓</b><p>Deploy CWF Services System สำเร็จ<small>Commit: fix technician queue display</small></p><time>17:42</time></div>
+          <div><b>B</b><p>สำรอง PostgreSQL สำเร็จ<small>684 MB · เก็บนอกเครื่องแล้ว</small></p><time>03:00</time></div>
+          <div><b>⚡</b><p>Cloudflare Tunnel reconnect<small>กลับมาออนไลน์ภายใน 4 วินาที</small></p><time>เมื่อวาน</time></div>
+        </div>
+      </section>
+
+      <section class="page" id="page-apps">
+        <div class="hero"><div><small>APPLICATIONS</small><h1>บริการทั้งหมด</h1><p>ควบคุม Container และดูทรัพยากรแยกรายระบบ</p></div></div>
+        <div class="chips"><button class="active">ทั้งหมด 4</button><button>Running 3</button><button>Warning 1</button></div>
+
+        <article class="appcard">
+          <header><div><b class="appicon">CWF</b><span><strong>CWF Services System</strong><small>Node.js · Production</small></span></div><em class="badge">Running</em></header>
+          <section><div><b>7%</b><small>CPU</small></div><div><b>1.2 GB</b><small>RAM</small></div><div><b>43 ms</b><small>Response</small></div></section>
+          <footer><button class="primary" onclick="openDeploy('CWF Services System')">Deploy</button><button onclick="logs('CWF Services System')">Logs</button><button class="danger" onclick="restart('CWF Services System')">Restart</button></footer>
+        </article>
+
+        <article class="appcard">
+          <header><div><b class="appicon purple">PG</b><span><strong>PostgreSQL</strong><small>Database · Production</small></span></div><em class="badge">Healthy</em></header>
+          <section><div><b>3%</b><small>CPU</small></div><div><b>2.6 GB</b><small>RAM</small></div><div><b>18</b><small>Connections</small></div></section>
+          <footer><button class="primary" onclick="runBackup()">Backup</button><button onclick="logs('PostgreSQL')">Logs</button><button class="danger" onclick="restart('PostgreSQL')">Restart</button></footer>
+        </article>
+
+        <article class="appcard">
+          <header><div><b class="appicon orange">n8n</b><span><strong>AI Office & Automation</strong><small>14 workflows</small></span></div><em class="badge warning">Warning</em></header>
+          <section><div><b>4%</b><small>CPU</small></div><div><b>780 MB</b><small>RAM</small></div><div><b>99.7%</b><small>Success</small></div></section>
+          <footer><button class="primary" onclick="openDeploy('AI Office')">Deploy</button><button onclick="logs('AI Office')">Logs</button><button class="danger" onclick="restart('AI Office')">Restart</button></footer>
+        </article>
+
+        <article class="appcard">
+          <header><div><b class="appicon yellow">CF</b><span><strong>Cloudflare Tunnel</strong><small>Secure public gateway</small></span></div><em class="badge">Connected</em></header>
+          <section><div><b>6</b><small>Routes</small></div><div><b>24 ms</b><small>Latency</small></div><div><b>0</b><small>Errors</small></div></section>
+          <footer><button class="primary" onclick="toast('เปิดหน้าจัดการโดเมน')">Domains</button><button onclick="logs('Cloudflare Tunnel')">Logs</button><button class="danger" onclick="restart('Cloudflare Tunnel')">Reconnect</button></footer>
+        </article>
+      </section>
+
+      <section class="page" id="page-deploy">
+        <div class="hero"><div><small>DEPLOY CENTER</small><h1>ปล่อยเวอร์ชันใหม่</h1><p>ดึงโค้ดจาก GitHub ตรวจสอบ แล้วสลับขึ้นใช้งาน</p></div></div>
+        <div class="formcard">
+          <label>โปรเจกต์</label><select id="project"><option>CWF Services System</option><option>FindFix Server Control</option><option>AI Office</option></select>
+          <label>Branch</label><select><option>main</option><option>staging</option><option>findfix-server-manager-demo</option></select>
+          <label>หมายเหตุ</label><input value="Mobile server manager update">
+          <button class="full" onclick="deploy()">ตรวจสอบและ Deploy</button>
+        </div>
+        <div class="section-title"><h2>Build Log</h2><button onclick="clearLog()">ล้าง</button></div>
+        <pre id="terminal">พร้อม Deploy
+✓ GitHub connection
+✓ Docker engine
+✓ Database connection
+รอคำสั่ง...</pre>
+      </section>
+
+      <section class="page" id="page-backups">
+        <div class="hero"><div><small>DATA PROTECTION</small><h1>สำรองข้อมูล</h1><p>ฐานข้อมูล ไฟล์ระบบ และรูปงานลูกค้า</p></div><button class="icon" onclick="runBackup()">＋</button></div>
+        <div class="backupstatus"><small>สถานะการสำรอง <b>ปลอดภัย</b></small><strong>ล่าสุด 03:00 น.</strong><p>Local + Off-site · 684 MB</p></div>
+        <div class="section-title"><h2>ไฟล์ล่าสุด</h2></div>
+        <div id="backupList" class="backups">
+          <article><div><b>postgres_2026-08-02.sql.gz</b><small>684 MB · สำเร็จ · เก็บนอกเครื่อง</small></div><button onclick="toast('เริ่มดาวน์โหลด')">↓</button></article>
+          <article><div><b>server_config_2026-08-02.tar.gz</b><small>18 MB · สำเร็จ · เก็บนอกเครื่อง</small></div><button onclick="toast('เริ่มดาวน์โหลด')">↓</button></article>
+          <article><div><b>postgres_2026-08-01.sql.gz</b><small>678 MB · สำเร็จ · เก็บนอกเครื่อง</small></div><button onclick="toast('เริ่มดาวน์โหลด')">↓</button></article>
+        </div>
+        <button class="full" onclick="runBackup()">สำรองข้อมูลตอนนี้</button>
+      </section>
+
+      <section class="page" id="page-settings">
+        <div class="hero"><div><small>SYSTEM SETTINGS</small><h1>ตั้งค่าระบบ</h1><p>FindFix Home Server · FF-SRV-01</p></div></div>
+        <div class="settings">
+          <article><div><b>เริ่มระบบอัตโนมัติ</b><small>เปิด VM และบริการทั้งหมดหลังไฟกลับ</small></div><button class="switch on" onclick="toggleSwitch(this)"></button></article>
+          <article><div><b>Auto Deploy จาก GitHub</b><small>Deploy เมื่อ Push เข้า main</small></div><button class="switch on" onclick="toggleSwitch(this)"></button></article>
+          <article><div><b>Auto Rollback</b><small>ย้อนกลับเมื่อ Health Check ไม่ผ่าน</small></div><button class="switch on" onclick="toggleSwitch(this)"></button></article>
+          <article><div><b>แจ้งเตือน LINE</b><small>Deploy, Backup, Disk และ Error</small></div><button class="switch" onclick="toggleSwitch(this)"></button></article>
+        </div>
+        <div class="section-title"><h2>ความปลอดภัย</h2></div>
+        <div class="settings">
+          <article onclick="toast('เปิด Cloudflare Access')"><div><b>Cloudflare Access</b><small>จำกัดเฉพาะบัญชีผู้ดูแล</small></div><span>›</span></article>
+          <article onclick="toast('เปิดการจัดการผู้ใช้')"><div><b>ผู้ดูแลระบบ</b><small>Admin 1 บัญชี · 2FA เปิดอยู่</small></div><span>›</span></article>
+          <article onclick="toast('ระบบเป็นเวอร์ชันล่าสุด')"><div><b>อัปเดตระบบ</b><small>Ubuntu และ Docker เป็นเวอร์ชันล่าสุด</small></div><span>›</span></article>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <nav class="bottomnav">
+    <button class="active" data-page="home" onclick="openPage('home')"><b>⌂</b><span>ภาพรวม</span></button>
+    <button data-page="apps" onclick="openPage('apps')"><b>▦</b><span>บริการ</span></button>
+    <button data-page="deploy" onclick="openPage('deploy')"><b>↑</b><span>Deploy</span></button>
+    <button data-page="backups" onclick="openPage('backups')"><b>◫</b><span>Backup</span></button>
+    <button data-page="settings" onclick="openPage('settings')"><b>⚙</b><span>ตั้งค่า</span></button>
+  </nav>
+
+  <div class="modal" id="modal" onclick="if(event.target===this)closeModal()"><div class="sheet"><i></i><h3 id="modalTitle">กำลัง Deploy</h3><p>ตรวจสอบโค้ด สร้าง Container และทำ Health Check</p><div class="progress"><span id="progress"></span></div><pre id="modalLog">เริ่มต้น...</pre><button id="closeBtn" class="full hide" onclick="closeModal()">เสร็จสิ้น</button></div></div>
+  <div class="toast" id="toast"></div>
+  <script src="app.js"></script>
+</body>
+</html>
