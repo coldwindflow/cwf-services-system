@@ -19,26 +19,28 @@ services:
       - cwf_staging
 
   db-bootstrap:
-    image: postgres:17-alpine
+    build:
+      context: .
+      dockerfile: Dockerfile.staging
+    image: cwf-staging-app:local
     container_name: cwf-staging-db-bootstrap
     restart: "no"
     depends_on:
       db:
         condition: service_healthy
+    env_file:
+      - .env.staging
     environment:
-      PGPASSWORD: ${POSTGRES_PASSWORD}
-    volumes:
-      - ./test/e2e/schema-core.sql:/schema-core.sql:ro
-    command:
-      - sh
-      - -ec
-      - |
-        psql \
-          -h db \
-          -U cwf_staging \
-          -d cwf_staging \
-          -v ON_ERROR_STOP=1 \
-          -f /schema-core.sql
+      NODE_ENV: production
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: cwf_staging
+      DB_USER: cwf_staging
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_SSL: "false"
+      NODE_OPTIONS: --require=/app/scripts/staging-postgres-preload.js
+      TZ: Asia/Bangkok
+    command: ["node", "scripts/bootstrap-staging-database.js"]
     networks:
       - cwf_staging
 
@@ -46,6 +48,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.staging
+    image: cwf-staging-app:local
     container_name: cwf-staging-app
     restart: unless-stopped
     depends_on:
@@ -64,6 +67,7 @@ services:
       DB_USER: cwf_staging
       DB_PASSWORD: ${POSTGRES_PASSWORD}
       DB_SSL: "false"
+      NODE_OPTIONS: --require=/app/scripts/staging-postgres-preload.js
       PUBLIC_APP_URL: http://192.168.1.113:8781
       TZ: Asia/Bangkok
       PUPPETEER_EXECUTABLE_PATH: /usr/bin/chromium
@@ -72,11 +76,11 @@ services:
     volumes:
       - cwf_staging_files:/app/storage
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/public/pricing_preview',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({job_type:'ล้างแอร์',ac_type:'ผนัง',btu:12000,machine_count:1,wash_variant:'ล้างธรรมดา'})}).then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
       interval: 15s
-      timeout: 5s
+      timeout: 8s
       retries: 12
-      start_period: 45s
+      start_period: 60s
     networks:
       - cwf_staging
 
