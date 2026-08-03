@@ -1,0 +1,94 @@
+services:
+  db:
+    image: postgres:17-alpine
+    container_name: cwf-production-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: cwf_production
+      POSTGRES_USER: cwf_production
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      TZ: Asia/Bangkok
+      PGTZ: Asia/Bangkok
+    command:
+      - postgres
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - max_connections=100
+      - -c
+      - timezone=Asia/Bangkok
+    volumes:
+      - cwf_production_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cwf_production -d cwf_production"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    logging:
+      driver: json-file
+      options:
+        max-size: 20m
+        max-file: "5"
+    mem_limit: 2g
+    cpus: 2.0
+    stop_grace_period: 60s
+    networks:
+      - cwf_production
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.production
+    image: cwf-production-app:local
+    container_name: cwf-production-app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - .env.production
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: cwf_production
+      DB_USER: cwf_production
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_SSL: "false"
+      DATABASE_URL: ${LOCAL_DATABASE_URL}
+      USER_DB_URL: ${LOCAL_DATABASE_URL}
+      TECH_DB_URL: ${LOCAL_DATABASE_URL}
+      ADMIN_DB_URL: ${LOCAL_DATABASE_URL}
+      NODE_OPTIONS: --require=/app/scripts/local-postgres-preload.js
+      PUBLIC_APP_URL: ${PUBLIC_APP_URL}
+      TZ: Asia/Bangkok
+      PUPPETEER_EXECUTABLE_PATH: /usr/bin/chromium
+    ports:
+      - "192.168.1.113:8782:3000"
+    volumes:
+      - cwf_production_files:/app/storage
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/public/pricing_preview',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({job_type:'ล้างแอร์',ac_type:'ผนัง',btu:12000,machine_count:1,wash_variant:'ล้างธรรมดา'})}).then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 8s
+      retries: 20
+      start_period: 90s
+    logging:
+      driver: json-file
+      options:
+        max-size: 20m
+        max-file: "5"
+    mem_limit: 3g
+    cpus: 3.0
+    stop_grace_period: 60s
+    networks:
+      - cwf_production
+
+volumes:
+  cwf_production_db:
+  cwf_production_files:
+
+networks:
+  cwf_production:
+    name: cwf_production_network
