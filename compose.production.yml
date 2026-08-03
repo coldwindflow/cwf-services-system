@@ -65,7 +65,7 @@ services:
       TZ: Asia/Bangkok
       PUPPETEER_EXECUTABLE_PATH: /usr/bin/chromium
     ports:
-      - "192.168.1.113:8782:3000"
+      - "127.0.0.1:8782:3000"
     volumes:
       - cwf_production_files:/app/storage
     healthcheck:
