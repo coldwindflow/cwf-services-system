@@ -1,0 +1,74 @@
+name: CWF Home Deploy Center
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        required: true
+        default: production
+        type: choice
+        options:
+          - production
+          - staging
+      action:
+        description: Operation to run
+        required: true
+        default: status
+        type: choice
+        options:
+          - status
+          - deploy
+          - restart
+          - rollback
+          - list-backups
+          - restore
+      backup_file:
+        description: Production backup filename for restore
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cwf-home-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  control:
+    name: ${{ inputs.environment }} / ${{ inputs.action }}
+    runs-on:
+      - self-hosted
+      - linux
+      - x64
+      - cwf-home
+    timeout-minutes: 90
+    env:
+      CWF_ENVIRONMENT: ${{ inputs.environment }}
+      CWF_ACTION: ${{ inputs.action }}
+      CWF_BACKUP_FILE: ${{ inputs.backup_file }}
+    steps:
+      - name: Validate operation
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          if [[ "$CWF_ENVIRONMENT" == "staging" && "$CWF_ACTION" =~ ^(list-backups|restore)$ ]]; then
+            echo "$CWF_ACTION is only available for production" >&2
+            exit 2
+          fi
+          if [[ "$CWF_ACTION" == "restore" && -z "$CWF_BACKUP_FILE" ]]; then
+            echo "backup_file is required for restore" >&2
+            exit 2
+          fi
+
+      - name: Run operation
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          if [[ "$CWF_ACTION" == "restore" ]]; then
+            sudo -n /usr/local/sbin/cwf-deployctl "$CWF_ENVIRONMENT" "$CWF_ACTION" "$CWF_BACKUP_FILE" | tee /tmp/cwf-home-control.log
+          else
+            sudo -n /usr/local/sbin/cwf-deployctl "$CWF_ENVIRONMENT" "$CWF_ACTION" | tee /tmp/cwf-home-control.log
+          fi
+          cat /tmp/cwf-home-control.log >> "$GITHUB_STEP_SUMMARY"
