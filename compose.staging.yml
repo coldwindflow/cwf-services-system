@@ -68,11 +68,11 @@ services:
       DB_PASSWORD: ${POSTGRES_PASSWORD}
       DB_SSL: "false"
       NODE_OPTIONS: --require=/app/scripts/staging-postgres-preload.js
-      PUBLIC_APP_URL: http://192.168.1.113:8781
+      PUBLIC_APP_URL: https://test-app.cwf-air.com
       TZ: Asia/Bangkok
       PUPPETEER_EXECUTABLE_PATH: /usr/bin/chromium
     ports:
-      - "8781:3000"
+      - "127.0.0.1:8781:3000"
     volumes:
       - cwf_staging_files:/app/storage
     healthcheck:
