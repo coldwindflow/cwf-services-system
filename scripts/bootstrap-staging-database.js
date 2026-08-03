@@ -81,11 +81,24 @@ function extractStatements(files) {
   return { creates, alters, indexes };
 }
 
+async function recoverTransaction(client) {
+  // A migration file may contain BEGIN/COMMIT. If one statement inside it
+  // fails, PostgreSQL keeps the session in 25P02 until an explicit ROLLBACK.
+  // ROLLBACK outside a transaction is harmless and only emits a notice.
+  try {
+    await client.query("ROLLBACK");
+  } catch (_) {
+    // The original error is more useful; a fresh query will expose any real
+    // connection failure on the next attempt.
+  }
+}
+
 async function runBestEffort(client, sql, label) {
   try {
     await client.query(sql);
     return true;
   } catch (error) {
+    await recoverTransaction(client);
     console.warn(`STAGING_SCHEMA_SKIP ${label}: ${String(error.message || error).slice(0, 220)}`);
     return false;
   }
@@ -105,6 +118,8 @@ async function runPasses(client, statements, passes = 3) {
 }
 
 async function assertSchema(client) {
+  await recoverTransaction(client);
+
   const requiredTables = [
     "users",
     "technician_profiles",
