@@ -22,6 +22,18 @@ function dbConfig() {
   };
 }
 
+function walkJsFiles(root) {
+  if (!fs.existsSync(root)) return [];
+  const out = [];
+  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+    if (["node_modules", ".git", "coverage"].includes(entry.name)) continue;
+    const full = path.join(root, entry.name);
+    if (entry.isDirectory()) out.push(...walkJsFiles(full));
+    else if (entry.isFile() && entry.name.endsWith(".js")) out.push(full);
+  }
+  return out;
+}
+
 function extractCreateTableStatements(src) {
   const out = [];
   const re = /CREATE TABLE IF NOT EXISTS public\.([a-z0-9_]+)\s*\(/g;
@@ -40,14 +52,56 @@ function extractCreateTableStatements(src) {
   return out;
 }
 
+function extractStatements(files) {
+  const creates = [];
+  const alters = [];
+  const indexes = [];
+
+  for (const file of files) {
+    const source = fs.readFileSync(file, "utf8");
+    const label = path.relative(REPO_ROOT, file);
+
+    for (const sql of extractCreateTableStatements(source)) {
+      creates.push({ sql, label: `CREATE from ${label}` });
+    }
+
+    for (const sql of source.match(
+      /ALTER TABLE public\.[a-z_]+ ADD COLUMN IF NOT EXISTS [^`;)]+/g
+    ) || []) {
+      if (!sql.includes("${")) alters.push({ sql, label: `ALTER from ${label}` });
+    }
+
+    for (const sql of source.match(
+      /CREATE (?:UNIQUE )?INDEX IF NOT EXISTS [^`;]+/g
+    ) || []) {
+      if (!sql.includes("${")) indexes.push({ sql, label: `INDEX from ${label}` });
+    }
+  }
+
+  return { creates, alters, indexes };
+}
+
 async function runBestEffort(client, sql, label) {
   try {
     await client.query(sql);
     return true;
   } catch (error) {
-    console.warn(`STAGING_SCHEMA_SKIP ${label}: ${String(error.message || error).slice(0, 180)}`);
+    console.warn(`STAGING_SCHEMA_SKIP ${label}: ${String(error.message || error).slice(0, 220)}`);
     return false;
   }
+}
+
+async function runPasses(client, statements, passes = 3) {
+  let pending = [...statements];
+  for (let pass = 1; pass <= passes && pending.length; pass += 1) {
+    const failed = [];
+    for (const statement of pending) {
+      const ok = await runBestEffort(client, statement.sql, `${statement.label} pass=${pass}`);
+      if (!ok) failed.push(statement);
+    }
+    pending = failed;
+  }
+  return pending;
 }
 
 async function assertSchema(client) {
@@ -108,51 +162,22 @@ async function main() {
     );
     await client.query(coreSql);
 
-    // Production predates password_hash-only auth and several boot paths still
-    // expect these legacy columns to exist before self-healing starts.
     await client.query("ALTER TABLE public.users ADD COLUMN IF NOT EXISTS password TEXT");
     await client.query("ALTER TABLE public.users ADD COLUMN IF NOT EXISTS position TEXT");
 
     const sourceFiles = [
       path.join(REPO_ROOT, "index.js"),
-      path.join(REPO_ROOT, "server", "customerPricing.js"),
+      ...walkJsFiles(path.join(REPO_ROOT, "server")),
+      ...walkJsFiles(path.join(REPO_ROOT, "scripts")),
     ];
 
-    for (const file of sourceFiles) {
-      const source = fs.readFileSync(file, "utf8");
-      for (const statement of extractCreateTableStatements(source)) {
-        await runBestEffort(client, statement, `CREATE from ${path.relative(REPO_ROOT, file)}`);
-      }
-    }
+    const statements = extractStatements(sourceFiles);
+    console.log(`STAGING_SCHEMA_DISCOVERED creates=${statements.creates.length} alters=${statements.alters.length} indexes=${statements.indexes.length}`);
 
-    // Replay the application's idempotent boot-time column self-heals before
-    // starting the app so one missing legacy column cannot abort later tables.
-    for (const file of sourceFiles) {
-      const source = fs.readFileSync(file, "utf8");
-      const alters = source.match(
-        /ALTER TABLE public\.[a-z_]+ ADD COLUMN IF NOT EXISTS [^`;)]+/g
-      ) || [];
-      for (const statement of alters) {
-        if (!statement.includes("${")) {
-          await runBestEffort(client, statement, `ALTER from ${path.relative(REPO_ROOT, file)}`);
-        }
-      }
-    }
+    await runPasses(client, statements.creates, 4);
+    await runPasses(client, statements.alters, 3);
+    await runPasses(client, statements.indexes, 3);
 
-    for (const file of sourceFiles) {
-      const source = fs.readFileSync(file, "utf8");
-      const indexes = source.match(
-        /CREATE (?:UNIQUE )?INDEX IF NOT EXISTS [^`;]+/g
-      ) || [];
-      for (const statement of indexes) {
-        if (!statement.includes("${")) {
-          await runBestEffort(client, statement, `INDEX from ${path.relative(REPO_ROOT, file)}`);
-        }
-      }
-    }
-
-    // The repository's SQL migrations are additive/idempotent. On a blank
-    // disposable staging database, apply every compatible migration in order.
     const migrationsDir = path.join(REPO_ROOT, "migrations");
     const migrationFiles = fs.readdirSync(migrationsDir)
       .filter((name) => name.endsWith(".sql"))
@@ -161,6 +186,10 @@ async function main() {
       const sql = fs.readFileSync(path.join(migrationsDir, name), "utf8");
       await runBestEffort(client, sql, `migration ${name}`);
     }
+
+    // Re-run extracted ALTERs and indexes after migrations create their tables.
+    await runPasses(client, statements.alters, 2);
+    await runPasses(client, statements.indexes, 2);
 
     await assertSchema(client);
     console.log("STAGING_SCHEMA_BOOTSTRAP_OK");
