@@ -18,6 +18,30 @@ services:
     networks:
       - cwf_staging
 
+  db-bootstrap:
+    image: postgres:17-alpine
+    container_name: cwf-staging-db-bootstrap
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - ./test/e2e/schema-core.sql:/schema-core.sql:ro
+    command:
+      - sh
+      - -ec
+      - |
+        psql \
+          -h db \
+          -U cwf_staging \
+          -d cwf_staging \
+          -v ON_ERROR_STOP=1 \
+          -f /schema-core.sql
+    networks:
+      - cwf_staging
+
   app:
     build:
       context: .
@@ -27,6 +51,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      db-bootstrap:
+        condition: service_completed_successfully
     env_file:
       - .env.staging
     environment:
