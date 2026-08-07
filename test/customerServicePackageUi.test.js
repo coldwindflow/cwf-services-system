@@ -61,6 +61,37 @@ test("package BTU choices enforce both maximum and minimum constraints", () => {
   assert.deepEqual(Array.from(root.bookingScheduled._test.packageBtuOptions(high)).map((x) => x.btu), [18000, 24000, 30000]);
 });
 
+test("fresh package selection requires an explicit allowed BTU choice", async () => {
+  const root = loadBooking();
+  root.api = { previewServicePackage: async () => preview() };
+  await root.bookingScheduled._test.selectServicePackage("arbitrary-package", "server-tier", container());
+  assert.deepEqual(Array.from(root.bookingScheduled._test.packageBtuOptions()).map((x) => x.btu), [9000, 12000]);
+  assert.equal(root.state.draft.scheduled.service_package_btu, "");
+  assert.notEqual(root.bookingScheduled._test.validateServiceStep(), "");
+  const source = read("customer-app/modules/bookingScheduled.js");
+  assert.match(source, /async function goNext[\s\S]*const error = validateServiceStep\(\)/);
+  assert.match(source, /async function submit[\s\S]*const serviceError = validateServiceStep\(\)[\s\S]*if \(contactError \|\| serviceError/);
+
+  const high = preview({ service: { service_key: "large", service_name: "Large", constraints: { job_type: "ล้าง", ac_type: "ผนัง", wash_variant: "ล้างพรีเมียม", btu_min: 18000, btu_max: null } } });
+  root.api.previewServicePackage = async () => high;
+  await root.bookingScheduled._test.selectServicePackage("arbitrary-package", "server-tier", container());
+  assert.deepEqual(Array.from(root.bookingScheduled._test.packageBtuOptions()).map((x) => x.btu), [18000, 24000, 30000]);
+  assert.equal(root.state.draft.scheduled.service_package_btu, "");
+  assert.notEqual(root.bookingScheduled._test.validateServiceStep(), "");
+});
+
+test("package restore keeps only a still-valid explicit BTU", async () => {
+  const root = loadBooking();
+  root.api = { previewServicePackage: async () => preview() };
+  await root.bookingScheduled._test.selectServicePackage("arbitrary-package", "server-tier", container(), { restoredBtu: 12000, restore: true });
+  assert.equal(root.state.draft.scheduled.service_package_btu, "12000");
+  assert.equal(root.bookingScheduled._test.validateServiceStep(), "");
+
+  await root.bookingScheduled._test.selectServicePackage("arbitrary-package", "server-tier", container(), { restoredBtu: 18000, restore: true });
+  assert.equal(root.state.draft.scheduled.service_package_btu, "");
+  assert.notEqual(root.bookingScheduled._test.validateServiceStep(), "");
+});
+
 test("package payload contains only keys and actual BTU while availability is server-derived", () => {
   const root = loadBooking();
   const data = preview();
@@ -135,10 +166,12 @@ test("build id is coordinated and service worker privacy/network behavior remain
   const index = read("customer-app/index.html");
   const sw = read("customer-app/sw.js");
   const app = read("customer-app/assets/customer-app.js");
+  const manifest = read("customer-app/manifest.webmanifest");
   const build = sw.match(/BUILD_ID = "([^"]+)"/)[1];
-  assert.notEqual(build, "20260728_urgent_dispatch_preflight_v2");
+  assert.equal(build, "20260807_service_packages_v1");
   assert.match(index, new RegExp(build));
   assert.match(app, new RegExp(`BUILD_ID = "${build}"`));
+  assert.match(manifest, new RegExp(`index\\.html\\?v=${build}#home`));
   assert.match(sw, /url\.pathname\.startsWith\("\/public\/"\)[\s\S]*event\.respondWith\(fetch\(request\)\)/);
   assert.match(sw, /hasTrackingCredential[\s\S]*fetch\(request, \{ cache: "no-store" \}\)/);
 });

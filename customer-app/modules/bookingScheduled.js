@@ -370,7 +370,7 @@
       if (String(draft().service_package_key) !== String(packageKey) || String(draft().service_package_tier_key) !== String(tierKey)) return null;
       const options = packageBtuOptions(preview);
       const restored = Number(opts.restoredBtu || 0);
-      const btu = options.some((item) => item.btu === restored) ? restored : (options[0]?.btu || "");
+      const btu = options.some((item) => item.btu === restored) ? restored : "";
       root.state.setScheduledPreview("package", { status: "success", data: preview, error: "", verified: true });
       const today = root.availability.bangkokTodayYmd();
       const keepRestoredDate = opts.restore && restoredDate >= today && restoredDate <= packageMaxDate();
