@@ -1,0 +1,112 @@
+name: CWF Production Service Package Migration
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type MIGRATE_SERVICE_PACKAGES_8093AD5 to run the approved one-time migration
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cwf-home-production
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    name: Apply guarded Service Package schema migration
+    runs-on:
+      - self-hosted
+      - linux
+      - x64
+      - cwf-home
+    timeout-minutes: 30
+    env:
+      GIT_CONFIG_NOSYSTEM: "1"
+      EXPECTED_PRODUCTION_REVISION: 8093ad5db19c3da10642b248b47f74ae739272e6
+      REQUIRED_CONFIRMATION: MIGRATE_SERVICE_PACKAGES_8093AD5
+    steps:
+      - name: Validate manual gate
+        shell: bash
+        env:
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$GITHUB_REF" == "refs/heads/main" ]] || {
+            echo "This migration workflow may only be dispatched from main." >&2
+            exit 2
+          }
+          [[ "$CONFIRMATION" == "$REQUIRED_CONFIRMATION" ]] || {
+            echo "Typed confirmation does not match the approved migration gate." >&2
+            exit 2
+          }
+
+      - name: Checkout reviewed operator
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          path: operator
+          fetch-depth: 1
+
+      - name: Checkout deployed Production release
+        uses: actions/checkout@v4
+        with:
+          ref: production/home-server
+          path: production
+          fetch-depth: 1
+
+      - name: Verify pinned release and operator files
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          actual="$(git -C production rev-parse HEAD)"
+          [[ "$actual" == "$EXPECTED_PRODUCTION_REVISION" ]] || {
+            echo "Production branch moved: expected $EXPECTED_PRODUCTION_REVISION, got $actual" >&2
+            exit 3
+          }
+          [[ -f operator/scripts/run-production-service-package-migration.sh ]] || {
+            echo "Reviewed migration operator is missing." >&2
+            exit 3
+          }
+          [[ -f production/migrations/20260807_service_packages.sql ]] || {
+            echo "Approved migration file is missing from the deployed Production release." >&2
+            exit 3
+          }
+
+      - name: Prepare trusted command wrappers
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p "$RUNNER_TEMP/cwf-production-migration-bin"
+
+          cat > "$RUNNER_TEMP/cwf-production-migration-bin/cwf-deployctl" <<'EOF'
+          #!/usr/bin/env bash
+          set -Eeuo pipefail
+          exec sudo -n /usr/local/sbin/cwf-deployctl "$@"
+          EOF
+
+          cat > "$RUNNER_TEMP/cwf-production-migration-bin/docker" <<'EOF'
+          #!/usr/bin/env bash
+          set -Eeuo pipefail
+          if /usr/bin/docker info >/dev/null 2>&1; then
+            exec /usr/bin/docker "$@"
+          fi
+          exec sudo -n /usr/bin/docker "$@"
+          EOF
+
+          chmod 0755 "$RUNNER_TEMP/cwf-production-migration-bin/cwf-deployctl" \
+            "$RUNNER_TEMP/cwf-production-migration-bin/docker"
+
+      - name: Apply exact migration with pre/post verification
+        shell: bash
+        working-directory: production
+        env:
+          OPERATOR_SCRIPT: ${{ github.workspace }}/operator/scripts/run-production-service-package-migration.sh
+        run: |
+          set -Eeuo pipefail
+          export PATH="$RUNNER_TEMP/cwf-production-migration-bin:$PATH"
+          bash "$OPERATOR_SCRIPT" | tee /tmp/cwf-production-service-package-migration.log
+          cat /tmp/cwf-production-service-package-migration.log >> "$GITHUB_STEP_SUMMARY"

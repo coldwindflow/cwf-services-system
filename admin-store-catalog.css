@@ -183,6 +183,15 @@
 .asc-modal-error{ color:#b91c1c; font-size:12px; margin-top:6px; display:none; }
 .asc-loading, .asc-empty, .asc-error{ padding:14px; text-align:center; color:#64748b; font-size:13px; }
 .asc-error{ color:#b91c1c; }
+.hidden{ display:none !important; }
+.asc-type-modal{ max-width:420px; }
+.asc-type-choice{ width:100%; margin-top:8px; }
+.asc-package-tier{ border:1px solid #dbe4ee; border-radius:10px; padding:10px; margin-bottom:10px; }
+.asc-package-badge{ background:#ede9fe; color:#6d28d9; }
+.asc-lifecycle-on-sale{ background:#dcfce7; color:#15803d; }
+.asc-lifecycle-upcoming{ background:#dbeafe; color:#1d4ed8; }
+.asc-lifecycle-draft,.asc-lifecycle-hidden,.asc-lifecycle-disabled{ background:#e2e8f0; color:#475569; }
+.asc-lifecycle-sale-ended,.asc-lifecycle-redeem-ended{ background:#fee2e2; color:#b91c1c; }
 
 @media (max-width: 360px) {
   .asc-grid2{ grid-template-columns:1fr; }
