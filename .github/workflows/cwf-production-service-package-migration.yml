@@ -25,6 +25,7 @@ jobs:
       - cwf-home
     timeout-minutes: 30
     env:
+      GIT_CONFIG_NOSYSTEM: "1"
       EXPECTED_PRODUCTION_REVISION: 8093ad5db19c3da10642b248b47f74ae739272e6
       REQUIRED_CONFIRMATION: MIGRATE_SERVICE_PACKAGES_8093AD5
     steps:
