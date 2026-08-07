@@ -6,14 +6,15 @@ const { createServicePackageResolver, readSnapshot } = require("../server/servic
 const repository = require("../server/services/packages/servicePackageRepository");
 
 const packageRow = {
-  service_package_id: 10, package_key: "generic-care", display_name: "Generic Care",
+  service_package_id: 10, package_key: "premium-wall", display_name: "Premium Wall Cleaning",
   service_key: "canonical-service", service_name: "Canonical Service", service_unit_duration_minutes: 45,
+  job_type: "wash", ac_type: "wall", wash_variant: "premium", btu_min: null, btu_max: 12000,
   sell_start_at: "2026-08-01T00:00:00.000Z", sell_end_at: "2026-08-31T23:59:59.000Z",
   redeem_until: "2026-12-31T23:59:59.000Z", is_active: true, is_customer_visible: true,
 };
 const tierRow = {
-  service_package_tier_id: 21, service_package_id: 10, tier_key: "two", display_name: "Two visits",
-  service_quantity: 2, fixed_total_price: "1399.00", is_active: true,
+  service_package_tier_id: 21, service_package_id: 10, tier_key: "two", display_name: "Two units",
+  service_quantity: 2, fixed_total_price: "1399.50", is_active: true,
 };
 
 function resolver(overrides = {}, clock = "2026-08-07T00:00:00.000Z") {
@@ -26,33 +27,55 @@ function resolver(overrides = {}, clock = "2026-08-07T00:00:00.000Z") {
   return createServicePackageResolver({ db: {}, packageRepository: repo, now: () => new Date(clock) });
 }
 
-test("active package and matching tier resolve server fixed total and independent redeem limit", async () => {
+test("wall premium package returns BTU maximum, quantity separately, and exact decimal snapshot", async () => {
   const result = await resolver().resolveSelection({
-    packageKey: "generic-care", tierKey: "two", fixed_total_price: 1, duration_minutes: 1,
+    packageKey: "premium-wall", tierKey: "two", price: 1, fixed_total_price: 1,
+    duration_minutes: 1, service_name: "fake", btu: 99999,
   });
-  assert.equal(result.fixed_total_price, 1399);
+  assert.equal(result.fixed_total_price, "1399.50");
+  assert.equal(result.service_lines[0].service_key, "canonical-service");
+  assert.equal(result.service_lines[0].service_name, "Canonical Service");
   assert.equal(result.service_lines[0].unit_duration_minutes, 45);
   assert.equal(result.service_lines[0].quantity, 2);
-  assert.equal(result.redeem_until, "2026-12-31T23:59:59.000Z");
+  assert.deepEqual(result.service_lines[0].service_constraints, {
+    job_type: "ล้าง", ac_type: "ผนัง", wash_variant: "ล้างพรีเมียม", btu_min: null, btu_max: 12000,
+  });
+  assert.equal(result.snapshot.fixed_total_price, "1399.50");
   assert.deepEqual(result.snapshot, readSnapshot(JSON.stringify(result.snapshot)));
 });
 
-test("tier/package mismatch is rejected", async () => {
-  const r = resolver();
-  r.resolveSelection = createServicePackageResolver({
-    db: {}, now: () => new Date("2026-08-07T00:00:00Z"),
-    packageRepository: { findPackageByKey: async () => packageRow, findTier: async () => null },
-  }).resolveSelection;
-  await assert.rejects(() => r.resolveSelection({ packageKey: "generic-care", tierKey: "wrong" }), { code: "TIER_PACKAGE_MISMATCH" });
+test("future package may set BTU minimum without inventing an exact BTU", async () => {
+  const result = await resolver({ package: { btu_min: 18000, btu_max: null } }).resolveSelection({ packageId: 10, tierId: 21 });
+  assert.deepEqual(result.service_lines[0].service_constraints, {
+    job_type: "ล้าง", ac_type: "ผนัง", wash_variant: "ล้างพรีเมียม", btu_min: 18000, btu_max: null,
+  });
+  assert.equal("btu" in result.service_lines[0].service_constraints, false);
 });
 
-test("new selection is rejected before sell start and after sell end", async () => {
-  await assert.rejects(() => resolver({}, "2026-07-31T23:59:59Z").resolveSelection({ packageKey: "generic-care", tierKey: "two" }), { code: "PACKAGE_NOT_ON_SALE" });
-  await assert.rejects(() => resolver({}, "2026-09-01T00:00:00Z").resolveSelection({ packageKey: "generic-care", tierKey: "two" }), { code: "PACKAGE_NOT_ON_SALE" });
+test("invalid BTU bounds and reversed ranges are rejected", async () => {
+  for (const packageOverride of [{ btu_min: 0 }, { btu_max: -1 }, { btu_min: 18000, btu_max: 12000 }]) {
+    await assert.rejects(() => resolver({ package: packageOverride }).resolveSelection({ packageId: 10, tierId: 21 }), { code: "INVALID_SERVICE_CONSTRAINTS" });
+  }
 });
 
-test("inactive package is rejected and repository listing filters hidden/inactive rows", async () => {
-  await assert.rejects(() => resolver({ package: { is_active: false } }).resolveSelection({ packageKey: "generic-care", tierKey: "two" }), { code: "PACKAGE_INACTIVE" });
+test("customer cannot resolve hidden package; admin can but cannot bypass sell end", async () => {
+  const hidden = resolver({ package: { is_customer_visible: false } });
+  await assert.rejects(() => hidden.resolveSelection({ packageId: 10, tierId: 21 }), { code: "PACKAGE_NOT_CUSTOMER_VISIBLE" });
+  assert.equal((await hidden.resolveSelection({ packageId: 10, tierId: 21 }, { identity: "admin" })).package.id, "10");
+  await assert.rejects(
+    () => resolver({ package: { is_customer_visible: false } }, "2026-09-01T00:00:00Z").resolveSelection({ packageId: 10, tierId: 21 }, { identity: "admin" }),
+    { code: "PACKAGE_NOT_ON_SALE" }
+  );
+});
+
+test("inactive packages, tier mismatch, and sale window violations are rejected", async () => {
+  await assert.rejects(() => resolver({ package: { is_active: false } }).resolveSelection({ packageId: 10, tierId: 21 }), { code: "PACKAGE_INACTIVE" });
+  await assert.rejects(() => resolver({ package: { service_package_id: 11 } }).resolveSelection({ packageId: 11, tierId: 21 }), { code: "TIER_PACKAGE_MISMATCH" });
+  await assert.rejects(() => resolver({}, "2026-07-31T23:59:59Z").resolveSelection({ packageId: 10, tierId: 21 }), { code: "PACKAGE_NOT_ON_SALE" });
+  await assert.rejects(() => resolver({}, "2026-09-01T00:00:00Z").resolveSelection({ packageId: 10, tierId: 21 }), { code: "PACKAGE_NOT_ON_SALE" });
+});
+
+test("repository customer listing retains active, visible, and sell-window filters", async () => {
   const calls = [];
   const db = { query: async (sql, params) => { calls.push({ sql, params }); return { rows: [] }; } };
   assert.deepEqual(await repository.listCustomerVisiblePackages(db), []);
@@ -61,20 +84,16 @@ test("inactive package is rejected and repository listing filters hidden/inactiv
   assert.match(calls[0].sql, /sell_end_at IS NULL/);
 });
 
-test("representative fixed totals are data, not package-name constants", async () => {
-  for (const total of [699, 1399, 1899, 2489]) {
-    const result = await resolver({ tier: { fixed_total_price: String(total) } }).resolveSelection({ packageId: 10, tierId: 21, price: 0 });
-    assert.equal(result.fixed_total_price, total);
-  }
-});
-
-test("historical reads retain the snapshot without repository re-resolution", () => {
+test("historical snapshot reads do not re-resolve current package data", () => {
   const snapshot = {
     schema_version: 1, package: { id: "10", key: "old", name: "Old" }, tier: { id: "21", key: "old", name: "Old" },
-    service_lines: [{ service_key: "old", service_name: "Old", quantity: 1, unit_duration_minutes: 30 }],
-    fixed_total_price: 699, redeem_until: null,
+    service_lines: [{ service_key: "old", service_name: "Old", quantity: 1, unit_duration_minutes: 30,
+      service_constraints: { job_type: "ล้าง", ac_type: "ผนัง", wash_variant: "ล้างพรีเมียม", btu_min: null, btu_max: 12000 } }],
+    fixed_total_price: "1399.50", redeem_until: null,
   };
   const historical = readSnapshot(snapshot);
-  snapshot.fixed_total_price = 1;
-  assert.equal(historical.fixed_total_price, 699);
+  snapshot.fixed_total_price = "1.00";
+  snapshot.service_lines[0].service_constraints.btu_max = 99999;
+  assert.equal(historical.fixed_total_price, "1399.50");
+  assert.equal(historical.service_lines[0].service_constraints.btu_max, 12000);
 });

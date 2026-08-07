@@ -26,6 +26,17 @@ test("package constraints separate identity, price, sell, and redeem semantics",
   assert.doesNotMatch(executable, /customer_service_price_rules|promotions?/i);
 });
 
+test("package definition owns booking constraints and validates BTU ranges", () => {
+  assert.match(sql, /job_type TEXT NOT NULL/);
+  assert.match(sql, /ac_type TEXT NOT NULL/);
+  assert.match(sql, /wash_variant TEXT/);
+  assert.match(sql, /btu_min INTEGER/);
+  assert.match(sql, /btu_max INTEGER/);
+  assert.match(sql, /btu_min IS NULL OR btu_min > 0/);
+  assert.match(sql, /btu_max IS NULL OR btu_max > 0/);
+  assert.match(sql, /btu_max >= btu_min/);
+});
+
 test("job_items package additions are nullable and preserve immutable snapshot data", () => {
   assert.match(sql, /ADD COLUMN IF NOT EXISTS service_package_id BIGINT;/);
   assert.match(sql, /ADD COLUMN IF NOT EXISTS service_package_tier_id BIGINT;/);
