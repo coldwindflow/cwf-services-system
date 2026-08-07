@@ -46,7 +46,7 @@ test("package controls keep server enum values while showing Thai labels", () =>
   for (const pair of [["wash", "ล้าง"], ["repair", "ซ่อม"], ["install", "ติดตั้ง"], ["wall", "ติดผนัง"], ["cassette", "สี่ทิศทาง"], ["floor", "ตั้งพื้น/แขวน"], ["ceiling", "ฝังในฝ้า"], ["normal", "ล้างธรรมดา"], ["premium", "ล้างพรีเมียม"], ["coil", "ล้างคอยล์"], ["overhaul", "ตัดล้าง"]]) {
     assert.match(js, new RegExp(`value="${pair[0]}"[^>]*>${pair[1]}`));
   }
-  const payload = js.match(/function packagePayload\(\)[\s\S]*?\n}\n/)[0];
+  const payload = js.match(/function packagePayload\(\)[\s\S]*?\r?\n}\r?\n/)[0];
   for (const field of ["job_type", "ac_type", "wash_variant", "tier_key"]) assert.match(payload, new RegExp(field));
   assert.match(js, /packageJobTypeLabel\(item\.job_type\)/);
   assert.match(js, /packageAcTypeLabel\(item\.ac_type\)/);
