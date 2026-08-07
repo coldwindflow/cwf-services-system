@@ -1,0 +1,131 @@
+"use strict";
+
+const test = require("node:test");
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
+const {
+  packageRequest,
+  canonicalizeSelection,
+  resolvePackageBooking,
+} = require("../server/services/booking/servicePackageBooking");
+
+function selection(overrides = {}) {
+  const base = {
+    package: { id: "41", key: "premium-day", name: "Premium Day" },
+    tier: { id: "73", key: "two-units", name: "2 units" },
+    service_lines: [{
+      service_key: "wall-premium-small",
+      service_name: "Premium wall wash",
+      quantity: 2,
+      unit_duration_minutes: 45,
+      service_constraints: {
+        job_type: "ล้าง", ac_type: "ผนัง", wash_variant: "ล้างพรีเมียม", btu_min: null, btu_max: 12000,
+      },
+    }],
+    fixed_total_price: "1399.50",
+    redeem_until: "2026-12-31T16:59:59.000Z",
+  };
+  const value = { ...base, ...overrides };
+  value.snapshot = structuredClone(value);
+  return value;
+}
+
+function body(overrides = {}) {
+  return {
+    service_package_key: "premium-day",
+    service_package_tier_key: "two-units",
+    btu: 12000,
+    price: 1,
+    standard_price: 2,
+    machine_count: 99,
+    duration_min: 1,
+    job_type: "ซ่อม",
+    ac_type: "แขวน",
+    wash_variant: "ล้างธรรมดา",
+    ...overrides,
+  };
+}
+
+test("no package keys preserves the ordinary booking branch", () => {
+  assert.equal(packageRequest({}), null);
+});
+
+test("package keys are paired and public numeric identities are rejected", () => {
+  for (const value of [
+    { service_package_key: "premium-day" },
+    { service_package_tier_key: "two-units" },
+    { service_package_key: "", service_package_tier_key: "" },
+    { service_package_id: 41 },
+    { service_package_key: "premium-day", service_package_tier_key: "two-units", service_package_tier_id: 73 },
+  ]) {
+    assert.throws(() => packageRequest(value), { code: "PACKAGE_IDENTITY_MALFORMED", statusCode: 400 });
+  }
+});
+
+test("resolver authority replaces fake service, quantity, duration, and exact fixed total", () => {
+  const result = canonicalizeSelection(selection(), body(), "2026-12-01T09:00:00+07:00");
+  assert.deepEqual(result.payload, {
+    job_type: "ล้าง", ac_type: "ผนัง", btu: 12000, machine_count: 2,
+    wash_variant: "ล้างพรีเมียม", repair_variant: "", admin_override_duration_min: 0,
+  });
+  assert.equal(result.durationMin, 90);
+  assert.equal(result.fixedTotal, "1399.50");
+  assert.equal(result.item.qty, 2);
+  assert.equal(result.item.line_total, "1399.50");
+  assert.equal(result.item.customer_price_source, "service_package");
+  assert.match(result.item.item_name, /ล้างพรีเมียม/);
+  assert.deepEqual(result.snapshot, selection().snapshot);
+});
+
+test("server BTU maximum and minimum constraints accept only their actual ranges", () => {
+  assert.doesNotThrow(() => canonicalizeSelection(selection(), body({ btu: 12000 }), "2026-12-01T09:00:00+07:00"));
+  assert.throws(() => canonicalizeSelection(selection(), body({ btu: 18000 }), "2026-12-01T09:00:00+07:00"), { code: "PACKAGE_BTU_MISMATCH" });
+  const large = selection();
+  large.service_lines[0].service_constraints.btu_min = 18000;
+  large.service_lines[0].service_constraints.btu_max = null;
+  assert.doesNotThrow(() => canonicalizeSelection(large, body({ btu: 18000 }), "2026-12-01T09:00:00+07:00"));
+  assert.throws(() => canonicalizeSelection(large, body({ btu: 12000 }), "2026-12-01T09:00:00+07:00"), { code: "PACKAGE_BTU_MISMATCH" });
+});
+
+test("sell resolution and redeem eligibility remain distinct", async () => {
+  const resolver = { async resolveSelection() { return selection(); } };
+  await assert.rejects(
+    resolvePackageBooking({ body: body(), bookingMode: "scheduled", appointmentDatetime: "2027-01-01T09:00:00+07:00", resolver }),
+    { code: "PACKAGE_REDEEM_WINDOW_EXCEEDED", statusCode: 409 }
+  );
+  const errorResolver = { async resolveSelection() { const e = new Error("hidden detail"); e.code = "PACKAGE_NOT_ON_SALE"; throw e; } };
+  await assert.rejects(
+    resolvePackageBooking({ body: body(), bookingMode: "scheduled", appointmentDatetime: "2026-12-01T09:00:00+07:00", resolver: errorResolver }),
+    { code: "PACKAGE_NOT_ON_SALE", message: "PACKAGE_NOT_ON_SALE" }
+  );
+});
+
+test("mixed ordinary lines and urgent package booking are rejected", async () => {
+  assert.throws(
+    () => canonicalizeSelection(selection(), body({ services: [{ job_type: "ล้าง" }] }), "2026-12-01T09:00:00+07:00"),
+    { code: "PACKAGE_MIXING_UNSUPPORTED" }
+  );
+  assert.throws(
+    () => canonicalizeSelection(selection(), body({ items: [{ item_id: 1, qty: 1 }] }), "2026-12-01T09:00:00+07:00"),
+    { code: "PACKAGE_MIXING_UNSUPPORTED" }
+  );
+  await assert.rejects(
+    resolvePackageBooking({ body: body(), bookingMode: "urgent", appointmentDatetime: "2026-12-01T09:00:00+07:00", resolver: {} }),
+    { code: "PACKAGE_URGENT_UNSUPPORTED" }
+  );
+});
+
+test("booking mutation keeps package linkage, snapshot, price, promotion bypass, and revalidation inside its transaction", () => {
+  const source = fs.readFileSync(path.join(__dirname, "../server/services/booking/createBookingJob.js"), "utf8");
+  const begin = source.indexOf('await client.query("BEGIN")');
+  const revalidate = source.indexOf("resolver: createServicePackageResolver(client)", begin);
+  const itemInsert = source.indexOf("service_package_snapshot", revalidate);
+  const units = source.indexOf("ensureCanonicalBookingJobUnits(job_id, client)", itemInsert);
+  const commit = source.indexOf('await client.query("COMMIT")', units);
+  assert.ok(begin >= 0 && revalidate > begin && itemInsert > revalidate && units > itemInsert && commit > units);
+  assert.match(source, /const promoPick = packageBooking \? null : await findBestCustomerPromotion/);
+  assert.match(source, /packageBooking \? packageBooking\.fixedTotal : Number\(total \|\| 0\)/);
+  assert.match(source, /pg_advisory_xact_lock/);
+  assert.match(source, /packageBooking \? \[packageBooking\.item\] : await customerPricingHelpers/);
+});
