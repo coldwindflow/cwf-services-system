@@ -1079,8 +1079,8 @@ function bindCatalogListActions() {
 /* ---------- Service Package catalog (separate pricing domain) ---------- */
 
 function packageLifecycleLabel(status) {
-  return ({ draft: "Draft", disabled: "Disabled", hidden: "Hidden", upcoming: "Upcoming", "on-sale": "On sale",
-    "sale-ended": "Sale ended", "redeem-ended": "Redeem ended" })[status] || "Draft";
+  return ({ draft: "แบบร่าง", disabled: "ปิดใช้งาน", hidden: "ซ่อนจากลูกค้า", upcoming: "ยังไม่ถึงวันขาย", "on-sale": "กำลังเปิดขาย",
+    "sale-ended": "ปิดการขายแล้ว", "redeem-ended": "หมดเขตใช้สิทธิ์" })[status] || "แบบร่าง";
 }
 
 function packageJobTypeInput(value) {
@@ -1104,6 +1104,12 @@ function packageWashVariantInput(value) {
   if (text.includes("ธรรมดา") || text.includes("normal")) return "normal";
   return "";
 }
+function packageJobTypeLabel(value) {
+  return ({ wash: "ล้าง", repair: "ซ่อม", install: "ติดตั้ง" })[packageJobTypeInput(value)] || "ติดตั้ง";
+}
+function packageAcTypeLabel(value) {
+  return ({ wall: "ติดผนัง", cassette: "สี่ทิศทาง", floor: "ตั้งพื้น/แขวน", ceiling: "ฝังในฝ้า" })[packageAcTypeInput(value)] || "ฝังในฝ้า";
+}
 
 function dateTimeLocalValue(value) {
   if (!value) return "";
@@ -1117,11 +1123,11 @@ function ensureCreateTypeChooser() {
   if (el("catalog_type_backdrop")) return;
   const wrap = document.createElement("div");
   wrap.innerHTML = `<div id="catalog_type_backdrop" class="cwf-modal-backdrop hidden"><div class="cwf-modal asc-type-modal">
-    <div class="cwf-modal-head"><div class="cwf-modal-title">Choose item type</div></div>
-    <div class="cwf-modal-body"><p>Type is permanent after the item is saved.</p>
-      <button id="new_ordinary_item" class="secondary asc-type-choice" type="button">Ordinary catalog item</button>
-      <button id="new_package_item" class="primary asc-type-choice" type="button">Service Package promotion</button></div>
-    <div class="cwf-modal-foot"><button id="new_type_cancel" class="secondary" type="button">Cancel</button></div>
+    <div class="cwf-modal-head"><div class="cwf-modal-title">เลือกประเภทรายการ</div></div>
+    <div class="cwf-modal-body"><p>ไม่สามารถเปลี่ยนประเภทได้หลังบันทึกรายการ</p>
+      <button id="new_ordinary_item" class="secondary asc-type-choice" type="button">รายการบริการปกติ</button>
+      <button id="new_package_item" class="primary asc-type-choice" type="button">โปรโมชั่นแพ็กเกจ</button></div>
+    <div class="cwf-modal-foot"><button id="new_type_cancel" class="secondary" type="button">ยกเลิก</button></div>
   </div></div>`;
   document.body.appendChild(wrap.firstElementChild);
   el("new_ordinary_item").addEventListener("click", () => { el("catalog_type_backdrop").classList.add("hidden"); openCatalogModalForNew(); });
@@ -1138,30 +1144,30 @@ function ensurePackageModal() {
   if (el("package_modal_backdrop")) return;
   const wrap = document.createElement("div");
   wrap.innerHTML = `<div id="package_modal_backdrop" class="cwf-modal-backdrop hidden"><div class="cwf-modal">
-    <div class="cwf-modal-head"><div id="package_modal_title" class="cwf-modal-title">New Service Package</div><button id="package_modal_close" class="cwf-modal-close" type="button">×</button></div>
+    <div class="cwf-modal-head"><div id="package_modal_title" class="cwf-modal-title">สร้างโปรโมชั่นแพ็กเกจใหม่</div><button id="package_modal_close" class="cwf-modal-close" type="button">×</button></div>
     <div class="cwf-modal-body">
-      <div class="asc-section"><div class="asc-section-title">Package identity</div>
-        <div class="asc-field"><label>Item type</label><input value="Service Package promotion" disabled></div>
-        <div id="pm_key_field" class="asc-field hidden"><label>Package key (server-controlled)</label><input id="pm_package_key" disabled></div>
-        <div class="asc-field"><label>Display name *</label><input id="pm_display_name"></div>
-        <div class="asc-field"><label>Description</label><textarea id="pm_description" rows="3"></textarea></div>
-        <div class="asc-grid2"><div class="asc-field"><label>Service key *</label><input id="pm_service_key"></div><div class="asc-field"><label>Service name *</label><input id="pm_service_name"></div></div>
+      <div class="asc-section"><div class="asc-section-title">ข้อมูลโปรโมชั่น</div>
+        <div class="asc-field"><label>ประเภทรายการ</label><input value="โปรโมชั่นแพ็กเกจ" disabled></div>
+        <div id="pm_key_field" class="asc-field hidden"><label>รหัสแพ็กเกจ (รหัสระบบ แก้ไขไม่ได้)</label><input id="pm_package_key" disabled></div>
+        <div class="asc-field"><label>ชื่อโปรโมชั่น *</label><input id="pm_display_name"></div>
+        <div class="asc-field"><label>รายละเอียด</label><textarea id="pm_description" rows="3"></textarea></div>
+        <div class="asc-grid2"><div class="asc-field"><label>รหัสบริการ (รหัสระบบ) *</label><input id="pm_service_key"></div><div class="asc-field"><label>ชื่อบริการ *</label><input id="pm_service_name"></div></div>
       </div>
-      <div class="asc-section"><div class="asc-section-title">Server-enforced service constraints</div>
-        <div class="asc-grid2"><div class="asc-field"><label>Job type *</label><select id="pm_job_type"><option value="wash">Wash</option><option value="repair">Repair</option><option value="install">Install</option></select></div>
-        <div class="asc-field"><label>AC type *</label><select id="pm_ac_type"><option value="wall">Wall</option><option value="cassette">Cassette</option><option value="floor">Floor/Hanging</option><option value="ceiling">Concealed ceiling</option></select></div></div>
-        <div class="asc-field"><label>Wash variant (required for wall wash)</label><select id="pm_wash_variant"><option value="">None</option><option value="normal">Normal wash</option><option value="premium">Premium wash</option><option value="coil">Coil wash</option><option value="overhaul">Overhaul wash</option></select></div>
-        <div class="asc-grid2"><div class="asc-field"><label>BTU min</label><input id="pm_btu_min" type="number" min="1" step="1"></div><div class="asc-field"><label>BTU max</label><input id="pm_btu_max" type="number" min="1" step="1"></div></div>
-        <div class="asc-field"><label>Duration per service unit (minutes) *</label><input id="pm_duration" type="number" min="1" step="1"></div>
+      <div class="asc-section"><div class="asc-section-title">เงื่อนไขบริการ</div>
+        <div class="asc-grid2"><div class="asc-field"><label>ประเภทงาน *</label><select id="pm_job_type"><option value="wash">ล้าง</option><option value="repair">ซ่อม</option><option value="install">ติดตั้ง</option></select></div>
+        <div class="asc-field"><label>ประเภทเครื่องปรับอากาศ *</label><select id="pm_ac_type"><option value="wall">ติดผนัง</option><option value="cassette">สี่ทิศทาง</option><option value="floor">ตั้งพื้น/แขวน</option><option value="ceiling">ฝังในฝ้า</option></select></div></div>
+        <div class="asc-field"><label>รูปแบบการล้าง (จำเป็นสำหรับงานล้างแอร์ติดผนัง)</label><select id="pm_wash_variant"><option value="">ไม่ระบุ</option><option value="normal">ล้างธรรมดา</option><option value="premium">ล้างพรีเมียม</option><option value="coil">ล้างคอยล์</option><option value="overhaul">ตัดล้าง</option></select></div>
+        <div class="asc-grid2"><div class="asc-field"><label>BTU ต่ำสุด</label><input id="pm_btu_min" type="number" min="1" step="1"></div><div class="asc-field"><label>BTU สูงสุด</label><input id="pm_btu_max" type="number" min="1" step="1"></div></div>
+        <div class="asc-field"><label>ระยะเวลาต่อหนึ่งครั้งบริการ (นาที) *</label><input id="pm_duration" type="number" min="1" step="1"></div>
       </div>
-      <div class="asc-section"><div class="asc-section-title">Sale and redemption lifecycle</div>
-        <div class="asc-grid2"><div class="asc-field"><label>Sell start</label><input id="pm_sell_start" type="datetime-local"></div><div class="asc-field"><label>Sell end</label><input id="pm_sell_end" type="datetime-local"></div></div>
-        <div class="asc-field"><label>Redeem until</label><input id="pm_redeem_until" type="datetime-local"></div>
-        <div class="asc-grid2"><div class="asc-field"><label>Active</label><select id="pm_active"><option value="0">Disabled</option><option value="1">Active</option></select></div><div class="asc-field"><label>Customer visible</label><select id="pm_visible"><option value="0">Hidden</option><option value="1">Visible</option></select></div></div>
+      <div class="asc-section"><div class="asc-section-title">ช่วงเวลาขายและใช้สิทธิ์</div>
+        <div class="asc-grid2"><div class="asc-field"><label>เริ่มขาย</label><input id="pm_sell_start" type="datetime-local"></div><div class="asc-field"><label>สิ้นสุดการขาย</label><input id="pm_sell_end" type="datetime-local"></div></div>
+        <div class="asc-field"><label>ใช้สิทธิ์ได้ถึง</label><input id="pm_redeem_until" type="datetime-local"></div>
+        <div class="asc-grid2"><div class="asc-field"><label>การใช้งาน</label><select id="pm_active"><option value="0">ปิดใช้งาน</option><option value="1">เปิดใช้งาน</option></select></div><div class="asc-field"><label>การแสดงต่อลูกค้า</label><select id="pm_visible"><option value="0">ซ่อนจากลูกค้า</option><option value="1">แสดงต่อลูกค้า</option></select></div></div>
       </div>
-      <div class="asc-section"><div class="asc-section-title">Package tiers</div><div id="pm_tiers"></div><button id="pm_add_tier" class="secondary btn-small" type="button">+ Add tier</button></div>
+      <div class="asc-section"><div class="asc-section-title">ระดับแพ็กเกจ</div><div id="pm_tiers"></div><button id="pm_add_tier" class="secondary btn-small" type="button">+ เพิ่มระดับ</button></div>
       <div id="package_modal_error" class="asc-modal-error"></div>
-    </div><div class="cwf-modal-foot"><button id="package_modal_cancel" class="secondary" type="button">Cancel</button><button id="package_modal_save" class="primary" type="button">Save package</button></div>
+    </div><div class="cwf-modal-foot"><button id="package_modal_cancel" class="secondary" type="button">ยกเลิก</button><button id="package_modal_save" class="primary" type="button">บันทึกแพ็กเกจ</button></div>
   </div></div>`;
   document.body.appendChild(wrap.firstElementChild);
   el("package_modal_close").addEventListener("click", closePackageModal);
@@ -1175,11 +1181,11 @@ function ensurePackageModal() {
 
 function renderPackageTiers() {
   el("pm_tiers").innerHTML = packageTierDrafts.map((tier, i) => `<div class="asc-package-tier" data-tier-index="${i}">
-    ${tier.tier_key ? `<div class="muted2 mini">Existing tier key is fixed</div>` : `<div class="muted2 mini">New tier key will be generated by the server</div>`}
-    <div class="asc-grid2"><div class="asc-field"><label>Display name *</label><input data-tier-field="display_name" value="${escapeHtml(tier.display_name)}"></div><div class="asc-field"><label>Quantity *</label><input data-tier-field="service_quantity" type="number" min="1" step="1" value="${tier.service_quantity}"></div></div>
-    <div class="asc-grid2"><div class="asc-field"><label>Fixed total (exact 2 decimals) *</label><input data-tier-field="fixed_total_price" inputmode="decimal" value="${escapeHtml(tier.fixed_total_price)}"></div><div class="asc-field"><label>Sort order</label><input data-tier-field="sort_order" type="number" step="1" value="${tier.sort_order}"></div></div>
-    <div class="asc-grid2"><div class="asc-field"><label>Status</label><select data-tier-field="is_active"><option value="1" ${tier.is_active ? "selected" : ""}>Active</option><option value="0" ${tier.is_active ? "" : "selected"}>Inactive</option></select></div><div><button class="secondary btn-small" data-remove-tier="${i}" type="button">Omit / deactivate</button></div></div>
-  </div>`).join("") || `<div class="muted2 mini">No tiers. Draft packages may be saved without tiers.</div>`;
+    ${tier.tier_key ? `<div class="muted2 mini">รหัสระดับเป็นรหัสระบบและแก้ไขไม่ได้</div>` : `<div class="muted2 mini">ระบบจะสร้างรหัสระดับใหม่ให้อัตโนมัติ</div>`}
+    <div class="asc-grid2"><div class="asc-field"><label>ชื่อระดับ *</label><input data-tier-field="display_name" value="${escapeHtml(tier.display_name)}"></div><div class="asc-field"><label>จำนวนครั้งบริการ *</label><input data-tier-field="service_quantity" type="number" min="1" step="1" value="${tier.service_quantity}"></div></div>
+    <div class="asc-grid2"><div class="asc-field"><label>ราคารวมคงที่ (ทศนิยม 2 ตำแหน่ง) *</label><input data-tier-field="fixed_total_price" inputmode="decimal" value="${escapeHtml(tier.fixed_total_price)}"></div><div class="asc-field"><label>ลำดับการแสดง</label><input data-tier-field="sort_order" type="number" step="1" value="${tier.sort_order}"></div></div>
+    <div class="asc-grid2"><div class="asc-field"><label>สถานะ</label><select data-tier-field="is_active"><option value="1" ${tier.is_active ? "selected" : ""}>เปิดใช้งาน</option><option value="0" ${tier.is_active ? "" : "selected"}>ปิดใช้งาน</option></select></div><div><button class="secondary btn-small" data-remove-tier="${i}" type="button">นำออก / ปิดใช้งาน</button></div></div>
+  </div>`).join("") || `<div class="muted2 mini">ยังไม่มีระดับ สามารถบันทึกแพ็กเกจแบบร่างโดยไม่มีระดับได้</div>`;
 }
 
 function updatePackageTierDraft(event) {
@@ -1194,7 +1200,7 @@ function openPackageModal(packageKey = null) {
   ensurePackageModal();
   editingPackageKey = packageKey;
   const item = packageKey ? servicePackages.find((p) => p.package_key === packageKey) : null;
-  el("package_modal_title").textContent = item ? `Edit ${item.display_name}` : "New Service Package";
+  el("package_modal_title").textContent = item ? `แก้ไข ${item.display_name}` : "สร้างโปรโมชั่นแพ็กเกจใหม่";
   el("pm_key_field").classList.toggle("hidden", !item);
   el("pm_package_key").value = item?.package_key || "";
   for (const [id, value] of Object.entries({ pm_display_name: item?.display_name, pm_description: item?.description,
@@ -1231,25 +1237,25 @@ async function saveServicePackage() {
   try {
     const url = editingPackageKey ? `/admin/service-packages/catalog/${encodeURIComponent(editingPackageKey)}` : "/admin/service-packages/catalog";
     await apiFetch(url, { method: editingPackageKey ? "PATCH" : "POST", body: JSON.stringify(packagePayload()) });
-    el("package_modal_backdrop").classList.add("hidden"); await loadServicePackages(); showToast("Service Package saved", "success");
-  } catch (error) { box.textContent = error.message || "Unable to save package"; box.style.display = "block"; }
+    el("package_modal_backdrop").classList.add("hidden"); await loadServicePackages(); showToast("บันทึกโปรโมชั่นแพ็กเกจแล้ว", "success");
+  } catch (_error) { box.textContent = "ไม่สามารถบันทึกแพ็กเกจได้ โปรดตรวจสอบข้อมูลแล้วลองอีกครั้ง"; box.style.display = "block"; }
   finally { isSaving = false; el("package_modal_save").disabled = false; }
 }
 
 function renderServicePackages() {
   const box = el("package_catalog_list");
   box.innerHTML = servicePackages.length ? servicePackages.map((item) => `<div class="asc-item-card">
-    <div class="asc-item-main"><div class="asc-item-title">${escapeHtml(item.display_name)} <span class="asc-badge asc-package-badge">Service Package</span></div>
-      <div class="asc-item-meta">${escapeHtml(item.service_name)} · ${escapeHtml(item.job_type)} · ${escapeHtml(item.ac_type)}</div>
-      <div class="asc-item-meta">${item.tiers.length} tiers · ${item.service_unit_duration_minutes} min/unit</div>
+    <div class="asc-item-main"><div class="asc-item-title">${escapeHtml(item.display_name)} <span class="asc-badge asc-package-badge">แพ็กเกจบริการ</span></div>
+      <div class="asc-item-meta">${escapeHtml(item.service_name)} · ${packageJobTypeLabel(item.job_type)} · ${packageAcTypeLabel(item.ac_type)}</div>
+      <div class="asc-item-meta">${item.tiers.length} ระดับ · ${item.service_unit_duration_minutes} นาที/ครั้งบริการ</div>
       <div class="asc-badges"><span class="asc-badge asc-lifecycle-${escapeHtml(item.lifecycle_status)}">${packageLifecycleLabel(item.lifecycle_status)}</span></div></div>
-    <div class="asc-item-actions"><button class="secondary btn-small" data-edit-package="${escapeHtml(item.package_key)}" type="button">Edit</button></div></div>`).join("") : `<div class="asc-empty">No Service Package promotions yet.</div>`;
+    <div class="asc-item-actions"><button class="secondary btn-small" data-edit-package="${escapeHtml(item.package_key)}" type="button">แก้ไข</button></div></div>`).join("") : `<div class="asc-empty">ยังไม่มีโปรโมชั่นแพ็กเกจบริการ</div>`;
 }
 
 async function loadServicePackages() {
-  const box = el("package_catalog_list"); box.innerHTML = `<div class="asc-loading">Loading packages...</div>`;
+  const box = el("package_catalog_list"); box.innerHTML = `<div class="asc-loading">กำลังโหลดโปรโมชั่น...</div>`;
   try { const items = await apiFetch("/admin/service-packages/catalog"); servicePackages = Array.isArray(items) ? items : []; renderServicePackages(); }
-  catch (error) { box.innerHTML = `<div class="asc-error">${escapeHtml(error.message || "Unable to load packages")}</div>`; }
+  catch (_error) { box.innerHTML = `<div class="asc-error">ไม่สามารถโหลดโปรโมชั่นแพ็กเกจได้ โปรดลองอีกครั้ง</div>`; }
 }
 
 function bindServicePackageActions() {
