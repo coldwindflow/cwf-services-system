@@ -116,12 +116,12 @@ function canonicalizeSelection(selection, body, appointmentDatetime) {
   };
 }
 
-async function resolvePackageBooking({ body, bookingMode, appointmentDatetime, resolver }) {
+async function resolvePackageBooking({ body, bookingMode, appointmentDatetime, resolver, identity = "customer" }) {
   const request = packageRequest(body);
   if (!request) return null;
   if (bookingMode !== "scheduled") throw packageError("PACKAGE_URGENT_UNSUPPORTED", 400);
   try {
-    const selection = await resolver.resolveSelection(request, { identity: "customer" });
+    const selection = await resolver.resolveSelection(request, { identity });
     return canonicalizeSelection(selection, body, appointmentDatetime);
   } catch (error) {
     if (error?.statusCode) throw error;

@@ -5,6 +5,19 @@ const { JOB_STATUS, ASSIGNMENT_STATUS, OFFER_STATUS } = require("./bookingStatus
 const { ensureBookingJobUnits } = require("./bookingJobUnits");
 const { packageRequest, resolvePackageBooking, packageBookingFromSnapshot } = require("./servicePackageBooking");
 
+function safePackagePreview(selection) {
+  const line = selection.service_lines[0];
+  return {
+    package_key: selection.package.key, package_name: selection.package.name,
+    tier_key: selection.tier.key, tier_name: selection.tier.name,
+    fixed_total_price: selection.fixed_total_price, quantity: line.quantity,
+    unit_duration_minutes: line.unit_duration_minutes,
+    duration_minutes: line.quantity * line.unit_duration_minutes,
+    service: { service_key: line.service_key, service_name: line.service_name, constraints: { ...line.service_constraints } },
+    redeem_until: selection.redeem_until,
+  };
+}
+
 function createBookingJobService(dependencies = {}) {
   const ensureCanonicalBookingJobUnits = dependencies.ensureBookingJobUnits || ensureBookingJobUnits;
   const {
@@ -124,6 +137,9 @@ function createBookingJobService(dependencies = {}) {
 
   async function handleAdminBookV2(req, res) {
     const body = req.body || {};
+    const hasPackageRequest = body.service_package_key != null || body.service_package_tier_key != null
+      || body.service_package_id != null || body.service_package_tier_id != null;
+    let packageBooking = null;
     const {
       customer_name,
       customer_phone,
@@ -164,7 +180,7 @@ function createBookingJobService(dependencies = {}) {
       return hasTech ? 'single' : 'auto';
     })();
 
-    if (!customer_name || !job_type || !appointment_datetime || !address_text) {
+    if (!customer_name || (!hasPackageRequest && !job_type) || !appointment_datetime || !address_text) {
       return res.status(400).json({ error: "กรอกข้อมูลไม่ครบ (ชื่อ/ประเภทงาน/วันนัด/ที่อยู่)" });
     }
 
@@ -180,6 +196,20 @@ function createBookingJobService(dependencies = {}) {
     const bm = isUrgentOffer ? "urgent" : rawBm;
     const ttype = (tech_type || (bm === "urgent" ? "partner" : "company")).toString().trim().toLowerCase();
     const mode = isUrgentOffer ? "offer" : rawMode;
+    if (hasPackageRequest) {
+      try {
+        if (promotion_id) {
+          const error = new Error("PACKAGE_PROMOTION_UNSUPPORTED");
+          error.code = "PACKAGE_PROMOTION_UNSUPPORTED"; error.statusCode = 400; throw error;
+        }
+        packageBooking = await resolvePackageBooking({ body, bookingMode: bm, appointmentDatetime: apptIso,
+          resolver: createServicePackageResolver(pool), identity: "admin" });
+      } catch (error) {
+        const code = String(error?.code || "PACKAGE_UNAVAILABLE").startsWith("PACKAGE_") ? String(error.code) : "PACKAGE_UNAVAILABLE";
+        const status = Number(error?.statusCode || error?.status || 409);
+        return res.status(status >= 400 && status < 500 ? status : 409).json({ error: code, code });
+      }
+    }
     // ✅ HOTFIX: allow_time_proposal may be omitted by older cached frontend/PWA.
     // Do not reference an undeclared destructured variable here; otherwise /admin/book_v2
     // crashes the whole Node process and Cloudflare shows 502. Missing value = false.
@@ -242,8 +272,8 @@ function createBookingJobService(dependencies = {}) {
       }
     }
 
-    const payloadV2 = {
-      job_type: String(job_type).trim(),
+    let payloadV2 = {
+      job_type: String(job_type || "").trim(),
       ac_type: (ac_type || "").toString().trim(),
       btu: coerceNumber(btu, 0),
       machine_count: Math.max(1, coerceNumber(machine_count, 1)),
@@ -253,20 +283,21 @@ function createBookingJobService(dependencies = {}) {
       services: Array.isArray(body.services) ? body.services : (Array.isArray(body.service_lines) ? body.service_lines : null),
       admin_override_duration_min: Math.max(0, coerceNumber(override_duration_min, 0)),
     };
+    if (packageBooking) payloadV2 = packageBooking.payload;
 
     // CWF Spec: Always use conservative duration for booking/collision (no parallel/team reduction)
-    let duration_min = computeDurationMinMulti(payloadV2, { source: "admin_book_v2", conservative: true });
+    let duration_min = packageBooking ? packageBooking.durationMin : computeDurationMinMulti(payloadV2, { source: "admin_book_v2", conservative: true });
     if (duration_min <= 0) {
       return res.status(400).json({ error: "งานประเภทนี้ต้องให้แอดมินกำหนดเวลา (duration_min)" });
     }
 
     // override duration (admin)
-    if (coerceNumber(override_duration_min, 0) > 0) {
+    if (!packageBooking && coerceNumber(override_duration_min, 0) > 0) {
       duration_min = Math.max(1, Math.floor(coerceNumber(override_duration_min, duration_min)));
     }
 
-    const customerPrice = await customerPricingHelpers.resolveCustomerPricingMulti(payloadV2, pool);
-    const standard_price = Number(customerPrice.active_price ?? customerPrice.standard_price ?? 0);
+    const customerPrice = packageBooking ? null : await customerPricingHelpers.resolveCustomerPricingMulti(payloadV2, pool);
+    const standard_price = packageBooking ? Number(packageBooking.fixedTotal) : Number(customerPrice.active_price ?? customerPrice.standard_price ?? 0);
 
 
   // Blocker: explicit admin coordinates must be validated at the BACKEND, not just
@@ -323,6 +354,17 @@ function createBookingJobService(dependencies = {}) {
     try {
       await client.query("BEGIN");
 
+      if (packageBooking) {
+        const revalidated = await resolvePackageBooking({ body, bookingMode: bm, appointmentDatetime: apptIso,
+          resolver: createServicePackageResolver(client), identity: "admin" });
+        if (JSON.stringify(revalidated) !== JSON.stringify(packageBooking)) {
+          const error = new Error("PACKAGE_UNAVAILABLE");
+          error.code = "PACKAGE_UNAVAILABLE"; error.statusCode = 409; throw error;
+        }
+        packageBooking = revalidated;
+        payloadV2 = packageBooking.payload;
+      }
+
       // Durable, cross-instance idempotency for customer-sourced urgent
       // requests: an advisory lock scoped to this transaction serializes any
       // concurrent/retried requests sharing the same urgent_request_key
@@ -366,7 +408,7 @@ function createBookingJobService(dependencies = {}) {
 
       // promo
       let promo = null;
-      if (promotion_id) {
+      if (!packageBooking && promotion_id) {
         const pr = await client.query(
           `SELECT promo_id, promo_name, promo_type, promo_value
            FROM public.promotions
@@ -377,9 +419,9 @@ function createBookingJobService(dependencies = {}) {
       }
 
       // resolve items
-  const computedItems = [];
+  const computedItems = packageBooking ? [packageBooking.item] : [];
 
-  const serviceLineItems = await customerPricingHelpers.buildCustomerServiceLineItemsFromPayload(
+  const serviceLineItems = packageBooking ? [] : await customerPricingHelpers.buildCustomerServiceLineItemsFromPayload(
     (payloadV2.services && Array.isArray(payloadV2.services))
       ? payloadV2
       : { ...payloadV2, services: [{
@@ -394,7 +436,7 @@ function createBookingJobService(dependencies = {}) {
     client
   );
 
-  if (coerceNumber(override_price, 0) > 0) {
+  if (!packageBooking && coerceNumber(override_price, 0) > 0) {
     // Customer override price only. Payroll must never use this as technician income.
     computedItems.push({ item_id: null, item_name: `ค่าบริการ (override)`, qty: 1, unit_price: coerceNumber(override_price, 0), line_total: coerceNumber(override_price, 0), is_service: false, customer_price_source: 'manual_override' });
   } else if (serviceLineItems.length) {
@@ -403,7 +445,7 @@ function createBookingJobService(dependencies = {}) {
     computedItems.push({ item_id: null, item_name: `ค่าบริการมาตรฐาน (${payloadV2.job_type || '-'})`, qty: 1, unit_price: Number(standard_price), line_total: Number(standard_price), is_service: false });
   }
 
-      if (itemIdQty.length) {
+      if (!packageBooking && itemIdQty.length) {
         const ids = itemIdQty.map((x) => x.item_id);
         const catR = await client.query(
           `SELECT item_id, item_name, base_price
@@ -529,7 +571,7 @@ function createBookingJobService(dependencies = {}) {
         [
           String(customer_name).trim(),
           (customer_phone || "").toString().trim(),
-          String(job_type).trim(),
+          String(packageBooking ? payloadV2.job_type : job_type).trim(),
           apptIso,
           Number(pricing.total || 0),
           String(address_text).trim(),
@@ -542,7 +584,7 @@ function createBookingJobService(dependencies = {}) {
           (String(job_zone || "").trim() || null),
           duration_min,
           (isUrgentOffer ? "urgent" : "scheduled"),
-          Math.max(0, coerceNumber(override_duration_min, 0)),
+          packageBooking ? 0 : Math.max(0, coerceNumber(override_duration_min, 0)),
           final_lat,
           final_lng,
           detectedZoneCode,
@@ -606,26 +648,24 @@ function createBookingJobService(dependencies = {}) {
 
       // job_items
       for (const it of computedItems) {
+        const packageColumns = packageBooking ? ", service_package_id, service_package_tier_id, service_package_snapshot" : "";
+        const packageValues = packageBooking ? ",$14,$15,$16" : "";
+        const itemParams = [
+          job_id, it.item_id || null, it.item_name, Number(it.qty || 0),
+          packageBooking ? it.unit_price : Number(it.unit_price || 0),
+          packageBooking ? it.line_total : Number(it.line_total || 0),
+          it.assigned_technician_username || null, !!it.is_service,
+          it.customer_price_rule_id || null, it.normal_unit_price || null,
+          it.customer_price_label || null, it.customer_campaign_name || null,
+          it.customer_price_source || null,
+        ];
+        if (packageBooking) itemParams.push(packageBooking.packageId, packageBooking.tierId, JSON.stringify(packageBooking.snapshot));
         await client.query(
           `INSERT INTO public.job_items
             (job_id, item_id, item_name, qty, unit_price, line_total, assigned_technician_username, is_service,
-             customer_price_rule_id, normal_unit_price, customer_price_label, customer_campaign_name, customer_price_source)
-          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
-          [
-            job_id,
-            it.item_id || null,
-            it.item_name,
-            Number(it.qty || 0),
-            Number(it.unit_price || 0),
-            Number(it.line_total || 0),
-            (it.assigned_technician_username || null),
-            !!it.is_service,
-            it.customer_price_rule_id || null,
-            it.normal_unit_price || null,
-            it.customer_price_label || null,
-            it.customer_campaign_name || null,
-            it.customer_price_source || null,
-          ]
+             customer_price_rule_id, normal_unit_price, customer_price_label, customer_campaign_name, customer_price_source${packageColumns})
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13${packageValues})`,
+          itemParams
         );
       }
 
@@ -775,6 +815,12 @@ function createBookingJobService(dependencies = {}) {
       });
     } catch (e) {
       await client.query("ROLLBACK");
+      if (hasPackageRequest) {
+        const code = String(e?.code || "PACKAGE_BOOKING_FAILED").startsWith("PACKAGE_") ? String(e.code) : "PACKAGE_BOOKING_FAILED";
+        const status = Number(e?.statusCode || e?.status || 500);
+        console.error("/admin/book_v2 package error:", code);
+        return res.status(status >= 400 && status < 600 ? status : 500).json({ error: code, code });
+      }
       const statusCode = Number(e?.statusCode || e?.status || 500);
       console.error("/admin/book_v2 error:", e);
       return res.status(statusCode >= 400 && statusCode < 600 ? statusCode : 500).json({
@@ -784,6 +830,47 @@ function createBookingJobService(dependencies = {}) {
       });
     } finally {
       client.release();
+    }
+  }
+
+  async function handleAdminServicePackageList(_req, res) {
+    try {
+      const result = await pool.query(
+        `SELECT p.package_key, t.tier_key FROM public.service_packages p
+         JOIN public.service_package_tiers t ON t.service_package_id=p.service_package_id
+         WHERE p.is_active=TRUE AND t.is_active=TRUE
+           AND (p.sell_start_at IS NULL OR p.sell_start_at <= NOW())
+           AND (p.sell_end_at IS NULL OR p.sell_end_at >= NOW())
+         ORDER BY p.service_package_id, t.sort_order, t.service_package_tier_id`
+      );
+      const resolver = createServicePackageResolver(pool);
+      const grouped = new Map();
+      for (const row of result.rows) {
+        const selection = await resolver.resolveSelection({ packageKey: row.package_key, tierKey: row.tier_key }, { identity: "admin" });
+        const preview = safePackagePreview(selection);
+        let item = grouped.get(preview.package_key);
+        if (!item) {
+          item = { package_key: preview.package_key, package_name: preview.package_name, service: preview.service,
+            unit_duration_minutes: preview.unit_duration_minutes, redeem_until: preview.redeem_until, tiers: [] };
+          grouped.set(preview.package_key, item);
+        }
+        item.tiers.push({ tier_key: preview.tier_key, tier_name: preview.tier_name,
+          fixed_total_price: preview.fixed_total_price, quantity: preview.quantity });
+      }
+      return res.json({ service_packages: [...grouped.values()] });
+    } catch (_) {
+      return res.status(503).json({ error: "SERVICE_PACKAGES_UNAVAILABLE", code: "SERVICE_PACKAGES_UNAVAILABLE" });
+    }
+  }
+
+  async function handleAdminServicePackagePreview(req, res) {
+    try {
+      const request = packageRequest({ service_package_key: req.body?.package_key, service_package_tier_key: req.body?.tier_key });
+      const selection = await createServicePackageResolver(pool).resolveSelection(request, { identity: "admin" });
+      return res.json(safePackagePreview(selection));
+    } catch (error) {
+      const code = error?.code === "PACKAGE_IDENTITY_MALFORMED" ? "INVALID_PACKAGE_SELECTION" : "SERVICE_PACKAGE_NOT_AVAILABLE";
+      return res.status(code === "INVALID_PACKAGE_SELECTION" ? 400 : 404).json({ error: code, code });
     }
   }
 
@@ -2002,6 +2089,8 @@ function createBookingJobService(dependencies = {}) {
 
   return {
     handleAdminBookV2,
+    handleAdminServicePackageList,
+    handleAdminServicePackagePreview,
     handleInternalBookFromAi,
     handlePublicCustomerUrgentBook,
     handlePublicUrgentPreflight,

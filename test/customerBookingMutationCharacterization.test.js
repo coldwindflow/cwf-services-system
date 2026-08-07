@@ -62,6 +62,7 @@ test("booking status compatibility values remain byte-identical", () => {
 test("public/admin/internal routes and urgent alias preserve registration and normalization", async () => {
   const registrations = [];
   const app = {
+    get(route, ...handlers) { registrations.push({ route, handlers }); },
     post(route, ...handlers) { registrations.push({ route, handlers }); },
   };
   const calls = [];
@@ -69,6 +70,8 @@ test("public/admin/internal routes and urgent alias preserve registration and no
     async handlePublicUrgentPreflight(req, res) { calls.push(["preflight", req.body]); return res.json({ can_dispatch: true }); },
     async handlePublicBook(req, res) { calls.push(["public", req.body]); return res.json({ ok: true }); },
     async handleAdminBookV2(req, res) { calls.push(["admin", req.body]); return res.json({ ok: true }); },
+    async handleAdminServicePackageList(_req, res) { return res.json({ service_packages: [] }); },
+    async handleAdminServicePackagePreview(_req, res) { return res.json({}); },
     async handleInternalBookFromAi(req, res) { calls.push(["internal", req.body]); return res.json({ ok: true }); },
   };
   const requireAdminSession = () => {};
@@ -80,20 +83,22 @@ test("public/admin/internal routes and urgent alias preserve registration and no
     "/public/urgent-dispatch-preflight",
     "/public/book",
     "/admin/book_v2",
+    "/admin/service-packages",
+    "/admin/service-packages/preview",
     "/admin/urgent_broadcast_v2",
     "/internal/book_from_ai",
   ]);
   assert.equal(registrations[2].handlers[0], requireAdminSession);
-  assert.equal(registrations[3].handlers[0], requireAdminSession);
-  assert.equal(registrations[4].handlers[0], requireInternalApiKeyOnly);
+  assert.equal(registrations[5].handlers[0], requireAdminSession);
+  assert.equal(registrations[6].handlers[0], requireInternalApiKeyOnly);
 
   const res = responseHarness();
-  await registrations[3].handlers.at(-1)({ body: { customer_name: "Alias" } }, res);
+  await registrations[5].handlers.at(-1)({ body: { customer_name: "Alias" } }, res);
   assert.equal(calls.at(-1)[0], "admin");
   assert.equal(calls.at(-1)[1].booking_mode, "urgent");
   assert.equal(calls.at(-1)[1].dispatch_mode, "offer");
 
-  await registrations[4].handlers.at(-1)({ body: { customer_name: "AI" } }, res);
+  await registrations[6].handlers.at(-1)({ body: { customer_name: "AI" } }, res);
   assert.equal(calls.at(-1)[0], "internal");
 });
 
