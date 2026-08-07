@@ -4913,6 +4913,7 @@ textarea.purchase-input { min-height: 66px; resize: vertical; }
    scrolls into view (JS adds .is-revealed via IntersectionObserver). The hero
    reveals immediately on load. Respects reduced-motion. */
 .homepage-screen > .homepage-hero,
+.homepage-screen > [data-home-service-packages],
 .homepage-screen > .homepage-quick-grid,
 .homepage-screen > .homepage-promo-banner,
 .homepage-screen > .homepage-section {
@@ -4921,6 +4922,37 @@ textarea.purchase-input { min-height: 66px; resize: vertical; }
   transition: opacity 0.55s cubic-bezier(0.22, 0.61, 0.36, 1),
               transform 0.55s cubic-bezier(0.22, 0.61, 0.36, 1);
   will-change: opacity, transform;
+}
+.homepage-screen > [data-home-service-packages][hidden] { display: none; }
+.homepage-package-feature {
+  padding: 16px;
+  border-radius: 22px;
+  color: #fff;
+  background: linear-gradient(145deg, #071b38, #0b4da2);
+  box-shadow: 0 12px 28px rgba(7, 27, 56, .18);
+  overflow: hidden;
+}
+.homepage-package-heading { display: flex; align-items: end; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.homepage-package-heading span { color: var(--yellow); font-size: 12px; font-weight: 900; }
+.homepage-package-heading h2 { margin: 2px 0 0; font-size: 21px; }
+.homepage-package-heading p { max-width: 190px; margin: 0; color: rgba(255,255,255,.78); font-size: 12px; line-height: 1.45; text-align: right; }
+.homepage-package-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); }
+.homepage-package-card { min-width: 0; padding: 14px; border: 1px solid rgba(255,255,255,.18); border-radius: 17px; background: rgba(255,255,255,.1); }
+.homepage-package-copy h3 { margin: 3px 0 4px; font-size: 18px; overflow-wrap: anywhere; }
+.homepage-package-copy p { margin: 0 0 5px; color: rgba(255,255,255,.82); font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.homepage-package-copy small, .homepage-package-service { color: rgba(255,255,255,.7); font-size: 11px; }
+.homepage-package-tiers { display: grid; gap: 8px; margin-top: 12px; }
+.homepage-package-tiers button { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 2px 10px; width: 100%; min-height: 54px; padding: 9px 11px; border: 0; border-radius: 13px; color: var(--ink); background: #fff; text-align: left; cursor: pointer; }
+.homepage-package-tiers button span { min-width: 0; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+.homepage-package-tiers button strong { min-width: 0; font-size: 14px; overflow-wrap: anywhere; }
+.homepage-package-tiers button em { grid-column: 2; grid-row: 1 / span 2; color: var(--blue); font-size: 12px; font-style: normal; font-weight: 900; }
+.homepage-package-tiers button:active { transform: scale(.98); }
+@media (max-width: 360px) {
+  .homepage-package-feature { padding: 13px; border-radius: 18px; }
+  .homepage-package-heading { display: block; }
+  .homepage-package-heading p { max-width: none; margin-top: 3px; text-align: left; }
+  .homepage-package-tiers button { grid-template-columns: minmax(0, 1fr); }
+  .homepage-package-tiers button em { grid-column: 1; grid-row: auto; }
 }
 .homepage-screen > .is-revealed {
   opacity: 1;
