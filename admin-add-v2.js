@@ -25,6 +25,8 @@ let state = {
   selected_items: [], // {item_id, qty, item_name, base_price}
   service_packages: [],
   service_package_preview: null,
+  service_package_preview_selection: null,
+  service_package_preview_request_id: 0,
   service_lines: [], // [{job_type, ac_type, btu, machine_count, wash_variant}]
   selected_slot_iso: "",
   selected_slot_key: "",
@@ -1360,6 +1362,43 @@ let previewTimer = null;
 
 function packageSelected() { return !!String(el("service_package_key")?.value || "").trim(); }
 
+function packagePreviewIsFresh() {
+  const selection = state.service_package_preview_selection;
+  return !!state.service_package_preview && !!selection
+    && selection.package_key === String(el("service_package_key")?.value || "")
+    && selection.tier_key === String(el("service_package_tier_key")?.value || "");
+}
+
+function invalidateServicePackagePreview({ loading = false } = {}) {
+  state.service_package_preview_request_id += 1;
+  state.service_package_preview = null;
+  state.service_package_preview_selection = null;
+  state.standard_price = 0;
+  state.normal_price = 0;
+  state.duration_min = 0;
+  state.effective_block_min = 0;
+  const btu = el("service_package_btu");
+  if (btu) btu.value = "";
+  const baseBtu = el("btu");
+  if (baseBtu) baseBtu.value = "";
+  const btuWrap = el("service_package_btu_wrap");
+  if (btuWrap) btuWrap.style.display = "none";
+  const panel = el("service_package_preview");
+  if (panel) {
+    panel.style.display = packageSelected() ? "" : "none";
+    panel.textContent = packageSelected()
+      ? (loading ? "Loading package price and duration..." : "Package price and duration unavailable")
+      : "";
+  }
+  ["pv_duration", "pv_block", "pv_price", "pv_normal_price", "pv_line_total"].forEach((id) => {
+    const node = el(id); if (node) node.textContent = "-";
+  });
+  resetScheduleStateForNewDate();
+  renderSlots();
+  const submit = el("btnSubmit");
+  if (submit) submit.disabled = packageSelected();
+}
+
 function setPackageControlsLocked(locked) {
   ["job_type", "ac_type", "btu", "machine_count", "override_price", "override_duration_min",
     "extras_select", "extras_qty", "btnAddExtra", "promotion_id"].forEach((id) => {
@@ -1381,10 +1420,16 @@ function renderPackageBtuOptions(constraints = {}) {
 async function previewServicePackage() {
   const packageKey = String(el("service_package_key")?.value || "");
   const tierKey = String(el("service_package_tier_key")?.value || "");
-  if (!packageKey || !tierKey) { state.service_package_preview = null; return; }
+  invalidateServicePackagePreview({ loading: !!(packageKey && tierKey) });
+  const requestId = state.service_package_preview_request_id;
+  if (!packageKey || !tierKey) return;
   const preview = await apiFetch("/admin/service-packages/preview", { method: "POST",
     body: JSON.stringify({ package_key: packageKey, tier_key: tierKey }) });
+  if (requestId !== state.service_package_preview_request_id
+      || packageKey !== String(el("service_package_key")?.value || "")
+      || tierKey !== String(el("service_package_tier_key")?.value || "")) return;
   state.service_package_preview = preview;
+  state.service_package_preview_selection = { package_key: packageKey, tier_key: tierKey };
   const c = preview.service.constraints;
   el("job_type").value = c.job_type; el("ac_type").value = c.ac_type;
   el("machine_count").value = String(preview.quantity);
@@ -1398,7 +1443,9 @@ async function previewServicePackage() {
   panel.textContent = `${preview.package_name} / ${preview.tier_name} | ${preview.service.service_name} | quantity ${preview.quantity} | duration ${preview.duration_minutes} min | fixed total ${preview.fixed_total_price} | BTU ${c.btu_min || "any"}-${c.btu_max || "any"} | redeem by ${preview.redeem_until || "no limit"}`;
   state.standard_price = Number(preview.fixed_total_price); state.normal_price = state.standard_price;
   state.duration_min = Number(preview.duration_minutes); state.effective_block_min = state.duration_min + Number(state.travel_buffer_min || 30);
-  setPackageControlsLocked(true); updateTotalPreview();
+  setPackageControlsLocked(true);
+  el("btnSubmit").disabled = false;
+  updateTotalPreview();
 }
 
 async function loadServicePackages() {
@@ -1419,7 +1466,7 @@ async function refreshPreviewDebounced() {
 
 async function refreshPreview() {
   if (packageSelected()) {
-    if (state.service_package_preview) {
+    if (packagePreviewIsFresh()) {
       el("pv_duration").textContent = String(state.duration_min);
       el("pv_block").textContent = String(state.effective_block_min);
       el("pv_price").textContent = fmtMoney(state.standard_price);
@@ -2822,6 +2869,11 @@ async function submitBooking() {
     showToast("กรอกข้อมูลบริการให้ครบก่อน", "error");
     return;
   }
+  if (packageSelected() && !packagePreviewIsFresh()) {
+    showToast("Wait for the selected package tier price and duration before booking", "error");
+    el("btnSubmit").disabled = true;
+    return;
+  }
   syncModesFromUI();
   const uiMode = (el('dispatch_mode_ui')?.value || 'normal').toString();
   const techSource = syncManualTechnicianSelection({ forSubmit: true });
@@ -2910,7 +2962,7 @@ async function submitBooking() {
   if (packageSelected()) {
     const preview = state.service_package_preview;
     const actualBtu = Number(el("service_package_btu")?.value || 0);
-    if (!preview || !actualBtu) {
+    if (!packagePreviewIsFresh() || !actualBtu) {
       showToast("Select a package tier and actual BTU before booking", "error");
       el("btnSubmit").disabled = false; return;
     }
@@ -3070,12 +3122,13 @@ function wireEvents() {
       option.textContent = `${item.tier_name} (${item.quantity} / ${item.fixed_total_price})`; tier.appendChild(option);
     }
     tier.disabled = !pkg;
-    state.service_package_preview = null;
-    el("service_package_preview").style.display = "none"; el("service_package_btu_wrap").style.display = "none";
+    invalidateServicePackagePreview();
     setPackageControlsLocked(!!pkg);
     if (!pkg) refreshPreviewDebounced();
   });
-  el("service_package_tier_key")?.addEventListener("change", () => previewServicePackage().then(refreshPreview).catch((e) => showToast(e.message, "error")));
+  el("service_package_tier_key")?.addEventListener("change", () => previewServicePackage().then(refreshPreview).catch((e) => {
+    showToast(e.message, "error");
+  }));
   el("service_package_btu")?.addEventListener("change", () => {
     el("btu").value = el("service_package_btu").value;
     refreshPreviewDebounced();

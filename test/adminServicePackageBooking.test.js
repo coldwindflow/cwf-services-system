@@ -67,3 +67,29 @@ test("Admin package UI sends stable keys and canonical availability inputs witho
   assert.match(js, /payload\.promotion_id = null/);
   assert.match(js, /Selected date is after the package redemption deadline/);
 });
+
+test("Admin package tier changes invalidate stale preview authority until the matching preview succeeds", () => {
+  const js = fs.readFileSync(path.join(__dirname, "../admin-add-v2.js"), "utf8");
+  const invalidate = js.slice(js.indexOf("function invalidateServicePackagePreview"), js.indexOf("function setPackageControlsLocked"));
+  const preview = js.slice(js.indexOf("async function previewServicePackage"), js.indexOf("async function loadServicePackages"));
+  const submit = js.slice(js.indexOf("async function submitBooking"), js.indexOf("function wireEvents"));
+  const wiring = js.slice(js.indexOf("function wireEvents"));
+
+  assert.match(invalidate, /service_package_preview = null/);
+  assert.match(invalidate, /service_package_preview_selection = null/);
+  assert.match(invalidate, /service_package_btu[\s\S]*value = ""/);
+  assert.match(invalidate, /resetScheduleStateForNewDate\(\)/);
+  assert.match(invalidate, /renderSlots\(\)/);
+  assert.match(invalidate, /submit\.disabled = packageSelected\(\)/);
+  assert.match(preview, /invalidateServicePackagePreview\(\{ loading: !!\(packageKey && tierKey\) \}\)/);
+  assert.match(preview, /requestId !== state\.service_package_preview_request_id/);
+  assert.match(preview, /packageKey !== String\(el\("service_package_key"\)/);
+  assert.match(preview, /tierKey !== String\(el\("service_package_tier_key"\)/);
+  assert.match(preview, /service_package_preview_selection = \{ package_key: packageKey, tier_key: tierKey \}/);
+  assert.match(preview, /renderPackageBtuOptions\(c\)/);
+  assert.match(preview, /preview\.duration_minutes/);
+  assert.match(preview, /preview\.fixed_total_price/);
+  assert.match(submit, /packageSelected\(\) && !packagePreviewIsFresh\(\)/);
+  assert.match(submit, /!packagePreviewIsFresh\(\) \|\| !actualBtu/);
+  assert.match(wiring, /service_package_tier_key[\s\S]*previewServicePackage\(\)/);
+});
