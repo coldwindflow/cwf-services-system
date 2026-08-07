@@ -167,9 +167,17 @@ test("saveCatalogItem guards against double submission", () => {
   assert.match(catalogJsSource, /isSaving = true;/);
 });
 
-test("admin-store-catalog.css exists and includes responsive rules for 320-360px without horizontal overflow", () => {
-  assert.match(catalogCssSource, /@media \(max-width: 360px\)/);
-  assert.match(catalogCssSource, /asc-item-card/);
+test("admin-store-catalog.css defines the page-local responsive modal contract", () => {
+  assert.match(catalogCssSource, /@media \(max-width: 640px\)[\s\S]*?\.asc-grid2\{ grid-template-columns:1fr; \}/);
+  assert.match(catalogCssSource, /\.cwf-modal\{[\s\S]*?max-height:calc\(100vh - 28px\);[\s\S]*?max-height:calc\(100dvh - 28px\);/);
+  assert.match(catalogCssSource, /\.cwf-modal-body\{[\s\S]*?overflow-x:hidden;[\s\S]*?overflow-y:auto;/);
+  assert.match(catalogCssSource, /\.cwf-modal-foot\{ padding-bottom:max\(14px, env\(safe-area-inset-bottom\)\); \}/);
+  assert.match(catalogCssSource, /\.cwf-modal input, \.cwf-modal select, \.cwf-modal textarea\{[\s\S]*?font-size:16px;/);
+});
+
+test("admin-store-catalog.html cache versions stay coherent with unchanged JavaScript", () => {
+  assert.match(catalogHtmlSource, /admin-store-catalog\.css\?v=20260808_service_packages_responsive_v2/);
+  assert.match(catalogHtmlSource, /admin-store-catalog\.js\?v=20260808_service_packages_th_v1/);
 });
 
 test("openCatalogModalForEdit populates cm_effective_from and cm_effective_to from raw pricing fields with fallback", () => {
@@ -379,8 +387,8 @@ test("gallery delete and set-primary actions ask for confirmation only on delete
 });
 
 test("admin-store-catalog.html keeps CSS cache and bumps JS cache for pricing safety", () => {
-  assert.match(catalogHtmlSource, /admin-store-catalog\.css\?v=20260808_service_packages/);
-  assert.match(catalogHtmlSource, /admin-store-catalog\.js\?v=20260808_service_packages/);
+  assert.match(catalogHtmlSource, /admin-store-catalog\.css\?v=20260808_service_packages_responsive_v2/);
+  assert.match(catalogHtmlSource, /admin-store-catalog\.js\?v=20260808_service_packages_th_v1/);
 });
 
 test("the item_category field is a service/product dropdown, not free text", () => {
