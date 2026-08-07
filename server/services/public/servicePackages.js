@@ -3,6 +3,7 @@
 const {
   ServicePackageResolutionError,
   buildSnapshot,
+  readSnapshot,
 } = require("../packages/servicePackageResolver");
 
 class PublicServicePackageError extends Error {
@@ -22,6 +23,7 @@ function isoInstant(value) {
 }
 
 function publicPreview(snapshot, metadata = {}) {
+  snapshot = readSnapshot(snapshot.snapshot || snapshot);
   const line = snapshot.service_lines[0];
   return {
     package_key: snapshot.package.key,
