@@ -54,6 +54,9 @@ const { pendingCustomerScheduledReservationSql } = require("./server/services/bo
 const { createBookingApprovalService } = require("./server/services/booking/bookingApprovalService");
 const { registerBookingApprovalRoutes } = require("./server/routes/admin/bookingApprovals");
 const { registerPublicCustomerBookingRoutes } = require("./server/routes/public/customerBookings");
+const { registerPublicServicePackageRoutes } = require("./server/routes/public/servicePackages");
+const { createServicePackageResolver } = require("./server/services/packages/servicePackageResolver");
+const { createPublicServicePackageService } = require("./server/services/public/servicePackages");
 const { registerAdminBookingRoutes } = require("./server/routes/admin/adminBookings");
 const { createTechnicianJobMoneyHelpers } = require("./server/technicianJobMoneySummary");
 const createSystemRoutes = require("./server/routes/system");
@@ -14123,6 +14126,7 @@ const bookingJobService = createBookingJobService({
   customerAvailability,
   publicCustomerAvailabilityDeps,
   findBestCustomerPromotion,
+  createServicePackageResolver: (db) => createServicePackageResolver({ db }),
   availabilityEngine: customerAvailability,
   urgentDispatchService,
   resolveCustomerUrgentCapability: () => urgentCapability.resolveUrgentCapability(pool),
@@ -24084,6 +24088,9 @@ registerAdminAvailabilityRoutes(app, {
 });
 
 registerPublicCustomerBookingRoutes(app, { service: bookingJobService });
+registerPublicServicePackageRoutes(app, {
+  service: createPublicServicePackageService({ resolver: createServicePackageResolver({ db: pool }) }),
+});
 
 
 

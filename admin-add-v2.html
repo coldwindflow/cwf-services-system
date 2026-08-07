@@ -294,6 +294,19 @@
         <!-- booking_mode UI moved to Section 4 only (reduce confusion) -->
       </div>
 <!-- MULTI-SERVICE (หลายรายการในใบงานเดียว) -->
+<div id="service_package_box" class="card card-lite" style="margin-top:12px">
+  <b>Service Package (optional)</b>
+  <div class="muted2 mini">Package totals, quantity, duration, and service rules come from the server. Packages cannot be mixed with ordinary lines, extras, overrides, or promotions.</div>
+  <div class="grid2" style="margin-top:10px">
+    <div><label>Package</label><select id="service_package_key"><option value="">No package</option></select></div>
+    <div><label>Tier</label><select id="service_package_tier_key" disabled><option value="">Select tier</option></select></div>
+  </div>
+  <div id="service_package_btu_wrap" style="display:none;margin-top:10px">
+    <label>Actual BTU *</label><select id="service_package_btu"><option value="">Select actual BTU</option></select>
+  </div>
+  <div id="service_package_preview" class="muted2" style="display:none;margin-top:10px"></div>
+</div>
+
 <div id="multi_service_box" class="card card-lite" style="margin-top:12px; display:none;">
   <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
     <div>
@@ -592,7 +605,7 @@
   </div>
 
   <script src="admin-v2-common.js?v=20260428_allpages_ui1"></script>
-  <script src="admin-add-v2.js?v=20260719_customer_booking_pr3_v1"></script>
+  <script src="admin-add-v2.js?v=20260807_admin_service_packages_v1"></script>
   <script src="admin-add-ai-intake-prefill.js?v=line-ai-prefill-real-v8"></script>
 </body>
 </html>

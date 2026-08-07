@@ -1,0 +1,70 @@
+name: CWF Home Staging
+
+on:
+  push:
+    branches:
+      - staging/home-server-test
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Operation to run
+        required: true
+        default: deploy
+        type: choice
+        options:
+          - deploy
+          - restart
+          - rollback
+          - status
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cwf-home-staging
+  cancel-in-progress: false
+
+jobs:
+  staging:
+    name: Staging operation
+    runs-on:
+      - self-hosted
+      - linux
+      - x64
+      - cwf-home
+    timeout-minutes: 60
+    steps:
+      - name: Auto deploy merged commit
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          sudo -n /usr/local/sbin/cwf-deployctl staging deploy "$GITHUB_SHA" | tee /tmp/cwf-staging-action.log
+          cat /tmp/cwf-staging-action.log >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Manual operation
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          CWF_ACTION: ${{ inputs.action }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          case "$CWF_ACTION" in
+            deploy)
+              sudo -n /usr/local/sbin/cwf-deployctl staging deploy | tee /tmp/cwf-staging-action.log
+              ;;
+            restart)
+              sudo -n /usr/local/sbin/cwf-deployctl staging restart | tee /tmp/cwf-staging-action.log
+              ;;
+            rollback)
+              sudo -n /usr/local/sbin/cwf-deployctl staging rollback | tee /tmp/cwf-staging-action.log
+              ;;
+            status)
+              sudo -n /usr/local/sbin/cwf-deployctl staging status | tee /tmp/cwf-staging-action.log
+              ;;
+            *)
+              echo "Unsupported action: $CWF_ACTION" >&2
+              exit 2
+              ;;
+          esac
+          cat /tmp/cwf-staging-action.log >> "$GITHUB_STEP_SUMMARY"
