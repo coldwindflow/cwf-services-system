@@ -3,6 +3,9 @@
 const repository = require("./servicePackageRepository");
 const { normalizeServiceType, normalizeAcType, normalizeWashVariantLabel, normalizeWashKey } = require("../../normalizers");
 
+const SUPPORTED_JOB_TYPES = new Set(["wash", "repair", "install"].map(normalizeServiceType));
+const SUPPORTED_AC_TYPES = new Set(["wall", "cassette", "floor", "ceiling"].map(normalizeAcType));
+
 class ServicePackageResolutionError extends Error {
   constructor(code, message) { super(message); this.name = "ServicePackageResolutionError"; this.code = code; }
 }
@@ -31,7 +34,8 @@ function serviceConstraints(packageRow) {
   const washVariant = packageRow.wash_variant == null ? null : normalizeWashVariantLabel(packageRow.wash_variant);
   const btuMin = positiveIntegerOrNull(packageRow.btu_min, "btu_min");
   const btuMax = positiveIntegerOrNull(packageRow.btu_max, "btu_max");
-  if (!jobType || !acType || (btuMin != null && btuMax != null && btuMax < btuMin)) {
+  if (!SUPPORTED_JOB_TYPES.has(jobType) || !SUPPORTED_AC_TYPES.has(acType)
+      || (btuMin != null && btuMax != null && btuMax < btuMin)) {
     fail("INVALID_SERVICE_CONSTRAINTS", "Package service constraints are invalid");
   }
   if (normalizeServiceType("wash") === jobType && normalizeAcType("wall") === acType && (!washVariant || !normalizeWashKey(washVariant))) {
@@ -58,10 +62,26 @@ function buildSnapshot(packageRow, tierRow) {
 }
 
 function readSnapshot(snapshot) {
-  const value = typeof snapshot === "string" ? JSON.parse(snapshot) : snapshot;
-  if (!value || value.schema_version !== 1 || !value.package || !value.tier
-      || !Array.isArray(value.service_lines) || value.service_lines.length !== 1
-      || !/^\d+\.\d{2}$/.test(String(value.fixed_total_price))) {
+  let value;
+  try {
+    value = typeof snapshot === "string" ? JSON.parse(snapshot) : snapshot;
+    const line = value?.service_lines?.[0];
+    const constraints = line?.service_constraints;
+    const totalMatch = typeof value?.fixed_total_price === "string"
+      ? /^(\d+)\.(\d{2})$/.exec(value.fixed_total_price)
+      : null;
+    if (!value || value.schema_version !== 1 || !value.package || !value.tier
+        || !Array.isArray(value.service_lines) || value.service_lines.length !== 1
+        || !totalMatch || (BigInt(totalMatch[1]) === 0n && totalMatch[2] === "00")
+        || !Number.isInteger(line.quantity) || line.quantity <= 0
+        || !Number.isInteger(line.unit_duration_minutes) || line.unit_duration_minutes <= 0
+        || !constraints || typeof constraints !== "object" || Array.isArray(constraints)
+        || (constraints.btu_min != null && (!Number.isInteger(constraints.btu_min) || constraints.btu_min <= 0))
+        || (constraints.btu_max != null && (!Number.isInteger(constraints.btu_max) || constraints.btu_max <= 0))) {
+      throw new Error("invalid snapshot fields");
+    }
+    serviceConstraints(constraints);
+  } catch (_) {
     fail("INVALID_PACKAGE_SNAPSHOT", "Package snapshot is invalid or unsupported");
   }
   return structuredClone(value);

@@ -97,3 +97,31 @@ test("historical snapshot reads do not re-resolve current package data", () => {
   assert.equal(historical.fixed_total_price, "1399.50");
   assert.equal(historical.service_lines[0].service_constraints.btu_max, 12000);
 });
+
+test("historical snapshot reads reject corrupted version-1 package semantics", () => {
+  const valid = {
+    schema_version: 1, package: { id: "10", key: "old", name: "Old" }, tier: { id: "21", key: "old", name: "Old" },
+    service_lines: [{ service_key: "old", service_name: "Old", quantity: 1, unit_duration_minutes: 30,
+      service_constraints: { job_type: "wash", ac_type: "wall", wash_variant: "premium", btu_min: null, btu_max: 12000 } }],
+    fixed_total_price: "1399.50", redeem_until: null,
+  };
+  const corruptions = [
+    (snapshot) => { snapshot.fixed_total_price = "0.00"; },
+    (snapshot) => { snapshot.service_lines[0].quantity = 0; },
+    (snapshot) => { snapshot.service_lines[0].quantity = -1; },
+    (snapshot) => { snapshot.service_lines[0].quantity = 1.5; },
+    (snapshot) => { snapshot.service_lines[0].unit_duration_minutes = 0; },
+    (snapshot) => { snapshot.service_lines[0].unit_duration_minutes = -30; },
+    (snapshot) => { snapshot.service_lines[0].unit_duration_minutes = 1.5; },
+    (snapshot) => { snapshot.service_lines[0].service_constraints.btu_min = 0; },
+    (snapshot) => { snapshot.service_lines[0].service_constraints.btu_min = 18000; },
+    (snapshot) => { snapshot.service_lines[0].service_constraints.job_type = "unsupported"; },
+    (snapshot) => { snapshot.service_lines[0].service_constraints.ac_type = "unsupported"; },
+    (snapshot) => { snapshot.service_lines[0].service_constraints.wash_variant = "unsupported"; },
+  ];
+  for (const corrupt of corruptions) {
+    const snapshot = structuredClone(valid);
+    corrupt(snapshot);
+    assert.throws(() => readSnapshot(snapshot), { code: "INVALID_PACKAGE_SNAPSHOT" });
+  }
+});
