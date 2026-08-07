@@ -12,9 +12,19 @@ const catalogCssSource = fs.readFileSync(path.join(__dirname, "..", "admin-store
 const VOID_TAGS = new Set(["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"]);
 
 function extractCatalogModalHtml() {
-  const m = catalogJsSource.match(/wrap\.innerHTML = `([\s\S]*?)`;\n  document\.body\.appendChild/);
+  const ensureCatalogModal = extractFunctionMatch("function ensureCatalogModal()")?.[0] || "";
+  const m = ensureCatalogModal.match(/wrap\.innerHTML = `([\s\S]*?)`;\r?\n  document\.body\.appendChild/);
   if (!m) throw new Error("could not find ensureCatalogModal's wrap.innerHTML template");
   return m[1];
+}
+
+function extractFunctionMatch(signature) {
+  const start = catalogJsSource.indexOf(signature);
+  if (start < 0) return null;
+  const tail = catalogJsSource.slice(start);
+  const closing = tail.match(/^}\r?$/m);
+  if (!closing) return null;
+  return [tail.slice(0, closing.index + closing[0].length)];
 }
 
 // Walks the modal's HTML template as a real tag stack (not just text matching), so a
@@ -143,7 +153,7 @@ test("catalog list renders loading, empty, and error states", () => {
 });
 
 test("image upload only happens after the item is saved and an itemId exists", () => {
-  const saveFnMatch = catalogJsSource.match(/async function saveCatalogItem\(\)[\s\S]*?\n}\n/);
+  const saveFnMatch = extractFunctionMatch("async function saveCatalogItem()");
   assert.ok(saveFnMatch, "saveCatalogItem function not found");
   const body = saveFnMatch[0];
   const saveCallIndex = body.search(/await apiFetch\(`\/admin\/catalog\/items/);
@@ -183,7 +193,7 @@ test("openCatalogModalForEdit reads raw pricing_* fields first, falling back to 
 });
 
 test("openCatalogModalForEdit never assigns blank/empty values when raw pricing data exists (no data loss on open+save)", () => {
-  const fnMatch = catalogJsSource.match(/function openCatalogModalForEdit\(itemId\)[\s\S]*?\n}\n/);
+  const fnMatch = extractFunctionMatch("function openCatalogModalForEdit(itemId)");
   assert.ok(fnMatch, "openCatalogModalForEdit function not found");
   const body = fnMatch[0];
   assert.doesNotMatch(body, /el\("cm_normal_price"\)\.value = "";/);
@@ -198,8 +208,8 @@ test("catalogModalPayload sends pricing.pricing_is_active, not pricing.is_active
 });
 
 test("the 7-section reorganization does not change which element id backs each field: every id read in catalogModalPayload is also written in openCatalogModalForEdit, so reordering sections never drops a value on open+save", () => {
-  const payloadMatch = catalogJsSource.match(/function catalogModalPayload\(\)[\s\S]*?\n}\n/);
-  const editMatch = catalogJsSource.match(/function openCatalogModalForEdit\(itemId\)[\s\S]*?\n}\n/);
+  const payloadMatch = extractFunctionMatch("function catalogModalPayload()");
+  const editMatch = extractFunctionMatch("function openCatalogModalForEdit(itemId)");
   assert.ok(payloadMatch, "catalogModalPayload function not found");
   assert.ok(editMatch, "openCatalogModalForEdit function not found");
   const payloadIds = [...payloadMatch[0].matchAll(/el\("(cm_[a-z_]+)"\)/g)].map((m) => m[1]);
@@ -217,7 +227,7 @@ test("no two distinct DOM elements in the modal share the same id (no duplicate 
 });
 
 test("hidden/collapsed fields (price-rule-matching accordion, booking advanced subsection) are populated on edit just like visible fields, so collapsing them never clears stored values", () => {
-  const editMatch = catalogJsSource.match(/function openCatalogModalForEdit\(itemId\)[\s\S]*?\n}\n/);
+  const editMatch = extractFunctionMatch("function openCatalogModalForEdit(itemId)");
   assert.ok(editMatch, "openCatalogModalForEdit function not found");
   const body = editMatch[0];
   for (const id of ["cm_job_category", "cm_ac_type", "cm_wash_variant", "cm_btu_min", "cm_btu_max", "cm_booking_service_key"]) {
@@ -241,7 +251,7 @@ test("modal includes booking_mode and is_featured under their own sections, plus
 });
 
 test("booking section shows only booking_mode/ac_type/btu/wash_variant prominently; service_key is tucked into a collapsed Advanced subsection", () => {
-  const sectionMatch = catalogJsSource.match(/4\) การจอง[\s\S]*?<\/div>\n\n        <div class="asc-section">\n          <div class="asc-section-title">5\)/);
+  const sectionMatch = extractCatalogModalHtml().match(/4\) การจอง[\s\S]*?<\/div>\r?\n\r?\n        <div class="asc-section">\r?\n          <div class="asc-section-title">5\)/);
   assert.ok(sectionMatch, "booking section not found");
   const section = sectionMatch[0];
   const detailsMatch = section.match(/<details class="asc-booking-advanced">[\s\S]*?<\/details>/);
@@ -369,8 +379,8 @@ test("gallery delete and set-primary actions ask for confirmation only on delete
 });
 
 test("admin-store-catalog.html keeps CSS cache and bumps JS cache for pricing safety", () => {
-  assert.match(catalogHtmlSource, /admin-store-catalog\.css\?v=20260702_cat_v2/);
-  assert.match(catalogHtmlSource, /admin-store-catalog\.js\?v=20260708_price_rule_safety_v3/);
+  assert.match(catalogHtmlSource, /admin-store-catalog\.css\?v=20260808_service_packages/);
+  assert.match(catalogHtmlSource, /admin-store-catalog\.js\?v=20260808_service_packages/);
 });
 
 test("the item_category field is a service/product dropdown, not free text", () => {
@@ -568,10 +578,12 @@ test("loadReviews sends status/source as server-side query params (so unassigned
     console,
   };
   vm.createContext(context);
-  const effectiveIdFn = catalogJsSource.match(/function reviewEffectiveItemId\(review\)[\s\S]*?\n}\n/)[0];
-  const effectiveNameFn = catalogJsSource.match(/function reviewEffectiveItemName\(review\)[\s\S]*?\n}\n/)[0];
-  const fnSource = catalogJsSource.match(/function renderReviewItemFilterOptions\(\)[\s\S]*?\n}\n\nasync function loadReviews\(\)[\s\S]*?\n}\n/)[0];
-  vm.runInContext(`let reviewItems = [];\n${effectiveIdFn}\n${effectiveNameFn}\n${fnSource}`, context);
+  const effectiveIdFn = extractFunctionMatch("function reviewEffectiveItemId(review)")[0];
+  const effectiveNameFn = extractFunctionMatch("function reviewEffectiveItemName(review)")[0];
+  const renderFilterFn = extractFunctionMatch("function renderReviewItemFilterOptions()")[0];
+  const renderListFn = extractFunctionMatch("function renderReviewList()")[0];
+  const loadReviewsFn = extractFunctionMatch("async function loadReviews()")[0];
+  vm.runInContext(`let reviewItems = [];\n${effectiveIdFn}\n${effectiveNameFn}\n${renderFilterFn}\n${renderListFn}\n${loadReviewsFn}`, context);
 
   await vm.runInContext("loadReviews()", context);
   assert.equal(calls[0], "/admin/catalog/reviews", "no filters selected must not send an empty querystring");
@@ -593,7 +605,7 @@ test("status/source filter selects re-fetch from the server (loadReviews), item 
 });
 
 test("setReviewModerationStatus confirms before acting, PATCHes the review, and updates state without a full reload", () => {
-  const fnMatch = catalogJsSource.match(/async function setReviewModerationStatus\(reviewId, nextStatus\)[\s\S]*?\n}\n/);
+  const fnMatch = extractFunctionMatch("async function setReviewModerationStatus(reviewId, nextStatus)");
   assert.ok(fnMatch, "setReviewModerationStatus function not found");
   const body = fnMatch[0];
   assert.match(body, /confirm\(/);
@@ -603,7 +615,7 @@ test("setReviewModerationStatus confirms before acting, PATCHes the review, and 
 });
 
 test("review action buttons never expose customer phone/email/internal IDs beyond completed_job_id and a display identity", () => {
-  const fnMatch = catalogJsSource.match(/function reviewCardHtml\(review\)[\s\S]*?\n}\n/);
+  const fnMatch = extractFunctionMatch("function reviewCardHtml(review)");
   assert.ok(fnMatch, "reviewCardHtml function not found");
   const body = fnMatch[0];
   assert.doesNotMatch(body, /\bphone\b/i);
@@ -613,7 +625,7 @@ test("review action buttons never expose customer phone/email/internal IDs beyon
 });
 
 test("review action buttons support approve/reject/hide/restore-to-pending depending on current status", () => {
-  const fnMatch = catalogJsSource.match(/function reviewActionButtons\(review\)[\s\S]*?\n}\n/);
+  const fnMatch = extractFunctionMatch("function reviewActionButtons(review)");
   assert.ok(fnMatch, "reviewActionButtons function not found");
   const body = fnMatch[0];
   assert.match(body, /"approved"/);
