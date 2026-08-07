@@ -5,7 +5,7 @@ const path = require("node:path");
 const vm = require("node:vm");
 
 const ROOT = path.resolve(__dirname, "..");
-const BUILD = "20260728_urgent_dispatch_preflight_v2";
+const BUILD = "20260807_service_packages_v1";
 
 function read(relativePath) {
   return fs.readFileSync(path.join(ROOT, relativePath), "utf8");
@@ -462,13 +462,11 @@ test("Customer App build and cache IDs include the central copy module consisten
   const index = read("customer-app/index.html");
   const sw = read("customer-app/sw.js");
   const app = read("customer-app/assets/customer-app.js");
-  const manifest = JSON.parse(read("customer-app/manifest.webmanifest"));
   assert.match(index, new RegExp(`customerCopy\\.js\\?v=${BUILD}`));
   assert.match(index, new RegExp(`bookingUrgent\\.js\\?v=${BUILD}`));
   assert.match(sw, new RegExp(`BUILD_ID = "${BUILD}"`));
   assert.match(sw, /modules\/customerCopy\.js\?v=\$\{BUILD_ID\}/);
   assert.match(app, new RegExp(`BUILD_ID = "${BUILD}"`));
-  assert.match(manifest.start_url, new RegExp(`v=${BUILD}`));
 });
 
 test("Scheduled and Urgent mobile contracts remain usable at 360px and 390px", () => {

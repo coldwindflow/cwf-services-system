@@ -87,6 +87,10 @@
       maps_url: "",
       customer_note: "",
       job_zone: "",
+      service_package_key: "",
+      service_package_tier_key: "",
+      service_package_btu: "",
+      service_package_preview: null,
     };
   }
 
@@ -181,6 +185,8 @@
       error: "",
     },
     scheduledPreview: {
+      packages: { status: "idle", items: [], error: "" },
+      package: { status: "idle", data: null, error: "", verified: false },
       pricing: { status: "idle", data: null, error: "" },
       availability: { status: "idle", data: null, error: "", query_key: "", loaded_at: "" },
       calendar: { status: "idle", data: null, error: "", query_key: "", loaded_at: "" },
@@ -230,6 +236,8 @@
       this.draft.scheduled = defaultScheduledDraft();
       this.scheduledWizard = { step: 1, maxStep: MAX_SCHEDULED_STEP, error: "" };
       this.scheduledPreview = {
+        packages: { status: "idle", items: [], error: "" },
+        package: { status: "idle", data: null, error: "", verified: false },
         pricing: { status: "idle", data: null, error: "" },
         availability: { status: "idle", data: null, error: "", query_key: "", loaded_at: "" },
         calendar: { status: "idle", data: null, error: "", query_key: "", loaded_at: "" },
@@ -282,6 +290,18 @@
         restored.btu = String(first.btu || 12000);
         restored.machine_count = Math.max(1, Math.min(10, Number(first.machine_count || 1)));
         restored.allow_time_proposal = restored.allow_time_proposal === true;
+        restored.service_package_key = String(restored.service_package_key || "").trim();
+        restored.service_package_tier_key = String(restored.service_package_tier_key || "").trim();
+        restored.service_package_btu = String(restored.service_package_btu || "").trim();
+        // Persisted display metadata is never authoritative for a new booking.
+        restored.service_package_preview = null;
+        if (!restored.service_package_key || !restored.service_package_tier_key) {
+          restored.service_package_key = "";
+          restored.service_package_tier_key = "";
+          restored.service_package_btu = "";
+        } else {
+          restored.services = [];
+        }
         if (!restored.date || restored.date < bangkokTodayYmd()) {
           restored.date = bangkokTodayYmd();
           restored.selectedSlot = null;
