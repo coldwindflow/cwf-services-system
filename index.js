@@ -58,6 +58,8 @@ const { registerPublicServicePackageRoutes } = require("./server/routes/public/s
 const { createServicePackageResolver } = require("./server/services/packages/servicePackageResolver");
 const { createPublicServicePackageService } = require("./server/services/public/servicePackages");
 const { registerAdminBookingRoutes } = require("./server/routes/admin/adminBookings");
+const { createServicePackageCatalogService } = require("./server/services/packages/servicePackageCatalogService");
+const { createServicePackageCatalogRoutes } = require("./server/routes/admin/servicePackageCatalog");
 const { createTechnicianJobMoneyHelpers } = require("./server/technicianJobMoneySummary");
 const createSystemRoutes = require("./server/routes/system");
 const createTechnicianDirectoryRoutes = require("./server/routes/users/technicians");
@@ -12973,6 +12975,10 @@ app.use(createCatalogItemRoutes({
   buildStartIntervalsByCollision,
   toMin,
   minToHHMM,
+}));
+app.use(createServicePackageCatalogRoutes({
+  service: createServicePackageCatalogService({ pool }),
+  requireAdminSession,
 }));
 app.use(createCatalogReviewRoutes({ pool, requireCustomerJwt, requireAdminSession }));
 app.use(createHomepageRoutes({ pool, requireAdminSession, requireCustomerJwt, upload, cloudinaryUploadBuffer, cloudinaryDestroyPublicId }));
