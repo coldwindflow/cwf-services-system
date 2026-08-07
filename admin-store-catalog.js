@@ -10,6 +10,9 @@ let galleryUploading = false;
 let galleryUploadQueue = [];
 let galleryPickNotice = "";
 let deleteModalItemId = null;
+let servicePackages = [];
+let editingPackageKey = null;
+let packageTierDrafts = [];
 const BOOKING_MODES = ["bookable", "contact_admin", "purchase"];
 // Must mirror the backend's MAX_CATALOG_IMAGES_PER_ITEM (server/routes/catalog/items.js)
 const MAX_GALLERY_IMAGES = 4;
@@ -1073,6 +1076,186 @@ function bindCatalogListActions() {
   });
 }
 
+/* ---------- Service Package catalog (separate pricing domain) ---------- */
+
+function packageLifecycleLabel(status) {
+  return ({ draft: "Draft", disabled: "Disabled", hidden: "Hidden", upcoming: "Upcoming", "on-sale": "On sale",
+    "sale-ended": "Sale ended", "redeem-ended": "Redeem ended" })[status] || "Draft";
+}
+
+function packageJobTypeInput(value) {
+  const text = String(value || "").toLowerCase();
+  if (text.includes("ล้าง") || text.includes("wash")) return "wash";
+  if (text.includes("ซ่อม") || text.includes("repair")) return "repair";
+  return "install";
+}
+function packageAcTypeInput(value) {
+  const text = String(value || "").toLowerCase();
+  if (text.includes("ผนัง") || text.includes("wall")) return "wall";
+  if (text.includes("สี่ทิศ") || text.includes("cassette")) return "cassette";
+  if (text.includes("แขวน") || text.includes("floor")) return "floor";
+  return "ceiling";
+}
+function packageWashVariantInput(value) {
+  const text = String(value || "").toLowerCase();
+  if (text.includes("พรีเมียม") || text.includes("premium")) return "premium";
+  if (text.includes("แขวนคอยล์") || text.includes("coil")) return "coil";
+  if (text.includes("ตัดล้าง") || text.includes("overhaul")) return "overhaul";
+  if (text.includes("ธรรมดา") || text.includes("normal")) return "normal";
+  return "";
+}
+
+function dateTimeLocalValue(value) {
+  if (!value) return "";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 16);
+}
+
+function ensureCreateTypeChooser() {
+  if (el("catalog_type_backdrop")) return;
+  const wrap = document.createElement("div");
+  wrap.innerHTML = `<div id="catalog_type_backdrop" class="cwf-modal-backdrop hidden"><div class="cwf-modal asc-type-modal">
+    <div class="cwf-modal-head"><div class="cwf-modal-title">Choose item type</div></div>
+    <div class="cwf-modal-body"><p>Type is permanent after the item is saved.</p>
+      <button id="new_ordinary_item" class="secondary asc-type-choice" type="button">Ordinary catalog item</button>
+      <button id="new_package_item" class="primary asc-type-choice" type="button">Service Package promotion</button></div>
+    <div class="cwf-modal-foot"><button id="new_type_cancel" class="secondary" type="button">Cancel</button></div>
+  </div></div>`;
+  document.body.appendChild(wrap.firstElementChild);
+  el("new_ordinary_item").addEventListener("click", () => { el("catalog_type_backdrop").classList.add("hidden"); openCatalogModalForNew(); });
+  el("new_package_item").addEventListener("click", () => { el("catalog_type_backdrop").classList.add("hidden"); openPackageModal(); });
+  el("new_type_cancel").addEventListener("click", () => el("catalog_type_backdrop").classList.add("hidden"));
+}
+
+function openCreateTypeChooser() {
+  ensureCreateTypeChooser();
+  el("catalog_type_backdrop").classList.remove("hidden");
+}
+
+function ensurePackageModal() {
+  if (el("package_modal_backdrop")) return;
+  const wrap = document.createElement("div");
+  wrap.innerHTML = `<div id="package_modal_backdrop" class="cwf-modal-backdrop hidden"><div class="cwf-modal">
+    <div class="cwf-modal-head"><div id="package_modal_title" class="cwf-modal-title">New Service Package</div><button id="package_modal_close" class="cwf-modal-close" type="button">×</button></div>
+    <div class="cwf-modal-body">
+      <div class="asc-section"><div class="asc-section-title">Package identity</div>
+        <div class="asc-field"><label>Item type</label><input value="Service Package promotion" disabled></div>
+        <div id="pm_key_field" class="asc-field hidden"><label>Package key (server-controlled)</label><input id="pm_package_key" disabled></div>
+        <div class="asc-field"><label>Display name *</label><input id="pm_display_name"></div>
+        <div class="asc-field"><label>Description</label><textarea id="pm_description" rows="3"></textarea></div>
+        <div class="asc-grid2"><div class="asc-field"><label>Service key *</label><input id="pm_service_key"></div><div class="asc-field"><label>Service name *</label><input id="pm_service_name"></div></div>
+      </div>
+      <div class="asc-section"><div class="asc-section-title">Server-enforced service constraints</div>
+        <div class="asc-grid2"><div class="asc-field"><label>Job type *</label><select id="pm_job_type"><option value="wash">Wash</option><option value="repair">Repair</option><option value="install">Install</option></select></div>
+        <div class="asc-field"><label>AC type *</label><select id="pm_ac_type"><option value="wall">Wall</option><option value="cassette">Cassette</option><option value="floor">Floor/Hanging</option><option value="ceiling">Concealed ceiling</option></select></div></div>
+        <div class="asc-field"><label>Wash variant (required for wall wash)</label><select id="pm_wash_variant"><option value="">None</option><option value="normal">Normal wash</option><option value="premium">Premium wash</option><option value="coil">Coil wash</option><option value="overhaul">Overhaul wash</option></select></div>
+        <div class="asc-grid2"><div class="asc-field"><label>BTU min</label><input id="pm_btu_min" type="number" min="1" step="1"></div><div class="asc-field"><label>BTU max</label><input id="pm_btu_max" type="number" min="1" step="1"></div></div>
+        <div class="asc-field"><label>Duration per service unit (minutes) *</label><input id="pm_duration" type="number" min="1" step="1"></div>
+      </div>
+      <div class="asc-section"><div class="asc-section-title">Sale and redemption lifecycle</div>
+        <div class="asc-grid2"><div class="asc-field"><label>Sell start</label><input id="pm_sell_start" type="datetime-local"></div><div class="asc-field"><label>Sell end</label><input id="pm_sell_end" type="datetime-local"></div></div>
+        <div class="asc-field"><label>Redeem until</label><input id="pm_redeem_until" type="datetime-local"></div>
+        <div class="asc-grid2"><div class="asc-field"><label>Active</label><select id="pm_active"><option value="0">Disabled</option><option value="1">Active</option></select></div><div class="asc-field"><label>Customer visible</label><select id="pm_visible"><option value="0">Hidden</option><option value="1">Visible</option></select></div></div>
+      </div>
+      <div class="asc-section"><div class="asc-section-title">Package tiers</div><div id="pm_tiers"></div><button id="pm_add_tier" class="secondary btn-small" type="button">+ Add tier</button></div>
+      <div id="package_modal_error" class="asc-modal-error"></div>
+    </div><div class="cwf-modal-foot"><button id="package_modal_cancel" class="secondary" type="button">Cancel</button><button id="package_modal_save" class="primary" type="button">Save package</button></div>
+  </div></div>`;
+  document.body.appendChild(wrap.firstElementChild);
+  el("package_modal_close").addEventListener("click", closePackageModal);
+  el("package_modal_cancel").addEventListener("click", closePackageModal);
+  el("package_modal_save").addEventListener("click", saveServicePackage);
+  el("pm_add_tier").addEventListener("click", () => { packageTierDrafts.push({ display_name: "", service_quantity: 1, fixed_total_price: "", sort_order: packageTierDrafts.length, is_active: true }); renderPackageTiers(); });
+  el("pm_tiers").addEventListener("input", updatePackageTierDraft);
+  el("pm_tiers").addEventListener("change", updatePackageTierDraft);
+  el("pm_tiers").addEventListener("click", (event) => { const button = event.target.closest("[data-remove-tier]"); if (!button) return; packageTierDrafts.splice(Number(button.dataset.removeTier), 1); renderPackageTiers(); });
+}
+
+function renderPackageTiers() {
+  el("pm_tiers").innerHTML = packageTierDrafts.map((tier, i) => `<div class="asc-package-tier" data-tier-index="${i}">
+    ${tier.tier_key ? `<div class="muted2 mini">Existing tier key is fixed</div>` : `<div class="muted2 mini">New tier key will be generated by the server</div>`}
+    <div class="asc-grid2"><div class="asc-field"><label>Display name *</label><input data-tier-field="display_name" value="${escapeHtml(tier.display_name)}"></div><div class="asc-field"><label>Quantity *</label><input data-tier-field="service_quantity" type="number" min="1" step="1" value="${tier.service_quantity}"></div></div>
+    <div class="asc-grid2"><div class="asc-field"><label>Fixed total (exact 2 decimals) *</label><input data-tier-field="fixed_total_price" inputmode="decimal" value="${escapeHtml(tier.fixed_total_price)}"></div><div class="asc-field"><label>Sort order</label><input data-tier-field="sort_order" type="number" step="1" value="${tier.sort_order}"></div></div>
+    <div class="asc-grid2"><div class="asc-field"><label>Status</label><select data-tier-field="is_active"><option value="1" ${tier.is_active ? "selected" : ""}>Active</option><option value="0" ${tier.is_active ? "" : "selected"}>Inactive</option></select></div><div><button class="secondary btn-small" data-remove-tier="${i}" type="button">Omit / deactivate</button></div></div>
+  </div>`).join("") || `<div class="muted2 mini">No tiers. Draft packages may be saved without tiers.</div>`;
+}
+
+function updatePackageTierDraft(event) {
+  const row = event.target.closest("[data-tier-index]");
+  const field = event.target.dataset.tierField;
+  if (!row || !field) return;
+  const tier = packageTierDrafts[Number(row.dataset.tierIndex)];
+  tier[field] = field === "is_active" ? event.target.value === "1" : event.target.value;
+}
+
+function openPackageModal(packageKey = null) {
+  ensurePackageModal();
+  editingPackageKey = packageKey;
+  const item = packageKey ? servicePackages.find((p) => p.package_key === packageKey) : null;
+  el("package_modal_title").textContent = item ? `Edit ${item.display_name}` : "New Service Package";
+  el("pm_key_field").classList.toggle("hidden", !item);
+  el("pm_package_key").value = item?.package_key || "";
+  for (const [id, value] of Object.entries({ pm_display_name: item?.display_name, pm_description: item?.description,
+    pm_service_key: item?.service_key, pm_service_name: item?.service_name, pm_job_type: item ? packageJobTypeInput(item.job_type) : "wash",
+    pm_ac_type: item ? packageAcTypeInput(item.ac_type) : "wall", pm_wash_variant: item ? packageWashVariantInput(item.wash_variant) : "", pm_btu_min: item?.btu_min,
+    pm_btu_max: item?.btu_max, pm_duration: item?.service_unit_duration_minutes,
+    pm_sell_start: dateTimeLocalValue(item?.sell_start_at), pm_sell_end: dateTimeLocalValue(item?.sell_end_at),
+    pm_redeem_until: dateTimeLocalValue(item?.redeem_until), pm_active: item?.is_active ? "1" : "0", pm_visible: item?.is_customer_visible ? "1" : "0" })) el(id).value = value == null ? "" : value;
+  packageTierDrafts = (item?.tiers || []).map((tier) => ({ ...tier }));
+  if (!item) packageTierDrafts.push({ display_name: "", service_quantity: 1, fixed_total_price: "", sort_order: 0, is_active: true });
+  renderPackageTiers();
+  el("package_modal_error").style.display = "none";
+  el("package_modal_backdrop").classList.remove("hidden");
+}
+
+function closePackageModal() { if (!isSaving) el("package_modal_backdrop").classList.add("hidden"); }
+function packageDateValue(id) { const value = el(id).value; return value ? new Date(value).toISOString() : null; }
+function packagePayload() {
+  const optionalInt = (id) => el(id).value === "" ? null : Number(el(id).value);
+  return { display_name: el("pm_display_name").value.trim(), description: el("pm_description").value.trim() || null,
+    service_key: el("pm_service_key").value.trim(), service_name: el("pm_service_name").value.trim(),
+    job_type: el("pm_job_type").value, ac_type: el("pm_ac_type").value, wash_variant: el("pm_wash_variant").value || null,
+    btu_min: optionalInt("pm_btu_min"), btu_max: optionalInt("pm_btu_max"), service_unit_duration_minutes: Number(el("pm_duration").value),
+    sell_start_at: packageDateValue("pm_sell_start"), sell_end_at: packageDateValue("pm_sell_end"), redeem_until: packageDateValue("pm_redeem_until"),
+    is_active: el("pm_active").value === "1", is_customer_visible: el("pm_visible").value === "1",
+    tiers: packageTierDrafts.map((tier) => ({ ...(tier.tier_key ? { tier_key: tier.tier_key } : {}), display_name: String(tier.display_name).trim(),
+      service_quantity: Number(tier.service_quantity), fixed_total_price: String(tier.fixed_total_price).trim(), sort_order: Number(tier.sort_order), is_active: tier.is_active })) };
+}
+
+async function saveServicePackage() {
+  if (isSaving) return;
+  isSaving = true; el("package_modal_save").disabled = true;
+  const box = el("package_modal_error"); box.style.display = "none";
+  try {
+    const url = editingPackageKey ? `/admin/service-packages/catalog/${encodeURIComponent(editingPackageKey)}` : "/admin/service-packages/catalog";
+    await apiFetch(url, { method: editingPackageKey ? "PATCH" : "POST", body: JSON.stringify(packagePayload()) });
+    el("package_modal_backdrop").classList.add("hidden"); await loadServicePackages(); showToast("Service Package saved", "success");
+  } catch (error) { box.textContent = error.message || "Unable to save package"; box.style.display = "block"; }
+  finally { isSaving = false; el("package_modal_save").disabled = false; }
+}
+
+function renderServicePackages() {
+  const box = el("package_catalog_list");
+  box.innerHTML = servicePackages.length ? servicePackages.map((item) => `<div class="asc-item-card">
+    <div class="asc-item-main"><div class="asc-item-title">${escapeHtml(item.display_name)} <span class="asc-badge asc-package-badge">Service Package</span></div>
+      <div class="asc-item-meta">${escapeHtml(item.service_name)} · ${escapeHtml(item.job_type)} · ${escapeHtml(item.ac_type)}</div>
+      <div class="asc-item-meta">${item.tiers.length} tiers · ${item.service_unit_duration_minutes} min/unit</div>
+      <div class="asc-badges"><span class="asc-badge asc-lifecycle-${escapeHtml(item.lifecycle_status)}">${packageLifecycleLabel(item.lifecycle_status)}</span></div></div>
+    <div class="asc-item-actions"><button class="secondary btn-small" data-edit-package="${escapeHtml(item.package_key)}" type="button">Edit</button></div></div>`).join("") : `<div class="asc-empty">No Service Package promotions yet.</div>`;
+}
+
+async function loadServicePackages() {
+  const box = el("package_catalog_list"); box.innerHTML = `<div class="asc-loading">Loading packages...</div>`;
+  try { const items = await apiFetch("/admin/service-packages/catalog"); servicePackages = Array.isArray(items) ? items : []; renderServicePackages(); }
+  catch (error) { box.innerHTML = `<div class="asc-error">${escapeHtml(error.message || "Unable to load packages")}</div>`; }
+}
+
+function bindServicePackageActions() {
+  el("package_catalog_list").addEventListener("click", (event) => { const button = event.target.closest("[data-edit-package]"); if (button) openPackageModal(button.dataset.editPackage); });
+}
+
 /* ---------- Review moderation ---------- */
 
 let reviewItems = [];
@@ -1362,12 +1545,15 @@ function bindReviewListActions() {
 
 document.addEventListener("DOMContentLoaded", () => {
   bindCatalogListActions();
-  el("btnNewItem").addEventListener("click", openCatalogModalForNew);
+  el("btnNewItem").addEventListener("click", openCreateTypeChooser);
   el("btnReloadCatalog").addEventListener("click", loadCatalogItems);
   el("catalog_search").addEventListener("input", renderCatalogList);
   el("catalog_filter_active").addEventListener("change", renderCatalogList);
   el("catalog_filter_visible").addEventListener("change", renderCatalogList);
   loadCatalogItems();
+  bindServicePackageActions();
+  el("btnReloadPackages").addEventListener("click", loadServicePackages);
+  loadServicePackages();
 
   bindReviewListActions();
   el("btnReloadReviews").addEventListener("click", loadReviews);
