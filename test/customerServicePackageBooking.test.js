@@ -9,6 +9,49 @@ const {
   canonicalizeSelection,
   resolvePackageBooking,
 } = require("../server/services/booking/servicePackageBooking");
+const { createBookingJobService } = require("../server/services/booking/createBookingJob");
+
+function responseHarness() {
+  return {
+    statusCode: 200,
+    body: null,
+    status(code) { this.statusCode = Number(code); return this; },
+    json(payload) { this.body = payload; return payload; },
+  };
+}
+
+async function invoke(handler, requestBody) {
+  const res = responseHarness();
+  await handler({ body: requestBody }, res);
+  return res;
+}
+
+function bookingService(overrides = {}) {
+  return createBookingJobService({
+    isServiceZoneFilterEnabled: () => false,
+    isCustomerScheduledBookingEnabled: () => true,
+    genToken: () => "test-booking-token",
+    createServicePackageResolver: () => ({
+      async resolveSelection() {
+        const error = new Error("resolver reached");
+        error.code = "PACKAGE_NOT_ON_SALE";
+        throw error;
+      },
+    }),
+    ...overrides,
+  });
+}
+
+function scheduledRequest(overrides = {}) {
+  return {
+    customer_name: "Package customer",
+    appointment_datetime: "2026-12-01T09:00:00+07:00",
+    address_text: "Bangkok",
+    booking_mode: "scheduled",
+    scheduled_request_key: "package-gate-test-0001",
+    ...overrides,
+  };
+}
 
 function selection(overrides = {}) {
   const base = {
@@ -49,6 +92,44 @@ function body(overrides = {}) {
 
 test("no package keys preserves the ordinary booking branch", () => {
   assert.equal(packageRequest({}), null);
+});
+
+test("Admin validation remains callable and requires ordinary job_type", async () => {
+  const source = fs.readFileSync(path.join(__dirname, "../server/services/booking/createBookingJob.js"), "utf8");
+  const adminStart = source.indexOf("async function handleAdminBookV2");
+  const adminEnd = source.indexOf("\n  async function ", adminStart + 1);
+  const adminSource = source.slice(adminStart, adminEnd);
+  assert.doesNotMatch(adminSource, /hasPackageRequest/);
+
+  const result = await invoke(bookingService().handleAdminBookV2, scheduledRequest());
+  assert.equal(result.statusCode, 400);
+  assert.ok(result.body?.error);
+});
+
+test("public scheduled package without client job_type reaches package resolution", async () => {
+  const result = await invoke(bookingService().handlePublicBook, scheduledRequest({
+    service_package_key: "premium-day",
+    service_package_tier_key: "two-units",
+    btu: 12000,
+  }));
+  assert.equal(result.statusCode, 409);
+  assert.deepEqual(result.body, { error: "PACKAGE_NOT_ON_SALE", code: "PACKAGE_NOT_ON_SALE" });
+});
+
+test("ordinary scheduled booking without job_type keeps existing required-field rejection", async () => {
+  const result = await invoke(bookingService().handlePublicBook, scheduledRequest());
+  assert.equal(result.statusCode, 400);
+  assert.ok(result.body?.error);
+});
+
+test("partial package identity with no job_type fails safely before mutation", async () => {
+  let poolCalls = 0;
+  const result = await invoke(bookingService({
+    pool: { query() { poolCalls += 1; throw new Error("unexpected mutation"); } },
+  }).handlePublicBook, scheduledRequest({ service_package_key: "premium-day" }));
+  assert.equal(result.statusCode, 400);
+  assert.deepEqual(result.body, { error: "PACKAGE_IDENTITY_MALFORMED", code: "PACKAGE_IDENTITY_MALFORMED" });
+  assert.equal(poolCalls, 0);
 });
 
 test("package keys are paired and public numeric identities are rejected", () => {

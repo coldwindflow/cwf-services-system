@@ -164,7 +164,7 @@ function createBookingJobService(dependencies = {}) {
       return hasTech ? 'single' : 'auto';
     })();
 
-    if (!customer_name || (!hasPackageRequest && !job_type) || !appointment_datetime || !address_text) {
+    if (!customer_name || !job_type || !appointment_datetime || !address_text) {
       return res.status(400).json({ error: "กรอกข้อมูลไม่ครบ (ชื่อ/ประเภทงาน/วันนัด/ที่อยู่)" });
     }
 
@@ -1205,7 +1205,7 @@ function createBookingJobService(dependencies = {}) {
       return handlePublicCustomerUrgentBook(req, res);
     }
 
-    if (!customer_name || !job_type || !appointment_datetime || !address_text) {
+    if (!customer_name || (!hasPackageRequest && !job_type) || !appointment_datetime || !address_text) {
       return res.status(400).json({ error: "กรอกข้อมูลไม่ครบ (ชื่อ/ประเภทงาน/วันนัด/ที่อยู่)" });
     }
 
