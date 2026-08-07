@@ -23,6 +23,8 @@ let state = {
   promo_list: [],
   catalog: [],
   selected_items: [], // {item_id, qty, item_name, base_price}
+  service_packages: [],
+  service_package_preview: null,
   service_lines: [], // [{job_type, ac_type, btu, machine_count, wash_variant}]
   selected_slot_iso: "",
   selected_slot_key: "",
@@ -1355,12 +1357,78 @@ return true;
 }
 
 let previewTimer = null;
+
+function packageSelected() { return !!String(el("service_package_key")?.value || "").trim(); }
+
+function setPackageControlsLocked(locked) {
+  ["job_type", "ac_type", "btu", "machine_count", "override_price", "override_duration_min",
+    "extras_select", "extras_qty", "btnAddExtra", "promotion_id"].forEach((id) => {
+    const node = el(id); if (node) node.disabled = !!locked;
+  });
+  const multi = el("multi_service_box"); if (multi) multi.style.display = locked ? "none" : multi.style.display;
+  const extras = el("extras_promo_details"); if (extras) extras.style.display = locked ? "none" : "";
+}
+
+function renderPackageBtuOptions(constraints = {}) {
+  const select = el("service_package_btu");
+  select.innerHTML = '<option value="">Select actual BTU</option>';
+  BTU_OPTIONS.filter((value) => (constraints.btu_min == null || value >= constraints.btu_min)
+    && (constraints.btu_max == null || value <= constraints.btu_max)).forEach((value) => {
+    const option = document.createElement("option"); option.value = String(value); option.textContent = `${value.toLocaleString()} BTU`; select.appendChild(option);
+  });
+}
+
+async function previewServicePackage() {
+  const packageKey = String(el("service_package_key")?.value || "");
+  const tierKey = String(el("service_package_tier_key")?.value || "");
+  if (!packageKey || !tierKey) { state.service_package_preview = null; return; }
+  const preview = await apiFetch("/admin/service-packages/preview", { method: "POST",
+    body: JSON.stringify({ package_key: packageKey, tier_key: tierKey }) });
+  state.service_package_preview = preview;
+  const c = preview.service.constraints;
+  el("job_type").value = c.job_type; el("ac_type").value = c.ac_type;
+  el("machine_count").value = String(preview.quantity);
+  buildVariantUI();
+  const wash = el("wash_variant"); if (wash && c.wash_variant) wash.value = c.wash_variant;
+  state.service_lines = []; state.selected_items = []; renderExtras(); renderServiceLines();
+  el("promotion_id").value = ""; el("override_price").value = "0"; el("override_duration_min").value = "0";
+  renderPackageBtuOptions(c);
+  el("service_package_btu_wrap").style.display = "";
+  const panel = el("service_package_preview"); panel.style.display = "";
+  panel.textContent = `${preview.package_name} / ${preview.tier_name} | ${preview.service.service_name} | quantity ${preview.quantity} | duration ${preview.duration_minutes} min | fixed total ${preview.fixed_total_price} | BTU ${c.btu_min || "any"}-${c.btu_max || "any"} | redeem by ${preview.redeem_until || "no limit"}`;
+  state.standard_price = Number(preview.fixed_total_price); state.normal_price = state.standard_price;
+  state.duration_min = Number(preview.duration_minutes); state.effective_block_min = state.duration_min + Number(state.travel_buffer_min || 30);
+  setPackageControlsLocked(true); updateTotalPreview();
+}
+
+async function loadServicePackages() {
+  try {
+    const data = await apiFetch("/admin/service-packages");
+    state.service_packages = Array.isArray(data.service_packages) ? data.service_packages : [];
+    const select = el("service_package_key");
+    for (const pkg of state.service_packages) {
+      const option = document.createElement("option"); option.value = pkg.package_key; option.textContent = pkg.package_name; select.appendChild(option);
+    }
+  } catch (_) { /* ordinary Admin booking remains available */ }
+}
+
 async function refreshPreviewDebounced() {
   clearTimeout(previewTimer);
   previewTimer = setTimeout(refreshPreview, 250);
 }
 
 async function refreshPreview() {
+  if (packageSelected()) {
+    if (state.service_package_preview) {
+      el("pv_duration").textContent = String(state.duration_min);
+      el("pv_block").textContent = String(state.effective_block_min);
+      el("pv_price").textContent = fmtMoney(state.standard_price);
+      el("pv_normal_price").textContent = fmtMoney(state.standard_price);
+      el("pv_line_total").textContent = fmtMoney(state.standard_price);
+      if (el("appt_date").value) loadAvailability();
+    }
+    return;
+  }
   if (!validateRequiredForPreview()) {
     el("pv_duration").textContent = "-";
     el("pv_block").textContent = "-";
@@ -1594,6 +1662,14 @@ async function runUrgentPreview(){
 }
 
 async function loadAvailability() {
+  if (packageSelected() && state.service_package_preview?.redeem_until) {
+    const selectedDate = String(el("appt_date")?.value || "");
+    const redeemDate = String(state.service_package_preview.redeem_until).slice(0, 10);
+    if (selectedDate && selectedDate > redeemDate) {
+      state.available_slots = []; state.slots_loaded = false; renderSlots();
+      showToast("Selected date is after the package redemption deadline", "error"); return;
+    }
+  }
   if (!canLoadAvailability()) {
     el("slots_box").innerHTML = `<div class="muted2">กรอกข้อมูลบริการให้ครบ + เลือกวันที่ก่อน</div>`;
     return;
@@ -2831,6 +2907,26 @@ async function submitBooking() {
 
   const services = getServicesPayload();
   if(services) payload.services = services;
+  if (packageSelected()) {
+    const preview = state.service_package_preview;
+    const actualBtu = Number(el("service_package_btu")?.value || 0);
+    if (!preview || !actualBtu) {
+      showToast("Select a package tier and actual BTU before booking", "error");
+      el("btnSubmit").disabled = false; return;
+    }
+    if (preview.redeem_until && new Date(payload.appointment_datetime) > new Date(preview.redeem_until)) {
+      showToast("The appointment is after this package redemption deadline", "error");
+      el("btnSubmit").disabled = false; return;
+    }
+    payload.service_package_key = el("service_package_key").value;
+    payload.service_package_tier_key = el("service_package_tier_key").value;
+    payload.btu = actualBtu;
+    delete payload.services;
+    payload.items = [];
+    payload.promotion_id = null;
+    payload.override_price = 0;
+    payload.override_duration_min = 0;
+  }
   // NOTE: split_assignments is optional and backward compatible
 
   console.info('[admin-add] submit technician source', {
@@ -2964,6 +3060,26 @@ async function submitBooking() {
 }
 
 function wireEvents() {
+  el("service_package_key")?.addEventListener("change", async () => {
+    const key = String(el("service_package_key").value || "");
+    const tier = el("service_package_tier_key");
+    tier.innerHTML = '<option value="">Select tier</option>';
+    const pkg = state.service_packages.find((item) => item.package_key === key);
+    for (const item of (pkg?.tiers || [])) {
+      const option = document.createElement("option"); option.value = item.tier_key;
+      option.textContent = `${item.tier_name} (${item.quantity} / ${item.fixed_total_price})`; tier.appendChild(option);
+    }
+    tier.disabled = !pkg;
+    state.service_package_preview = null;
+    el("service_package_preview").style.display = "none"; el("service_package_btu_wrap").style.display = "none";
+    setPackageControlsLocked(!!pkg);
+    if (!pkg) refreshPreviewDebounced();
+  });
+  el("service_package_tier_key")?.addEventListener("change", () => previewServicePackage().then(refreshPreview).catch((e) => showToast(e.message, "error")));
+  el("service_package_btu")?.addEventListener("change", () => {
+    el("btu").value = el("service_package_btu").value;
+    refreshPreviewDebounced();
+  });
   const updateOverrideDurationLabel = ()=>{
     const lab = el('override_duration_label');
     if(!lab) return;
@@ -3286,7 +3402,7 @@ async function init() {
   if (r0) r0.addEventListener("change", refreshPreviewDebounced);
 
   el("appt_date").value = todayYMD();
-  await Promise.all([loadCatalog(), loadPromotions(), loadTechsForType()]);
+  await Promise.all([loadCatalog(), loadPromotions(), loadTechsForType(), loadServicePackages()]);
   wirePromotionControls();
   renderExtras();
   wireEvents();

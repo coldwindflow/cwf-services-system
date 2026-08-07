@@ -9,6 +9,8 @@ function registerAdminBookingRoutes(app, options = {}) {
   }
 
   app.post("/admin/book_v2", requireAdminSession, service.handleAdminBookV2);
+  app.get("/admin/service-packages", requireAdminSession, service.handleAdminServicePackageList);
+  app.post("/admin/service-packages/preview", requireAdminSession, service.handleAdminServicePackagePreview);
   app.post("/admin/urgent_broadcast_v2", requireAdminSession, (req, res) => {
     req.body = {
       ...(req.body || {}),

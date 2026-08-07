@@ -100,12 +100,13 @@ test("no package keys preserves the ordinary booking branch", () => {
   assert.equal(packageRequest({}), null);
 });
 
-test("Admin validation remains callable and requires ordinary job_type", async () => {
+test("Admin ordinary validation remains callable while package requests use the shared resolver", async () => {
   const source = fs.readFileSync(path.join(__dirname, "../server/services/booking/createBookingJob.js"), "utf8");
   const adminStart = source.indexOf("async function handleAdminBookV2");
   const adminEnd = source.indexOf("\n  async function ", adminStart + 1);
   const adminSource = source.slice(adminStart, adminEnd);
-  assert.doesNotMatch(adminSource, /hasPackageRequest/);
+  assert.match(adminSource, /hasPackageRequest/);
+  assert.match(adminSource, /identity: "admin"/);
 
   const result = await invoke(bookingService().handleAdminBookV2, scheduledRequest());
   assert.equal(result.statusCode, 400);
