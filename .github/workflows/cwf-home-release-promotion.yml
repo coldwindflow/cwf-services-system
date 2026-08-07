@@ -1,0 +1,137 @@
+name: CWF Home Release Promotion
+
+on:
+  push:
+    branches:
+      - main
+  workflow_run:
+    workflows:
+      - CWF Home Staging
+    types:
+      - completed
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: cwf-home-release-promotion
+  cancel-in-progress: false
+
+jobs:
+  main-to-staging:
+    name: Open main to staging promotion
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create or reuse staging promotion PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const headBranch = 'main';
+            const baseBranch = 'staging/home-server-test';
+            const head = `${owner}:${headBranch}`;
+
+            const { data: existing } = await github.rest.pulls.list({
+              owner,
+              repo,
+              state: 'open',
+              head,
+              base: baseBranch,
+              per_page: 20,
+            });
+
+            if (existing.length) {
+              core.notice(`Staging promotion PR already open: #${existing[0].number}`);
+              return;
+            }
+
+            const { data: comparison } = await github.rest.repos.compareCommitsWithBasehead({
+              owner,
+              repo,
+              basehead: `${baseBranch}...${headBranch}`,
+            });
+
+            if (!comparison.ahead_by) {
+              core.notice('No new main commits need promotion to staging.');
+              return;
+            }
+
+            const { data: pr } = await github.rest.pulls.create({
+              owner,
+              repo,
+              title: 'Promote main to CWF home staging',
+              head: headBranch,
+              base: baseBranch,
+              draft: false,
+              body: [
+                'Automated release promotion PR.',
+                '',
+                'Merge this PR to deploy the merged code to `test-app.cwf-air.com` through the self-hosted runner.',
+                '',
+                'Do not bypass staging. After the staging deployment succeeds, the release pipeline will open the Production promotion PR automatically.',
+              ].join('\n'),
+            });
+            core.notice(`Created staging promotion PR #${pr.number}`);
+
+  staging-to-production:
+    name: Open staging to production promotion
+    if: >-
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'staging/home-server-test'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create or reuse production promotion PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const headBranch = 'staging/home-server-test';
+            const baseBranch = 'production/home-server';
+            const head = `${owner}:${headBranch}`;
+
+            const { data: existing } = await github.rest.pulls.list({
+              owner,
+              repo,
+              state: 'open',
+              head,
+              base: baseBranch,
+              per_page: 20,
+            });
+
+            if (existing.length) {
+              core.notice(`Production promotion PR already open: #${existing[0].number}`);
+              return;
+            }
+
+            const { data: comparison } = await github.rest.repos.compareCommitsWithBasehead({
+              owner,
+              repo,
+              basehead: `${baseBranch}...${headBranch}`,
+            });
+
+            if (!comparison.ahead_by) {
+              core.notice('No staged commits need promotion to Production.');
+              return;
+            }
+
+            const { data: pr } = await github.rest.pulls.create({
+              owner,
+              repo,
+              title: 'Promote verified staging to CWF home production',
+              head: headBranch,
+              base: baseBranch,
+              draft: false,
+              body: [
+                'Automated Production promotion PR created only after `CWF Home Staging` completed successfully.',
+                '',
+                'Before merge, verify `https://test-app.cwf-air.com` and any required migration/data gates.',
+                '',
+                'Merging this PR is the Production release event. The existing `CWF Home Production` workflow must then perform backup, deploy, health check, and automatic rollback on failure.',
+              ].join('\n'),
+            });
+            core.notice(`Created Production promotion PR #${pr.number}`);

@@ -7271,3 +7271,12 @@ body.has-advisor-sheet { overflow: hidden; }
   .bottom-nav .nav-item { min-width: 0; padding-inline: 1px; }
   .bottom-nav .nav-item [data-nav-label] { font-size: 9px !important; }
 }
+.package-picker { margin: 1rem 0; padding: 1rem; border: 1px solid var(--line, #dfe5e2); border-radius: 16px; }
+.package-card-grid { display: grid; gap: .8rem; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
+.package-card { padding: 1rem; border: 1px solid var(--line, #dfe5e2); border-radius: 14px; background: #fff; }
+.package-card.is-selected { border-color: var(--brand, #167a5b); box-shadow: 0 0 0 2px rgba(22,122,91,.12); }
+.package-tier-list { display: grid; gap: .55rem; margin-top: .75rem; }
+.selected-package-summary { display: grid; gap: .55rem; margin: 1rem 0; padding: 1rem; border-radius: 14px; background: #f5faf8; }
+.has-package-selection .ordinary-service-controls,
+.has-package-selection [data-action="add-line"],
+.has-package-selection .service-line-review-list { display: none; }
