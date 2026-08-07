@@ -51,6 +51,22 @@ function serviceItemName(line, btu) {
   return parts.join(" • ");
 }
 
+function allocateUnitPrice(fixedTotal, quantity) {
+  const match = /^(\d+)\.(\d{2})$/.exec(String(fixedTotal));
+  if (!match || !Number.isSafeInteger(quantity) || quantity <= 0) {
+    throw packageError("INVALID_PACKAGE_PRICE", 409);
+  }
+  const totalMinor = (BigInt(match[1]) * 100n) + BigInt(match[2]);
+  if (totalMinor <= 0n) throw packageError("INVALID_PACKAGE_PRICE", 409);
+  const divisor = BigInt(quantity);
+  const quotient = totalMinor / divisor;
+  const remainder = totalMinor % divisor;
+  const roundedMinor = quotient + (remainder * 2n >= divisor ? 1n : 0n);
+  const major = roundedMinor / 100n;
+  const minor = String(roundedMinor % 100n).padStart(2, "0");
+  return `${major}.${minor}`;
+}
+
 function canonicalizeSelection(selection, body, appointmentDatetime) {
   const line = selection?.service_lines?.[0];
   const constraints = line?.service_constraints;
@@ -72,6 +88,7 @@ function canonicalizeSelection(selection, body, appointmentDatetime) {
   const quantity = Number(line.quantity);
   const unitDuration = Number(line.unit_duration_minutes);
   const fixedTotal = String(selection.fixed_total_price);
+  const unitPrice = allocateUnitPrice(fixedTotal, quantity);
   return {
     packageId: String(selection.package.id),
     tierId: String(selection.tier.id),
@@ -91,7 +108,7 @@ function canonicalizeSelection(selection, body, appointmentDatetime) {
       item_id: null,
       item_name: serviceItemName(line, btu),
       qty: quantity,
-      unit_price: fixedTotal,
+      unit_price: unitPrice,
       line_total: fixedTotal,
       is_service: true,
       customer_price_source: "service_package",

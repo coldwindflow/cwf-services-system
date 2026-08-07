@@ -153,10 +153,31 @@ test("resolver authority replaces fake service, quantity, duration, and exact fi
   assert.equal(result.durationMin, 90);
   assert.equal(result.fixedTotal, "1399.50");
   assert.equal(result.item.qty, 2);
+  assert.equal(result.item.unit_price, "699.75");
   assert.equal(result.item.line_total, "1399.50");
+  const allocatedMinor = BigInt(result.item.unit_price.replace(".", "")) * BigInt(result.item.qty);
+  assert.equal(allocatedMinor, BigInt(result.item.line_total.replace(".", "")));
   assert.equal(result.item.customer_price_source, "service_package");
   assert.match(result.item.item_name, /ล้างพรีเมียม/);
   assert.deepEqual(result.snapshot, selection().snapshot);
+});
+
+test("awkward package division uses deterministic DB-scale allocation and preserves exact total", () => {
+  const awkward = selection();
+  awkward.service_lines[0].quantity = 4;
+  awkward.snapshot = structuredClone(awkward);
+
+  const result = canonicalizeSelection(awkward, body(), "2026-12-01T09:00:00+07:00");
+
+  assert.equal(result.item.qty, 4);
+  assert.equal(result.item.unit_price, "349.88");
+  assert.equal(result.item.line_total, "1399.50");
+  assert.equal(result.fixedTotal, "1399.50");
+  assert.equal(
+    canonicalizeSelection(awkward, body(), "2026-12-01T09:00:00+07:00").item.unit_price,
+    "349.88"
+  );
+  assert.equal(BigInt(result.item.line_total.replace(".", "")), 139950n);
 });
 
 test("server BTU maximum and minimum constraints accept only their actual ranges", () => {
