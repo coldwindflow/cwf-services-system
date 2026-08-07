@@ -28,6 +28,12 @@ test("operator hard-pins the approved revision and migration with no generic inp
   assert.match(source, /cwf-deployctl production list-backups/);
 });
 
+test("healthy Production status validator returns success under set -e", () => {
+  const match = source.match(/validate_production_status\(\) \{([\s\S]*?)\n\}/);
+  assert.ok(match, "validate_production_status must exist");
+  assert.match(match[1], /return 0\s*$/m);
+});
+
 test("operator fails closed before DDL on revision, health, backup, Docker, and DB evidence", () => {
   const ddlPosition = source.indexOf("docker exec -i");
   assert.ok(ddlPosition > 0, "DDL execution must be explicit");
