@@ -12,6 +12,8 @@ class ServicePackageResolutionError extends Error {
 
 function fail(code, message) { throw new ServicePackageResolutionError(code, message); }
 function instant(value) { return value == null ? null : new Date(value).toISOString(); }
+function nonEmptyString(value) { return typeof value === "string" && value.length > 0; }
+function positiveIntegerString(value) { return typeof value === "string" && /^[1-9]\d*$/.test(value); }
 function decimalText(value) {
   const text = String(value == null ? "" : value).trim();
   const match = /^(\d+)\.(\d{2})$/.exec(text);
@@ -70,8 +72,13 @@ function readSnapshot(snapshot) {
     const totalMatch = typeof value?.fixed_total_price === "string"
       ? /^(\d+)\.(\d{2})$/.exec(value.fixed_total_price)
       : null;
-    if (!value || value.schema_version !== 1 || !value.package || !value.tier
+    if (!value || value.schema_version !== 1
+        || !positiveIntegerString(value.package?.id)
+        || !nonEmptyString(value.package?.key) || !nonEmptyString(value.package?.name)
+        || !positiveIntegerString(value.tier?.id)
+        || !nonEmptyString(value.tier?.key) || !nonEmptyString(value.tier?.name)
         || !Array.isArray(value.service_lines) || value.service_lines.length !== 1
+        || !nonEmptyString(line.service_key) || !nonEmptyString(line.service_name)
         || !totalMatch || (BigInt(totalMatch[1]) === 0n && totalMatch[2] === "00")
         || !Number.isInteger(line.quantity) || line.quantity <= 0
         || !Number.isInteger(line.unit_duration_minutes) || line.unit_duration_minutes <= 0
