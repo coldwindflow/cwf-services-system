@@ -379,8 +379,8 @@ test("gallery delete and set-primary actions ask for confirmation only on delete
 });
 
 test("admin-store-catalog.html keeps CSS cache and bumps JS cache for pricing safety", () => {
-  assert.match(catalogHtmlSource, /admin-store-catalog\.css\?v=20260808_service_packages/);
-  assert.match(catalogHtmlSource, /admin-store-catalog\.js\?v=20260808_service_packages/);
+  assert.match(catalogHtmlSource, /admin-store-catalog\.css\?v=20260808_service_packages_th_v1/);
+  assert.match(catalogHtmlSource, /admin-store-catalog\.js\?v=20260808_service_packages_th_v1/);
 });
 
 test("the item_category field is a service/product dropdown, not free text", () => {
