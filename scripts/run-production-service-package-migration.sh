@@ -27,6 +27,7 @@ validate_production_status() {
     die "Production status does not contain healthy/running evidence"
   grep -Eiq '(unhealthy|degraded|failed|stopped|exited)' <<<"$status_output" &&
     die "Production status contains unhealthy evidence"
+  return 0
 }
 
 db_query() {
