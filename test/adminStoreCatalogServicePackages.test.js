@@ -39,7 +39,7 @@ test("same Admin page renders full package history lifecycle statuses and uses c
   for (const status of ["แบบร่าง", "ปิดใช้งาน", "ซ่อนจากลูกค้า", "ยังไม่ถึงวันขาย", "กำลังเปิดขาย", "ปิดการขายแล้ว", "หมดเขตใช้สิทธิ์"]) assert.match(js, new RegExp(status));
   for (const statusKey of ["draft", "disabled", "hidden", "upcoming", "on-sale", "sale-ended", "redeem-ended"]) assert.match(js, new RegExp(`(?:^|[" ])${statusKey}(?:[":]|$)`));
   assert.match(html, /admin-store-catalog\.js\?v=20260808_service_packages_th_v1/);
-  assert.match(html, /admin-store-catalog\.css\?v=20260808_service_packages_th_v1/);
+  assert.match(html, /admin-store-catalog\.css\?v=20260808_service_packages_responsive_v2/);
 });
 
 test("package controls keep server enum values while showing Thai labels", () => {
