@@ -5,6 +5,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const { createServicePackageCatalogService, validate, lifecycle } = require("../server/services/packages/servicePackageCatalogService");
+const { createServicePackageResolver } = require("../server/services/packages/servicePackageResolver");
 
 function valid(overrides = {}) {
   return { display_name: "Season package", description: "A managed package", service_key: "wash_wall",
@@ -34,6 +35,63 @@ test("validation accepts exact package fields and rejects dates, BTU, duration, 
   const service = createServicePackageCatalogService({ pool: { query() {}, async connect() { connects += 1; } } });
   await assert.rejects(service.create(valid({ service_unit_duration_minutes: 0 })));
   assert.equal(connects, 0);
+});
+
+test("schema-range numeric failures are rejected exactly before connecting", async () => {
+  const invalid = [
+    { btu_min: 2147483648 },
+    { btu_max: 2147483648 },
+    { service_unit_duration_minutes: 2147483648 },
+    { tiers: [{ display_name: "x", service_quantity: 2147483648, fixed_total_price: "12.50", sort_order: 0, is_active: true }] },
+    { tiers: [{ display_name: "x", service_quantity: 1, fixed_total_price: "10000000000.00", sort_order: 0, is_active: true }] },
+    { tiers: [{ display_name: "x", service_quantity: 1, fixed_total_price: "9999999999.999", sort_order: 0, is_active: true }] },
+    { tiers: [{ display_name: "x", service_quantity: 1, fixed_total_price: "12.50", sort_order: 2147483648, is_active: true }] },
+    { tiers: [{ display_name: "x", service_quantity: 1, fixed_total_price: "12.50", sort_order: -2147483649, is_active: true }] },
+  ];
+  assert.equal(validate(valid({ tiers: [{ display_name: "max", service_quantity: 2147483647,
+    fixed_total_price: "9999999999.99", sort_order: -2147483648, is_active: true }] })).tiers[0].fixed_total_price, "9999999999.99");
+  let connects = 0;
+  const service = createServicePackageCatalogService({ pool: { query() {}, async connect() { connects += 1; } } });
+  for (const change of invalid) await assert.rejects(service.create(valid(change)), { status: 400 });
+  assert.equal(connects, 0);
+});
+
+test("managed package state feeds the existing customer discovery seam and excludes unavailable packages", async () => {
+  const packages = [];
+  let nextId = 1;
+  const repo = {
+    async insertPackage(_db, value) {
+      const saved = row(value, nextId++);
+      packages.push(saved);
+      return saved;
+    },
+    async insertTier(_db, packageId, tier) {
+      const saved = { service_package_tier_id: packageId * 10, service_package_id: packageId, ...tier };
+      packages.find((item) => item.service_package_id === packageId).tiers.push(saved);
+      return saved;
+    },
+    async listCustomerVisiblePackages(_db, { at } = {}) {
+      const clock = at || new Date();
+      return packages.filter((item) => item.is_active && item.is_customer_visible
+        && (!item.sell_start_at || clock >= new Date(item.sell_start_at))
+        && (!item.sell_end_at || clock <= new Date(item.sell_end_at)));
+    },
+  };
+  const client = { async query() {}, release() {} };
+  const pool = { async query() {}, async connect() { return client; } };
+  const management = createServicePackageCatalogService({ pool, packageRepository: repo });
+  const states = [
+    ["available", { is_active: true, is_customer_visible: true }],
+    ["future", { is_active: true, is_customer_visible: true, sell_start_at: "2026-09-01T00:00:00Z",
+      sell_end_at: "2026-09-30T00:00:00Z", redeem_until: "2026-10-31T00:00:00Z" }],
+    ["expired", { is_active: true, is_customer_visible: true, sell_end_at: "2026-08-01T00:00:00Z" }],
+    ["hidden", { is_active: true, is_customer_visible: false }],
+    ["inactive", { is_active: false, is_customer_visible: true }],
+  ];
+  for (const [name, overrides] of states) await management.create(valid({ display_name: name, ...overrides }));
+  const discovery = createServicePackageResolver({ db: pool, packageRepository: repo });
+  const visible = await discovery.listCustomerVisible({ at: new Date("2026-08-08T00:00:00Z") });
+  assert.deepEqual(visible.map((item) => item.display_name), ["available"]);
 });
 
 test("create is one transaction, returns safe keys/round-trip values and rolls back a tier failure", async () => {

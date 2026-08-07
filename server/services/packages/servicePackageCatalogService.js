@@ -6,6 +6,9 @@ const { normalizeServiceType, normalizeAcType, normalizeWashVariantLabel, normal
 
 const JOB_TYPES = new Set(["wash", "repair", "install"].map(normalizeServiceType));
 const AC_TYPES = new Set(["wall", "cassette", "floor", "ceiling"].map(normalizeAcType));
+const PG_INTEGER_MIN = -2147483648;
+const PG_INTEGER_MAX = 2147483647;
+const MAX_FIXED_TOTAL_CENTS = 999999999999n;
 
 class ServicePackageCatalogError extends Error {
   constructor(code, message, status = 400) { super(message); this.name = "ServicePackageCatalogError"; this.code = code; this.status = status; }
@@ -30,7 +33,17 @@ function bool(value, field) {
 function positiveInt(value, field, optional = false) {
   if (optional && (value == null || value === "")) return null;
   const result = Number(value);
-  if (!Number.isInteger(result) || result <= 0) fail("INVALID_PACKAGE", `${field} must be a positive integer`);
+  if (!Number.isInteger(result) || result <= 0 || result > PG_INTEGER_MAX) {
+    fail("INVALID_PACKAGE", `${field} must be a positive PostgreSQL integer`);
+  }
+  return result;
+}
+function integer(value, field, fallback) {
+  if (value == null || value === "") return fallback;
+  const result = Number(value);
+  if (!Number.isInteger(result) || result < PG_INTEGER_MIN || result > PG_INTEGER_MAX) {
+    fail("INVALID_TIER", `${field} must be a PostgreSQL integer`);
+  }
   return result;
 }
 function date(value, field) {
@@ -40,11 +53,14 @@ function date(value, field) {
 }
 function money(value) {
   const result = String(value == null ? "" : value).trim();
-  if (!/^\d+\.\d{2}$/.test(result)) {
+  const match = /^(\d+)\.(\d{2})$/.exec(result);
+  if (!match) {
     fail("INVALID_TIER", "fixed_total_price must be positive decimal text with exactly two fractional digits");
   }
-  if (Number(result) <= 0) fail("INVALID_TIER", "fixed_total_price must be positive");
-  return Number(result).toFixed(2);
+  const cents = (BigInt(match[1]) * 100n) + BigInt(match[2]);
+  if (cents <= 0n) fail("INVALID_TIER", "fixed_total_price must be positive");
+  if (cents > MAX_FIXED_TOTAL_CENTS) fail("INVALID_TIER", "fixed_total_price exceeds the NUMERIC(12,2) range");
+  return result;
 }
 function key(prefix) { return `${prefix}-${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`; }
 
@@ -77,7 +93,7 @@ function validate(input) {
     const tierKey = tier.tier_key == null ? null : text(tier.tier_key, "tier_key", 200);
     return { tier_key: tierKey, display_name: text(tier.display_name, "tier display_name"),
       service_quantity: positiveInt(tier.service_quantity, "service_quantity"),
-      fixed_total_price: money(tier.fixed_total_price), sort_order: Number.isInteger(Number(tier.sort_order)) ? Number(tier.sort_order) : index,
+      fixed_total_price: money(tier.fixed_total_price), sort_order: integer(tier.sort_order, "sort_order", index),
       is_active: bool(tier.is_active, "tier is_active") };
   });
   const suppliedKeys = tiers.map((tier) => tier.tier_key).filter(Boolean);
