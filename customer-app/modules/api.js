@@ -108,6 +108,20 @@
       });
     },
 
+    async loadServicePackages() {
+      return requestJson("/public/service-packages", { cache: "no-store" });
+    },
+
+    async previewServicePackage(packageKey, tierKey) {
+      return requestJson("/public/service-packages/preview", {
+        method: "POST",
+        body: {
+          package_key: String(packageKey || "").trim(),
+          tier_key: String(tierKey || "").trim(),
+        },
+      });
+    },
+
     async loadAvailability(query) {
       return requestJson("/public/availability_v2", { query, cache: "no-store" });
     },
