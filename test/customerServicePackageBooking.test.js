@@ -8,6 +8,7 @@ const {
   packageRequest,
   canonicalizeSelection,
   resolvePackageBooking,
+  packageBookingFromSnapshot,
 } = require("../server/services/booking/servicePackageBooking");
 const { createBookingJobService } = require("../server/services/booking/createBookingJob");
 
@@ -27,7 +28,12 @@ async function invoke(handler, requestBody) {
 }
 
 function bookingService(overrides = {}) {
+  const emptyClient = {
+    async query() { return { rows: [] }; },
+    release() {},
+  };
   return createBookingJobService({
+    pool: { async connect() { return emptyClient; } },
     isServiceZoneFilterEnabled: () => false,
     isCustomerScheduledBookingEnabled: () => true,
     genToken: () => "test-booking-token",
@@ -203,6 +209,100 @@ test("sell resolution and redeem eligibility remain distinct", async () => {
   );
 });
 
+test("committed package replay rebuilds from immutable snapshot without current resolver state", () => {
+  const historical = selection();
+  const replay = packageBookingFromSnapshot({
+    body: body(),
+    appointmentDatetime: "2026-12-01T09:00:00+07:00",
+    snapshot: historical.snapshot,
+    packageId: "41",
+    tierId: "73",
+  });
+
+  assert.equal(replay.packageId, "41");
+  assert.equal(replay.tierId, "73");
+  assert.equal(replay.fixedTotal, "1399.50");
+  assert.equal(replay.item.qty, 2);
+  assert.equal(replay.item.unit_price, "699.75");
+  assert.equal(replay.item.line_total, "1399.50");
+});
+
+test("historical package replay rejects changed package, tier, and BTU material", () => {
+  const historical = selection();
+  const args = {
+    appointmentDatetime: "2026-12-01T09:00:00+07:00",
+    snapshot: historical.snapshot,
+    packageId: "41",
+    tierId: "73",
+  };
+  assert.equal(packageBookingFromSnapshot({ ...args, body: body({ service_package_key: "other" }) }), null);
+  assert.equal(packageBookingFromSnapshot({ ...args, body: body({ service_package_tier_key: "other" }) }), null);
+  assert.equal(packageBookingFromSnapshot({ ...args, body: body({ btu: 18000 }) }), null);
+});
+
+test("advisory-locked committed package replay bypasses unavailable current resolver and creates nothing", async () => {
+  const historical = selection();
+  const canonical = canonicalizeSelection(historical.snapshot, body(), "2026-12-01T09:00:00+07:00");
+  const request = scheduledRequest({ ...body(), customer_phone: "0812345678" });
+  const prior = {
+    job_id: "501", booking_code: "CWF501", booking_token: "stored-token",
+    dispatch_mode: "normal", duration_min: 90, job_price: "1399.50",
+    appointment_datetime: request.appointment_datetime, customer_phone: request.customer_phone,
+    customer_name: request.customer_name, address_text: request.address_text,
+    maps_url: null, job_zone: null, job_type: canonical.payload.job_type,
+    customer_note: null, allow_time_proposal: false, gps_latitude: null, gps_longitude: null,
+  };
+  const calls = [];
+  const client = {
+    async query(sql) {
+      calls.push(sql);
+      if (/FROM public\.jobs/.test(sql)) return { rows: [prior] };
+      return { rows: [] };
+    },
+    release() {},
+  };
+  const replayPool = {
+    async connect() { return client; },
+    async query(sql) {
+      calls.push(sql);
+      if (/service_package_snapshot/.test(sql)) return { rows: [{
+        service_package_id: "41", service_package_tier_id: "73",
+        service_package_snapshot: historical.snapshot,
+      }] };
+      if (/SELECT 1 FROM public\.job_items/.test(sql)) return { rows: [{ "?column?": 1 }] };
+      if (/SELECT item_name, qty, line_total/.test(sql)) return { rows: [canonical.item] };
+      throw new Error(`unexpected query: ${sql}`);
+    },
+  };
+  let resolverCalls = 0;
+  const service = bookingService({
+    pool: replayPool,
+    normalizeAppointmentDatetime: (value) => value,
+    effectiveBlockMin: (value) => value,
+    createServicePackageResolver: () => ({
+      async resolveSelection() { resolverCalls += 1; throw Object.assign(new Error("expired"), { code: "PACKAGE_NOT_ON_SALE" }); },
+    }),
+  });
+
+  const result = await invoke(service.handlePublicBook, request);
+  assert.equal(result.statusCode, 200);
+  assert.equal(result.body.replayed, true);
+  assert.equal(result.body.job_id, "501");
+  assert.equal(result.body.base_total, 1399.5);
+  assert.equal(resolverCalls, 0);
+  assert.ok(calls.some((sql) => /pg_advisory_xact_lock/.test(sql)));
+  assert.equal(calls.some((sql) => /\bINSERT\b|\bUPDATE\b|\bDELETE\b/.test(sql)), false);
+
+  const changed = await invoke(service.handlePublicBook, {
+    ...request,
+    appointment_datetime: "2026-12-02T09:00:00+07:00",
+  });
+  assert.equal(changed.statusCode, 409);
+  assert.equal(changed.body.code, "IDEMPOTENCY_KEY_REUSED");
+  assert.equal(resolverCalls, 0);
+  assert.equal(calls.some((sql) => /\bINSERT\b|\bUPDATE\b|\bDELETE\b/.test(sql)), false);
+});
+
 test("mixed ordinary lines and urgent package booking are rejected", async () => {
   assert.throws(
     () => canonicalizeSelection(selection(), body({ services: [{ job_type: "ล้าง" }] }), "2026-12-01T09:00:00+07:00"),
@@ -230,4 +330,17 @@ test("booking mutation keeps package linkage, snapshot, price, promotion bypass,
   assert.match(source, /packageBooking \? packageBooking\.fixedTotal : Number\(total \|\| 0\)/);
   assert.match(source, /pg_advisory_xact_lock/);
   assert.match(source, /packageBooking \? \[packageBooking\.item\] : await customerPricingHelpers/);
+});
+
+test("package replay ordering uses persisted history before current resolution and locked revalidation", () => {
+  const source = fs.readFileSync(path.join(__dirname, "../server/services/booking/createBookingJob.js"), "utf8");
+  const handler = source.indexOf("async function handlePublicBook");
+  const historicalReplay = source.indexOf("historicalPackageBookingForReplay(", handler);
+  const currentResolve = source.indexOf("packageBooking = await resolvePackageBooking", handler);
+  assert.ok(historicalReplay > handler && historicalReplay < currentResolve);
+
+  const begin = source.indexOf('await client.query("BEGIN")', currentResolve);
+  const lockedLookup = source.indexOf('await client.query("SELECT pg_advisory_xact_lock', begin);
+  const revalidate = source.indexOf("const revalidatedPackageBooking", begin);
+  assert.ok(begin > currentResolve && lockedLookup > begin && revalidate > lockedLookup);
 });

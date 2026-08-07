@@ -130,4 +130,26 @@ async function resolvePackageBooking({ body, bookingMode, appointmentDatetime, r
   }
 }
 
-module.exports = { packageRequest, canonicalizeSelection, resolvePackageBooking };
+function packageBookingFromSnapshot({ body, appointmentDatetime, snapshot, packageId, tierId }) {
+  let request;
+  try { request = packageRequest(body); } catch (_) { return null; }
+  if (!request) return null;
+  let selection = snapshot;
+  if (typeof selection === "string") {
+    try { selection = JSON.parse(selection); } catch (_) { return null; }
+  }
+  if (!selection || typeof selection !== "object") return null;
+  if (String(selection.package?.key || "") !== request.packageKey
+      || String(selection.tier?.key || "") !== request.tierKey
+      || String(selection.package?.id || "") !== String(packageId || "")
+      || String(selection.tier?.id || "") !== String(tierId || "")) {
+    return null;
+  }
+  try {
+    return canonicalizeSelection(selection, body, appointmentDatetime);
+  } catch (_) {
+    return null;
+  }
+}
+
+module.exports = { packageRequest, canonicalizeSelection, resolvePackageBooking, packageBookingFromSnapshot };
