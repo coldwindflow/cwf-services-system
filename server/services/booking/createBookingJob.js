@@ -3,6 +3,7 @@
 const crypto = require("crypto");
 const { JOB_STATUS, ASSIGNMENT_STATUS, OFFER_STATUS } = require("./bookingStatuses");
 const { ensureBookingJobUnits } = require("./bookingJobUnits");
+const { packageRequest, resolvePackageBooking, packageBookingFromSnapshot } = require("./servicePackageBooking");
 
 function createBookingJobService(dependencies = {}) {
   const ensureCanonicalBookingJobUnits = dependencies.ensureBookingJobUnits || ensureBookingJobUnits;
@@ -38,6 +39,7 @@ function createBookingJobService(dependencies = {}) {
     customerAvailability,
     publicCustomerAvailabilityDeps,
     findBestCustomerPromotion,
+    createServicePackageResolver,
   } = dependencies;
 
   const ENABLE_SERVICE_ZONE_FILTER = Boolean(dependencies.isServiceZoneFilterEnabled());
@@ -842,10 +844,10 @@ function createBookingJobService(dependencies = {}) {
   // Rebuild the incoming service + extra lines with the SAME normalizer used to
   // create a booking, so an identical service payload yields an identical
   // signature (and any material change yields a different one). Read-only.
-  async function buildIncomingBookingLineSignature(db, payloadV2, itemIdQty, standardPrice) {
+  async function buildIncomingBookingLineSignature(db, payloadV2, itemIdQty, standardPrice, packageBooking) {
     let computed = [];
     let total = Number(standardPrice || 0);
-    const serviceLines = await customerPricingHelpers.buildCustomerServiceLineItemsFromPayload(
+    const serviceLines = packageBooking ? [packageBooking.item] : await customerPricingHelpers.buildCustomerServiceLineItemsFromPayload(
       (payloadV2.services && Array.isArray(payloadV2.services))
         ? payloadV2
         : {
@@ -917,9 +919,42 @@ function createBookingJobService(dependencies = {}) {
   // by the pre-flight replay and the in-transaction race path.
   async function scheduledPayloadMatchesExisting(db, jobRow, incoming, options = {}) {
     if (!scheduledScalarsMatch(jobRow, incoming, options)) return false;
+    if (incoming.packageBooking) {
+      const packageLink = await db.query(
+        `SELECT 1 FROM public.job_items
+          WHERE job_id=$1 AND service_package_id=$2 AND service_package_tier_id=$3
+          LIMIT 1`,
+        [jobRow.job_id, incoming.packageBooking.packageId, incoming.packageBooking.tierId]
+      );
+      if (!packageLink.rows[0]) return false;
+    }
     const storedSig = await loadStoredBookingLineSignature(db, jobRow.job_id);
-    const incomingSig = await buildIncomingBookingLineSignature(db, incoming.payloadV2, incoming.itemIdQty, incoming.standardPrice);
+    const incomingSig = await buildIncomingBookingLineSignature(
+      db, incoming.payloadV2, incoming.itemIdQty, incoming.standardPrice, incoming.packageBooking
+    );
     return storedSig === incomingSig;
+  }
+
+  async function historicalPackageBookingForReplay(db, jobId, body, appointmentDatetime) {
+    const result = await db.query(
+      `SELECT service_package_id, service_package_tier_id, service_package_snapshot
+         FROM public.job_items
+        WHERE job_id=$1
+          AND service_package_id IS NOT NULL
+          AND service_package_tier_id IS NOT NULL
+          AND service_package_snapshot IS NOT NULL
+        LIMIT 1`,
+      [jobId]
+    );
+    const item = result.rows[0];
+    if (!item) return null;
+    return packageBookingFromSnapshot({
+      body,
+      appointmentDatetime,
+      snapshot: item.service_package_snapshot,
+      packageId: item.service_package_id,
+      tierId: item.service_package_tier_id,
+    });
   }
 
   // Customer App V2 urgent requests are just another entry point into the
@@ -1138,6 +1173,8 @@ function createBookingJobService(dependencies = {}) {
       scheduled_request_key,
       urgent_request_key,
       catalog_item_id, // optional: links this booking to the Store catalog item it was booked for
+      service_package_key,
+      service_package_tier_key,
     } = req.body || {};
 
     // 🔒 Kill switch (fail closed) — CANONICAL GATE. /public/book is entirely
@@ -1152,6 +1189,17 @@ function createBookingJobService(dependencies = {}) {
     if (canonicalBookingMode !== "scheduled" && canonicalBookingMode !== "urgent") {
       return res.status(400).json({ error: "ประเภทการจองไม่ถูกต้อง", code: "UNKNOWN_BOOKING_MODE" });
     }
+    let packageRequestBody;
+    let hasPackageRequest = false;
+    try {
+      packageRequestBody = { ...(req.body || {}) };
+      // Parse before urgent routing so package keys can never reach or alter urgent dispatch.
+      hasPackageRequest = service_package_key != null || service_package_tier_key != null
+        || req.body?.service_package_id != null || req.body?.service_package_tier_id != null;
+      if (canonicalBookingMode === "urgent" && hasPackageRequest) {
+        return res.status(400).json({ error: "PACKAGE_URGENT_UNSUPPORTED", code: "PACKAGE_URGENT_UNSUPPORTED" });
+      }
+    } catch (_) {}
     const urgentCapability = canonicalBookingMode === "urgent"
       ? await resolveCustomerUrgentCapability()
       : null;
@@ -1179,13 +1227,19 @@ function createBookingJobService(dependencies = {}) {
       return handlePublicCustomerUrgentBook(req, res);
     }
 
-    if (!customer_name || !job_type || !appointment_datetime || !address_text) {
+    if (!customer_name || (!hasPackageRequest && !job_type) || !appointment_datetime || !address_text) {
       return res.status(400).json({ error: "กรอกข้อมูลไม่ครบ (ชื่อ/ประเภทงาน/วันนัด/ที่อยู่)" });
     }
 
     // ✅ Soft customer identity: never required, never trusted blindly elsewhere —
     // this is only a best-effort linkage so a logged-in customer can later prove
     // ownership of *this* job for review eligibility. Booking proceeds for guests too.
+    try {
+      if (hasPackageRequest) packageRequest(packageRequestBody);
+    } catch (error) {
+      return res.status(Number(error.statusCode || 400)).json({ error: error.code, code: error.code });
+    }
+
     let customerSubForJob = null;
     try {
       const jwtSecretForBook = getJwtSecret();
@@ -1253,7 +1307,64 @@ function createBookingJobService(dependencies = {}) {
     }
     const persistedGpsLatitude = bm === "urgent" && gps_latitude != null ? Number(gps_latitude) : null;
     const persistedGpsLongitude = bm === "urgent" && gps_longitude != null ? Number(gps_longitude) : null;
-    const payloadV2 = {
+
+    // A committed package retry is resolved from immutable booking history before
+    // consulting today's package sale/configuration state.
+    if (bm === "scheduled" && hasPackageRequest && deterministicToken) {
+      const idem = await pool.connect();
+      let prior = null;
+      try {
+        await idem.query("BEGIN");
+        await idem.query("SELECT pg_advisory_xact_lock(hashtext($1))", [bookingRequestKey]);
+        const result = await idem.query(
+          `SELECT job_id, booking_code, booking_token, dispatch_mode, duration_min, job_price,
+                  appointment_datetime, customer_phone, customer_name, address_text, maps_url,
+                  job_zone, job_type, customer_note, allow_time_proposal, gps_latitude, gps_longitude
+             FROM public.jobs
+            WHERE booking_token=$1 AND job_source='customer' AND booking_mode=$2
+              AND canceled_at IS NULL
+            LIMIT 1`,
+          [deterministicToken, bm]
+        );
+        await idem.query("COMMIT");
+        prior = result.rows[0] || null;
+      } catch (error) {
+        try { await idem.query("ROLLBACK"); } catch (_) {}
+        throw error;
+      } finally {
+        idem.release();
+      }
+      if (prior) {
+        const historicalPackageBooking = await historicalPackageBookingForReplay(
+          pool, prior.job_id, packageRequestBody, appointment_datetime
+        );
+        const incomingBooking = historicalPackageBooking ? {
+          appointment_datetime, customer_phone, customer_name, address_text, maps_url,
+          job_zone, job_type: historicalPackageBooking.payload.job_type, customer_note,
+          allow_time_proposal: allowTimeProposal, gps_latitude: persistedGpsLatitude,
+          gps_longitude: persistedGpsLongitude, duration_min: historicalPackageBooking.durationMin,
+          payloadV2: historicalPackageBooking.payload, itemIdQty,
+          standardPrice: historicalPackageBooking.fixedTotal,
+          packageBooking: historicalPackageBooking,
+        } : null;
+        if (!incomingBooking || !(await scheduledPayloadMatchesExisting(pool, prior, incomingBooking))) {
+          return res.status(409).json({
+            error: "This request key was already used for another booking. Start a new booking.",
+            code: "IDEMPOTENCY_KEY_REUSED",
+          });
+        }
+        const replayDuration = Number(prior.duration_min || historicalPackageBooking.durationMin || 0);
+        return res.json({
+          success: true, replayed: true, job_id: prior.job_id,
+          booking_code: prior.booking_code, token: prior.booking_token,
+          booking_mode: bm, dispatch_mode: prior.dispatch_mode || "normal",
+          duration_min: replayDuration, effective_block_min: effectiveBlockMin(replayDuration),
+          travel_buffer_min: TRAVEL_BUFFER_MIN, base_total: Number(prior.job_price || 0),
+        });
+      }
+    }
+
+    let payloadV2 = {
       job_type: String(job_type).trim(),
       ac_type: (ac_type || "").toString().trim(),
       btu: Number(btu || 0),
@@ -1263,6 +1374,18 @@ function createBookingJobService(dependencies = {}) {
       admin_override_duration_min: 0, // ลูกค้าห้าม override
     };
     if (Array.isArray(services) && services.length) payloadV2.services = services;
+    let packageBooking = null;
+    try {
+      packageBooking = await resolvePackageBooking({
+        body: packageRequestBody,
+        bookingMode: bm,
+        appointmentDatetime: appointment_datetime,
+        resolver: hasPackageRequest ? createServicePackageResolver(pool) : null,
+      });
+      if (packageBooking) payloadV2 = packageBooking.payload;
+    } catch (error) {
+      return res.status(Number(error.statusCode || 400)).json({ error: error.code, code: error.code });
+    }
     if (bm === "urgent") {
       if (!urgentPublicAdapter.isStrictUrgentCleaningPayload(payloadV2)) {
         return res.status(400).json({ error: "URGENT_CLEANING_ONLY", code: "URGENT_CLEANING_ONLY" });
@@ -1285,7 +1408,9 @@ function createBookingJobService(dependencies = {}) {
       });
     }
     // CWF Spec: conservative duration for schedule/collision
-    const duration_min_v2 = computeDurationMinMulti(payloadV2, { source: "public_book", conservative: true });
+    const duration_min_v2 = packageBooking
+      ? packageBooking.durationMin
+      : computeDurationMinMulti(payloadV2, { source: "public_book", conservative: true });
     if (duration_min_v2 <= 0) return res.status(400).json({ error: "งานประเภทนี้ต้องให้แอดมินกำหนดเวลา (duration)" });
     if (bm === "scheduled") {
       const startIsoForCutoff = normalizeAppointmentDatetime(appointment_datetime);
@@ -1309,8 +1434,10 @@ function createBookingJobService(dependencies = {}) {
         });
       }
     }
-    const customerPrice = await customerPricingHelpers.resolveCustomerPricingMulti(payloadV2, pool);
-    const standard_price = Number(customerPrice.active_price ?? customerPrice.standard_price ?? 0);
+    const customerPrice = packageBooking ? null : await customerPricingHelpers.resolveCustomerPricingMulti(payloadV2, pool);
+    const standard_price = packageBooking
+      ? packageBooking.fixedTotal
+      : Number(customerPrice.active_price ?? customerPrice.standard_price ?? 0);
 
   // ✅ Parse lat/lng from maps_url or address_text (fail-open)
   const parsedLL = parseLatLngFromText(maps_url) || parseLatLngFromText(address_text);
@@ -1364,9 +1491,9 @@ function createBookingJobService(dependencies = {}) {
       if (prior) {
         const incomingBooking = {
           appointment_datetime, customer_phone, customer_name, address_text, maps_url,
-          job_zone, job_type, customer_note, allow_time_proposal: allowTimeProposal,
+          job_zone, job_type: packageBooking ? payloadV2.job_type : job_type, customer_note, allow_time_proposal: allowTimeProposal,
           gps_latitude: persistedGpsLatitude, gps_longitude: persistedGpsLongitude,
-          duration_min: duration_min_v2, payloadV2, itemIdQty, standardPrice: standard_price,
+          duration_min: duration_min_v2, payloadV2, itemIdQty, standardPrice: standard_price, packageBooking,
         };
         if (!(await scheduledPayloadMatchesExisting(pool, prior, incomingBooking))) {
           // Same key, materially different booking. No mutation, no identifiers/PII.
@@ -1480,13 +1607,19 @@ function createBookingJobService(dependencies = {}) {
           // (no mutation, no identifiers/PII). Same comparison as the pre-flight path.
           const row = existing.rows[0];
           await client.query("COMMIT");
-          const incomingBooking = {
+          const replayPackageBooking = hasPackageRequest
+            ? await historicalPackageBookingForReplay(pool, row.job_id, packageRequestBody, appointment_datetime)
+            : null;
+          const incomingBooking = hasPackageRequest && !replayPackageBooking ? null : {
             appointment_datetime, customer_phone, customer_name, address_text, maps_url,
-            job_zone, job_type, customer_note, allow_time_proposal: allowTimeProposal,
+            job_zone, job_type: replayPackageBooking ? replayPackageBooking.payload.job_type : job_type, customer_note, allow_time_proposal: allowTimeProposal,
             gps_latitude: persistedGpsLatitude, gps_longitude: persistedGpsLongitude,
-            duration_min: duration_min_v2, payloadV2, itemIdQty, standardPrice: standard_price,
+            duration_min: replayPackageBooking ? replayPackageBooking.durationMin : duration_min_v2,
+            payloadV2: replayPackageBooking ? replayPackageBooking.payload : payloadV2,
+            itemIdQty, standardPrice: replayPackageBooking ? replayPackageBooking.fixedTotal : standard_price,
+            packageBooking: replayPackageBooking,
           };
-          if (!(await scheduledPayloadMatchesExisting(pool, row, incomingBooking))) {
+          if (!incomingBooking || !(await scheduledPayloadMatchesExisting(pool, row, incomingBooking))) {
             return res.status(409).json({
               error: "คำขอนี้ถูกใช้ไปแล้วกับการจองอื่น กรุณาเริ่มการจองใหม่",
               code: "IDEMPOTENCY_KEY_REUSED",
@@ -1508,6 +1641,25 @@ function createBookingJobService(dependencies = {}) {
         }
       }
 
+      // Only a genuinely new mutation depends on current package state. The
+      // advisory-lock replay above must win if another request just committed.
+      if (packageBooking) {
+        const revalidatedPackageBooking = await resolvePackageBooking({
+          body: packageRequestBody,
+          bookingMode: bm,
+          appointmentDatetime: appointment_datetime,
+          resolver: createServicePackageResolver(client),
+        });
+        if (JSON.stringify(revalidatedPackageBooking) !== JSON.stringify(packageBooking)) {
+          const changed = new Error("PACKAGE_UNAVAILABLE");
+          changed.code = "PACKAGE_UNAVAILABLE";
+          changed.statusCode = 409;
+          throw changed;
+        }
+        packageBooking = revalidatedPackageBooking;
+        payloadV2 = packageBooking.payload;
+      }
+
       let draftReservationTech = null;
       if (bm === "scheduled") {
         const startIso = normalizeAppointmentDatetime(appointment_datetime);
@@ -1524,7 +1676,7 @@ function createBookingJobService(dependencies = {}) {
       }
 
       // 1) ดึงราคา base_price จาก DB
-  const serviceLineItems = await customerPricingHelpers.buildCustomerServiceLineItemsFromPayload(
+  const serviceLineItems = packageBooking ? [packageBooking.item] : await customerPricingHelpers.buildCustomerServiceLineItemsFromPayload(
     (payloadV2.services && Array.isArray(payloadV2.services))
       ? payloadV2
       : { ...payloadV2, services: [{
@@ -1588,8 +1740,8 @@ function createBookingJobService(dependencies = {}) {
       // IMPORTANT: "ราคา" ของงานต้องเป็นราคาพื้นฐานเดิม (ห้ามเปลี่ยนราคา)
       // - jobs.job_price เก็บ base_total เท่านั้น
       // - ส่วนลดบันทึกแยกที่ job_promotions.applied_discount
-      const base_total = Number(total || 0);
-      const promoPick = await findBestCustomerPromotion(payloadV2, base_total, client);
+      const base_total = packageBooking ? packageBooking.fixedTotal : Number(total || 0);
+      const promoPick = packageBooking ? null : await findBestCustomerPromotion(payloadV2, base_total, client);
       const appliedPromo = promoPick?.promo || null;
       const appliedDiscount = Math.min(Number(base_total || 0), Number(promoPick?.discount || 0));
 
@@ -1610,9 +1762,9 @@ function createBookingJobService(dependencies = {}) {
       const jobInsertParams = [
         String(customer_name).trim(),
         (customer_phone || "").toString().trim(),
-        String(job_type).trim(),
+        String(packageBooking ? payloadV2.job_type : job_type).trim(),
         appointment_datetime,
-        Number(base_total || 0),
+        base_total,
         String(address_text).trim(),
         token,
         (customer_note || "").toString(),
@@ -1724,28 +1876,34 @@ function createBookingJobService(dependencies = {}) {
 
       // 3) บันทึกรายการ (ถ้ามี)
       for (const it of computedItems) {
+        const itemParams = [
+          job_id,
+          it.item_id || null,
+          it.item_name,
+          Number(it.qty || 0),
+          packageBooking ? it.unit_price : Number(it.unit_price || 0),
+          packageBooking ? it.line_total : Number(it.line_total || 0),
+          it.assigned_technician_username || null,
+          !!it.is_service,
+          it.customer_price_rule_id || null,
+          it.normal_unit_price || null,
+          it.customer_price_label || null,
+          it.customer_campaign_name || null,
+          it.customer_price_source || null,
+        ];
+        const packageColumns = packageBooking
+          ? ", service_package_id, service_package_tier_id, service_package_snapshot"
+          : "";
+        const packageValues = packageBooking ? ",$14,$15,$16" : "";
+        if (packageBooking) {
+          itemParams.push(packageBooking.packageId, packageBooking.tierId, JSON.stringify(packageBooking.snapshot));
+        }
         await client.query(
-          `
-          INSERT INTO public.job_items
+          `INSERT INTO public.job_items
             (job_id, item_id, item_name, qty, unit_price, line_total, assigned_technician_username, is_service,
-             customer_price_rule_id, normal_unit_price, customer_price_label, customer_campaign_name, customer_price_source)
-          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-          `,
-          [
-            job_id,
-            it.item_id || null,
-            it.item_name,
-            Number(it.qty || 0),
-            Number(it.unit_price || 0),
-            Number(it.line_total || 0),
-            it.assigned_technician_username || null,
-            !!it.is_service,
-            it.customer_price_rule_id || null,
-            it.normal_unit_price || null,
-            it.customer_price_label || null,
-            it.customer_campaign_name || null,
-            it.customer_price_source || null,
-          ]
+             customer_price_rule_id, normal_unit_price, customer_price_label, customer_campaign_name, customer_price_source${packageColumns})
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13${packageValues})`,
+          itemParams
         );
       }
 
@@ -1822,6 +1980,15 @@ function createBookingJobService(dependencies = {}) {
       });
     } catch (e) {
       await client.query("ROLLBACK");
+      if (hasPackageRequest) {
+        const knownPackageCode = String(e?.code || "").startsWith("PACKAGE_") ? e.code : "PACKAGE_BOOKING_FAILED";
+        const statusCode = Number(e?.statusCode || e?.status || 500);
+        console.error(e);
+        return res.status(statusCode >= 400 && statusCode < 600 ? statusCode : 500).json({
+          error: knownPackageCode,
+          code: knownPackageCode,
+        });
+      }
       const statusCode = Number(e?.statusCode || e?.status || 500);
       console.error(e);
       res.status(statusCode >= 400 && statusCode < 600 ? statusCode : 500).json({

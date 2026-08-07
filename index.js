@@ -14126,6 +14126,7 @@ const bookingJobService = createBookingJobService({
   customerAvailability,
   publicCustomerAvailabilityDeps,
   findBestCustomerPromotion,
+  createServicePackageResolver: (db) => createServicePackageResolver({ db }),
   availabilityEngine: customerAvailability,
   urgentDispatchService,
   resolveCustomerUrgentCapability: () => urgentCapability.resolveUrgentCapability(pool),
