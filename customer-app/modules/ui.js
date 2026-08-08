@@ -787,13 +787,56 @@
   function renderHomepageSectionsWithAdvisor() {
     const sections = homepageSections();
     const rendered = sections.map((section) => ({ section, html: renderHomepageSection(section) })).filter((entry) => entry.html);
-    if (!root.advisor || typeof root.advisor.renderSection !== "function") return rendered.map((entry) => entry.html).join("");
+    const packageHtml = renderHomepageServicePackages();
+    const packageMount = `<div data-home-service-packages ${packageHtml ? "" : "hidden"}>${packageHtml}</div>`;
     const quickIndex = rendered.findIndex((entry) => entry.section.type === "quick");
     const heroIndex = rendered.findIndex((entry) => entry.section.type === "hero");
+    const packageAfter = heroIndex >= 0 ? heroIndex : -1;
+    if (!root.advisor || typeof root.advisor.renderSection !== "function") {
+      if (packageAfter < 0) return `${packageMount}${rendered.map((entry) => entry.html).join("")}`;
+      return rendered.map((entry, index) => `${entry.html}${index === packageAfter ? packageMount : ""}`).join("");
+    }
     const insertAfter = quickIndex >= 0 ? quickIndex : heroIndex >= 0 ? heroIndex : -1;
     const advisorHtml = root.advisor.renderSection(root.state.catalog || { status: "idle", items: [] });
-    if (insertAfter < 0) return `${advisorHtml}${rendered.map((entry) => entry.html).join("")}`;
-    return rendered.map((entry, index) => `${entry.html}${index === insertAfter ? advisorHtml : ""}`).join("");
+    if (insertAfter < 0) return `${packageMount}${advisorHtml}${rendered.map((entry) => entry.html).join("")}`;
+    return rendered.map((entry, index) => `${entry.html}${index === packageAfter ? packageMount : ""}${index === insertAfter ? advisorHtml : ""}`).join("");
+  }
+
+  function homepageServicePackages() {
+    if (root.state.homeServicePackages?.status !== "success") return [];
+    const now = Date.now();
+    return (Array.isArray(root.state.homeServicePackages.items) ? root.state.homeServicePackages.items : [])
+      .filter((item) => {
+        if (!item || !item.package_key || !item.package_name || !Array.isArray(item.tiers)) return false;
+        if (item.is_active === false || item.is_customer_visible === false) return false;
+        const starts = item.sell_start_at ? Date.parse(item.sell_start_at) : NaN;
+        const ends = item.sell_end_at ? Date.parse(item.sell_end_at) : NaN;
+        return !(Number.isFinite(starts) && starts > now) && !(Number.isFinite(ends) && ends < now);
+      })
+      .map((item) => ({
+        ...item,
+        tiers: item.tiers.filter((tier) => tier && tier.tier_key && Number(tier.quantity) > 0 && tier.fixed_total_price != null),
+      }))
+      .filter((item) => item.tiers.length);
+  }
+
+  function formatPackageDate(value) {
+    const raw = String(value || "").slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return "";
+    const [year, month, day] = raw.split("-").map(Number);
+    return `${day}/${month}/${year + 543}`;
+  }
+
+  function renderHomepageServicePackages() {
+    const packages = homepageServicePackages();
+    if (!packages.length) return "";
+    return `<section class="homepage-package-feature" aria-labelledby="homepage-package-title">
+      <div class="homepage-package-heading"><div><span>โปรโมชั่นพิเศษ</span><h2 id="homepage-package-title">แพ็กเกจแนะนำ</h2></div><p>เลือกราคาที่ต้องการ แล้วจองต่อได้ทันที</p></div>
+      <div class="homepage-package-grid">${packages.map((item) => {
+        const deadline = item.sell_end_at || item.redeem_until;
+        return `<article class="homepage-package-card"><div class="homepage-package-copy"><span class="homepage-package-service">${root.utils.escapeHtml(item.service?.service_name || "บริการ CWF")}</span><h3>${root.utils.escapeHtml(item.package_name)}</h3>${item.description ? `<p>${root.utils.escapeHtml(item.description)}</p>` : ""}${deadline ? `<small>${item.sell_end_at ? "จองได้ถึง" : "ใช้สิทธิ์ได้ถึง"} ${root.utils.escapeHtml(formatPackageDate(deadline))}</small>` : ""}</div><div class="homepage-package-tiers">${item.tiers.map((tier) => `<button type="button" data-home-package-key="${root.utils.escapeHtml(item.package_key)}" data-home-package-tier-key="${root.utils.escapeHtml(tier.tier_key)}"><span>${root.utils.escapeHtml(tier.tier_name || `${tier.quantity} เครื่อง`)}</span><strong>${root.utils.escapeHtml(String(tier.quantity))} เครื่อง — ${root.utils.escapeHtml(String(tier.fixed_total_price))} บาท</strong><em>จองโปรนี้</em></button>`).join("")}</div></article>`;
+      }).join("")}</div>
+    </section>`;
   }
 
   function renderAccountShortcut() {
@@ -960,6 +1003,17 @@
     }
   }
 
+  async function loadHomeServicePackagesData() {
+    if (root.state.homeServicePackages?.status !== "idle") return;
+    root.state.setCollection("homeServicePackages", { status: "loading", items: [], error: "" });
+    try {
+      const data = await root.api.loadServicePackages();
+      root.state.setCollection("homeServicePackages", { status: "success", items: Array.isArray(data?.service_packages) ? data.service_packages : [], error: "" });
+    } catch (error) {
+      root.state.setCollection("homeServicePackages", { status: "error", items: [], error: error?.message || "SERVICE_PACKAGES_UNAVAILABLE" });
+    }
+  }
+
   async function loadHomeData() {
     if (homeLoadPromise) return homeLoadPromise;
     const needsAuth = root.state.authStatus === "idle" && !root.state.customer;
@@ -969,7 +1023,8 @@
     const needsZones = root.state.zones?.status === "idle";
     const needsPricing = root.state.homePricing?.status === "idle";
     const needsActiveJob = root.state.homeActiveJob?.status === "idle";
-    if (!needsAuth && !needsHomepage && !needsCatalog && !needsPromotions && !needsZones && !needsPricing && !needsActiveJob) return Promise.resolve([]);
+    const needsServicePackages = root.state.homeServicePackages?.status === "idle";
+    if (!needsAuth && !needsHomepage && !needsCatalog && !needsPromotions && !needsZones && !needsPricing && !needsActiveJob && !needsServicePackages) return Promise.resolve([]);
     const tasks = [];
     if (needsAuth) tasks.push(root.auth.loadCustomer(null));
     if (needsHomepage) tasks.push(loadHomepageData());
@@ -978,6 +1033,7 @@
     if (needsZones) tasks.push(loadCollection("zones", root.api.loadServiceZones, "zones"));
     if (needsPricing) tasks.push(loadHomePricingData());
     if (needsActiveJob) tasks.push(loadHomeActiveJobData());
+    if (needsServicePackages) tasks.push(loadHomeServicePackagesData());
     homeLoadPromise = Promise.allSettled(tasks).finally(() => {
       homeLoadPromise = null;
       patchHomeData();
@@ -1081,6 +1137,28 @@
     bindHomepageHeroSliders(container);
     bindHomepagePromoBannerSlider(container);
     bindHomepageFeaturedRotators(container);
+    container.querySelectorAll("[data-home-package-key][data-home-package-tier-key]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const packageKey = String(button.getAttribute("data-home-package-key") || "").trim();
+        const tierKey = String(button.getAttribute("data-home-package-tier-key") || "").trim();
+        if (!packageKey || !tierKey) return;
+        root.state.updateDraft("scheduled", {
+          service_package_key: packageKey,
+          service_package_tier_key: tierKey,
+          service_package_btu: "",
+          service_package_preview: null,
+          services: [],
+          selectedSlot: null,
+          scheduled_request_key: "",
+        });
+        root.state.setScheduledWizard({ step: 1, error: "" });
+        root.state.setScheduledPreview("package", { status: "idle", data: null, error: "", verified: false });
+        root.state.setScheduledPreview("pricing", { status: "idle", data: null, error: "" });
+        root.state.setScheduledPreview("availability", { status: "idle", data: null, error: "", query_key: "", loaded_at: "" });
+        root.state.setScheduledPreview("calendar", { status: "idle", data: null, error: "", query_key: "", loaded_at: "" });
+        root.utils.routeTo("scheduled");
+      });
+    });
     container.querySelectorAll("[data-home-contact]").forEach((button) => {
       button.addEventListener("click", (event) => {
         event.preventDefault?.();
@@ -1300,6 +1378,7 @@
     const blocks = Array.from(screen.children).filter((el) =>
       el.classList &&
       (el.classList.contains("homepage-hero") ||
+        el.hasAttribute?.("data-home-service-packages") ||
         el.classList.contains("homepage-quick-grid") ||
         el.classList.contains("homepage-promo-banner") ||
         el.classList.contains("homepage-section")));
@@ -1497,6 +1576,12 @@
     if (account) {
       account.innerHTML = renderAccountShortcut();
       root.auth?.bindAvatarFallbacks?.(account);
+    }
+    const packageMount = container.querySelector("[data-home-service-packages]");
+    if (packageMount) {
+      const html = renderHomepageServicePackages();
+      packageMount.innerHTML = html;
+      packageMount.hidden = !html;
     }
     // Re-render each featured/active-job mount from its own section config (by
     // id), so duplicated sections of these types all refresh — not just the
@@ -1703,6 +1788,9 @@
       featuredCatalogPool,
       buildFeaturedPages,
       renderHomepageHero,
+      homepageServicePackages,
+      renderHomepageServicePackages,
+      bindHomepage,
       renderHomepageSectionsWithAdvisor,
       renderHomepageFeaturedServices,
       openFeaturedContactSheet,
