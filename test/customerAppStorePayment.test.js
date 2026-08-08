@@ -58,7 +58,7 @@ test("store falls back to the LINE hand-off when payment is unconfigured or the 
 test("payment step styles exist and the Customer App payment build id is bumped", () => {
   assert.match(cssSrc, /\.pay-method-btn/);
   assert.match(cssSrc, /\.pay-qr-img/);
-  assert.match(read("customer-app/index.html"), /modules\/store\.js\?v=20260809_issue267_booking_ticket_v5/);
-  assert.match(read("customer-app/sw.js"), /BUILD_ID = "20260809_issue267_booking_ticket_v5"/);
+  assert.match(read("customer-app/index.html"), /modules\/store\.js\?v=20260809_issue267_catalog_flow_v6/);
+  assert.match(read("customer-app/sw.js"), /BUILD_ID = "20260809_issue267_catalog_flow_v6"/);
   assert.match(storeSrc, /payment-security 20260705 loaded/);
 });

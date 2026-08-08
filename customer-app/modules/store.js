@@ -970,6 +970,20 @@
         root.utils.routeTo("scheduled");
       });
     });
+    container.querySelectorAll("[data-store-urgent]").forEach((button) => {
+      button.addEventListener("click", (event) => {
+        event.stopPropagation && event.stopPropagation();
+        if (button.disabled) return;
+        const id = button.getAttribute("data-store-urgent");
+        const item = (root.state.catalog.items || []).find((it) => String(it.item_id) === String(id));
+        if (!item || !allowsUrgentBooking(item) || !urgentBookingAvailable()) return;
+        if (isServicePackageBundle(item)) { goToDetail(id); return; }
+        const draftItem = root.services.catalogItemToCommerceDraft(item);
+        if (!draftItem || !root.services.applyCommerceDraft("urgent", draftItem)) return;
+        trackItemEvent("cwf_store_begin_urgent_booking", item, { source: "store_list" });
+        root.utils.routeTo("urgent");
+      });
+    });
     container.querySelectorAll("[data-store-buy]").forEach((button) => {
       button.addEventListener("click", (event) => {
         event.stopPropagation && event.stopPropagation();
@@ -1770,19 +1784,6 @@
         const draftItem = root.services.catalogItemToCommerceDraft(item);
         if (!draftItem || !root.services.applyCommerceDraft("urgent", draftItem)) return;
         trackItemEvent("cwf_store_begin_urgent_booking", item, { source: "store_detail" });
-        root.utils.routeTo("urgent");
-      });
-    });
-    container.querySelectorAll("[data-store-urgent]").forEach((button) => {
-      button.addEventListener("click", (event) => {
-        event.stopPropagation && event.stopPropagation();
-        if (button.disabled) return;
-        const id = button.getAttribute("data-store-urgent");
-        const item = (root.state.catalog.items || []).find((it) => String(it.item_id) === String(id));
-        if (isServicePackageBundle(item)) { goToDetail(id); return; }
-        const draftItem = root.services.catalogItemToCommerceDraft(item);
-        if (!draftItem || !root.services.applyCommerceDraft("urgent", draftItem)) return;
-        trackItemEvent("cwf_store_begin_urgent_booking", item, { source: "store_list" });
         root.utils.routeTo("urgent");
       });
     });

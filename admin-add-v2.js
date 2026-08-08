@@ -1369,6 +1369,28 @@ let previewTimer = null;
 function bundleSelected() { return !!String(el("store_service_bundle_key")?.value || "").trim(); }
 function packageSelected() { return bundleSelected() || !!String(el("service_package_key")?.value || "").trim(); }
 
+function selectedStorePromotion() {
+  if (bundleSelected()) {
+    return state.service_bundles.find((item) => item.service_bundle_key === String(el("store_service_bundle_key")?.value || "")) || null;
+  }
+  return state.catalog.find((item) => Number(item.item_id) === Number(state.selected_store_catalog_item_id)) || null;
+}
+
+function applySelectedStoreFlowPolicy() {
+  const select = el("dispatch_mode_ui");
+  const urgent = select?.querySelector?.('option[value="urgent"]');
+  if (!select || !urgent) return;
+  const promotion = selectedStorePromotion();
+  const legacyPackage = !promotion && !!String(el("service_package_key")?.value || "").trim();
+  const blocked = legacyPackage || (promotion
+    && String(promotion.booking_flow_policy || "scheduled_only") !== "scheduled_and_urgent");
+  urgent.disabled = !!blocked;
+  if (blocked && select.value === "urgent") {
+    select.value = "assign";
+    syncModesFromUI();
+  }
+}
+
 function packagePreviewIsFresh() {
   if (bundleSelected()) return !!state.service_bundle_quote && state.service_bundle_quote_fingerprint === bundleFingerprint();
   const selection = state.service_package_preview_selection;
@@ -1456,8 +1478,8 @@ function invalidateServicePackagePreview({ loading = false } = {}) {
   if (submit) submit.disabled = packageSelected();
 }
 
-function setPackageControlsLocked(locked) {
-  ["job_type", "ac_type", "btu", "machine_count", "override_price", "override_duration_min",
+function setPackageControlsLocked(locked, { allowQuantity = false } = {}) {
+  ["job_type", "ac_type", "btu", ...(allowQuantity ? [] : ["machine_count"]), "override_price", "override_duration_min",
     "extras_select", "extras_qty", "btnAddExtra", "promotion_id"].forEach((id) => {
     const node = el(id); if (node) node.disabled = !!locked;
   });
@@ -1538,6 +1560,58 @@ async function refreshPreview() {
       el("pv_normal_price").textContent = fmtMoney(state.standard_price);
       el("pv_line_total").textContent = fmtMoney(state.standard_price);
       if (el("appt_date").value) loadAvailability();
+    }
+    return;
+  }
+  if (state.selected_store_catalog_item_id) {
+    if (!validateRequiredForPreview()) {
+      el("pv_duration").textContent = "-";
+      el("pv_block").textContent = "-";
+      el("pv_price").textContent = "-";
+      if (el("pv_normal_price")) el("pv_normal_price").textContent = "-";
+      if (el("pv_price_source")) el("pv_price_source").textContent = "-";
+      if (el("pv_line_total")) el("pv_line_total").textContent = "-";
+      return;
+    }
+    try {
+      const payload = getPayloadV2();
+      const quote = await apiFetch("/admin/catalog-booking-preview", { method: "POST", body: JSON.stringify({
+        catalog_item_id: state.selected_store_catalog_item_id,
+        booking_mode: String(el("booking_mode")?.value || "scheduled"),
+        job_type: payload.job_type,
+        ac_type: payload.ac_type,
+        btu: payload.btu,
+        wash_variant: payload.wash_variant,
+        machine_count: payload.machine_count,
+      }) });
+      state.normal_price = Number(quote.normal_unit_price || quote.unit_price || 0) * Number(quote.machine_count || 1);
+      state.active_price = Number(quote.exact_total || 0);
+      state.standard_price = state.active_price;
+      state.customer_price_label = quote.price_label || "";
+      state.campaign_name = quote.campaign_name || "";
+      state.customer_price_source = quote.price_source || "";
+      state.duration_min = Number(quote.duration_min || 0);
+      state.effective_block_min = Number(quote.effective_block_min || 0);
+      state.travel_buffer_min = Number(quote.travel_buffer_min || 30);
+      el("pv_duration").textContent = String(state.duration_min);
+      el("pv_block").textContent = String(state.effective_block_min);
+      el("pv_price").textContent = fmtMoney(state.standard_price);
+      if (el("pv_normal_price")) el("pv_normal_price").textContent = fmtMoney(state.normal_price);
+      if (el("pv_price_source")) {
+        const campaign = state.campaign_name || state.customer_price_label || "-";
+        el("pv_price_source").textContent = `แคมเปญที่ใช้: ${campaign} • แหล่งราคา: Store catalog`;
+      }
+      if (el("pv_line_total")) el("pv_line_total").textContent = fmtMoney(state.standard_price);
+      updateTotalPreview();
+      if (el("appt_date").value) loadAvailability();
+    } catch (e) {
+      el("pv_duration").textContent = "-";
+      el("pv_block").textContent = "-";
+      el("pv_price").textContent = "-";
+      if (el("pv_normal_price")) el("pv_normal_price").textContent = "-";
+      if (el("pv_price_source")) el("pv_price_source").textContent = "-";
+      if (el("pv_line_total")) el("pv_line_total").textContent = "-";
+      showToast(e.message || "คำนวณรายการร้านค้าไม่สำเร็จ", "error");
     }
     return;
   }
@@ -3074,6 +3148,13 @@ async function submitBooking() {
     payload.override_duration_min = 0;
     }
   }
+  if (state.selected_store_catalog_item_id) {
+    delete payload.services;
+    payload.items = [];
+    payload.promotion_id = null;
+    payload.override_price = 0;
+    payload.override_duration_min = 0;
+  }
   // NOTE: split_assignments is optional and backward compatible
   const adminPayloadFingerprint = JSON.stringify(payload);
   if (!state.admin_request_key || state.admin_request_fingerprint !== adminPayloadFingerprint) {
@@ -3217,12 +3298,33 @@ function wireEvents() {
     const id = Number(el("store_bookable_item_id").value || 0);
     const item = state.catalog.find((entry) => Number(entry.item_id) === id);
     state.selected_store_catalog_item_id = item ? id : null;
-    if (!item) return;
+    state.admin_request_key = "";
+    state.admin_request_fingerprint = "";
+    if (!item) {
+      setPackageControlsLocked(packageSelected());
+      applySelectedStoreFlowPolicy();
+      return;
+    }
+    el("store_service_bundle_key").value = "";
+    el("service_package_key").value = "";
+    el("service_package_tier_key").innerHTML = '<option value="">Select tier</option>';
+    el("service_package_tier_key").disabled = true;
+    renderServiceBundleGroups();
+    invalidateServicePackagePreview();
+    state.service_lines = [];
+    state.selected_items = [];
+    renderServiceLines();
+    renderExtras();
+    el("promotion_id").value = "";
+    el("override_price").value = "0";
+    el("override_duration_min").value = "0";
     el("job_type").value = item.booking_job_type || "";
     el("ac_type").value = item.booking_ac_type || "";
     buildVariantUI();
     el("btu").value = String(item.booking_btu || "");
     const wash = el("wash_variant"); if (wash) wash.value = item.booking_wash_variant || "";
+    setPackageControlsLocked(true, { allowQuantity: true });
+    applySelectedStoreFlowPolicy();
     refreshPreviewDebounced();
   });
   el("store_service_bundle_key")?.addEventListener("change", () => {
@@ -3239,13 +3341,19 @@ function wireEvents() {
     invalidateServicePackagePreview();
     renderServiceBundleGroups();
     setPackageControlsLocked(selected);
+    applySelectedStoreFlowPolicy();
   });
   el("service_package_key")?.addEventListener("change", async () => {
     const key = String(el("service_package_key").value || "");
     const tier = el("service_package_tier_key");
     tier.innerHTML = '<option value="">Select tier</option>';
     const pkg = state.service_packages.find((item) => item.package_key === key);
-    if (pkg) { el("store_service_bundle_key").value = ""; renderServiceBundleGroups(); }
+    if (pkg) {
+      state.selected_store_catalog_item_id = null;
+      if (el("store_bookable_item_id")) el("store_bookable_item_id").value = "";
+      el("store_service_bundle_key").value = "";
+      renderServiceBundleGroups();
+    }
     for (const item of (pkg?.tiers || [])) {
       const option = document.createElement("option"); option.value = item.tier_key;
       option.textContent = `${item.tier_name} (${item.quantity} / ${item.fixed_total_price})`; tier.appendChild(option);
@@ -3253,6 +3361,7 @@ function wireEvents() {
     tier.disabled = !pkg;
     invalidateServicePackagePreview();
     setPackageControlsLocked(!!pkg);
+    applySelectedStoreFlowPolicy();
     if (!pkg) refreshPreviewDebounced();
   });
   el("service_package_tier_key")?.addEventListener("change", () => previewServicePackage().then(refreshPreview).catch((e) => {

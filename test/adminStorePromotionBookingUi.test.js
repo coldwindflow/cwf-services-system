@@ -6,6 +6,9 @@ const fs = require("node:fs");
 const html = fs.readFileSync("admin-add-v2.html", "utf8");
 const js = fs.readFileSync("admin-add-v2.js", "utf8");
 const booking = fs.readFileSync("server/services/booking/createBookingJob.js", "utf8");
+const policy = fs.readFileSync("server/services/booking/catalogBookingPolicy.js", "utf8");
+const guard = fs.readFileSync("server/services/booking/adminStorePromotionPolicy.js", "utf8");
+const routes = fs.readFileSync("server/routes/admin/adminBookings.js", "utf8");
 
 test("Admin Add Job selects Store parents, quotes arbitrary mixed groups and retains ordinary catalog identity", () => {
   assert.match(html, /store_bookable_item_id/);
@@ -18,4 +21,18 @@ test("Admin Add Job selects Store parents, quotes arbitrary mixed groups and ret
   assert.doesNotMatch(js, /data-admin-bundle-quantity[^\n]+max=/);
   assert.match(booking, /AND p\.catalog_item_id IS NULL/);
   assert.match(booking, /ADMIN_IDEMPOTENCY_KEY_REUSED/);
+  assert.match(routes, /\/admin\/catalog-booking-preview/);
+  assert.match(js, /\/admin\/catalog-booking-preview/);
+  assert.match(js, /applySelectedStoreFlowPolicy/);
+  assert.match(js, /urgent\.disabled = !!blocked/);
+  assert.match(js, /state\.service_lines = \[\]/);
+  assert.match(js, /state\.selected_items = \[\]/);
+  assert.match(js, /if \(state\.selected_store_catalog_item_id\)[\s\S]*?delete payload\.services/);
+  assert.match(booking, /validateAdminStorePromotionRequest/);
+  assert.match(booking, /buildCatalogBookingItem/);
+  assert.match(booking, /buildCatalogBookingPayload/);
+  assert.match(booking, /CATALOG_STACKING_UNSUPPORTED/);
+  assert.match(policy, /ci\.job_category AS booking_job_type/);
+  assert.match(policy, /exact_total/);
+  assert.match(guard, /STORE_PROMOTION_STACKING_UNSUPPORTED/);
 });

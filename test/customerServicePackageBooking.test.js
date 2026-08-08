@@ -333,10 +333,10 @@ test("booking mutation keeps package linkage, snapshot, price, promotion bypass,
   const units = source.indexOf("ensureCanonicalBookingJobUnits(job_id, client)", itemInsert);
   const commit = source.indexOf('await client.query("COMMIT")', units);
   assert.ok(begin >= 0 && revalidate > begin && itemInsert > revalidate && units > itemInsert && commit > units);
-  assert.match(source, /const promoPick = packageBooking \? null : await findBestCustomerPromotion/);
+  assert.match(source, /const promoPick = packageBooking \|\| catalogBooking \? null : await findBestCustomerPromotion/);
   assert.match(source, /packageBooking \? packageBooking\.fixedTotal : Number\(total \|\| 0\)/);
   assert.match(source, /pg_advisory_xact_lock/);
-  assert.match(source, /packageBooking \? packageBooking\.items : await customerPricingHelpers/);
+  assert.match(source, /packageBooking \? packageBooking\.items[\s\S]*?catalogBooking \? \[buildCatalogBookingItem\(catalogBooking\)\]/);
 });
 
 test("package replay ordering uses persisted history before current resolution and locked revalidation", () => {

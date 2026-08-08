@@ -32,3 +32,12 @@ test("scheduled flow and Admin use the composite contract instead of standalone 
   assert.match(admin, /บันทึกสินค้าและแพ็กเกจ/);
   assert.match(admin, /loadCatalogItems\(\)/);
 });
+
+test("Store grid binds urgent actions with policy and runtime availability gates", () => {
+  const grid = store.slice(store.indexOf("function bindGridActions"), store.indexOf("function patchGrid"));
+  const detail = store.slice(store.indexOf("function bindDetailBody"), store.indexOf("function openDetail"));
+  assert.match(grid, /querySelectorAll\("\[data-store-urgent\]"\)/);
+  assert.match(grid, /allowsUrgentBooking\(item\)/);
+  assert.match(grid, /urgentBookingAvailable/);
+  assert.doesNotMatch(detail, /querySelectorAll\("\[data-store-urgent\]"\)/);
+});
