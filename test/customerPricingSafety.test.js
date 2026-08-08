@@ -532,5 +532,5 @@ test("admin UI source exposes safety warnings and cache-busted assets", () => {
   assert.match(catalogJs, /ราคาสินค้าเท่านั้น ไม่ใช้คำนวณค่าบริการ/);
   assert.match(catalogJs, /modalPricingRisk/);
   assert.match(promoHtml, /admin-promotions-v2\.js\?v=20260708_price_rule_safety_v2/);
-  assert.match(catalogHtml, /admin-store-catalog\.js\?v=20260808_service_packages_th_v1/);
+  assert.match(catalogHtml, /admin-store-catalog\.js\?v=20260809_store_service_package_bundles_v1/);
 });

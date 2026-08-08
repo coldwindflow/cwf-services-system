@@ -91,6 +91,8 @@
       service_package_tier_key: "",
       service_package_btu: "",
       service_package_preview: null,
+      service_package_groups: [],
+      service_package_bundle_preview: null,
     };
   }
 
@@ -296,6 +298,8 @@
         restored.service_package_btu = String(restored.service_package_btu || "").trim();
         // Persisted display metadata is never authoritative for a new booking.
         restored.service_package_preview = null;
+        restored.service_package_groups = Array.isArray(restored.service_package_groups) ? restored.service_package_groups : [];
+        restored.service_package_bundle_preview = null;
         if (!restored.service_package_key || !restored.service_package_tier_key) {
           restored.service_package_key = "";
           restored.service_package_tier_key = "";

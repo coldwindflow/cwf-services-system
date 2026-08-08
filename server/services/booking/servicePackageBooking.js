@@ -1,5 +1,7 @@
 "use strict";
 
+const { normalizeGroups, parseMoney, formatMoney, allocateUnitMoney } = require("../packages/compositeServicePackage");
+
 const PACKAGE_ERROR_STATUS = Object.freeze({
   PACKAGE_IDENTITY_REQUIRED: 400,
   TIER_IDENTITY_REQUIRED: 400,
@@ -21,6 +23,7 @@ function packageError(code, status = 400) {
 }
 
 function packageRequest(body = {}) {
+  if (Object.prototype.hasOwnProperty.call(body, "service_package_groups")) return { composite: true };
   const hasPackageKey = Object.prototype.hasOwnProperty.call(body, "service_package_key");
   const hasTierKey = Object.prototype.hasOwnProperty.call(body, "service_package_tier_key");
   const packageKey = String(body.service_package_key || "").trim();
@@ -89,6 +92,15 @@ function canonicalizeSelection(selection, body, appointmentDatetime) {
   const unitDuration = Number(line.unit_duration_minutes);
   const fixedTotal = String(selection.fixed_total_price);
   const unitPrice = allocateUnitPrice(fixedTotal, quantity);
+  const item = {
+    item_id: null,
+    item_name: serviceItemName(line, btu),
+    qty: quantity,
+    unit_price: unitPrice,
+    line_total: fixedTotal,
+    is_service: true,
+    customer_price_source: "service_package",
+  };
   return {
     packageId: String(selection.package.id),
     tierId: String(selection.tier.id),
@@ -104,15 +116,8 @@ function canonicalizeSelection(selection, body, appointmentDatetime) {
       repair_variant: "",
       admin_override_duration_min: 0,
     },
-    item: {
-      item_id: null,
-      item_name: serviceItemName(line, btu),
-      qty: quantity,
-      unit_price: unitPrice,
-      line_total: fixedTotal,
-      is_service: true,
-      customer_price_source: "service_package",
-    },
+    item,
+    items: [{ ...item, packageId: String(selection.package.id), tierId: String(selection.tier.id), snapshot: selection.snapshot }],
   };
 }
 
@@ -121,6 +126,10 @@ async function resolvePackageBooking({ body, bookingMode, appointmentDatetime, r
   if (!request) return null;
   if (bookingMode !== "scheduled") throw packageError("PACKAGE_URGENT_UNSUPPORTED", 400);
   try {
+    if (request.composite) {
+      if (!resolver || typeof resolver.resolveComposite !== "function") throw packageError("PACKAGE_UNAVAILABLE", 409);
+      return await resolver.resolveComposite({ body, bookingMode, appointmentDatetime, identity });
+    }
     const selection = await resolver.resolveSelection(request, { identity });
     return canonicalizeSelection(selection, body, appointmentDatetime);
   } catch (error) {
@@ -152,4 +161,56 @@ function packageBookingFromSnapshot({ body, appointmentDatetime, snapshot, packa
   }
 }
 
-module.exports = { packageRequest, canonicalizeSelection, resolvePackageBooking, packageBookingFromSnapshot };
+function compositeBookingFromSnapshots({ body, snapshots }) {
+  let groups;
+  try { groups = normalizeGroups(body); } catch (_) { return null; }
+  if (!groups || !Array.isArray(snapshots) || !snapshots.length) return null;
+  const items = [];
+  const storedGroups = new Map();
+  let total = 0n;
+  let durationMin = 0;
+  let bundleKey = null;
+  let bundleId = null;
+  for (const row of snapshots) {
+    let snapshot = row.service_package_snapshot;
+    if (typeof snapshot === "string") { try { snapshot = JSON.parse(snapshot); } catch (_) { return null; } }
+    if (!snapshot || snapshot.schema_version !== 2) return null;
+    if (String(snapshot.package?.id) !== String(row.service_package_id)
+        || String(snapshot.tier?.id) !== String(row.service_package_tier_id)) return null;
+    if (bundleKey && bundleKey !== snapshot.catalog_item?.key) return null;
+    bundleKey = snapshot.catalog_item?.key; bundleId = String(snapshot.catalog_item?.id || "");
+    const btu = Number(snapshot.taxonomy?.selected_btu); const quantity = Number(snapshot.quantity);
+    if (!bundleKey || !bundleId || !snapshot.package?.key || !Number.isInteger(btu) || !Number.isInteger(quantity) || quantity <= 0) return null;
+    let price;
+    try { price = parseMoney(snapshot.fixed_total_price); } catch (_) { return null; }
+    total += price;
+    durationMin += quantity * Number(snapshot.unit_duration_minutes || 0);
+    const groupKey = `${snapshot.package.key}:${btu}`;
+    storedGroups.set(groupKey, (storedGroups.get(groupKey) || 0) + quantity);
+    items.push({
+      item_id: bundleId, item_name: `${snapshot.package.name} • ${btu} BTU • ${quantity} เครื่อง`, qty: quantity,
+      unit_price: allocateUnitMoney(price, quantity), line_total: snapshot.fixed_total_price,
+      is_service: true, customer_price_source: "service_package",
+      packageId: String(row.service_package_id), tierId: String(row.service_package_tier_id), snapshot,
+    });
+  }
+  const requestedGroups = new Map();
+  groups.forEach((group) => {
+    const key = `${group.packageKey}:${group.btu}`;
+    requestedGroups.set(key, (requestedGroups.get(key) || 0) + group.quantity);
+  });
+  if (storedGroups.size !== requestedGroups.size
+      || [...storedGroups].some(([key, quantity]) => requestedGroups.get(key) !== quantity)) return null;
+  const first = items[0].snapshot;
+  return {
+    bundleId, bundleKey, fixedTotal: formatMoney(total), durationMin, items,
+    payload: {
+      job_type: first.taxonomy.job_type, ac_type: first.taxonomy.ac_type,
+      btu: groups[0].btu, machine_count: groups.reduce((sum, group) => sum + group.quantity, 0),
+      wash_variant: first.taxonomy.wash_variant || "", repair_variant: "", admin_override_duration_min: 0,
+      service_package_groups: groups.map((group) => ({ package_key: group.packageKey, btu: group.btu, quantity: group.quantity })),
+    },
+  };
+}
+
+module.exports = { packageRequest, canonicalizeSelection, resolvePackageBooking, packageBookingFromSnapshot, compositeBookingFromSnapshots };

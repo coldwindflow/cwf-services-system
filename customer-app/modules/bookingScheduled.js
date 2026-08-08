@@ -22,11 +22,15 @@
   }
 
   function hasPackageSelection() {
-    return Boolean(String(draft().service_package_key || "").trim() && String(draft().service_package_tier_key || "").trim());
+    return hasCompositeSelection() || Boolean(String(draft().service_package_key || "").trim() && String(draft().service_package_tier_key || "").trim());
+  }
+
+  function hasCompositeSelection() {
+    return Array.isArray(draft().service_package_groups) && draft().service_package_groups.length > 0;
   }
 
   function packagePreview() {
-    return root.state.scheduledPreview.package?.data || null;
+    return draft().service_package_bundle_preview || root.state.scheduledPreview.package?.data || null;
   }
 
   function packageBtuOptions(preview = packagePreview()) {
@@ -53,6 +57,7 @@
   function payloadFromDraft() {
     if (hasPackageSelection()) {
       const preview = packagePreview();
+      if (hasCompositeSelection()) return preview?.payload || null;
       if (!preview || !packageBtuIsValid(preview)) return null;
       const constraints = preview.service?.constraints || {};
       return {
@@ -339,7 +344,8 @@
   }
 
   function clearPackageSelection() {
-    root.state.updateDraft("scheduled", { service_package_key: "", service_package_tier_key: "", service_package_btu: "", service_package_preview: null, scheduled_request_key: "" });
+    root.state.updateDraft("scheduled", { service_package_key: "", service_package_tier_key: "", service_package_btu: "", service_package_preview: null,
+      service_package_groups: [], service_package_bundle_preview: null, scheduled_request_key: "" });
     root.state.setScheduledPreview("package", { status: "idle", data: null, error: "", verified: false });
     clearPriceCalendarSlots();
   }
@@ -394,6 +400,10 @@
   function renderSelectedPackage() {
     const preview = packagePreview();
     if (!hasPackageSelection() || !preview) return "";
+    if (hasCompositeSelection()) {
+      const groups = Array.isArray(preview.groups) ? preview.groups : [];
+      return `<div class="selected-package-summary"><strong>${root.utils.escapeHtml(preview.package_name || "แพ็กเกจบริการ")}</strong>${groups.map((group) => `<span>${root.utils.escapeHtml(group.package_name || group.package_key)} · ${root.utils.escapeHtml(String(group.btu))} BTU · ${root.utils.escapeHtml(String(group.quantity))} เครื่อง</span>`).join("")}<span>ยอดรวม ${root.utils.escapeHtml(String(preview.fixed_total_price))} บาท · ${root.utils.escapeHtml(String(preview.duration_min))} นาที</span>${preview.redeem_until ? `<small>เลือกวันใช้บริการได้ถึง ${root.utils.escapeHtml(String(preview.redeem_until).slice(0, 10))}</small>` : ""}</div>`;
+    }
     return `<div class="selected-package-summary"><strong>${root.utils.escapeHtml(preview.package_name || "แพ็กเกจบริการ")} · ${root.utils.escapeHtml(preview.tier_name || "")}</strong><span>${root.utils.escapeHtml(preview.service?.service_name || "")} · ${root.utils.escapeHtml(String(preview.quantity))} เครื่อง</span><span>ยอดรวม ${root.utils.escapeHtml(String(preview.fixed_total_price))} บาท · ${root.utils.escapeHtml(String(Number(preview.quantity) * Number(preview.unit_duration_minutes)))} นาที</span>${preview.redeem_until ? `<small>เลือกวันใช้บริการได้ถึง ${root.utils.escapeHtml(String(preview.redeem_until).slice(0, 10))}</small>` : ""}<div class="field field-wide"><label>BTU จริงของเครื่องปรับอากาศ</label>${choiceGroup("service_package_btu", packageBtuOptions(preview), draft().service_package_btu, "btu-choice-grid", "package")}</div></div>`;
   }
 
@@ -448,7 +458,8 @@
     if (hasPackageSelection()) {
       const preview = packagePreview();
       if (!preview) return root.utils.stateBox("", "กรุณาเลือกแพ็กเกจและรอการตรวจสอบ");
-      return `<div class="wizard-price-summary"><div><span>ยอดรวมแพ็กเกจ</span><strong>${root.utils.escapeHtml(String(preview.fixed_total_price))} บาท</strong></div><div><span>เวลาทำงานรวม</span><strong>${root.utils.escapeHtml(String(Number(preview.quantity) * Number(preview.unit_duration_minutes)))} นาที</strong></div></div>`;
+      const minutes = hasCompositeSelection() ? Number(preview.duration_min) : Number(preview.quantity) * Number(preview.unit_duration_minutes);
+      return `<div class="wizard-price-summary"><div><span>ยอดรวมแพ็กเกจ</span><strong>${root.utils.escapeHtml(String(preview.fixed_total_price))} บาท</strong></div><div><span>เวลาทำงานรวม</span><strong>${root.utils.escapeHtml(String(minutes))} นาที</strong></div></div>`;
     }
     const pricing = root.state.scheduledPreview.pricing;
     const data = pricing.data;
@@ -750,6 +761,9 @@
     const pricing = root.state.scheduledPreview.pricing.data || {};
     if (hasPackageSelection()) {
       const preview = packagePreview() || {};
+      if (hasCompositeSelection()) {
+        return `<div class="data-list review-data-list"><div class="data-row"><strong>แพ็กเกจ</strong><span class="muted">${root.utils.escapeHtml(preview.package_name || "-")}</span></div>${(preview.groups || []).map((group) => `<div class="data-row"><strong>${root.utils.escapeHtml(group.package_name || group.package_key)}</strong><span class="muted">${root.utils.escapeHtml(String(group.btu))} BTU · ${root.utils.escapeHtml(String(group.quantity))} เครื่อง</span></div>`).join("")}<div class="data-row"><strong>ยอดรวมคงที่</strong><span class="muted">${root.utils.escapeHtml(String(preview.fixed_total_price || "-"))} บาท</span></div><div class="data-row"><strong>ผู้ติดต่อ</strong><span class="muted">${root.utils.escapeHtml(d.customer_name || "-")} · ${root.utils.escapeHtml(d.customer_phone || "-")}</span></div><div class="data-row"><strong>ที่อยู่</strong><span class="muted">${root.utils.escapeHtml(d.address_text || "-")}</span></div><div class="data-row"><strong>วันและเวลา</strong><span class="muted">${root.utils.escapeHtml(d.date || "-")} · ${root.utils.escapeHtml(selected.start || "-")}-${root.utils.escapeHtml(selected.end || "-")} น.</span></div></div>`;
+      }
       return `<div class="data-list review-data-list">
         <div class="data-row"><strong>แพ็กเกจ</strong><span class="muted">${root.utils.escapeHtml(preview.package_name || "-")} · ${root.utils.escapeHtml(preview.tier_name || "-")}</span></div>
         <div class="data-row"><strong>บริการและจำนวน</strong><span class="muted">${root.utils.escapeHtml(preview.service?.service_name || "-")} · ${root.utils.escapeHtml(String(preview.quantity || "-"))} เครื่อง</span></div>
@@ -845,6 +859,7 @@
   function validateServiceStep() {
     if (hasPackageSelection()) {
       if (root.state.scheduledPreview.package?.verified !== true || !packagePreview()) return "กรุณารอให้ระบบตรวจสอบแพ็กเกจอีกครั้ง";
+      if (hasCompositeSelection()) return "";
       if (!packageBtuIsValid()) return "กรุณาเลือก BTU จริงที่อยู่ในช่วงของแพ็กเกจ";
       return "";
     }
@@ -903,6 +918,7 @@
     };
     if (hasPackageSelection()) {
       delete common.catalog_item_id;
+      if (hasCompositeSelection()) return { ...common, service_package_groups: draft().service_package_groups.map((group) => ({ package_key: group.package_key, btu: Number(group.btu), quantity: Number(group.quantity) })) };
       return {
         ...common,
         service_package_key: String(d.service_package_key).trim(),
@@ -917,7 +933,7 @@
     if (hasPackageSelection()) {
       const preview = packagePreview();
       if (!preview) throw new Error("แพ็กเกจยังไม่พร้อม");
-      const data = { duration_min: Number(preview.quantity) * Number(preview.unit_duration_minutes), fixed_total_price: preview.fixed_total_price };
+      const data = { duration_min: hasCompositeSelection() ? Number(preview.duration_min) : Number(preview.quantity) * Number(preview.unit_duration_minutes), fixed_total_price: preview.fixed_total_price };
       root.state.setScheduledPreview("pricing", { status: "success", data, error: "" });
       if (!opts.preserveDependents) clearCalendarSlots();
       paint(container);
@@ -1347,7 +1363,7 @@
   async function recoverScheduledDependencies(container) {
     if (recoveryInFlight) return;
     if (step() < 2) return;
-    if (hasPackageSelection() && root.state.scheduledPreview.package?.verified !== true) {
+    if (hasPackageSelection() && !hasCompositeSelection() && root.state.scheduledPreview.package?.verified !== true) {
       const restoredBtu = draft().service_package_btu;
       const restored = await selectServicePackage(draft().service_package_key, draft().service_package_tier_key, container, { restoredBtu, restore: true });
       if (!restored) return;
@@ -1383,7 +1399,7 @@
     paint(container);
     if (root.state.scheduledPreview.packages.status === "idle") loadServicePackages(container);
     if (step() === 1) {
-      if (hasPackageSelection() && root.state.scheduledPreview.package?.verified !== true) {
+      if (hasPackageSelection() && !hasCompositeSelection() && root.state.scheduledPreview.package?.verified !== true) {
         selectServicePackage(draft().service_package_key, draft().service_package_tier_key, container, { restoredBtu: draft().service_package_btu, restore: true });
         return;
       }

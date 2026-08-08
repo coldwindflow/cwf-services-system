@@ -281,7 +281,7 @@ test("api exposes loadCustomerAppConfig as a no-store GET to /public/customer-ap
 });
 
 test("build wiring: pageAvailability.js is registered in the HTML shell and the SW cache, with the new build id", () => {
-  const build = "20260808_homepage_service_packages_v2";
+  const build = "20260809_store_service_package_bundles_v1";
   assert.match(indexHtml, new RegExp(`modules/pageAvailability\\.js\\?v=${build}`));
   assert.match(swSrc, new RegExp(`BUILD_ID = "${build}"`));
   assert.match(swSrc, /modules\/pageAvailability\.js\?v=\$\{BUILD_ID\}/);
@@ -294,7 +294,7 @@ test("build wiring: pageAvailability.js is registered in the HTML shell and the 
    RUNTIME tests (execute the real code in a VM — not regex assertions).
    ========================================================================== */
 
-const BUILD = "20260808_homepage_service_packages_v2";
+const BUILD = "20260809_store_service_package_bundles_v1";
 const adminSrc = read("admin-homepage-cms.js");
 
 function reqUrlOf(req) {

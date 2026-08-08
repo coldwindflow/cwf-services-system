@@ -2,6 +2,7 @@ const { money, intOrNull, boolish, validateServicePriceRuleForWrite, serviceRule
 const cloudinaryImageUpload = require("../../lib/cloudinaryImageUpload");
 const customerAvailability = require("../../services/public/customerAvailability");
 const { getBangkokNow, computeJobTiming } = require("../../services/jobTiming");
+const servicePackageRepository = require("../../services/packages/servicePackageRepository");
 
 const MAX_CATALOG_IMAGES_PER_ITEM = 4;
 
@@ -85,7 +86,7 @@ const CATALOG_HOT_FIELDS = ["is_hot"];
 // "purchase" = a physical product the customer can buy (e.g. an AC unit),
 // validated like "contact_admin" (no booking ac_type/btu required) — the buy
 // flow collects quantity + delivery/install options at checkout instead.
-const BOOKING_MODES = new Set(["bookable", "contact_admin", "purchase"]);
+const BOOKING_MODES = new Set(["bookable", "contact_admin", "purchase", "service_package"]);
 
 // Allowed values must match the Customer App's canonical lists exactly
 // (customer-app/modules/services.js: acTypes/btuOptions/washVariants) so a
@@ -504,6 +505,61 @@ async function attachCatalogImages(pool, rows, imagesReady) {
   return rows;
 }
 
+async function attachCatalogServicePackages(pool, rows, { customer = false } = {}) {
+  rows.forEach((row) => { row.service_package_variants = []; });
+  if (!rows.length) return rows;
+  const ready = await pool.query(`
+    SELECT COUNT(*)::int AS cnt FROM information_schema.columns
+     WHERE table_schema='public' AND (
+       (table_name='catalog_items' AND column_name IN
+         ('service_bundle_key','service_package_sell_start_at','service_package_sell_end_at','service_package_redeem_until'))
+       OR (table_name='service_packages' AND column_name='catalog_item_id')
+     )
+  `);
+  if (Number(ready.rows?.[0]?.cnt || 0) !== 5) return rows;
+  const ids = rows.map((row) => row.item_id);
+  const parents = await pool.query(
+    `SELECT item_id,service_bundle_key,service_package_sell_start_at,service_package_sell_end_at,service_package_redeem_until
+       FROM public.catalog_items WHERE item_id=ANY($1::bigint[])`, [ids]
+  );
+  const parentById = new Map(parents.rows.map((row) => [String(row.item_id), row]));
+  const variants = await servicePackageRepository.listLinkedPackagesForCatalogItems(pool, ids, { customer });
+  const byItem = new Map();
+  variants.forEach((variant) => {
+    const key = String(variant.catalog_item_id);
+    if (!byItem.has(key)) byItem.set(key, []);
+    byItem.get(key).push({
+      package_key: variant.package_key,
+      package_name: variant.display_name,
+      description: variant.description,
+      service: {
+        service_key: variant.service_key,
+        service_name: variant.service_name,
+        job_type: variant.job_type,
+        ac_type: variant.ac_type,
+        wash_variant: variant.wash_variant,
+        btu_min: variant.btu_min == null ? null : Number(variant.btu_min),
+        btu_max: variant.btu_max == null ? null : Number(variant.btu_max),
+      },
+      unit_duration_minutes: Number(variant.service_unit_duration_minutes),
+      sort_order: Number(variant.sort_order || 0),
+      is_active: Boolean(variant.is_active),
+      is_customer_visible: Boolean(variant.is_customer_visible),
+      tiers: (variant.tiers || []).map((tier) => ({
+        tier_key: tier.tier_key, tier_name: tier.display_name,
+        quantity: Number(tier.service_quantity), fixed_total_price: String(tier.fixed_total_price),
+        sort_order: Number(tier.sort_order || 0), is_active: Boolean(tier.is_active),
+      })),
+    });
+  });
+  rows.forEach((row) => {
+    const parent = parentById.get(String(row.item_id));
+    if (parent) Object.assign(row, parent);
+    row.service_package_variants = byItem.get(String(row.item_id)) || [];
+  });
+  return rows;
+}
+
 // Same migration as catalog_item_reviews; gates whether rating aggregation
 // can take admin-assigned reviews (assigned_item_id, set on originally
 // ambiguous service_type/overall-scoped tracking reviews) into account.
@@ -830,6 +886,12 @@ function serializeCatalogRow(row) {
     short_description: row.short_description || null,
     highlights: Array.isArray(row.highlights) ? row.highlights : [],
     booking_mode: BOOKING_MODES.has(row.booking_mode) ? row.booking_mode : "contact_admin",
+    service_bundle_key: row.booking_mode === "service_package" ? (row.service_bundle_key || null) : null,
+    service_package_sell_start_at: row.booking_mode === "service_package" ? (row.service_package_sell_start_at || null) : null,
+    service_package_sell_end_at: row.booking_mode === "service_package" ? (row.service_package_sell_end_at || null) : null,
+    service_package_redeem_until: row.booking_mode === "service_package" ? (row.service_package_redeem_until || null) : null,
+    service_package_variants: row.booking_mode === "service_package" && Array.isArray(row.service_package_variants)
+      ? row.service_package_variants : [],
     // Needed on the list endpoint so the Store card's "book" button can build a
     // real booking draft without a follow-up detail fetch. booking_service_key is
     // intentionally omitted here: the frontend never uses it for booking, only
@@ -1134,6 +1196,7 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
         params
       );
       await attachCatalogImages(pool, r.rows, imagesReady);
+      await attachCatalogServicePackages(pool, r.rows, { customer });
       await attachCatalogRatings(pool, r.rows, reviewsReady);
       await attachBookingCounts(pool, r.rows, jobsCatalogLinkReady);
       await attachTodayQueueAvailability(pool, r.rows, queueSlotDeps);
@@ -1165,6 +1228,7 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
       const row = r.rows[0];
       if (!row) return res.status(404).json({ error: "ไม่พบรายการนี้" });
       await attachCatalogImages(pool, [row], imagesReady);
+      await attachCatalogServicePackages(pool, [row], { customer: true });
       await attachCatalogRatings(pool, [row], reviewsReady);
       await attachBookingCounts(pool, [row], jobsCatalogLinkReady);
       await attachTodayQueueAvailability(pool, [row], queueSlotDeps);
@@ -1187,6 +1251,7 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
       const select = buildCatalogSelect({ pricingReady, marketplaceReady, autoplayReady, hotReady });
       const r = await pool.query(`${select} ORDER BY ci.item_category, ci.item_name`);
       await attachCatalogImages(pool, r.rows, imagesReady);
+      await attachCatalogServicePackages(pool, r.rows);
       await attachCatalogRatings(pool, r.rows, reviewsReady);
       await attachBookingCounts(pool, r.rows, jobsCatalogLinkReady);
       res.json(r.rows.map(serializeAdminCatalogRow));
@@ -1208,6 +1273,9 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
 
     const marketplaceResult = validateMarketplaceFields(merged);
     if (!marketplaceResult.ok) return res.status(400).json({ error: marketplaceResult.errors.join(", ") });
+    if (marketplaceResult.value.booking_mode === "service_package") {
+      return res.status(400).json({ error: "Use the atomic Store service-package bundle endpoint", code: "SERVICE_PACKAGE_BUNDLE_ENDPOINT_REQUIRED" });
+    }
 
     const hotResult = validateHotField(merged);
     if (!hotResult.ok) return res.status(400).json({ error: hotResult.errors.join(", ") });
@@ -1340,6 +1408,9 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
 
     const marketplaceResult = validateMarketplaceFields(merged);
     if (!marketplaceResult.ok) return res.status(400).json({ error: marketplaceResult.errors.join(", ") });
+    if (marketplaceResult.value.booking_mode === "service_package") {
+      return res.status(400).json({ error: "Use the atomic Store service-package bundle endpoint", code: "SERVICE_PACKAGE_BUNDLE_ENDPOINT_REQUIRED" });
+    }
 
     const hotResult = validateHotField(merged);
     if (!hotResult.ok) return res.status(400).json({ error: hotResult.errors.join(", ") });
@@ -1954,6 +2025,7 @@ module.exports.buildCatalogSelect = buildCatalogSelect;
 module.exports.MAX_CATALOG_IMAGES_PER_ITEM = MAX_CATALOG_IMAGES_PER_ITEM;
 module.exports.validateHotField = validateHotField;
 module.exports.attachCatalogRatings = attachCatalogRatings;
+module.exports.attachCatalogServicePackages = attachCatalogServicePackages;
 // Test-only: queueTodayCache is a 60s in-process TTL cache, deliberately shared
 // across requests within a process. Tests that need a fresh eligibility check
 // (rather than another test's cached value) must clear it first.

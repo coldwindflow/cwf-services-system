@@ -44,6 +44,11 @@
   }
 
   function effectiveSalePrice(item) {
+    if (item?.booking_mode === "service_package") {
+      const prices = (item.service_package_variants || []).flatMap((variant) => (variant.tiers || []))
+        .filter((tier) => tier.is_active !== false).map((tier) => Number(tier.fixed_total_price)).filter((price) => Number.isFinite(price) && price > 0);
+      if (prices.length) return Math.min(...prices);
+    }
     const display = Number(item.display_price);
     if (Number.isFinite(display) && display > 0) return display;
     const base = Number(item.base_price);
@@ -58,7 +63,7 @@
   function priceLabel(item) {
     const sale = effectiveSalePrice(item);
     if (sale === null) return "สอบถามราคา";
-    return root.utils.formatBaht(sale);
+    return `${item?.booking_mode === "service_package" ? "เริ่ม " : ""}${root.utils.formatBaht(sale)}`;
   }
 
   function hasPromo(item) {
@@ -79,7 +84,83 @@
   }
 
   function isBookable(item) {
-    return item.booking_mode === "bookable";
+    return item.booking_mode === "bookable" || item.booking_mode === "service_package";
+  }
+
+  function isServicePackageBundle(item) {
+    return item?.booking_mode === "service_package" && Array.isArray(item.service_package_variants);
+  }
+
+  function bundleBtuOptions(variant) {
+    const service = variant?.service || {};
+    const min = Number(service.btu_min || 0);
+    const max = Number(service.btu_max || Number.MAX_SAFE_INTEGER);
+    return root.services.bookableBtuOptions.filter((option) => option.btu >= min && option.btu <= max);
+  }
+
+  function composeBundleTiers(tiers, requestedQuantity) {
+    const usable = (tiers || []).filter((tier) => tier.is_active !== false).map((tier) => ({
+      ...tier, quantity: Number(tier.quantity), minor: BigInt(String(tier.fixed_total_price).replace(".", "")),
+    })).filter((tier) => Number.isInteger(tier.quantity) && tier.quantity > 0);
+    const exact = usable.filter((tier) => tier.quantity === requestedQuantity).sort((a, b) => a.minor < b.minor ? -1 : 1)[0];
+    if (exact) return { minor: exact.minor, components: [exact] };
+    const best = Array(requestedQuantity + 1).fill(null); best[0] = { minor: 0n, components: [] };
+    for (let target = 1; target <= requestedQuantity; target += 1) {
+      for (const tier of usable) {
+        const prior = best[target - tier.quantity];
+        if (tier.quantity > target || !prior || (tier.quantity === 1 && prior.components.some((part) => part.quantity === 1))) continue;
+        const candidate = { minor: prior.minor + tier.minor, components: [...prior.components, tier] };
+        const current = best[target];
+        if (!current || candidate.minor < current.minor
+            || (candidate.minor === current.minor && candidate.components.length < current.components.length)) best[target] = candidate;
+      }
+    }
+    return best[requestedQuantity];
+  }
+
+  function renderBundleConfigurator(item) {
+    if (!isServicePackageBundle(item)) return "";
+    return `<section class="store-bundle-config" data-store-bundle-config><h3>เลือก BTU และจำนวนเครื่อง</h3><p class="muted">รวมแอร์หลายขนาดในงานเดียวได้ และเลือกมากกว่า 4 เครื่องได้</p>${item.service_package_variants.map((variant) => {
+      const options = bundleBtuOptions(variant);
+      return `<div class="store-bundle-row" data-bundle-package="${root.utils.escapeHtml(variant.package_key)}"><div><strong>${root.utils.escapeHtml(variant.package_name)}</strong>${variant.description ? `<small>${root.utils.escapeHtml(variant.description)}</small>` : ""}</div><label>BTU<select class="select" data-bundle-btu>${options.map((option) => `<option value="${option.btu}">${root.utils.escapeHtml(option.label || `${option.btu} BTU`)}</option>`).join("")}</select></label><label>จำนวน<select class="select" data-bundle-quantity>${Array.from({ length: 11 }, (_, quantity) => `<option value="${quantity}">${quantity} เครื่อง</option>`).join("")}</select></label></div>`;
+    }).join("")}<div class="store-bundle-live-total" data-bundle-total>เลือกอย่างน้อย 1 เครื่อง</div><div class="inline-error" data-bundle-error aria-live="polite"></div></section>`;
+  }
+
+  function collectBundleDraft(container, item) {
+    const groups = []; const previewGroups = []; const services = [];
+    let total = 0n; let durationMin = 0;
+    container.querySelectorAll("[data-bundle-package]").forEach((row) => {
+      const quantity = Number(row.querySelector("[data-bundle-quantity]")?.value || 0);
+      if (!quantity) return;
+      const packageKey = row.getAttribute("data-bundle-package");
+      const variant = item.service_package_variants.find((entry) => entry.package_key === packageKey);
+      const btu = Number(row.querySelector("[data-bundle-btu]")?.value || 0);
+      const plan = variant ? composeBundleTiers(variant.tiers, quantity) : null;
+      if (!variant || !plan || !btu) throw new Error("จำนวนที่เลือกไม่สามารถจัดเป็นแพ็กเกจได้");
+      total += plan.minor; durationMin += quantity * Number(variant.unit_duration_minutes);
+      groups.push({ package_key: packageKey, btu, quantity });
+      previewGroups.push({ package_key: packageKey, package_name: variant.package_name, btu, quantity });
+      services.push({ job_type: variant.service.job_type, ac_type: variant.service.ac_type, btu, machine_count: quantity,
+        wash_variant: variant.service.wash_variant || "", repair_variant: "" });
+    });
+    if (!groups.length) throw new Error("กรุณาเลือกอย่างน้อย 1 เครื่อง");
+    const fixedTotal = `${total / 100n}.${String(total % 100n).padStart(2, "0")}`;
+    return { groups, preview: { package_name: item.item_name, groups: previewGroups, fixed_total_price: fixedTotal,
+      duration_min: durationMin, redeem_until: item.service_package_redeem_until, payload: { services } } };
+  }
+
+  function beginBundleBooking(container, item) {
+    const errorBox = container.querySelector("[data-bundle-error]");
+    try {
+      const result = collectBundleDraft(container, item);
+      root.state.updateDraft("scheduled", { service_package_key: "", service_package_tier_key: "", service_package_btu: "",
+        service_package_groups: result.groups, service_package_bundle_preview: result.preview, services: [], selectedSlot: null, scheduled_request_key: "" });
+      root.state.setScheduledPreview("package", { status: "success", data: result.preview, error: "", verified: true });
+      root.state.setScheduledPreview("pricing", { status: "idle", data: null, error: "" });
+      root.utils.routeTo("scheduled");
+    } catch (error) {
+      if (errorBox) errorBox.textContent = error.message;
+    }
   }
 
   // Physical product the customer can buy (e.g. an AC unit) — gets a "ซื้อ"
@@ -785,6 +866,7 @@
         event.stopPropagation && event.stopPropagation();
         const id = button.getAttribute("data-store-book");
         const item = (root.state.catalog.items || []).find((it) => String(it.item_id) === String(id));
+        if (isServicePackageBundle(item)) { goToDetail(id); return; }
         const draftItem = root.services.catalogItemToCommerceDraft(item);
         if (!draftItem || !root.services.applyCommerceDraft("scheduled", draftItem)) {
           trackItemEvent("cwf_store_contact_admin", item, { source: "store_list" });
@@ -1452,7 +1534,7 @@
     const bookable = isBookable(item);
     const showCompare = canonicalAcType(item) === "wall" && canonicalJobCategory(item) === "wash";
     const ctaButton = bookable
-      ? `<button class="primary-btn" type="button" data-store-detail-book="1">จองคิว</button>`
+      ? `<button class="primary-btn" type="button" data-store-detail-book="1">${isServicePackageBundle(item) ? "จองแพ็กเกจ" : "จองคิว"}</button>`
       : isPurchase(item)
         ? `<button class="primary-btn" type="button" data-store-detail-buy="1">ซื้อสินค้า</button>`
         : `<button class="primary-btn" type="button" data-store-detail-contact="1">สอบถามแอดมิน</button>`;
@@ -1475,6 +1557,7 @@
       ${renderPromoInfo(item)}
       ${renderVariantSelector(item, siblings)}
       ${item.short_description ? `<div class="store-detail-section store-detail-summary"><p>${root.utils.escapeHtml(item.short_description)}</p></div>` : ""}
+      ${renderBundleConfigurator(item)}
       <div class="store-detail-inline-cta">${ctaButton}</div>
       <div class="store-detail-accordion-group">
         ${renderAccordionSection("จุดเด่นของบริการ", highlights.length ? `
@@ -1558,6 +1641,7 @@
       bookButton.addEventListener("click", () => {
         const item = root.state.storeDetail?.data;
         if (!item) return;
+        if (isServicePackageBundle(item)) { beginBundleBooking(container, item); return; }
         const draftItem = root.services.catalogItemToCommerceDraft(item);
         if (!draftItem || !root.services.applyCommerceDraft("scheduled", draftItem)) {
           trackItemEvent("cwf_store_contact_admin", item, { source: "store_detail" });
@@ -1566,6 +1650,20 @@
         }
         trackItemEvent("cwf_store_begin_booking", item, { source: "store_detail" });
         root.utils.routeTo("scheduled");
+      });
+    });
+    container.querySelectorAll("[data-bundle-quantity], [data-bundle-btu]").forEach((control) => {
+      control.addEventListener("change", () => {
+        const item = root.state.storeDetail?.data;
+        const total = container.querySelector("[data-bundle-total]");
+        const error = container.querySelector("[data-bundle-error]");
+        if (error) error.textContent = "";
+        try {
+          const result = collectBundleDraft(container, item);
+          if (total) total.textContent = `รวม ${result.preview.groups.reduce((sum, group) => sum + group.quantity, 0)} เครื่อง · ${result.preview.fixed_total_price} บาท · ${result.preview.duration_min} นาที`;
+        } catch (cause) {
+          if (total) total.textContent = cause.message;
+        }
       });
     });
     container.querySelectorAll("[data-store-detail-contact]").forEach((contactButton) => {
@@ -2093,7 +2191,8 @@
     clearDetailAutoplay();
   };
 
-  store._test = { loadDetail, loadReviewsList, loadEligibility, detailItemId, renderDetailBody, renderReviewsSectionBody };
+  store._test = { loadDetail, loadReviewsList, loadEligibility, detailItemId, renderDetailBody, renderReviewsSectionBody,
+    composeBundleTiers, renderBundleConfigurator, collectBundleDraft };
 
   root.store = store;
 })();

@@ -2,6 +2,7 @@
 
 const repository = require("./servicePackageRepository");
 const { normalizeServiceType, normalizeAcType, normalizeWashVariantLabel, normalizeWashKey } = require("../../normalizers");
+const { resolveCompositeBooking } = require("./compositeServicePackage");
 
 const SUPPORTED_JOB_TYPES = new Set(["wash", "repair", "install"].map(normalizeServiceType));
 const SUPPORTED_AC_TYPES = new Set(["wall", "cassette", "floor", "ceiling"].map(normalizeAcType));
@@ -123,6 +124,9 @@ function createServicePackageResolver({ db, packageRepository = repository, now 
     },
     readSnapshot,
     listCustomerVisible(options) { return packageRepository.listCustomerVisiblePackages(db, options); },
+    resolveComposite(input) {
+      return resolveCompositeBooking({ ...input, repository: packageRepository, db, now });
+    },
   };
 }
 

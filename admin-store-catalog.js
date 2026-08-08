@@ -13,7 +13,7 @@ let deleteModalItemId = null;
 let servicePackages = [];
 let editingPackageKey = null;
 let packageTierDrafts = [];
-const BOOKING_MODES = ["bookable", "contact_admin", "purchase"];
+const BOOKING_MODES = ["bookable", "contact_admin", "purchase", "service_package"];
 // Must mirror the backend's MAX_CATALOG_IMAGES_PER_ITEM (server/routes/catalog/items.js)
 const MAX_GALLERY_IMAGES = 4;
 
@@ -1071,7 +1071,8 @@ function bindCatalogListActions() {
     const item = catalogItems.find((x) => Number(x.item_id) === id);
     if (!item) return;
     const act = button.getAttribute("data-act");
-    if (act === "edit") openCatalogModalForEdit(id);
+    if (act === "edit" && item.booking_mode === "service_package") openBundleModal(item.service_bundle_key);
+    else if (act === "edit") openCatalogModalForEdit(id);
     else if (act === "more") openMoreSheet(id);
   });
 }
@@ -1131,13 +1132,73 @@ function ensureCreateTypeChooser() {
   </div></div>`;
   document.body.appendChild(wrap.firstElementChild);
   el("new_ordinary_item").addEventListener("click", () => { el("catalog_type_backdrop").classList.add("hidden"); openCatalogModalForNew(); });
-  el("new_package_item").addEventListener("click", () => { el("catalog_type_backdrop").classList.add("hidden"); openPackageModal(); });
+  el("new_package_item").addEventListener("click", () => { el("catalog_type_backdrop").classList.add("hidden"); openBundleModal(); });
   el("new_type_cancel").addEventListener("click", () => el("catalog_type_backdrop").classList.add("hidden"));
 }
 
 function openCreateTypeChooser() {
   ensureCreateTypeChooser();
   el("catalog_type_backdrop").classList.remove("hidden");
+}
+
+function ensureBundleModal() {
+  if (el("bundle_modal_backdrop")) return;
+  const wrap = document.createElement("div");
+  wrap.innerHTML = `<div id="bundle_modal_backdrop" class="cwf-modal-backdrop hidden"><div class="cwf-modal">
+    <div class="cwf-modal-head"><div id="bundle_modal_title" class="cwf-modal-title">สร้าง Store service package</div><button id="bundle_modal_close" class="cwf-modal-close" type="button">×</button></div>
+    <div class="cwf-modal-body"><div class="asc-section"><div class="asc-section-title">สินค้าแม่ใน Store</div>
+      <div class="asc-field"><label>ชื่อสินค้า *</label><input id="bm_item_name"></div>
+      <div class="asc-field"><label>คำอธิบายสั้น</label><textarea id="bm_short_description" rows="2"></textarea></div>
+      <div class="asc-grid2"><div class="asc-field"><label>เริ่มขาย</label><input id="bm_sell_start" type="datetime-local"></div><div class="asc-field"><label>สิ้นสุดการขาย</label><input id="bm_sell_end" type="datetime-local"></div></div>
+      <div class="asc-field"><label>ใช้สิทธิ์ได้ถึง</label><input id="bm_redeem_until" type="datetime-local"></div>
+      <div class="asc-grid2"><div class="asc-field"><label>สถานะ</label><select id="bm_active"><option value="0">แบบร่าง</option><option value="1">เปิดใช้งาน</option></select></div><div class="asc-field"><label>Store</label><select id="bm_visible"><option value="0">ซ่อน</option><option value="1">แสดง</option></select></div></div>
+    </div><div class="asc-section"><div class="asc-section-title">BTU variants และ tiers</div><p class="muted2 mini">กำหนดเป็น JSON array; package_key/tier_key ที่ระบบสร้างให้ต้องคงเดิมเมื่อแก้ไข</p><textarea id="bm_variants" rows="18" spellcheck="false"></textarea></div>
+    <div id="bundle_modal_error" class="asc-modal-error"></div></div>
+    <div class="cwf-modal-foot"><button id="bundle_modal_cancel" class="secondary" type="button">ยกเลิก</button><button id="bundle_modal_save" class="primary" type="button">บันทึกสินค้าและแพ็กเกจ</button></div>
+  </div></div>`;
+  document.body.appendChild(wrap.firstElementChild);
+  const close = () => { if (!isSaving) el("bundle_modal_backdrop").classList.add("hidden"); };
+  el("bundle_modal_close").addEventListener("click", close);
+  el("bundle_modal_cancel").addEventListener("click", close);
+  el("bundle_modal_save").addEventListener("click", saveBundle);
+}
+
+let editingBundleKey = null;
+function defaultBundleVariant() {
+  return [{ display_name: "", description: null, service_key: "", service_name: "", job_type: "wash", ac_type: "wall",
+    wash_variant: "premium", btu_min: null, btu_max: null, service_unit_duration_minutes: 45, is_active: false,
+    is_customer_visible: false, tiers: [{ display_name: "1 เครื่อง", service_quantity: 1, fixed_total_price: "0.00", sort_order: 0, is_active: false }] }];
+}
+function openBundleModal(bundleKey = null) {
+  ensureBundleModal(); editingBundleKey = bundleKey;
+  const bundle = bundleKey ? servicePackages.find((item) => item.service_bundle_key === bundleKey) : null;
+  el("bundle_modal_title").textContent = bundle ? `แก้ไข ${bundle.item_name}` : "สร้าง Store service package";
+  el("bm_item_name").value = bundle?.item_name || "";
+  el("bm_short_description").value = bundle?.short_description || "";
+  el("bm_sell_start").value = dateTimeLocalValue(bundle?.sell_start_at);
+  el("bm_sell_end").value = dateTimeLocalValue(bundle?.sell_end_at);
+  el("bm_redeem_until").value = dateTimeLocalValue(bundle?.redeem_until);
+  el("bm_active").value = bundle?.is_active ? "1" : "0";
+  el("bm_visible").value = bundle?.is_customer_visible ? "1" : "0";
+  el("bm_variants").value = JSON.stringify(bundle?.variants || defaultBundleVariant(), null, 2);
+  el("bundle_modal_error").style.display = "none";
+  el("bundle_modal_backdrop").classList.remove("hidden");
+}
+function bundleDateValue(id) { const value = el(id).value; return value ? new Date(value).toISOString() : null; }
+async function saveBundle() {
+  if (isSaving) return;
+  const box = el("bundle_modal_error"); box.style.display = "none"; isSaving = true; el("bundle_modal_save").disabled = true;
+  try {
+    const payload = { item_name: el("bm_item_name").value.trim(), short_description: el("bm_short_description").value.trim() || null,
+      sell_start_at: bundleDateValue("bm_sell_start"), sell_end_at: bundleDateValue("bm_sell_end"), redeem_until: bundleDateValue("bm_redeem_until"),
+      is_active: el("bm_active").value === "1", is_customer_visible: el("bm_visible").value === "1",
+      variants: JSON.parse(el("bm_variants").value) };
+    const url = editingBundleKey ? `/admin/catalog/service-package-bundles/${encodeURIComponent(editingBundleKey)}` : "/admin/catalog/service-package-bundles";
+    await apiFetch(url, { method: editingBundleKey ? "PATCH" : "POST", body: JSON.stringify(payload) });
+    el("bundle_modal_backdrop").classList.add("hidden"); await Promise.all([loadServicePackages(), loadCatalogItems()]);
+    showToast("บันทึก Store service package แล้ว สามารถจัดการรูปภาพจากการ์ดสินค้าแม่ได้", "success");
+  } catch (error) { box.textContent = error?.message || "ข้อมูล variants ไม่ถูกต้อง"; box.style.display = "block"; }
+  finally { isSaving = false; el("bundle_modal_save").disabled = false; }
 }
 
 function ensurePackageModal() {
@@ -1245,21 +1306,21 @@ async function saveServicePackage() {
 function renderServicePackages() {
   const box = el("package_catalog_list");
   box.innerHTML = servicePackages.length ? servicePackages.map((item) => `<div class="asc-item-card">
-    <div class="asc-item-main"><div class="asc-item-title">${escapeHtml(item.display_name)} <span class="asc-badge asc-package-badge">แพ็กเกจบริการ</span></div>
-      <div class="asc-item-meta">${escapeHtml(item.service_name)} · ${packageJobTypeLabel(item.job_type)} · ${packageAcTypeLabel(item.ac_type)}</div>
-      <div class="asc-item-meta">${item.tiers.length} ระดับ · ${item.service_unit_duration_minutes} นาที/ครั้งบริการ</div>
-      <div class="asc-badges"><span class="asc-badge asc-lifecycle-${escapeHtml(item.lifecycle_status)}">${packageLifecycleLabel(item.lifecycle_status)}</span></div></div>
-    <div class="asc-item-actions"><button class="secondary btn-small" data-edit-package="${escapeHtml(item.package_key)}" type="button">แก้ไข</button></div></div>`).join("") : `<div class="asc-empty">ยังไม่มีโปรโมชั่นแพ็กเกจบริการ</div>`;
+    <div class="asc-item-main"><div class="asc-item-title">${escapeHtml(item.item_name)} <span class="asc-badge asc-package-badge">Store service package</span></div>
+      <div class="asc-item-meta">${item.variants.length} BTU variants · ${item.variants.reduce((sum, variant) => sum + variant.tiers.length, 0)} tiers</div>
+      <div class="asc-item-meta">รหัสสินค้าแม่: ${escapeHtml(item.service_bundle_key)}</div>
+      <div class="asc-badges"><span class="asc-badge">${item.is_active ? "เปิดใช้งาน" : "แบบร่าง"}</span><span class="asc-badge">${item.is_customer_visible ? "แสดงใน Store" : "ซ่อน"}</span></div></div>
+    <div class="asc-item-actions"><button class="secondary btn-small" data-edit-bundle="${escapeHtml(item.service_bundle_key)}" type="button">แก้ไข</button></div></div>`).join("") : `<div class="asc-empty">ยังไม่มี Store service package</div>`;
 }
 
 async function loadServicePackages() {
   const box = el("package_catalog_list"); box.innerHTML = `<div class="asc-loading">กำลังโหลดโปรโมชั่น...</div>`;
-  try { const items = await apiFetch("/admin/service-packages/catalog"); servicePackages = Array.isArray(items) ? items : []; renderServicePackages(); }
+  try { const result = await apiFetch("/admin/catalog/service-package-bundles"); servicePackages = Array.isArray(result?.bundles) ? result.bundles : []; renderServicePackages(); }
   catch (_error) { box.innerHTML = `<div class="asc-error">ไม่สามารถโหลดโปรโมชั่นแพ็กเกจได้ โปรดลองอีกครั้ง</div>`; }
 }
 
 function bindServicePackageActions() {
-  el("package_catalog_list").addEventListener("click", (event) => { const button = event.target.closest("[data-edit-package]"); if (button) openPackageModal(button.dataset.editPackage); });
+  el("package_catalog_list").addEventListener("click", (event) => { const button = event.target.closest("[data-edit-bundle]"); if (button) openBundleModal(button.dataset.editBundle); });
 }
 
 /* ---------- Review moderation ---------- */

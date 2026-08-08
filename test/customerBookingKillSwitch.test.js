@@ -89,7 +89,7 @@ test("scheduled idempotency is payload-bound and checked before the availability
   // Reusing a key with a different payload is a 409, never a silent old-job return.
   assert.match(bookHandler, /code: "IDEMPOTENCY_KEY_REUSED"/);
   // Both the pre-flight and the in-transaction race path use the SAME full match.
-  assert.equal((bookHandler.match(/scheduledPayloadMatchesExisting\(pool, /g) || []).length, 2);
+  assert.equal((bookHandler.match(/scheduledPayloadMatchesExisting\(pool, /g) || []).length, 3);
 });
 
 test("idempotency payload comparison covers every canonical material field", () => {

@@ -3,7 +3,7 @@
 const crypto = require("crypto");
 const { JOB_STATUS, ASSIGNMENT_STATUS, OFFER_STATUS } = require("./bookingStatuses");
 const { ensureBookingJobUnits } = require("./bookingJobUnits");
-const { packageRequest, resolvePackageBooking, packageBookingFromSnapshot } = require("./servicePackageBooking");
+const { packageRequest, resolvePackageBooking, packageBookingFromSnapshot, compositeBookingFromSnapshots } = require("./servicePackageBooking");
 
 function safePackagePreview(selection) {
   const line = selection.service_lines[0];
@@ -138,6 +138,7 @@ function createBookingJobService(dependencies = {}) {
   async function handleAdminBookV2(req, res) {
     const body = req.body || {};
     const hasPackageRequest = body.service_package_key != null || body.service_package_tier_key != null
+      || body.service_package_groups != null
       || body.service_package_id != null || body.service_package_tier_id != null;
     let packageBooking = null;
     const {
@@ -419,7 +420,7 @@ function createBookingJobService(dependencies = {}) {
       }
 
       // resolve items
-  const computedItems = packageBooking ? [packageBooking.item] : [];
+  const computedItems = packageBooking ? packageBooking.items : [];
 
   const serviceLineItems = packageBooking ? [] : await customerPricingHelpers.buildCustomerServiceLineItemsFromPayload(
     (payloadV2.services && Array.isArray(payloadV2.services))
@@ -659,7 +660,7 @@ function createBookingJobService(dependencies = {}) {
           it.customer_price_label || null, it.customer_campaign_name || null,
           it.customer_price_source || null,
         ];
-        if (packageBooking) itemParams.push(packageBooking.packageId, packageBooking.tierId, JSON.stringify(packageBooking.snapshot));
+        if (packageBooking) itemParams.push(it.packageId, it.tierId, JSON.stringify(it.snapshot));
         await client.query(
           `INSERT INTO public.job_items
             (job_id, item_id, item_name, qty, unit_price, line_total, assigned_technician_username, is_service,
@@ -934,7 +935,7 @@ function createBookingJobService(dependencies = {}) {
   async function buildIncomingBookingLineSignature(db, payloadV2, itemIdQty, standardPrice, packageBooking) {
     let computed = [];
     let total = Number(standardPrice || 0);
-    const serviceLines = packageBooking ? [packageBooking.item] : await customerPricingHelpers.buildCustomerServiceLineItemsFromPayload(
+    const serviceLines = packageBooking ? packageBooking.items : await customerPricingHelpers.buildCustomerServiceLineItemsFromPayload(
       (payloadV2.services && Array.isArray(payloadV2.services))
         ? payloadV2
         : {
@@ -1007,13 +1008,21 @@ function createBookingJobService(dependencies = {}) {
   async function scheduledPayloadMatchesExisting(db, jobRow, incoming, options = {}) {
     if (!scheduledScalarsMatch(jobRow, incoming, options)) return false;
     if (incoming.packageBooking) {
-      const packageLink = await db.query(
-        `SELECT 1 FROM public.job_items
-          WHERE job_id=$1 AND service_package_id=$2 AND service_package_tier_id=$3
-          LIMIT 1`,
-        [jobRow.job_id, incoming.packageBooking.packageId, incoming.packageBooking.tierId]
-      );
-      if (!packageLink.rows[0]) return false;
+      if (incoming.packageBooking.bundleId) {
+        const packageLinks = await db.query(
+          `SELECT service_package_id::text AS package_id, service_package_tier_id::text AS tier_id
+             FROM public.job_items WHERE job_id=$1 AND service_package_id IS NOT NULL`, [jobRow.job_id]
+        );
+        const actual = packageLinks.rows.map((row) => `${row.package_id}:${row.tier_id}`).sort();
+        const expected = incoming.packageBooking.items.map((item) => `${item.packageId}:${item.tierId}`).sort();
+        if (actual.length !== expected.length || actual.some((value, index) => value !== expected[index])) return false;
+      } else {
+        const packageLink = await db.query(
+          `SELECT 1 FROM public.job_items WHERE job_id=$1 AND service_package_id=$2 AND service_package_tier_id=$3 LIMIT 1`,
+          [jobRow.job_id, incoming.packageBooking.packageId, incoming.packageBooking.tierId]
+        );
+        if (!packageLink.rows[0]) return false;
+      }
     }
     const storedSig = await loadStoredBookingLineSignature(db, jobRow.job_id);
     const incomingSig = await buildIncomingBookingLineSignature(
@@ -1030,11 +1039,14 @@ function createBookingJobService(dependencies = {}) {
           AND service_package_id IS NOT NULL
           AND service_package_tier_id IS NOT NULL
           AND service_package_snapshot IS NOT NULL
-        LIMIT 1`,
+        ORDER BY job_item_id`,
       [jobId]
     );
     const item = result.rows[0];
     if (!item) return null;
+    if (Object.prototype.hasOwnProperty.call(body || {}, "service_package_groups")) {
+      return compositeBookingFromSnapshots({ body, appointmentDatetime, snapshots: result.rows });
+    }
     return packageBookingFromSnapshot({
       body,
       appointmentDatetime,
@@ -1282,6 +1294,7 @@ function createBookingJobService(dependencies = {}) {
       packageRequestBody = { ...(req.body || {}) };
       // Parse before urgent routing so package keys can never reach or alter urgent dispatch.
       hasPackageRequest = service_package_key != null || service_package_tier_key != null
+        || req.body?.service_package_groups != null
         || req.body?.service_package_id != null || req.body?.service_package_tier_id != null;
       if (canonicalBookingMode === "urgent" && hasPackageRequest) {
         return res.status(400).json({ error: "PACKAGE_URGENT_UNSUPPORTED", code: "PACKAGE_URGENT_UNSUPPORTED" });
@@ -1341,7 +1354,7 @@ function createBookingJobService(dependencies = {}) {
       customerSubForJob = null;
     }
     const catalogItemIdForJob = Number(catalog_item_id);
-    const safeCatalogItemIdForJob = Number.isFinite(catalogItemIdForJob) && catalogItemIdForJob > 0 ? catalogItemIdForJob : null;
+    let safeCatalogItemIdForJob = Number.isFinite(catalogItemIdForJob) && catalogItemIdForJob > 0 ? catalogItemIdForJob : null;
 
     // ✅ sanitize items (ไม่เชื่อราคา/ชื่อจากฝั่งลูกค้า)
     const safeItemsIn = Array.isArray(items) ? items : [];
@@ -1469,7 +1482,10 @@ function createBookingJobService(dependencies = {}) {
         appointmentDatetime: appointment_datetime,
         resolver: hasPackageRequest ? createServicePackageResolver(pool) : null,
       });
-      if (packageBooking) payloadV2 = packageBooking.payload;
+      if (packageBooking) {
+        payloadV2 = packageBooking.payload;
+        if (packageBooking.bundleId) safeCatalogItemIdForJob = Number(packageBooking.bundleId);
+      }
     } catch (error) {
       return res.status(Number(error.statusCode || 400)).json({ error: error.code, code: error.code });
     }
@@ -1763,7 +1779,7 @@ function createBookingJobService(dependencies = {}) {
       }
 
       // 1) ดึงราคา base_price จาก DB
-  const serviceLineItems = packageBooking ? [packageBooking.item] : await customerPricingHelpers.buildCustomerServiceLineItemsFromPayload(
+  const serviceLineItems = packageBooking ? packageBooking.items : await customerPricingHelpers.buildCustomerServiceLineItemsFromPayload(
     (payloadV2.services && Array.isArray(payloadV2.services))
       ? payloadV2
       : { ...payloadV2, services: [{
@@ -1983,7 +1999,7 @@ function createBookingJobService(dependencies = {}) {
           : "";
         const packageValues = packageBooking ? ",$14,$15,$16" : "";
         if (packageBooking) {
-          itemParams.push(packageBooking.packageId, packageBooking.tierId, JSON.stringify(packageBooking.snapshot));
+          itemParams.push(it.packageId, it.tierId, JSON.stringify(it.snapshot));
         }
         await client.query(
           `INSERT INTO public.job_items
