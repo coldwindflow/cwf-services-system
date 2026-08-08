@@ -237,6 +237,11 @@ function ensureCatalogModal() {
           <div class="asc-field"><label>นับถอยหลังถึงเวลาปิดขาย</label><select id="cm_show_sale_countdown"><option value="0">ไม่แสดง</option><option value="1">แสดงจากเวลาปิดขายจริง</option></select></div>
         </div>
 
+        <div class="asc-section">
+          <div class="asc-section-title">ตัวอย่างโปรโมชั่นบนมือถือก่อนเผยแพร่</div>
+          <div id="cm_campaign_preview" class="asc-mobile-preview asc-campaign-preview" aria-live="polite"></div>
+        </div>
+
         <details class="asc-section asc-accordion">
           <summary class="asc-section-title asc-accordion-summary">7) ข้อมูลจับคู่ระบบราคา (กดเพื่อแก้ไข)</summary>
           <div class="asc-warning">การแก้ไขค่าด้านล่างนี้จะเปลี่ยนการจับคู่กับระบบราคาอัตโนมัติ (customer_service_price_rules) โปรดมั่นใจก่อนแก้ไข</div>
@@ -271,7 +276,62 @@ function ensureCatalogModal() {
   el("cm_image_delete").addEventListener("click", onCatalogImageDeleteClick);
   el("cm_booking_mode").addEventListener("change", updateBookingFieldsVisibility);
   el("cm_booking_ac_type").addEventListener("change", updateBookingFieldsVisibility);
+  bindAdminCampaignPreview("cm");
   bindGalleryActions();
+}
+
+const ADMIN_CAMPAIGN_THEMES = new Set(["default", "premium", "limited_time", "new"]);
+const ADMIN_CAMPAIGN_EFFECTS = new Set(["none", "soft_glow", "shimmer_border", "badge_pulse"]);
+function renderAdminCampaignPreview(prefix) {
+  const box = el(`${prefix}_campaign_preview`);
+  if (!box) return;
+  const bundle = prefix === "bm";
+  const name = String(el(`${prefix}_item_name`)?.value || "").trim() || "ตัวอย่างชื่อสินค้า";
+  const badge = String(el(`${prefix}_promotion_badge_text`)?.value || "").trim();
+  const support = String(el(`${prefix}_promotion_supporting_text`)?.value || "").trim();
+  const themeValue = String(el(`${prefix}_promotion_theme_preset`)?.value || "default");
+  const effectValue = String(el(`${prefix}_promotion_effect_preset`)?.value || "none");
+  const theme = ADMIN_CAMPAIGN_THEMES.has(themeValue) ? themeValue : "default";
+  const effect = ADMIN_CAMPAIGN_EFFECTS.has(effectValue) ? effectValue : "none";
+  const featuredId = bundle ? "bm_featured" : "cm_is_featured";
+  const endId = bundle ? "bm_sell_end" : "cm_effective_to";
+  const showCountdown = el(`${prefix}_show_sale_countdown`)?.value === "1";
+  const endValue = String(el(endId)?.value || "").trim();
+  let countdown = "";
+  if (showCountdown) {
+    const parsed = endValue ? new Date(endValue) : null;
+    const label = parsed && Number.isFinite(parsed.getTime())
+      ? `นับถอยหลังถึง ${parsed.toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" })}`
+      : "จะแสดงเวลานับถอยหลังเมื่อระบุเวลาปิดขาย";
+    countdown = `<span class="asc-campaign-countdown">${escapeHtml(label)}</span>`;
+  }
+  box.className = `asc-mobile-preview asc-campaign-preview asc-campaign-theme-${theme} asc-campaign-effect-${effect}`;
+  box.innerHTML = `<article class="asc-campaign-preview-card">
+    <div class="asc-campaign-preview-media" aria-hidden="true">รูปสินค้า/แกลเลอรีเดิม</div>
+    <div class="asc-campaign-preview-copy">
+      ${el(featuredId)?.value === "1" ? `<span class="asc-badge asc-badge-featured">Featured Services</span>` : ""}
+      ${badge ? `<span class="asc-campaign-badge">${escapeHtml(badge)}</span>` : ""}
+      <strong>${escapeHtml(name)}</strong>
+      ${support ? `<span class="asc-campaign-support">${escapeHtml(support)}</span>` : ""}
+      ${countdown}
+      <button class="primary" type="button" disabled aria-disabled="true">ตัวอย่างปุ่มหลัก</button>
+    </div>
+  </article>`;
+}
+function bindAdminCampaignPreview(prefix) {
+  const bundle = prefix === "bm";
+  const ids = [
+    `${prefix}_item_name`, bundle ? "bm_featured" : "cm_is_featured",
+    `${prefix}_promotion_badge_text`, `${prefix}_promotion_supporting_text`,
+    `${prefix}_promotion_theme_preset`, `${prefix}_promotion_effect_preset`,
+    `${prefix}_show_sale_countdown`, bundle ? "bm_sell_end" : "cm_effective_to",
+  ];
+  ids.forEach((id) => {
+    const input = el(id);
+    input?.addEventListener("input", () => renderAdminCampaignPreview(prefix));
+    input?.addEventListener("change", () => renderAdminCampaignPreview(prefix));
+  });
+  renderAdminCampaignPreview(prefix);
 }
 
 function updateBookingFieldsVisibility() {
@@ -377,6 +437,7 @@ function resetCatalogModalFields() {
   galleryPickNotice = "";
   renderGalleryManager();
   hideCatalogModalError();
+  renderAdminCampaignPreview("cm");
 }
 
 function openCatalogModalForNew() {
@@ -445,6 +506,7 @@ function openCatalogModalForEdit(itemId) {
   el("cm_service_conditions").value = item.service_conditions || "";
   updateBookingFieldsVisibility();
   loadGalleryImages(itemId);
+  renderAdminCampaignPreview("cm");
   el("catalog_modal_backdrop").classList.remove("hidden");
 }
 
@@ -1182,6 +1244,7 @@ function ensureBundleModal() {
       <div class="asc-grid2"><div class="asc-field"><label>ข้อความป้ายโปรโมชั่น</label><input id="bm_promotion_badge_text" maxlength="80"></div><div class="asc-field"><label>ข้อความสนับสนุนโปรโมชั่น</label><input id="bm_promotion_supporting_text" maxlength="200"></div></div>
       <div class="asc-grid2"><div class="asc-field"><label>ธีม</label><select id="bm_promotion_theme_preset"><option value="default">ปกติ</option><option value="premium">พรีเมียม</option><option value="limited_time">เวลาจำกัด</option><option value="new">ใหม่</option></select></div><div class="asc-field"><label>เอฟเฟกต์</label><select id="bm_promotion_effect_preset"><option value="none">ไม่มี</option><option value="soft_glow">แสงนุ่ม</option><option value="shimmer_border">ขอบประกาย</option><option value="badge_pulse">ป้ายเต้นเบา</option></select></div></div>
       <div class="asc-field"><label>นับถอยหลังถึงเวลาปิดขาย</label><select id="bm_show_sale_countdown"><option value="0">ไม่แสดง</option><option value="1">แสดงจากเวลาปิดขายจริง</option></select></div>
+      <div class="asc-section-title">ตัวอย่างโปรโมชั่นบนมือถือก่อนเผยแพร่</div><div id="bm_campaign_preview" class="asc-mobile-preview asc-campaign-preview" aria-live="polite"></div>
       <div class="asc-field"><label>เพิ่มรูปภาพ/แกลเลอรี</label><input id="bm_images" type="file" accept="image/jpeg,image/png,image/webp" multiple><p class="muted2 mini">ใช้ระบบรูปภาพ catalog เดิม รูปที่มีอยู่จะไม่ถูกลบเมื่อบันทึก</p></div>
     </div><div class="asc-section"><div class="asc-toolbar-row"><div><div class="asc-section-title">รูปแบบบริการและระดับราคา</div><p class="muted2 mini">เลือก taxonomy จากระบบ เพิ่มจำนวน variant/tier ได้ตามต้องการ ระบบรักษารหัสเดิมและเก็บรายการที่ปิดใช้งาน</p></div><button id="bm_add_variant" class="secondary btn-small" type="button">+ เพิ่มรูปแบบบริการ</button></div><div id="bm_variant_editor"></div></div>
     <div id="bundle_modal_error" class="asc-modal-error"></div></div>
@@ -1196,6 +1259,7 @@ function ensureBundleModal() {
   el("bm_variant_editor").addEventListener("input", updateBundleVariantDraft);
   el("bm_variant_editor").addEventListener("change", updateBundleVariantDraft);
   el("bm_variant_editor").addEventListener("click", handleBundleEditorAction);
+  bindAdminCampaignPreview("bm");
 }
 
 let editingBundleKey = null;
@@ -1306,6 +1370,7 @@ async function openBundleModal(bundleKey = null) {
   el("bm_show_sale_countdown").value = bundle?.show_sale_countdown ? "1" : "0";
   bundleVariantDrafts = (bundle?.variants || []).map(bundleVariantDraft);
   renderBundleVariantEditor();
+  renderAdminCampaignPreview("bm");
   el("bundle_modal_error").style.display = "none";
   el("bundle_modal_backdrop").classList.remove("hidden");
 }

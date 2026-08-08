@@ -288,18 +288,29 @@
     return pages;
   }
 
-  // One compact featured card: image, name, price, book button — nothing else.
-  // The old card also carried a two-line description and a promo line, which
-  // made the homepage section very tall; customers asked for just the essentials
-  // shown as small cards.
+  function featuredCampaignPresentation(item) {
+    try {
+      const api = root.store?.campaignPresentation;
+      if (!api) return { theme: "default", effect: "none", html: "" };
+      return { theme: api.theme(item), effect: api.effect(item), html: api.render(item) };
+    } catch (_error) {
+      // Presentation is progressive enhancement. A missing/failed effect must
+      // never prevent the card, detail navigation, quote, or booking action.
+      return { theme: "default", effect: "none", html: "" };
+    }
+  }
+
+  // One compact featured card: existing image/name/price/action plus the
+  // bounded parent-item campaign presentation. No second carousel is created.
   function renderFeaturedMiniCard(item, showPrice, showBadge, interactive = true) {
     const id = root.utils.escapeHtml(item.item_id);
     const imageUrl = firstCatalogImage(item);
-    const bookable = item.booking_mode === "bookable";
+    const bookable = item.booking_mode === "bookable" || item.booking_mode === "service_package";
+    const campaign = featuredCampaignPresentation(item);
     const price = catalogDisplayPrice(item);
     const tabIndex = interactive ? "" : ` tabindex="-1"`;
     return `
-      <article class="homepage-service-card">
+      <article class="homepage-service-card campaign-theme-${campaign.theme} campaign-effect-${campaign.effect}">
         <button type="button" class="homepage-card-link" data-home-featured-detail="${id}"${tabIndex}>
           <div class="homepage-card-image">
             ${imageUrl
@@ -307,13 +318,14 @@
               : root.utils.icon("sparkle", 28)}
             ${showBadge ? `<span class="homepage-service-badge">${bookable ? "จองได้" : "สอบถาม"}</span>` : ""}
           </div>
+          ${campaign.html}
           <div class="homepage-card-body">
             <strong>${root.utils.escapeHtml(item.item_name || "-")}</strong>
             ${showPrice ? `<span>${root.utils.escapeHtml(price)}${item.unit_label && price !== "สอบถามราคา" ? ` / ${root.utils.escapeHtml(item.unit_label)}` : ""}</span>` : ""}
           </div>
         </button>
         <button type="button" class="${bookable ? "primary-btn" : "secondary-btn"} homepage-service-action" data-home-featured-action="${id}"${tabIndex}>
-          ${bookable ? "จอง" : "สอบถาม"}
+          ${item.booking_mode === "service_package" ? "ดูแพ็กเกจ" : bookable ? "จอง" : "สอบถาม"}
         </button>
       </article>
     `;
@@ -1137,6 +1149,7 @@
     bindHomepageHeroSliders(container);
     bindHomepagePromoBannerSlider(container);
     bindHomepageFeaturedRotators(container);
+    root.store?.campaignPresentation?.bind?.(container);
     container.querySelectorAll("[data-home-package-key][data-home-package-tier-key]").forEach((button) => {
       button.addEventListener("click", () => {
         const packageKey = String(button.getAttribute("data-home-package-key") || "").trim();
@@ -1178,6 +1191,10 @@
         const id = button.getAttribute("data-home-featured-action");
         const item = (root.state.catalog?.items || []).find((row) => String(row.item_id) === String(id));
         if (!item) return;
+        if (item.booking_mode === "service_package") {
+          root.utils.routeTo(`storeItem-${id}`);
+          return;
+        }
         if (item.booking_mode === "bookable") {
           const draftItem = strictCatalogCommerceDraft(item);
           if (draftItem && root.services.applyCommerceDraft("scheduled", draftItem)) {
@@ -1700,6 +1717,7 @@
 
     renderHome(container) {
       cleanupHomepageFeaturedRotators(container);
+      root.store?.campaignPresentation?.clear?.();
       root.advisor?.cleanup?.(container);
       const sectionsHtml = renderHomepageSectionsWithAdvisor();
       container.innerHTML = `
@@ -1804,6 +1822,7 @@
   ui.renderHome.onLeave = () => {
     const container = document.getElementById("app");
     cleanupHomepageFeaturedRotators(container);
+    root.store?.campaignPresentation?.clear?.();
     root.advisor?.cleanup?.(container);
   };
   root.ui = ui;

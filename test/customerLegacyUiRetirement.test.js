@@ -77,7 +77,7 @@ test("featured manual mode preserves configured order, removes duplicates, and n
 test("homepage renders a single compact page without timer controls when the pool has six items", () => {
   const app = loadHomepage(Array.from({ length: 6 }, (_, index) => catalogItem(index + 1, { is_featured: index < 2 })));
   const html = app.ui._test.renderHomepageFeaturedServices({ featured_mode: "auto", featured_limit: 6 });
-  assert.equal((html.match(/class="homepage-service-card"/g) || []).length, 6);
+  assert.equal((html.match(/class="homepage-service-card(?:\s[^"]*)?"/g) || []).length, 6);
   assert.match(html, /homepage-featured-grid/);
   assert.match(html, /data-featured-page-count="1"/);
   assert.doesNotMatch(html, /data-featured-dot|aria-hidden="true"/);

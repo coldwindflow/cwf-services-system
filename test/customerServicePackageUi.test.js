@@ -190,7 +190,7 @@ test("build id is coordinated and service worker privacy/network behavior remain
   const app = read("customer-app/assets/customer-app.js");
   const manifest = read("customer-app/manifest.webmanifest");
   const build = sw.match(/BUILD_ID = "([^"]+)"/)[1];
-  assert.equal(build, "20260809_issue267_admin_builder_v2");
+  assert.equal(build, "20260809_issue267_merchandising_v3");
   assert.match(index, new RegExp(build));
   assert.match(app, new RegExp(`BUILD_ID = "${build}"`));
   assert.match(manifest, new RegExp(`index\\.html\\?v=${build}#home`));

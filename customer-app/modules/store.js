@@ -883,25 +883,37 @@
       const end = new Date(node.getAttribute("data-campaign-countdown"));
       if (!Number.isFinite(end.getTime())) return;
       let timer = null;
+      let disposed = false;
+      const stop = () => { if (timer) clearTimeout(timer); timer = null; };
+      let cleanup = () => {};
       const tick = () => {
-        if (!node.isConnected) return;
+        if (disposed) return;
+        if (!node.isConnected) { cleanup(); return; }
+        stop();
         const remaining = end.getTime() - Date.now();
         if (remaining <= 0) {
           node.textContent = "ปิดรับจองแล้ว";
-          node.closest(".store-card, .store-detail-screen")?.querySelectorAll("[data-store-book], [data-store-urgent], [data-store-detail-book], [data-store-detail-urgent]").forEach((button) => { button.disabled = true; });
-          if (timer) clearTimeout(timer);
-          timer = null;
+          node.closest(".store-card, .store-detail-screen, .homepage-service-card")
+            ?.querySelectorAll("[data-store-book], [data-store-urgent], [data-store-detail-book], [data-store-detail-urgent], [data-home-featured-action]")
+            .forEach((button) => { button.disabled = true; button.setAttribute("aria-disabled", "true"); });
+          cleanup();
           return;
         }
         const minutes = Math.ceil(remaining / 60000);
         const days = Math.floor(minutes / 1440); const hours = Math.floor((minutes % 1440) / 60); const mins = minutes % 60;
         node.textContent = days ? `เหลือ ${days} วัน ${hours} ชม.` : `เหลือ ${hours} ชม. ${mins} นาที`;
-        timer = setTimeout(tick, 60000);
+        if (!document.hidden) timer = setTimeout(tick, 60000);
       };
-      const onVisibility = () => { if (!document.hidden) tick(); };
+      const onVisibility = () => { if (document.hidden) stop(); else tick(); };
+      cleanup = () => {
+        if (disposed) return;
+        disposed = true;
+        stop();
+        document.removeEventListener("visibilitychange", onVisibility);
+      };
       document.addEventListener("visibilitychange", onVisibility);
       tick();
-      campaignCountdownCleanups.push(() => { if (timer) clearTimeout(timer); document.removeEventListener("visibilitychange", onVisibility); });
+      campaignCountdownCleanups.push(cleanup);
     });
   }
 
@@ -2302,8 +2314,19 @@
     clearCampaignCountdowns();
   };
 
+  // Shared presentation renderer/lifecycle for both Store and the existing
+  // Homepage Featured Services cards. CSS effects stay decorative; callers can
+  // omit this API and still render/navigate/book normally.
+  store.campaignPresentation = {
+    theme: campaignTheme,
+    effect: campaignEffect,
+    render: renderCampaignPresentation,
+    bind: bindCampaignCountdowns,
+    clear: clearCampaignCountdowns,
+  };
+
   store._test = { loadDetail, loadReviewsList, loadEligibility, detailItemId, renderDetailBody, renderReviewsSectionBody,
-    composeBundleTiers, renderBundleConfigurator, collectBundleDraft };
+    composeBundleTiers, renderBundleConfigurator, collectBundleDraft, bindCampaignCountdowns, clearCampaignCountdowns };
 
   root.store = store;
 })();
