@@ -2,6 +2,8 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 const { validate } = require("../server/services/packages/storeServicePackageCatalogService");
 
 function variant(overrides = {}) {
@@ -58,4 +60,10 @@ test("canonical Admin taxonomy accepts a non-wall package and derives service id
 test("unknown free-text taxonomy is rejected before persistence", () => {
   assert.throws(() => validate(bundle({ variants: [variant({ ac_type: "invented-ac-type" })] })),
     { code: "INVALID_SERVICE_CONSTRAINTS" });
+});
+
+test("bundle taxonomy reuses the canonical price-book contract without campaign defaults", () => {
+  const source = fs.readFileSync(path.join(__dirname, "../server/services/packages/servicePackageTaxonomy.js"), "utf8");
+  assert.match(source, /supportedServiceTaxonomy/);
+  assert.doesNotMatch(source, /Premium Day|["']wall["']|["']premium["']|12000|18000|699\.00/);
 });

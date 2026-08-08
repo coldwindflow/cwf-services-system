@@ -1,29 +1,14 @@
 "use strict";
 
 const { normalizeServiceType, normalizeAcType, normalizeWashVariantLabel } = require("../../normalizers");
+const { supportedServiceTaxonomy } = require("../../customerPricing");
 
-// This is the existing booking taxonomy expressed once as a shared server
-// contract. Store package configuration consumes these values; individual
-// campaigns never define or hard-code their own service taxonomy.
-const JOB_TYPES = Object.freeze([
-  Object.freeze({ key: "wash", value: normalizeServiceType("wash"), label: "ล้าง" }),
-  Object.freeze({ key: "repair", value: normalizeServiceType("repair"), label: "ซ่อม" }),
-  Object.freeze({ key: "install", value: normalizeServiceType("install"), label: "ติดตั้ง" }),
-]);
-
-const AC_TYPES = Object.freeze([
-  Object.freeze({ key: "wall", value: normalizeAcType("wall"), label: "แอร์ผนัง" }),
-  Object.freeze({ key: "cassette", value: normalizeAcType("cassette"), label: "แอร์สี่ทิศทาง" }),
-  Object.freeze({ key: "floor", value: normalizeAcType("floor"), label: "แอร์แขวน" }),
-  Object.freeze({ key: "ceiling", value: normalizeAcType("ceiling"), label: "แอร์เปลือยใต้ฝ้า" }),
-]);
-
-const WASH_VARIANTS = Object.freeze([
-  Object.freeze({ key: "normal", value: normalizeWashVariantLabel("normal"), label: "ล้างปกติ" }),
-  Object.freeze({ key: "premium", value: normalizeWashVariantLabel("premium"), label: "ล้างพรีเมียม" }),
-  Object.freeze({ key: "coil", value: normalizeWashVariantLabel("coil"), label: "ล้างแบบแขวนคอยล์" }),
-  Object.freeze({ key: "overhaul", value: normalizeWashVariantLabel("overhaul"), label: "ตัดล้างใหญ่" }),
-]);
+// Store packages reuse the canonical customer price-book taxonomy. Campaigns
+// therefore contain configuration only and cannot introduce private variants.
+const canonical = supportedServiceTaxonomy();
+const JOB_TYPES = Object.freeze(canonical.job_types.map(Object.freeze));
+const AC_TYPES = Object.freeze(canonical.ac_types.map(Object.freeze));
+const WASH_VARIANTS = Object.freeze(canonical.wash_variants.map(Object.freeze));
 
 const JOB_TYPE_VALUES = new Set(JOB_TYPES.map((entry) => entry.value));
 const AC_TYPE_VALUES = new Set(AC_TYPES.map((entry) => entry.value));
