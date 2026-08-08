@@ -161,6 +161,7 @@
     zones: { status: "idle", items: [], error: "" },
     homePricing: { status: "idle", items: {}, error: "" },
     homeActiveJob: { status: "idle", data: null, error: "" },
+    homeServicePackages: { status: "idle", items: [], error: "" },
     addressPrefill: { status: "idle", scopes: {}, error: "" },
     profileAddressForm: { editing: false, status: "idle", error: "", success: "" },
     customerHistory: {
