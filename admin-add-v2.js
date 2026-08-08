@@ -27,6 +27,12 @@ let state = {
   service_package_preview: null,
   service_package_preview_selection: null,
   service_package_preview_request_id: 0,
+  service_bundles: [],
+  service_bundle_quote: null,
+  service_bundle_quote_fingerprint: "",
+  selected_store_catalog_item_id: null,
+  admin_request_key: "",
+  admin_request_fingerprint: "",
   service_lines: [], // [{job_type, ac_type, btu, machine_count, wash_variant}]
   selected_slot_iso: "",
   selected_slot_key: "",
@@ -1360,19 +1366,70 @@ return true;
 
 let previewTimer = null;
 
-function packageSelected() { return !!String(el("service_package_key")?.value || "").trim(); }
+function bundleSelected() { return !!String(el("store_service_bundle_key")?.value || "").trim(); }
+function packageSelected() { return bundleSelected() || !!String(el("service_package_key")?.value || "").trim(); }
 
 function packagePreviewIsFresh() {
+  if (bundleSelected()) return !!state.service_bundle_quote && state.service_bundle_quote_fingerprint === bundleFingerprint();
   const selection = state.service_package_preview_selection;
   return !!state.service_package_preview && !!selection
     && selection.package_key === String(el("service_package_key")?.value || "")
     && selection.tier_key === String(el("service_package_tier_key")?.value || "");
 }
 
+function bundleFingerprint() {
+  const key = String(el("store_service_bundle_key")?.value || "");
+  const groups = [...document.querySelectorAll("[data-admin-bundle-group]")].map((row) => ({
+    package_key: row.getAttribute("data-admin-bundle-group"),
+    btu: Number(row.querySelector("[data-admin-bundle-btu]")?.value || 0),
+    quantity: Number(row.querySelector("[data-admin-bundle-quantity]")?.value || 0),
+  })).filter((group) => group.quantity > 0);
+  return JSON.stringify({ key, groups, mode: String(el("booking_mode")?.value || "scheduled") });
+}
+
+function selectedBundleGroups() {
+  try { return JSON.parse(bundleFingerprint()).groups; } catch (_) { return []; }
+}
+
+function renderServiceBundleGroups() {
+  const wrap = el("store_service_bundle_groups");
+  const bundle = state.service_bundles.find((item) => item.service_bundle_key === String(el("store_service_bundle_key")?.value || ""));
+  if (!wrap) return;
+  if (!bundle) { wrap.style.display = "none"; wrap.innerHTML = ""; return; }
+  wrap.style.display = "";
+  wrap.innerHTML = (bundle.variants || []).filter((variant) => variant.is_active !== false).map((variant) => `
+    <div class="grid3" data-admin-bundle-group="${escapeHtml(variant.package_key)}" style="margin-top:8px">
+      <div><label>${escapeHtml(variant.display_name)}</label><div class="muted2 mini">BTU ${variant.btu_min ?? "any"}-${variant.btu_max ?? "any"}</div></div>
+      <div><label>Actual BTU</label><input type="number" min="1" step="1" data-admin-bundle-btu value="${escapeHtml(variant.btu_min || variant.btu_max || "")}"></div>
+      <div><label>Quantity</label><input type="number" min="0" step="1" value="0" data-admin-bundle-quantity></div>
+    </div>`).join("") + '<div id="store_service_bundle_quote" class="muted2" style="margin-top:8px"></div>';
+  wrap.querySelectorAll("input").forEach((input) => input.addEventListener("change", () => previewServiceBundle().catch((e) => showToast(e.message, "error"))));
+}
+
+async function previewServiceBundle() {
+  state.service_bundle_quote = null;
+  state.service_bundle_quote_fingerprint = "";
+  const groups = selectedBundleGroups();
+  const panel = el("store_service_bundle_quote");
+  if (!bundleSelected() || !groups.length) { if (panel) panel.textContent = "Select at least one quantity"; return; }
+  const appointment = localDatetimeToBangkokISO(String(el("appointment_datetime")?.value || "").trim()) || new Date(Date.now() + 86400000).toISOString();
+  const quote = await apiFetch("/admin/catalog/service-package-bundles/quote", { method: "POST", body: JSON.stringify({
+    service_package_groups: groups, booking_mode: String(el("booking_mode")?.value || "scheduled"), appointment_datetime: appointment,
+  }) });
+  state.service_bundle_quote = quote;
+  state.service_bundle_quote_fingerprint = bundleFingerprint();
+  state.standard_price = Number(quote.fixed_total_price); state.normal_price = state.standard_price;
+  state.duration_min = Number(quote.duration_minutes); state.effective_block_min = state.duration_min + Number(state.travel_buffer_min || 30);
+  if (panel) panel.textContent = `${quote.machine_count} units | ${quote.fixed_total_price} | ${quote.duration_minutes} min | ${(quote.components || []).map((x) => `${x.tier_name} x ${x.quantity}`).join(", ")}`;
+  updateTotalPreview();
+}
+
 function invalidateServicePackagePreview({ loading = false } = {}) {
   state.service_package_preview_request_id += 1;
   state.service_package_preview = null;
   state.service_package_preview_selection = null;
+  state.service_bundle_quote = null;
+  state.service_bundle_quote_fingerprint = "";
   state.standard_price = 0;
   state.normal_price = 0;
   state.duration_min = 0;
@@ -1457,6 +1514,14 @@ async function loadServicePackages() {
       const option = document.createElement("option"); option.value = pkg.package_key; option.textContent = pkg.package_name; select.appendChild(option);
     }
   } catch (_) { /* ordinary Admin booking remains available */ }
+  try {
+    const data = await apiFetch("/admin/catalog/service-package-bundles");
+    state.service_bundles = Array.isArray(data.bundles) ? data.bundles : [];
+    const select = el("store_service_bundle_key");
+    for (const bundle of state.service_bundles.filter((item) => item.is_active !== false)) {
+      const option = document.createElement("option"); option.value = bundle.service_bundle_key; option.textContent = bundle.item_name; select.appendChild(option);
+    }
+  } catch (_) { /* legacy Admin booking remains available */ }
 }
 
 async function refreshPreviewDebounced() {
@@ -1573,6 +1638,12 @@ async function loadCatalog() {
   try {
     const items = await apiFetch("/catalog/items");
     state.catalog = Array.isArray(items) ? items : [];
+    const storeSelect = el("store_bookable_item_id");
+    if (storeSelect) {
+      for (const it of state.catalog.filter((item) => item?.booking_mode === "bookable" && item?.is_active !== false)) {
+        const option = document.createElement("option"); option.value = String(it.item_id); option.textContent = it.item_name; storeSelect.appendChild(option);
+      }
+    }
     const sel = el("extras_select");
     if(!sel) return;
     sel.innerHTML = "";
@@ -2876,6 +2947,14 @@ async function submitBooking() {
   }
   syncModesFromUI();
   const uiMode = (el('dispatch_mode_ui')?.value || 'normal').toString();
+  const selectedStorePromotion = bundleSelected()
+    ? state.service_bundles.find((item) => item.service_bundle_key === String(el("store_service_bundle_key")?.value || ""))
+    : state.catalog.find((item) => Number(item.item_id) === Number(state.selected_store_catalog_item_id));
+  if (uiMode === "urgent" && selectedStorePromotion
+      && String(selectedStorePromotion.booking_flow_policy || "scheduled_only") !== "scheduled_and_urgent") {
+    showToast("รายการร้านค้านี้อนุญาตเฉพาะการจองล่วงหน้า", "error");
+    return;
+  }
   const techSource = syncManualTechnicianSelection({ forSubmit: true });
   const expectedSingleTechnician = (uiMode !== 'urgent' && techSource.assign_mode === 'single')
     ? String(techSource.technician_username || '').trim()
@@ -2944,6 +3023,7 @@ async function submitBooking() {
       return mode === 'team' ? getTeamMembersForPayload() : [];
     })(),
     allow_time_proposal: uiMode === 'urgent' ? !!el('allow_time_proposal')?.checked : false,
+    catalog_item_id: state.selected_store_catalog_item_id,
     // wash split assignment (optional, lock mode only)
     split_assignments: (()=>{
       try {
@@ -2960,6 +3040,20 @@ async function submitBooking() {
   const services = getServicesPayload();
   if(services) payload.services = services;
   if (packageSelected()) {
+    if (bundleSelected()) {
+      if (!packagePreviewIsFresh()) {
+        showToast("Select Store package quantities and wait for the server quote", "error");
+        el("btnSubmit").disabled = false; return;
+      }
+      payload.service_package_groups = selectedBundleGroups();
+      delete payload.service_package_key;
+      delete payload.service_package_tier_key;
+      delete payload.services;
+      payload.items = [];
+      payload.promotion_id = null;
+      payload.override_price = 0;
+      payload.override_duration_min = 0;
+    } else {
     const preview = state.service_package_preview;
     const actualBtu = Number(el("service_package_btu")?.value || 0);
     if (!packagePreviewIsFresh() || !actualBtu) {
@@ -2978,8 +3072,15 @@ async function submitBooking() {
     payload.promotion_id = null;
     payload.override_price = 0;
     payload.override_duration_min = 0;
+    }
   }
   // NOTE: split_assignments is optional and backward compatible
+  const adminPayloadFingerprint = JSON.stringify(payload);
+  if (!state.admin_request_key || state.admin_request_fingerprint !== adminPayloadFingerprint) {
+    state.admin_request_key = (globalThis.crypto?.randomUUID?.() || `admin_${Date.now()}_${Math.random().toString(36).slice(2)}`).replace(/-/g, "_");
+    state.admin_request_fingerprint = adminPayloadFingerprint;
+  }
+  payload.admin_request_key = state.admin_request_key;
 
   console.info('[admin-add] submit technician source', {
     assign_mode: payload.assign_mode,
@@ -3112,11 +3213,39 @@ async function submitBooking() {
 }
 
 function wireEvents() {
+  el("store_bookable_item_id")?.addEventListener("change", () => {
+    const id = Number(el("store_bookable_item_id").value || 0);
+    const item = state.catalog.find((entry) => Number(entry.item_id) === id);
+    state.selected_store_catalog_item_id = item ? id : null;
+    if (!item) return;
+    el("job_type").value = item.booking_job_type || "";
+    el("ac_type").value = item.booking_ac_type || "";
+    buildVariantUI();
+    el("btu").value = String(item.booking_btu || "");
+    const wash = el("wash_variant"); if (wash) wash.value = item.booking_wash_variant || "";
+    refreshPreviewDebounced();
+  });
+  el("store_service_bundle_key")?.addEventListener("change", () => {
+    const selected = bundleSelected();
+    if (selected) {
+      state.selected_store_catalog_item_id = null;
+      if (el("store_bookable_item_id")) el("store_bookable_item_id").value = "";
+      el("service_package_key").value = "";
+      el("service_package_tier_key").innerHTML = '<option value="">Select tier</option>';
+      el("service_package_tier_key").disabled = true;
+    }
+    state.admin_request_key = "";
+    state.admin_request_fingerprint = "";
+    invalidateServicePackagePreview();
+    renderServiceBundleGroups();
+    setPackageControlsLocked(selected);
+  });
   el("service_package_key")?.addEventListener("change", async () => {
     const key = String(el("service_package_key").value || "");
     const tier = el("service_package_tier_key");
     tier.innerHTML = '<option value="">Select tier</option>';
     const pkg = state.service_packages.find((item) => item.package_key === key);
+    if (pkg) { el("store_service_bundle_key").value = ""; renderServiceBundleGroups(); }
     for (const item of (pkg?.tiers || [])) {
       const option = document.createElement("option"); option.value = item.tier_key;
       option.textContent = `${item.tier_name} (${item.quantity} / ${item.fixed_total_price})`; tier.appendChild(option);

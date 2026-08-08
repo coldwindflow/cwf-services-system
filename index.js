@@ -60,6 +60,8 @@ const { createPublicServicePackageService } = require("./server/services/public/
 const { registerAdminBookingRoutes } = require("./server/routes/admin/adminBookings");
 const { createServicePackageCatalogService } = require("./server/services/packages/servicePackageCatalogService");
 const { createServicePackageCatalogRoutes } = require("./server/routes/admin/servicePackageCatalog");
+const { createStoreServicePackageCatalogService } = require("./server/services/packages/storeServicePackageCatalogService");
+const { createStoreServicePackageCatalogRoutes } = require("./server/routes/admin/storeServicePackageCatalog");
 const { createTechnicianJobMoneyHelpers } = require("./server/technicianJobMoneySummary");
 const createSystemRoutes = require("./server/routes/system");
 const createTechnicianDirectoryRoutes = require("./server/routes/users/technicians");
@@ -12978,6 +12980,10 @@ app.use(createCatalogItemRoutes({
 }));
 app.use(createServicePackageCatalogRoutes({
   service: createServicePackageCatalogService({ pool }),
+  requireAdminSession,
+}));
+app.use(createStoreServicePackageCatalogRoutes({
+  service: createStoreServicePackageCatalogService({ pool }),
   requireAdminSession,
 }));
 app.use(createCatalogReviewRoutes({ pool, requireCustomerJwt, requireAdminSession }));

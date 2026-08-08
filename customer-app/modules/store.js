@@ -44,6 +44,11 @@
   }
 
   function effectiveSalePrice(item) {
+    if (item?.booking_mode === "service_package") {
+      const prices = (item.service_package_variants || []).flatMap((variant) => (variant.tiers || []))
+        .filter((tier) => tier.is_active !== false).map((tier) => Number(tier.fixed_total_price)).filter((price) => Number.isFinite(price) && price > 0);
+      if (prices.length) return Math.min(...prices);
+    }
     const display = Number(item.display_price);
     if (Number.isFinite(display) && display > 0) return display;
     const base = Number(item.base_price);
@@ -58,7 +63,7 @@
   function priceLabel(item) {
     const sale = effectiveSalePrice(item);
     if (sale === null) return "สอบถามราคา";
-    return root.utils.formatBaht(sale);
+    return `${item?.booking_mode === "service_package" ? "เริ่ม " : ""}${root.utils.formatBaht(sale)}`;
   }
 
   function hasPromo(item) {
@@ -79,7 +84,98 @@
   }
 
   function isBookable(item) {
-    return item.booking_mode === "bookable";
+    return item.booking_mode === "bookable" || item.booking_mode === "service_package";
+  }
+
+  function isServicePackageBundle(item) {
+    return item?.booking_mode === "service_package" && Array.isArray(item.service_package_variants);
+  }
+
+  function bundleBtuOptions(variant) {
+    const service = variant?.service || {};
+    const min = Number(service.btu_min || 0);
+    const max = Number(service.btu_max || Number.MAX_SAFE_INTEGER);
+    return root.services.bookableBtuOptions.filter((option) => option.btu >= min && option.btu <= max);
+  }
+
+  function composeBundleTiers(tiers, requestedQuantity) {
+    const usable = (tiers || []).filter((tier) => tier.is_active !== false).map((tier) => ({
+      ...tier, quantity: Number(tier.quantity), minor: BigInt(String(tier.fixed_total_price).replace(".", "")),
+    })).filter((tier) => Number.isInteger(tier.quantity) && tier.quantity > 0);
+    const exact = usable.filter((tier) => tier.quantity === requestedQuantity).sort((a, b) => a.minor < b.minor ? -1 : 1)[0];
+    if (exact) return { minor: exact.minor, components: [exact] };
+    const compare = (candidate, current) => {
+      if (!current) return -1;
+      if (candidate.components.length !== current.components.length) return candidate.components.length - current.components.length;
+      if (candidate.minor !== current.minor) return candidate.minor < current.minor ? -1 : 1;
+      const left = candidate.components.map((item) => item.quantity).sort((a, b) => b - a);
+      const right = current.components.map((item) => item.quantity).sort((a, b) => b - a);
+      for (let index = 0; index < Math.max(left.length, right.length); index += 1) {
+        if ((left[index] || 0) !== (right[index] || 0)) return (right[index] || 0) - (left[index] || 0);
+      }
+      return 0;
+    };
+    const best = Array(requestedQuantity + 1).fill(null); best[0] = { minor: 0n, components: [] };
+    for (let target = 1; target <= requestedQuantity; target += 1) {
+      for (const tier of usable) {
+        const prior = best[target - tier.quantity];
+        if (tier.quantity > target || !prior) continue;
+        const candidate = { minor: prior.minor + tier.minor, components: [...prior.components, tier] };
+        const current = best[target];
+        if (compare(candidate, current) < 0) best[target] = candidate;
+      }
+    }
+    return best[requestedQuantity];
+  }
+
+  function renderBundleConfigurator(item) {
+    if (!isServicePackageBundle(item)) return "";
+    return `<section class="store-bundle-config" data-store-bundle-config><h3>เลือก BTU และจำนวนเครื่อง</h3><p class="muted">รวมแอร์หลายขนาดในงานเดียวได้ และเลือกมากกว่า 4 เครื่องได้</p>${item.service_package_variants.map((variant) => {
+      const options = bundleBtuOptions(variant);
+      return `<div class="store-bundle-row" data-bundle-package="${root.utils.escapeHtml(variant.package_key)}"><div><strong>${root.utils.escapeHtml(variant.package_name)}</strong>${variant.description ? `<small>${root.utils.escapeHtml(variant.description)}</small>` : ""}</div><label>BTU<select class="select" data-bundle-btu>${options.map((option) => `<option value="${option.btu}">${root.utils.escapeHtml(option.label || `${option.btu} BTU`)}</option>`).join("")}</select></label><label>จำนวน<input class="input" data-bundle-quantity type="number" min="0" step="1" inputmode="numeric" value="0" aria-label="จำนวนเครื่องสำหรับ ${root.utils.escapeHtml(variant.package_name)}"></label></div>`;
+    }).join("")}<div class="store-bundle-live-total" data-bundle-total>เลือกอย่างน้อย 1 เครื่อง</div><div class="inline-error" data-bundle-error aria-live="polite"></div></section>`;
+  }
+
+  function collectBundleDraft(container, item) {
+    const groups = []; const previewGroups = []; const services = [];
+    let total = 0n; let durationMin = 0;
+    container.querySelectorAll("[data-bundle-package]").forEach((row) => {
+      const quantity = Number(row.querySelector("[data-bundle-quantity]")?.value || 0);
+      if (!Number.isSafeInteger(quantity) || quantity < 0) throw new Error("จำนวนเครื่องต้องเป็นจำนวนเต็มตั้งแต่ 0 ขึ้นไป");
+      if (!quantity) return;
+      const packageKey = row.getAttribute("data-bundle-package");
+      const variant = item.service_package_variants.find((entry) => entry.package_key === packageKey);
+      const btu = Number(row.querySelector("[data-bundle-btu]")?.value || 0);
+      const plan = variant ? composeBundleTiers(variant.tiers, quantity) : null;
+      if (!variant || !plan || !btu) throw new Error("จำนวนที่เลือกไม่สามารถจัดเป็นแพ็กเกจได้");
+      total += plan.minor; durationMin += quantity * Number(variant.unit_duration_minutes);
+      groups.push({ package_key: packageKey, btu, quantity });
+      previewGroups.push({ package_key: packageKey, package_name: variant.package_name, btu, quantity });
+      services.push({ job_type: variant.service.job_type, ac_type: variant.service.ac_type, btu, machine_count: quantity,
+        wash_variant: variant.service.wash_variant || "", repair_variant: "" });
+    });
+    if (!groups.length) throw new Error("กรุณาเลือกอย่างน้อย 1 เครื่อง");
+    const fixedTotal = `${total / 100n}.${String(total % 100n).padStart(2, "0")}`;
+    return { groups, preview: { package_name: item.item_name, groups: previewGroups, fixed_total_price: fixedTotal,
+      duration_min: durationMin, redeem_until: item.service_package_redeem_until, payload: { services } } };
+  }
+
+  function beginBundleBooking(container, item, scope = "scheduled") {
+    const errorBox = container.querySelector("[data-bundle-error]");
+    try {
+      const result = collectBundleDraft(container, item);
+      const common = { catalog_item_id: Number(item.item_id), service_package_key: "", service_package_tier_key: "", service_package_btu: "",
+        service_package_groups: result.groups, service_package_bundle_preview: result.preview,
+        services: result.preview.payload.services, selectedSlot: null };
+      root.state.updateDraft(scope, scope === "urgent" ? { ...common, urgent_request_key: "" } : { ...common, scheduled_request_key: "" });
+      if (scope === "scheduled") {
+        root.state.setScheduledPreview("package", { status: "success", data: result.preview, error: "", verified: true });
+        root.state.setScheduledPreview("pricing", { status: "idle", data: null, error: "" });
+      }
+      root.utils.routeTo(scope);
+    } catch (error) {
+      if (errorBox) errorBox.textContent = error.message;
+    }
   }
 
   // Physical product the customer can buy (e.g. an AC unit) — gets a "ซื้อ"
@@ -430,6 +526,21 @@
     return `<div class="store-promo-info">${parts.join("")}</div>`;
   }
 
+  const CAMPAIGN_THEMES = new Set(["default", "premium", "limited_time", "new"]);
+  const CAMPAIGN_EFFECTS = new Set(["none", "soft_glow", "shimmer_border", "badge_pulse"]);
+  function campaignTheme(item) { return CAMPAIGN_THEMES.has(item?.promotion_theme_preset) ? item.promotion_theme_preset : "default"; }
+  function campaignEffect(item) { return CAMPAIGN_EFFECTS.has(item?.promotion_effect_preset) ? item.promotion_effect_preset : "none"; }
+  function campaignSaleEnd(item) { return item?.service_package_sell_end_at || item?.effective_to || null; }
+  function renderCampaignPresentation(item) {
+    const badge = String(item?.promotion_badge_text || "").trim();
+    const support = String(item?.promotion_supporting_text || "").trim();
+    const end = campaignSaleEnd(item);
+    const countdown = item?.show_sale_countdown === true && end
+      ? `<span class="store-campaign-countdown" data-campaign-countdown="${root.utils.escapeHtml(end)}" aria-label="เวลาที่เหลือของโปรโมชั่น"></span>` : "";
+    if (!badge && !support && !countdown) return "";
+    return `<div class="store-campaign-presentation">${badge ? `<span class="store-campaign-badge">${root.utils.escapeHtml(badge)}</span>` : ""}${support ? `<span class="store-campaign-support">${root.utils.escapeHtml(support)}</span>` : ""}${countdown}</div>`;
+  }
+
   // Real review aggregates only. item.rating_average/review_count come straight
   // from the backend's catalog_item_reviews aggregation (approved reviews only —
   // see attachCatalogRatings() in server/routes/catalog/items.js). There is no
@@ -530,6 +641,23 @@
     return badges.length ? `<div class="store-card-badges">${badges.join("")}</div>` : "";
   }
 
+  function allowsUrgentBooking(item) {
+    return String(item?.booking_flow_policy || "scheduled_only") === "scheduled_and_urgent";
+  }
+
+  function urgentBookingAvailable() {
+    return root.pageAvailability?.isEnabled?.("urgent") === true;
+  }
+
+  function renderBookingActions(item, id, detail = false) {
+    const attribute = detail ? "data-store-detail" : "data-store";
+    const value = detail ? "1" : root.utils.escapeHtml(id);
+    const scheduled = `<button class="primary-btn" type="button" ${attribute}-book="${value}">${isServicePackageBundle(item) ? "จองแพ็กเกจ" : "จองคิว"}</button>`;
+    if (!allowsUrgentBooking(item)) return scheduled;
+    const enabled = urgentBookingAvailable();
+    return `${scheduled}<button class="secondary-btn" type="button" ${attribute}-urgent="${value}"${enabled ? "" : " disabled"}>${enabled ? "จองด่วน" : "คิวด่วนปิดชั่วคราว"}</button>`;
+  }
+
   function renderCard(item) {
     const id = String(item.item_id || "");
     const name = item.item_name || "-";
@@ -540,8 +668,9 @@
     const promo = hasPromo(item);
     const bookable = isBookable(item);
     return `
-      <article class="store-card" data-store-item="${root.utils.escapeHtml(id)}" tabindex="0" role="button" aria-label="ดูรายละเอียด ${root.utils.escapeHtml(name)}">
+      <article class="store-card campaign-theme-${campaignTheme(item)} campaign-effect-${campaignEffect(item)}" data-store-item="${root.utils.escapeHtml(id)}" tabindex="0" role="button" aria-label="ดูรายละเอียด ${root.utils.escapeHtml(name)}">
         ${renderCardGallery(item, name)}
+        ${renderCampaignPresentation(item)}
         ${renderBadges(item)}
         <div class="store-card-head">
           ${category ? `<span class="tag">${root.utils.escapeHtml(category)}</span>` : ""}
@@ -558,7 +687,7 @@
         ${renderPromoInfo(item)}
         <div class="store-card-actions">
           ${bookable
-            ? `<button class="primary-btn" type="button" data-store-book="${root.utils.escapeHtml(id)}">จองคิว</button>`
+            ? renderBookingActions(item, id)
             : isPurchase(item)
               ? `<button class="primary-btn" type="button" data-store-buy="${root.utils.escapeHtml(id)}">ซื้อ</button>`
               : `<button class="secondary-btn" type="button" data-store-contact="${root.utils.escapeHtml(id)}" data-store-contact-name="${root.utils.escapeHtml(name)}">สอบถามแอดมิน</button>`}
@@ -737,10 +866,55 @@
   }
 
   let cardAutoplayCleanups = [];
+  let campaignCountdownCleanups = [];
 
   function clearCardAutoplay() {
     cardAutoplayCleanups.forEach((cleanup) => cleanup());
     cardAutoplayCleanups = [];
+  }
+
+  function clearCampaignCountdowns() {
+    campaignCountdownCleanups.forEach((cleanup) => cleanup());
+    campaignCountdownCleanups = [];
+  }
+  function bindCampaignCountdowns(scope) {
+    clearCampaignCountdowns();
+    scope.querySelectorAll("[data-campaign-countdown]").forEach((node) => {
+      const end = new Date(node.getAttribute("data-campaign-countdown"));
+      if (!Number.isFinite(end.getTime())) return;
+      let timer = null;
+      let disposed = false;
+      const stop = () => { if (timer) clearTimeout(timer); timer = null; };
+      let cleanup = () => {};
+      const tick = () => {
+        if (disposed) return;
+        if (!node.isConnected) { cleanup(); return; }
+        stop();
+        const remaining = end.getTime() - Date.now();
+        if (remaining <= 0) {
+          node.textContent = "ปิดรับจองแล้ว";
+          node.closest(".store-card, .store-detail-screen, .homepage-service-card")
+            ?.querySelectorAll("[data-store-book], [data-store-urgent], [data-store-detail-book], [data-store-detail-urgent], [data-home-featured-action]")
+            .forEach((button) => { button.disabled = true; button.setAttribute("aria-disabled", "true"); });
+          cleanup();
+          return;
+        }
+        const minutes = Math.ceil(remaining / 60000);
+        const days = Math.floor(minutes / 1440); const hours = Math.floor((minutes % 1440) / 60); const mins = minutes % 60;
+        node.textContent = days ? `เหลือ ${days} วัน ${hours} ชม.` : `เหลือ ${hours} ชม. ${mins} นาที`;
+        if (!document.hidden) timer = setTimeout(tick, 60000);
+      };
+      const onVisibility = () => { if (document.hidden) stop(); else tick(); };
+      cleanup = () => {
+        if (disposed) return;
+        disposed = true;
+        stop();
+        document.removeEventListener("visibilitychange", onVisibility);
+      };
+      document.addEventListener("visibilitychange", onVisibility);
+      tick();
+      campaignCountdownCleanups.push(cleanup);
+    });
   }
 
   function bindGallerySliders(scope) {
@@ -770,12 +944,12 @@
     container.querySelectorAll("[data-store-item]").forEach((card) => {
       const id = card.getAttribute("data-store-item");
       card.addEventListener("click", (event) => {
-        if (event.target.closest("[data-store-book], [data-store-contact], [data-store-buy]")) return;
+        if (event.target.closest("[data-store-book], [data-store-urgent], [data-store-contact], [data-store-buy]")) return;
         goToDetail(id);
       });
       card.addEventListener("keydown", (event) => {
         if (event.key !== "Enter" && event.key !== " ") return;
-        if (event.target.closest("[data-store-book], [data-store-contact], [data-store-buy]")) return;
+        if (event.target.closest("[data-store-book], [data-store-urgent], [data-store-contact], [data-store-buy]")) return;
         event.preventDefault();
         goToDetail(id);
       });
@@ -785,6 +959,7 @@
         event.stopPropagation && event.stopPropagation();
         const id = button.getAttribute("data-store-book");
         const item = (root.state.catalog.items || []).find((it) => String(it.item_id) === String(id));
+        if (isServicePackageBundle(item)) { goToDetail(id); return; }
         const draftItem = root.services.catalogItemToCommerceDraft(item);
         if (!draftItem || !root.services.applyCommerceDraft("scheduled", draftItem)) {
           trackItemEvent("cwf_store_contact_admin", item, { source: "store_list" });
@@ -821,6 +996,7 @@
       });
     });
     bindGallerySliders(container);
+    bindCampaignCountdowns(container);
   }
 
   function patchGrid(container) {
@@ -1452,7 +1628,7 @@
     const bookable = isBookable(item);
     const showCompare = canonicalAcType(item) === "wall" && canonicalJobCategory(item) === "wash";
     const ctaButton = bookable
-      ? `<button class="primary-btn" type="button" data-store-detail-book="1">จองคิว</button>`
+      ? renderBookingActions(item, item.item_id, true)
       : isPurchase(item)
         ? `<button class="primary-btn" type="button" data-store-detail-buy="1">ซื้อสินค้า</button>`
         : `<button class="primary-btn" type="button" data-store-detail-contact="1">สอบถามแอดมิน</button>`;
@@ -1460,6 +1636,7 @@
     return `
       <button class="store-detail-back" type="button" data-store-detail-back>${root.utils.icon("pin", 16)}กลับไปหน้าร้านค้า</button>
       ${renderDetailGallery(item, name)}
+      <div class="campaign-theme-${campaignTheme(item)} campaign-effect-${campaignEffect(item)}">${renderCampaignPresentation(item)}</div>
       ${renderBadges(item)}
       <div class="store-detail-head">
         ${category ? `<span class="tag">${root.utils.escapeHtml(category)}</span>` : ""}
@@ -1475,6 +1652,7 @@
       ${renderPromoInfo(item)}
       ${renderVariantSelector(item, siblings)}
       ${item.short_description ? `<div class="store-detail-section store-detail-summary"><p>${root.utils.escapeHtml(item.short_description)}</p></div>` : ""}
+      ${renderBundleConfigurator(item)}
       <div class="store-detail-inline-cta">${ctaButton}</div>
       <div class="store-detail-accordion-group">
         ${renderAccordionSection("จุดเด่นของบริการ", highlights.length ? `
@@ -1558,6 +1736,7 @@
       bookButton.addEventListener("click", () => {
         const item = root.state.storeDetail?.data;
         if (!item) return;
+        if (isServicePackageBundle(item)) { beginBundleBooking(container, item); return; }
         const draftItem = root.services.catalogItemToCommerceDraft(item);
         if (!draftItem || !root.services.applyCommerceDraft("scheduled", draftItem)) {
           trackItemEvent("cwf_store_contact_admin", item, { source: "store_detail" });
@@ -1566,6 +1745,45 @@
         }
         trackItemEvent("cwf_store_begin_booking", item, { source: "store_detail" });
         root.utils.routeTo("scheduled");
+      });
+    });
+    container.querySelectorAll("[data-bundle-quantity], [data-bundle-btu]").forEach((control) => {
+      control.addEventListener("change", () => {
+        const item = root.state.storeDetail?.data;
+        const total = container.querySelector("[data-bundle-total]");
+        const error = container.querySelector("[data-bundle-error]");
+        if (error) error.textContent = "";
+        try {
+          const result = collectBundleDraft(container, item);
+          if (total) total.textContent = `รวม ${result.preview.groups.reduce((sum, group) => sum + group.quantity, 0)} เครื่อง · ${result.preview.fixed_total_price} บาท · ${result.preview.duration_min} นาที`;
+        } catch (cause) {
+          if (total) total.textContent = cause.message;
+        }
+      });
+    });
+    container.querySelectorAll("[data-store-detail-urgent]").forEach((bookButton) => {
+      bookButton.addEventListener("click", () => {
+        if (bookButton.disabled) return;
+        const item = root.state.storeDetail?.data;
+        if (!item || !allowsUrgentBooking(item)) return;
+        if (isServicePackageBundle(item)) { beginBundleBooking(container, item, "urgent"); return; }
+        const draftItem = root.services.catalogItemToCommerceDraft(item);
+        if (!draftItem || !root.services.applyCommerceDraft("urgent", draftItem)) return;
+        trackItemEvent("cwf_store_begin_urgent_booking", item, { source: "store_detail" });
+        root.utils.routeTo("urgent");
+      });
+    });
+    container.querySelectorAll("[data-store-urgent]").forEach((button) => {
+      button.addEventListener("click", (event) => {
+        event.stopPropagation && event.stopPropagation();
+        if (button.disabled) return;
+        const id = button.getAttribute("data-store-urgent");
+        const item = (root.state.catalog.items || []).find((it) => String(it.item_id) === String(id));
+        if (isServicePackageBundle(item)) { goToDetail(id); return; }
+        const draftItem = root.services.catalogItemToCommerceDraft(item);
+        if (!draftItem || !root.services.applyCommerceDraft("urgent", draftItem)) return;
+        trackItemEvent("cwf_store_begin_urgent_booking", item, { source: "store_list" });
+        root.utils.routeTo("urgent");
       });
     });
     container.querySelectorAll("[data-store-detail-contact]").forEach((contactButton) => {
@@ -1619,6 +1837,7 @@
     const item = root.state.storeDetail?.data;
     if (item) bindReviewsSection(container, item);
     bindDetailGallery(container);
+    bindCampaignCountdowns(container);
   }
 
   function patchDetailBody(container) {
@@ -2088,12 +2307,26 @@
 
   store.render.onLeave = () => {
     clearCardAutoplay();
+    clearCampaignCountdowns();
   };
   store.renderDetail.onLeave = () => {
     clearDetailAutoplay();
+    clearCampaignCountdowns();
   };
 
-  store._test = { loadDetail, loadReviewsList, loadEligibility, detailItemId, renderDetailBody, renderReviewsSectionBody };
+  // Shared presentation renderer/lifecycle for both Store and the existing
+  // Homepage Featured Services cards. CSS effects stay decorative; callers can
+  // omit this API and still render/navigate/book normally.
+  store.campaignPresentation = {
+    theme: campaignTheme,
+    effect: campaignEffect,
+    render: renderCampaignPresentation,
+    bind: bindCampaignCountdowns,
+    clear: clearCampaignCountdowns,
+  };
+
+  store._test = { loadDetail, loadReviewsList, loadEligibility, detailItemId, renderDetailBody, renderReviewsSectionBody,
+    composeBundleTiers, renderBundleConfigurator, collectBundleDraft, bindCampaignCountdowns, clearCampaignCountdowns };
 
   root.store = store;
 })();

@@ -225,8 +225,8 @@
     const line = normalizeServiceLine(item.draft);
     const catalogItemId = Number.isFinite(Number(item.id)) && Number(item.id) > 0 ? Number(item.id) : null;
     root.state.updateDraft(scope, {
-      service_kind: "clean",
-      job_type: "ล้าง",
+      service_kind: line.job_type === "ล้าง" ? "clean" : line.job_type,
+      job_type: line.job_type,
       ac_type: line.ac_type,
       btu: String(line.btu),
       machine_count: line.machine_count,
@@ -235,6 +235,7 @@
       selectedSlot: null,
       catalog_item_id: catalogItemId,
       ...(scope === "scheduled" ? { scheduled_request_key: "" } : {}),
+      ...(scope === "urgent" ? { urgent_request_key: "", service_package_groups: [], service_package_bundle_preview: null } : {}),
     });
     root.state.selectedService = { id: item.id || item.title || "", route: scope };
     if (scope === "scheduled") {
