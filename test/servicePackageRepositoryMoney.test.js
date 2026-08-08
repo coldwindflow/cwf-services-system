@@ -3,12 +3,14 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const repository = require("../server/services/packages/servicePackageRepository");
-const { buildSnapshot } = require("../server/services/packages/servicePackageResolver");
+const { buildSnapshot, createServicePackageResolver } = require("../server/services/packages/servicePackageResolver");
+const { createPublicServicePackageService } = require("../server/services/public/servicePackages");
 
 const packageRow = {
   service_package_id: 10,
   package_key: "premium-wall",
   display_name: "Premium Wall",
+  description: "Fixed package",
   service_key: "wall-premium",
   service_name: "Premium cleaning",
   service_unit_duration_minutes: 45,
@@ -17,7 +19,11 @@ const packageRow = {
   wash_variant: "premium",
   btu_min: null,
   btu_max: 12000,
+  sell_start_at: null,
+  sell_end_at: null,
   redeem_until: null,
+  is_active: true,
+  is_customer_visible: true,
 };
 
 const tierRow = {
@@ -70,5 +76,28 @@ test("resolver rejects numeric JSON money but accepts repository exact decimal t
   assert.equal(
     buildSnapshot(packageRow, { ...tierRow, fixed_total_price: "9999999999.99" }).fixed_total_price,
     "9999999999.99"
+  );
+});
+
+test("public package list succeeds when repository aggregate returns exact price text", async () => {
+  const db = {
+    async query(sql) {
+      assert.match(sql, /fixed_total_price', t\.fixed_total_price::text/);
+      return {
+        rows: [{
+          ...packageRow,
+          tiers: [
+            { ...tierRow, tier_key: "one", fixed_total_price: "699.00" },
+            { ...tierRow, service_package_tier_id: 22, tier_key: "two", service_quantity: 2, fixed_total_price: "1399.50" },
+          ],
+        }],
+      };
+    },
+  };
+  const resolver = createServicePackageResolver({ db, now: () => new Date("2026-08-08T00:00:00Z") });
+  const result = await createPublicServicePackageService({ resolver }).list();
+  assert.deepEqual(
+    result.service_packages[0].tiers.map((tier) => tier.fixed_total_price),
+    ["699.00", "1399.50"]
   );
 });
