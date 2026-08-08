@@ -163,6 +163,25 @@ async function assertSchema(client) {
   if (missingColumns.length) {
     throw new Error(`users schema incomplete; missing: ${missingColumns.join(", ")}`);
   }
+
+  const technicianColumns = await client.query(
+    `SELECT column_name
+       FROM information_schema.columns
+      WHERE table_schema='public'
+        AND table_name='technician_profiles'
+        AND column_name = ANY($1::text[])`,
+    [["done_count", "position", "technician_code"]]
+  );
+  const presentTechnicianColumns = new Set(
+    technicianColumns.rows.map((row) => row.column_name)
+  );
+  const missingTechnicianColumns = ["done_count", "position", "technician_code"]
+    .filter((name) => !presentTechnicianColumns.has(name));
+  if (missingTechnicianColumns.length) {
+    throw new Error(
+      `technician_profiles schema incomplete; missing: ${missingTechnicianColumns.join(", ")}`
+    );
+  }
 }
 
 async function main() {
@@ -179,6 +198,9 @@ async function main() {
 
     await client.query("ALTER TABLE public.users ADD COLUMN IF NOT EXISTS password TEXT");
     await client.query("ALTER TABLE public.users ADD COLUMN IF NOT EXISTS position TEXT");
+    await client.query("ALTER TABLE public.technician_profiles ADD COLUMN IF NOT EXISTS technician_code TEXT");
+    await client.query("ALTER TABLE public.technician_profiles ADD COLUMN IF NOT EXISTS position TEXT");
+    await client.query("ALTER TABLE public.technician_profiles ADD COLUMN IF NOT EXISTS done_count INT DEFAULT 0");
 
     const sourceFiles = [
       path.join(REPO_ROOT, "index.js"),

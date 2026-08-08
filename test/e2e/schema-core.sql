@@ -13,13 +13,16 @@ CREATE TABLE IF NOT EXISTS public.users (
 
 CREATE TABLE IF NOT EXISTS public.technician_profiles (
   username             TEXT PRIMARY KEY,
+  technician_code      TEXT,
   full_name            TEXT,
   phone                TEXT,
   photo_path           TEXT,
+  position             TEXT,
   rank_level           INT,
   rank_key             TEXT,
   rating               NUMERIC,
   grade                TEXT,
+  done_count            INT DEFAULT 0,
   employment_type      TEXT DEFAULT 'company',
   work_start           TEXT DEFAULT '09:00',
   work_end             TEXT DEFAULT '18:00',
