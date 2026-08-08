@@ -12,6 +12,18 @@
   let sameDayVisibilityRefresh = null;
   let scheduledLifecycleEpoch = 0;
   let latestContainer = null;
+  let ticketCopyState = { status: "idle", error: "" };
+
+  function bookingTicketText(ticket) {
+    if (!ticket || !ticket.booking_code || !Array.isArray(ticket.components)) return "";
+    const lines = [ticket.heading || "CWF BOOKING TICKET", `รหัสการจอง: ${ticket.booking_code}`,
+      `ชื่อผู้ติดต่อ: ${ticket.customer_name || "-"}`, `เบอร์โทร: ${ticket.customer_phone || "-"}`, "รายการบริการ:"];
+    ticket.components.forEach((item) => lines.push(`- ${item.label} x ${item.quantity}`));
+    lines.push(`จำนวนรวม: ${ticket.total_machine_count} เครื่อง`, `วันเวลานัด: ${ticket.appointment_datetime}`,
+      `ยอดยืนยันจากระบบ: ${ticket.exact_total} บาท`, `สถานะ: ${ticket.public_status}`,
+      "ผู้ส่งยืนยันว่า LINE บัญชีนี้เป็นผู้ติดต่อสำหรับรายการจองนี้");
+    return lines.join("\n");
+  }
 
   function draft() {
     return root.state.draft.scheduled || {};
@@ -823,6 +835,9 @@
     const result = root.state.scheduledSubmit.result || {};
     const selected = draft().selectedSlot || {};
     const trackingKey = result.token || result.booking_code || "";
+    const ticketText = bookingTicketText(result.booking_ticket);
+    const copied = ticketCopyState.status === "copied";
+    const manual = ticketCopyState.status === "manual";
     return `
       <section class="card success-card booking-result-card">
         <div class="success-mark">✓</div>
@@ -837,6 +852,16 @@
           <div class="data-row"><strong>เวลาทำงาน</strong><span class="muted">${root.utils.escapeHtml(result.duration_min || "-")} นาที</span></div>
           <div class="data-row"><strong>สถานะ</strong><span class="muted">รอแอดมินยืนยัน</span></div>
         </div>
+        ${ticketText ? `<div class="booking-ticket-handoff">
+          <p>ส่ง Ticket นี้ใน LINE OA เพื่อให้แอดมินทราบว่า LINE นี้เป็นผู้ติดต่อของรายการจองใด</p>
+          <p class="muted">Ticket มีชื่อและเบอร์โทรที่ใช้จอง กรุณาตรวจสอบก่อนคัดลอก</p>
+          <div class="button-row">
+            <button type="button" class="secondary-btn" data-action="copy-booking-ticket" ${ticketCopyState.status === "copying" ? "disabled" : ""}>${copied ? "คัดลอกแล้ว" : "คัดลอก Ticket ส่งให้แอดมิน"}</button>
+            ${copied ? '<a class="primary-btn" href="https://lin.ee/fG1Oq7y" target="_blank" rel="noopener noreferrer">เปิด LINE OA เพื่อส่ง Ticket</a>' : ""}
+          </div>
+          <div role="status" aria-live="polite">${copied ? "คัดลอกแล้ว" : root.utils.escapeHtml(ticketCopyState.error || "")}</div>
+          ${manual ? `<label for="booking-ticket-manual">คัดลอกข้อความด้านล่างด้วยตนเอง</label><textarea id="booking-ticket-manual" class="input textarea" rows="10" readonly>${root.utils.escapeHtml(ticketText)}</textarea>` : ""}
+        </div>` : ""}
         <div class="button-row">
           <button type="button" class="primary-btn" data-action="track-created" data-tracking-key="${root.utils.escapeHtml(trackingKey)}">ติดตามสถานะงาน</button>
           <button type="button" class="secondary-btn" data-action="new-cleaning-booking">จองล้างแอร์เพิ่ม</button>
@@ -1119,6 +1144,7 @@
       const result = await root.api.submitScheduledBooking(buildSubmitPayload());
       if (lifecycleEpoch !== scheduledLifecycleEpoch) return;
       if (!result?.success || (!result.booking_code && !result.token)) throw new Error("ระบบไม่ได้ส่งรหัสติดตามกลับมา");
+      ticketCopyState = { status: "idle", error: "" };
       root.state.setScheduledSubmit({ status: "success", error: "", result });
       try {
         window.sessionStorage.removeItem("cwf_customer_app_v2_scheduled_v5");
@@ -1343,12 +1369,28 @@
           paint(container);
         }
         if (action === "submit-scheduled") await submit(container);
+        if (action === "copy-booking-ticket") {
+          if (ticketCopyState.status === "copying" || ticketCopyState.status === "copied") return;
+          const ticketText = bookingTicketText(root.state.scheduledSubmit.result?.booking_ticket);
+          if (!ticketText) { ticketCopyState = { status: "manual", error: "ไม่พบข้อมูล Ticket ที่ยืนยันจากระบบ" }; paint(container); return; }
+          ticketCopyState = { status: "copying", error: "" }; paint(container);
+          try {
+            if (!navigator.clipboard?.writeText || window.isSecureContext === false) throw new Error("CLIPBOARD_UNAVAILABLE");
+            await navigator.clipboard.writeText(ticketText);
+            ticketCopyState = { status: "copied", error: "" };
+          } catch (_) {
+            ticketCopyState = { status: "manual", error: "เบราว์เซอร์ไม่อนุญาตให้คัดลอกอัตโนมัติ กรุณาคัดลอกข้อความด้านล่าง" };
+          }
+          paint(container);
+          if (ticketCopyState.status === "manual") container.querySelector("#booking-ticket-manual")?.select?.();
+        }
         if (action === "track-created") {
           const key = button.getAttribute("data-tracking-key") || "";
           if (key) root.state.updateDraft("tracking", { trackingCode: key });
           root.utils.routeTo("tracking");
         }
         if (action === "new-cleaning-booking") {
+          ticketCopyState = { status: "idle", error: "" };
           root.state.resetScheduledDraft();
           paint(container);
         }

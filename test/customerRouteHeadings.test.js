@@ -80,7 +80,7 @@ test("Customer App UI module has no startup debug logging", () => {
   assert.doesNotMatch(UI_SOURCE, /\bconsole\.(?:debug|info|log)\s*\(/);
 });
 
-test("all Customer App routes render one semantic text-only page heading", () => {
+test("routes keep semantic headings while four redundant mobile rows are visually hidden", () => {
   const { app } = loadUi({
     utils: {
       iconSlot() { throw new Error("page heading must not request an icon slot"); },
@@ -105,9 +105,11 @@ test("all Customer App routes render one semantic text-only page heading", () =>
 
     assert.equal(container.insertions.length, 1, `${route} heading should not be injected twice`);
     const html = container.insertions[0];
-    assert.match(html, /<header class="route-page-heading"/);
+    assert.match(html, /<header class="route-page-heading(?: is-accessible-only)?"/);
     assert.match(html, new RegExp(`data-page-icon-heading="${page}"`));
     assert.match(html, new RegExp(`<h2 class="route-page-heading__title">${label}</h2>`));
+    const hidden = ["home", "store", "storeItem", "storeItem-42", "scheduled", "tracking"].includes(route);
+    assert.equal(/is-accessible-only/.test(html), hidden, `${route} standalone visibility`);
     assert.doesNotMatch(html, /<svg\b|<img\b|cwf-icon-slot|data-(?:cwf-)?icon-slot/i);
   }
 });
@@ -175,6 +177,7 @@ test("route heading layout stays aligned and mobile overflow guards remain activ
   assert.match(css, /\.booking-wizard-page\s*\{[^}]*padding:\s*12px 16px 20px;/s);
   assert.match(css, /\.booking-wizard-page > \.route-page-heading\s*\{[^}]*margin:\s*0;/s);
   assert.match(css, /\.route-page-heading ~ \.page-header-mount:empty\s*\{\s*display:\s*none;/);
+  assert.match(css, /\.route-page-heading\.is-accessible-only\s*\{[^}]*position:\s*absolute;[^}]*width:\s*1px;[^}]*height:\s*1px;/s);
   assert.match(css, /html\s*\{[^}]*overflow-x:\s*hidden;/s);
   assert.match(css, /body\s*\{[^}]*overflow-x:\s*hidden;/s);
   assert.doesNotMatch(css, /\.page-icon-heading/);

@@ -3,6 +3,7 @@ const cloudinaryImageUpload = require("../../lib/cloudinaryImageUpload");
 const customerAvailability = require("../../services/public/customerAvailability");
 const { getBangkokNow, computeJobTiming } = require("../../services/jobTiming");
 const servicePackageRepository = require("../../services/packages/servicePackageRepository");
+const { validateCatalogCampaignPolicy, safeCatalogCampaignPolicy } = require("../../services/catalogCampaignPolicy");
 
 const MAX_CATALOG_IMAGES_PER_ITEM = 4;
 
@@ -82,6 +83,10 @@ const CATALOG_MARKETPLACE_FIELDS = [
 // its own whitelist, mirroring CATALOG_MARKETPLACE_FIELDS, since it ships in a later
 // migration and needs its own independent schema-readiness gate.
 const CATALOG_HOT_FIELDS = ["is_hot"];
+const CATALOG_CAMPAIGN_FIELDS = [
+  "promotion_badge_text", "promotion_theme_preset", "promotion_effect_preset",
+  "show_sale_countdown", "promotion_supporting_text", "booking_flow_policy",
+];
 
 // "purchase" = a physical product the customer can buy (e.g. an AC unit),
 // validated like "contact_admin" (no booking ac_type/btu required) — the buy
@@ -108,6 +113,9 @@ function mergeCatalogItemPayload(existing, body) {
   CATALOG_HOT_FIELDS.forEach((key) => {
     merged[key] = Object.prototype.hasOwnProperty.call(body, key) ? body[key] : existing[key];
   });
+  CATALOG_CAMPAIGN_FIELDS.forEach((key) => {
+    merged[key] = Object.prototype.hasOwnProperty.call(body, key) ? body[key] : existing[key];
+  });
   return merged;
 }
 
@@ -120,6 +128,11 @@ function validateHotField(merged) {
   );
   if (!isHotResult.ok) return { ok: false, errors: [isHotResult.error] };
   return { ok: true, value: { is_hot: isHotResult.value } };
+}
+
+function validateCampaignFields(merged) {
+  try { return { ok: true, value: validateCatalogCampaignPolicy(merged, { oldClient: true }) }; }
+  catch (error) { return { ok: false, errors: [error.code || "INVALID_CATALOG_CAMPAIGN_POLICY"] }; }
 }
 
 function parseOptionalText(value, fieldLabel, maxLen) {
@@ -560,6 +573,23 @@ async function attachCatalogServicePackages(pool, rows, { customer = false } = {
   return rows;
 }
 
+async function attachCatalogCampaignPolicy(pool, rows, ready = true) {
+  if (!rows.length) return rows;
+  if (!ready) {
+    rows.forEach((row) => Object.assign(row, safeCatalogCampaignPolicy({})));
+    return rows;
+  }
+  const result = await pool.query(
+    `SELECT item_id,promotion_badge_text,promotion_theme_preset,promotion_effect_preset,
+            show_sale_countdown,promotion_supporting_text,booking_flow_policy
+       FROM public.catalog_items WHERE item_id=ANY($1::bigint[])`,
+    [rows.map((row) => row.item_id)]
+  );
+  const byId = new Map(result.rows.map((row) => [String(row.item_id), safeCatalogCampaignPolicy(row)]));
+  rows.forEach((row) => Object.assign(row, byId.get(String(row.item_id)) || safeCatalogCampaignPolicy({})));
+  return rows;
+}
+
 // Same migration as catalog_item_reviews; gates whether rating aggregation
 // can take admin-assigned reviews (assigned_item_id, set on originally
 // ambiguous service_type/overall-scoped tracking reviews) into account.
@@ -834,6 +864,7 @@ function computeEffectivePricing(row) {
 // a customer see right now". Do not add raw rule fields here; see serializeAdminCatalogRow.
 function serializeCatalogRow(row) {
   const pricing = computeEffectivePricing(row);
+  const campaign = safeCatalogCampaignPolicy(row);
   // Multi-image gallery, ordered by sort_order. Falls back to the legacy single
   // image_url/image_public_id pair (as one synthetic primary image) so items
   // created before the marketplace v2 migration still render a photo.
@@ -900,6 +931,7 @@ function serializeCatalogRow(row) {
     booking_btu: row.booking_mode === "bookable" ? (row.booking_btu || null) : null,
     booking_wash_variant: row.booking_mode === "bookable" ? (row.booking_wash_variant || null) : null,
     is_featured: Boolean(row.is_featured),
+    ...campaign,
     // Fail-safe disabled: row.is_autoplay_enabled is undefined until the autoplay
     // migration has actually run, and a pre-migration item must never be silently
     // treated as autoplay-enabled.
@@ -1134,6 +1166,20 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
     return ready;
   }
 
+  let campaignSchemaReadyCache = false;
+  async function isCampaignSchemaReady(db) {
+    if (campaignSchemaReadyCache) return true;
+    const r = await db.query(`
+      SELECT COUNT(*)::int AS cnt FROM information_schema.columns
+       WHERE table_schema='public' AND table_name='catalog_items'
+         AND column_name IN ('promotion_badge_text','promotion_theme_preset','promotion_effect_preset',
+           'show_sale_countdown','promotion_supporting_text','booking_flow_policy')
+    `);
+    const ready = Number(r.rows?.[0]?.cnt || 0) === 6;
+    if (ready) campaignSchemaReadyCache = true;
+    return ready;
+  }
+
   // Same migration adds public.catalog_item_reviews; gated independently since a
   // deployment could in principle have is_hot but not yet have run far enough for
   // the table (both ship in the same file, but this stays defensive/explicit).
@@ -1171,6 +1217,7 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
       const hotReady = await isHotSchemaReady(pool);
       const reviewsReady = await isReviewsSchemaReady(pool);
       const jobsCatalogLinkReady = await isJobsCatalogLinkSchemaReady(pool);
+      const campaignReady = await isCampaignSchemaReady(pool);
       const select = buildCatalogSelect({ pricingReady, marketplaceReady, autoplayReady, hotReady });
       const customer = String(req.query.customer || "").trim() === "1";
       const job_category = (req.query.job_category || "").toString().trim();
@@ -1197,6 +1244,7 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
       );
       await attachCatalogImages(pool, r.rows, imagesReady);
       await attachCatalogServicePackages(pool, r.rows, { customer });
+      await attachCatalogCampaignPolicy(pool, r.rows, campaignReady);
       await attachCatalogRatings(pool, r.rows, reviewsReady);
       await attachBookingCounts(pool, r.rows, jobsCatalogLinkReady);
       await attachTodayQueueAvailability(pool, r.rows, queueSlotDeps);
@@ -1219,6 +1267,7 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
       const hotReady = await isHotSchemaReady(pool);
       const reviewsReady = await isReviewsSchemaReady(pool);
       const jobsCatalogLinkReady = await isJobsCatalogLinkSchemaReady(pool);
+      const campaignReady = await isCampaignSchemaReady(pool);
       const select = buildCatalogSelect({ pricingReady, marketplaceReady, autoplayReady, hotReady });
 
       const r = await pool.query(
@@ -1229,6 +1278,7 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
       if (!row) return res.status(404).json({ error: "ไม่พบรายการนี้" });
       await attachCatalogImages(pool, [row], imagesReady);
       await attachCatalogServicePackages(pool, [row], { customer: true });
+      await attachCatalogCampaignPolicy(pool, [row], campaignReady);
       await attachCatalogRatings(pool, [row], reviewsReady);
       await attachBookingCounts(pool, [row], jobsCatalogLinkReady);
       await attachTodayQueueAvailability(pool, [row], queueSlotDeps);
@@ -1248,10 +1298,12 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
       const hotReady = await isHotSchemaReady(pool);
       const reviewsReady = await isReviewsSchemaReady(pool);
       const jobsCatalogLinkReady = await isJobsCatalogLinkSchemaReady(pool);
+      const campaignReady = await isCampaignSchemaReady(pool);
       const select = buildCatalogSelect({ pricingReady, marketplaceReady, autoplayReady, hotReady });
       const r = await pool.query(`${select} ORDER BY ci.item_category, ci.item_name`);
       await attachCatalogImages(pool, r.rows, imagesReady);
       await attachCatalogServicePackages(pool, r.rows);
+      await attachCatalogCampaignPolicy(pool, r.rows, campaignReady);
       await attachCatalogRatings(pool, r.rows, reviewsReady);
       await attachBookingCounts(pool, r.rows, jobsCatalogLinkReady);
       res.json(r.rows.map(serializeAdminCatalogRow));
@@ -1279,6 +1331,8 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
 
     const hotResult = validateHotField(merged);
     if (!hotResult.ok) return res.status(400).json({ error: hotResult.errors.join(", ") });
+    const campaignResult = validateCampaignFields(merged);
+    if (!campaignResult.ok) return res.status(400).json({ error: campaignResult.errors.join(", "), code: campaignResult.errors[0] });
 
     const hasPricingKey = req.body && Object.prototype.hasOwnProperty.call(req.body, "pricing");
     const pricingResult = hasPricingKey ? validatePricingInput(req.body.pricing) : { ok: true, value: undefined };
@@ -1286,10 +1340,12 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
 
     const hasMarketplaceKey = CATALOG_MARKETPLACE_FIELDS.some((key) => Object.prototype.hasOwnProperty.call(req.body || {}, key));
     const hasHotKey = CATALOG_HOT_FIELDS.some((key) => Object.prototype.hasOwnProperty.call(req.body || {}, key));
+    const hasCampaignKey = CATALOG_CAMPAIGN_FIELDS.some((key) => Object.prototype.hasOwnProperty.call(req.body || {}, key));
     const schemaReady = await isMediaPricingSchemaReady(pool);
     const marketplaceReady = await isMarketplaceSchemaReady(pool);
     const autoplayReady = await isAutoplaySchemaReady(pool);
     const hotReady = await isHotSchemaReady(pool);
+    const campaignReady = await isCampaignSchemaReady(pool);
     if (pricingResult.value && !schemaReady) {
       return res.status(503).json({ error: "ระบบราคาโปรโมชันยังไม่พร้อมใช้งาน (ยังไม่ได้รัน migration)" });
     }
@@ -1299,10 +1355,14 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
     if (hasHotKey && !hotReady) {
       return res.status(503).json({ error: "ระบบ HOT badge ยังไม่พร้อมใช้งาน (ยังไม่ได้รัน migration)" });
     }
+    if (hasCampaignKey && !campaignReady) {
+      return res.status(503).json({ error: "ระบบการนำเสนอโปรโมชั่น/นโยบายการจองยังไม่พร้อมใช้งาน", code: "CATALOG_CAMPAIGN_MIGRATION_REQUIRED" });
+    }
 
     const v = result.value;
     const mv = marketplaceResult.value;
     const hv = hotResult.value;
+    const cv = campaignResult.value;
     const pricingScopeResult = validateCatalogPricingScope(pricingResult.value, { ...v, booking_mode: mv.booking_mode });
     if (!pricingScopeResult.ok) return res.status(400).json({ error: pricingScopeResult.error, code: pricingScopeResult.error, risk_codes: pricingScopeResult.risk_codes || [] });
     const client = await pool.connect();
@@ -1362,6 +1422,16 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
       }
       const itemId = insertRes.rows[0].item_id;
 
+      if (campaignReady) {
+        await client.query(
+          `UPDATE public.catalog_items SET promotion_badge_text=$1,promotion_theme_preset=$2,
+             promotion_effect_preset=$3,show_sale_countdown=$4,promotion_supporting_text=$5,booking_flow_policy=$6
+           WHERE item_id=$7`,
+          [cv.promotion_badge_text, cv.promotion_theme_preset, cv.promotion_effect_preset,
+            cv.show_sale_countdown, cv.promotion_supporting_text, cv.booking_flow_policy, itemId]
+        );
+      }
+
       if (pricingResult.value) {
         const ruleId = await savePriceRuleForCatalogItem(client, {
           ruleId: null,
@@ -1378,6 +1448,7 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
       const select = buildCatalogSelect({ pricingReady: schemaReady, marketplaceReady, autoplayReady, hotReady });
       const final = await client.query(`${select} WHERE ci.item_id = $1`, [itemId]);
       await attachCatalogImages(client, final.rows, imagesReady);
+      await attachCatalogCampaignPolicy(client, final.rows, campaignReady);
       await attachCatalogRatings(client, final.rows, await isReviewsSchemaReady(client));
       res.status(201).json(serializeAdminCatalogRow(final.rows[0]));
     } catch (e) {
@@ -1397,8 +1468,10 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
     const marketplaceReady = await isMarketplaceSchemaReady(pool);
     const autoplayReady = await isAutoplaySchemaReady(pool);
     const hotReady = await isHotSchemaReady(pool);
+    const campaignReady = await isCampaignSchemaReady(pool);
     const select = buildCatalogSelect({ pricingReady: schemaReady, marketplaceReady, autoplayReady, hotReady });
     const existingResult = await pool.query(`${select} WHERE ci.item_id = $1`, [itemId]);
+    await attachCatalogCampaignPolicy(pool, existingResult.rows, campaignReady);
     const existing = existingResult.rows[0];
     if (!existing) return res.status(404).json({ error: "ไม่พบรายการนี้" });
 
@@ -1414,6 +1487,8 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
 
     const hotResult = validateHotField(merged);
     if (!hotResult.ok) return res.status(400).json({ error: hotResult.errors.join(", ") });
+    const campaignResult = validateCampaignFields(merged);
+    if (!campaignResult.ok) return res.status(400).json({ error: campaignResult.errors.join(", "), code: campaignResult.errors[0] });
 
     const hasPricingKey = req.body && Object.prototype.hasOwnProperty.call(req.body, "pricing");
     const pricingResult = hasPricingKey ? validatePricingInput(req.body.pricing) : { ok: true, value: undefined };
@@ -1431,10 +1506,15 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
     if (hasHotKey && !hotReady) {
       return res.status(503).json({ error: "ระบบ HOT badge ยังไม่พร้อมใช้งาน (ยังไม่ได้รัน migration)" });
     }
+    const hasCampaignKey = CATALOG_CAMPAIGN_FIELDS.some((key) => Object.prototype.hasOwnProperty.call(req.body || {}, key));
+    if (hasCampaignKey && !campaignReady) {
+      return res.status(503).json({ error: "ระบบการนำเสนอโปรโมชั่น/นโยบายการจองยังไม่พร้อมใช้งาน", code: "CATALOG_CAMPAIGN_MIGRATION_REQUIRED" });
+    }
 
     const v = result.value;
     const mv = marketplaceResult.value;
     const hv = hotResult.value;
+    const cv = campaignResult.value;
     const pricingScopeResult = validateCatalogPricingScope(pricingResult.value, { ...v, booking_mode: mv.booking_mode });
     if (!pricingScopeResult.ok) return res.status(400).json({ error: pricingScopeResult.error, code: pricingScopeResult.error, risk_codes: pricingScopeResult.risk_codes || [] });
     const client = await pool.connect();
@@ -1502,6 +1582,16 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
         );
       }
 
+      if (campaignReady) {
+        await client.query(
+          `UPDATE public.catalog_items SET promotion_badge_text=$1,promotion_theme_preset=$2,
+             promotion_effect_preset=$3,show_sale_countdown=$4,promotion_supporting_text=$5,booking_flow_policy=$6
+           WHERE item_id=$7`,
+          [cv.promotion_badge_text, cv.promotion_theme_preset, cv.promotion_effect_preset,
+            cv.show_sale_countdown, cv.promotion_supporting_text, cv.booking_flow_policy, itemId]
+        );
+      }
+
       // pricingResult.value === undefined -> field omitted, leave pricing untouched.
       // pricingResult.value === null      -> caller sent no pricing changes; the existing
       //                                       linked price rule (if any) is preserved as-is.
@@ -1523,6 +1613,7 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
       const imagesReady = await isCatalogImagesSchemaReady(client);
       const final = await client.query(`${select} WHERE ci.item_id = $1`, [itemId]);
       await attachCatalogImages(client, final.rows, imagesReady);
+      await attachCatalogCampaignPolicy(client, final.rows, campaignReady);
       await attachCatalogRatings(client, final.rows, await isReviewsSchemaReady(client));
       res.json(serializeAdminCatalogRow(final.rows[0]));
     } catch (e) {
@@ -2026,6 +2117,8 @@ module.exports.MAX_CATALOG_IMAGES_PER_ITEM = MAX_CATALOG_IMAGES_PER_ITEM;
 module.exports.validateHotField = validateHotField;
 module.exports.attachCatalogRatings = attachCatalogRatings;
 module.exports.attachCatalogServicePackages = attachCatalogServicePackages;
+module.exports.attachCatalogCampaignPolicy = attachCatalogCampaignPolicy;
+module.exports.validateCampaignFields = validateCampaignFields;
 // Test-only: queueTodayCache is a 60s in-process TTL cache, deliberately shared
 // across requests within a process. Tests that need a fresh eligibility check
 // (rather than another test's cached value) must clear it first.

@@ -1644,12 +1644,14 @@
 
   function ensureRouteHeading(container, route) {
     const page = routeIconPage(route);
+    const hideStandalone = route === "home" || route === "store" || route === "storeItem"
+      || /^storeItem-\d+$/.test(String(route || "")) || route === "scheduled" || route === "tracking";
     const screen = container.querySelector?.(".screen, .booking-wizard-page");
     if (screen && !screen.querySelector("[data-page-icon-heading]")) {
       const registry = window.CWFIconRegistry;
       const item = registry?.navigationItem?.(homepageConfig(), page) || { label: page };
       screen.insertAdjacentHTML("afterbegin", `
-        <header class="route-page-heading" data-page-icon-heading="${root.utils.escapeHtml(page)}">
+        <header class="route-page-heading${hideStandalone ? " is-accessible-only" : ""}" data-page-icon-heading="${root.utils.escapeHtml(page)}">
           <h2 class="route-page-heading__title">${root.utils.escapeHtml(item.label)}</h2>
         </header>
       `);

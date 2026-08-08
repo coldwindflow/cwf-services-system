@@ -106,7 +106,7 @@ test("Admin ordinary validation remains callable while package requests use the 
   const adminEnd = source.indexOf("\n  async function ", adminStart + 1);
   const adminSource = source.slice(adminStart, adminEnd);
   assert.match(adminSource, /hasPackageRequest/);
-  assert.match(adminSource, /identity: "admin"/);
+  assert.match(adminSource, /identity: Array\.isArray\(body\.service_package_groups\) \? "customer" : "admin"/);
 
   const result = await invoke(bookingService().handleAdminBookV2, scheduledRequest());
   assert.equal(result.statusCode, 400);
@@ -266,11 +266,13 @@ test("advisory-locked committed package replay bypasses unavailable current reso
     async connect() { return client; },
     async query(sql) {
       calls.push(sql);
+      if (/FROM public\.jobs WHERE job_id=\$1/.test(sql)) return { rows: [prior] };
       if (/service_package_snapshot/.test(sql)) return { rows: [{
         service_package_id: "41", service_package_tier_id: "73",
         service_package_snapshot: historical.snapshot,
       }] };
       if (/SELECT 1 FROM public\.job_items/.test(sql)) return { rows: [{ "?column?": 1 }] };
+      if (/SELECT item_name, qty, is_service/.test(sql)) return { rows: [{ ...canonical.item, is_service: true }] };
       if (/SELECT item_name, qty, line_total/.test(sql)) return { rows: [canonical.item] };
       throw new Error(`unexpected query: ${sql}`);
     },

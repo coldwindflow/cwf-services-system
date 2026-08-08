@@ -24,7 +24,7 @@ test("money is exact integer satang and round-trips decimal text", () => {
   assert.throws(() => parseMoney("699"), { code: "INVALID_PACKAGE_PRICE" });
 });
 
-test("tier composition uses exact tier, then minimum total with deterministic ties", () => {
+test("tier composition uses exact tier, then fewest components, exact totals, and deterministic larger-tier ties", () => {
   assert.equal(composeTiers(small, 2).fixed_total_price, "1399.00");
   assert.equal(composeTiers(small, 5).fixed_total_price, "3188.00");
   assert.deepEqual(composeTiers(small, 5).components.map((x) => x.quantity), [4, 1]);

@@ -14,6 +14,12 @@ test("bundle migration links variants to Store parent and widens booking mode", 
   assert.match(sql, /service_bundle_key TEXT/);
   assert.match(sql, /service_package_sell_start_at TIMESTAMPTZ/);
   assert.match(sql, /service_package_redeem_until TIMESTAMPTZ/);
+  assert.match(sql, /promotion_theme_preset TEXT NOT NULL DEFAULT 'default'/);
+  assert.match(sql, /promotion_effect_preset TEXT NOT NULL DEFAULT 'none'/);
+  assert.match(sql, /booking_flow_policy TEXT NOT NULL DEFAULT 'scheduled_only'/);
+  assert.match(sql, /scheduled_and_urgent/);
+  assert.match(sql, /admin_request_key VARCHAR\(128\)/);
+  assert.match(sql, /CREATE UNIQUE INDEX IF NOT EXISTS uq_jobs_admin_request_key/);
   assert.doesNotMatch(sql.split("\n").filter((line) => !line.trim().startsWith("--")).join("\n"), /\b(?:DELETE FROM|TRUNCATE|DROP TABLE|DROP COLUMN)\b/i);
 });
 
@@ -29,6 +35,9 @@ test("migration runner is advisory locked, verified, and redacts credentials", (
 
 test("pre-data rollback restores the former booking-mode contract", () => {
   assert.match(rollback, /DROP COLUMN IF EXISTS catalog_item_id/);
+  assert.match(rollback, /DROP COLUMN IF EXISTS booking_flow_policy/);
+  assert.match(rollback, /DROP COLUMN IF EXISTS promotion_theme_preset/);
+  assert.match(rollback, /DROP COLUMN IF EXISTS admin_request_key/);
   assert.match(rollback, /CHECK \(booking_mode IN \('bookable', 'contact_admin', 'purchase'\)\)/);
   assert.match(rollback, /PRE-DATA ROLLBACK ONLY/);
 });

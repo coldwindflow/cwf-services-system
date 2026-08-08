@@ -3,6 +3,9 @@
 const crypto = require("node:crypto");
 const repository = require("./servicePackageRepository");
 const { validate: validatePackage } = require("./servicePackageCatalogService");
+const { publicTaxonomy, canonicalServiceIdentity } = require("./servicePackageTaxonomy");
+const { validateCatalogCampaignPolicy } = require("../catalogCampaignPolicy");
+const { resolveCompositeBooking } = require("./compositeServicePackage");
 
 class StoreServicePackageCatalogError extends Error {
   constructor(code, message, status = 400) {
@@ -42,16 +45,22 @@ function validate(input) {
   const sellStart = instant(input.sell_start_at, "sell_start_at");
   const sellEnd = instant(input.sell_end_at, "sell_end_at");
   const redeemUntil = instant(input.redeem_until, "redeem_until");
+  let campaign;
+  try { campaign = validateCatalogCampaignPolicy(input); }
+  catch (error) { fail(error.code || "INVALID_CATALOG_CAMPAIGN_POLICY", error.field || "Invalid campaign setting"); }
   if (sellStart && sellEnd && sellEnd < sellStart) fail("INVALID_SELL_WINDOW", "sell_end_at must not precede sell_start_at");
   if (redeemUntil && sellEnd && redeemUntil < sellEnd) fail("INVALID_REDEEM_WINDOW", "redeem_until must not precede sell_end_at");
   if (!Array.isArray(input.variants) || !input.variants.length) fail("INVALID_VARIANTS", "At least one variant is required");
   const variants = input.variants.map((raw, index) => {
     const packageKey = raw?.package_key == null ? null : requiredText(raw.package_key, "package_key", 128);
+    const identity = canonicalServiceIdentity(raw);
+    if (!identity) fail("INVALID_SERVICE_CONSTRAINTS", "Variant taxonomy must use a supported Admin option");
     const packageInput = { ...raw };
     delete packageInput.package_key;
     delete packageInput.packageKey;
     const value = validatePackage({
       ...packageInput,
+      ...identity,
       sell_start_at: null,
       sell_end_at: null,
       redeem_until: null,
@@ -79,7 +88,7 @@ function validate(input) {
     is_customer_visible: boolean(input.is_customer_visible, "is_customer_visible"),
     is_featured: input.is_featured == null ? false : boolean(input.is_featured, "is_featured"),
     is_autoplay_enabled: input.is_autoplay_enabled == null ? true : boolean(input.is_autoplay_enabled, "is_autoplay_enabled"),
-    sell_start_at: sellStart, sell_end_at: sellEnd, redeem_until: redeemUntil, variants,
+    sell_start_at: sellStart, sell_end_at: sellEnd, redeem_until: redeemUntil, ...campaign, variants,
   };
 }
 
@@ -123,11 +132,39 @@ async function listBundles(db) {
     sell_end_at: row.service_package_sell_end_at, redeem_until: row.service_package_redeem_until,
     is_active: Boolean(row.is_active), is_customer_visible: Boolean(row.is_customer_visible),
     is_featured: Boolean(row.is_featured), is_autoplay_enabled: Boolean(row.is_autoplay_enabled),
+    promotion_badge_text: row.promotion_badge_text || null,
+    promotion_theme_preset: row.promotion_theme_preset || "default",
+    promotion_effect_preset: row.promotion_effect_preset || "none",
+    show_sale_countdown: Boolean(row.show_sale_countdown),
+    promotion_supporting_text: row.promotion_supporting_text || null,
+    booking_flow_policy: row.booking_flow_policy || "scheduled_only",
     variants: byItem.get(String(row.item_id)) || [],
   }));
 }
 
 function createStoreServicePackageCatalogService({ pool, packageRepository = repository }) {
+  async function quote(input = {}) {
+    const booking = await resolveCompositeBooking({
+      body: { service_package_groups: input.service_package_groups },
+      bookingMode: String(input.booking_mode || "scheduled"),
+      appointmentDatetime: input.appointment_datetime,
+      repository: packageRepository, db: pool, identity: "customer",
+    });
+    return {
+      bundle_key: booking.bundleKey,
+      fixed_total_price: booking.fixedTotal,
+      duration_minutes: booking.durationMin,
+      machine_count: booking.payload.machine_count,
+      groups: booking.payload.service_package_groups,
+      components: booking.items.map((item) => ({
+        package_key: item.snapshot.package.key,
+        tier_key: item.snapshot.tier.key,
+        tier_name: item.snapshot.tier.name,
+        quantity: item.snapshot.quantity,
+        fixed_total_price: item.snapshot.fixed_total_price,
+      })),
+    };
+  }
   async function save(input, bundleKey = null) {
     const value = validate(input);
     const client = await pool.connect();
@@ -140,12 +177,15 @@ function createStoreServicePackageCatalogService({ pool, packageRepository = rep
           `INSERT INTO public.catalog_items
             (item_name,item_category,base_price,unit_label,job_category,ac_type,is_active,is_customer_visible,
              short_description,long_description,highlights,service_conditions,booking_mode,is_featured,is_autoplay_enabled,
-             service_bundle_key,service_package_sell_start_at,service_package_sell_end_at,service_package_redeem_until)
-           VALUES ($1,'service',0,'package',$2,$3,$4,$5,$6,$7,$8,$9,'service_package',$10,$11,$12,$13,$14,$15)
+             service_bundle_key,service_package_sell_start_at,service_package_sell_end_at,service_package_redeem_until,
+             promotion_badge_text,promotion_theme_preset,promotion_effect_preset,show_sale_countdown,promotion_supporting_text,booking_flow_policy)
+           VALUES ($1,'service',0,'package',$2,$3,$4,$5,$6,$7,$8,$9,'service_package',$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
            RETURNING *`,
           [value.item_name, value.variants[0].job_type, value.variants[0].ac_type, value.is_active, value.is_customer_visible,
             value.short_description, value.long_description, JSON.stringify(value.highlights), value.service_conditions,
-            value.is_featured, value.is_autoplay_enabled, generatedKey("bundle"), value.sell_start_at, value.sell_end_at, value.redeem_until]
+            value.is_featured, value.is_autoplay_enabled, generatedKey("bundle"), value.sell_start_at, value.sell_end_at, value.redeem_until,
+            value.promotion_badge_text, value.promotion_theme_preset, value.promotion_effect_preset, value.show_sale_countdown,
+            value.promotion_supporting_text, value.booking_flow_policy]
         );
         parent = inserted.rows[0];
       } else {
@@ -153,10 +193,14 @@ function createStoreServicePackageCatalogService({ pool, packageRepository = rep
           `UPDATE public.catalog_items SET item_name=$2,job_category=$3,ac_type=$4,is_active=$5,is_customer_visible=$6,
              short_description=$7,long_description=$8,highlights=$9,service_conditions=$10,is_featured=$11,
              is_autoplay_enabled=$12,service_package_sell_start_at=$13,service_package_sell_end_at=$14,
-             service_package_redeem_until=$15,updated_at=NOW() WHERE item_id=$1 RETURNING *`,
+             service_package_redeem_until=$15,promotion_badge_text=$16,promotion_theme_preset=$17,
+             promotion_effect_preset=$18,show_sale_countdown=$19,promotion_supporting_text=$20,booking_flow_policy=$21,
+             updated_at=NOW() WHERE item_id=$1 RETURNING *`,
           [parent.item_id, value.item_name, value.variants[0].job_type, value.variants[0].ac_type, value.is_active,
             value.is_customer_visible, value.short_description, value.long_description, JSON.stringify(value.highlights),
-            value.service_conditions, value.is_featured, value.is_autoplay_enabled, value.sell_start_at, value.sell_end_at, value.redeem_until]
+            value.service_conditions, value.is_featured, value.is_autoplay_enabled, value.sell_start_at, value.sell_end_at, value.redeem_until,
+            value.promotion_badge_text, value.promotion_theme_preset, value.promotion_effect_preset, value.show_sale_countdown,
+            value.promotion_supporting_text, value.booking_flow_policy]
         );
         parent = updated.rows[0];
       }
@@ -208,7 +252,13 @@ function createStoreServicePackageCatalogService({ pool, packageRepository = rep
       throw error;
     } finally { client.release(); }
   }
-  return { list: () => listBundles(pool), create: (input) => save(input), update: (key, input) => save(input, requiredText(key, "service_bundle_key", 128)) };
+  return {
+    list: () => listBundles(pool),
+    taxonomy: () => publicTaxonomy(),
+    quote,
+    create: (input) => save(input),
+    update: (key, input) => save(input, requiredText(key, "service_bundle_key", 128)),
+  };
 }
 
 module.exports = { StoreServicePackageCatalogError, validate, createStoreServicePackageCatalogService };

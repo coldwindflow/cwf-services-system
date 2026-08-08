@@ -3,9 +3,7 @@
 const repository = require("./servicePackageRepository");
 const { normalizeServiceType, normalizeAcType, normalizeWashVariantLabel, normalizeWashKey } = require("../../normalizers");
 const { resolveCompositeBooking } = require("./compositeServicePackage");
-
-const SUPPORTED_JOB_TYPES = new Set(["wash", "repair", "install"].map(normalizeServiceType));
-const SUPPORTED_AC_TYPES = new Set(["wall", "cassette", "floor", "ceiling"].map(normalizeAcType));
+const { JOB_TYPE_VALUES, AC_TYPE_VALUES, WASH_VARIANT_VALUES } = require("./servicePackageTaxonomy");
 
 class ServicePackageResolutionError extends Error {
   constructor(code, message) { super(message); this.name = "ServicePackageResolutionError"; this.code = code; }
@@ -37,7 +35,7 @@ function serviceConstraints(packageRow) {
   const washVariant = packageRow.wash_variant == null ? null : normalizeWashVariantLabel(packageRow.wash_variant);
   const btuMin = positiveIntegerOrNull(packageRow.btu_min, "btu_min");
   const btuMax = positiveIntegerOrNull(packageRow.btu_max, "btu_max");
-  if (!SUPPORTED_JOB_TYPES.has(jobType) || !SUPPORTED_AC_TYPES.has(acType)
+  if (!JOB_TYPE_VALUES.has(jobType) || !AC_TYPE_VALUES.has(acType) || (washVariant && !WASH_VARIANT_VALUES.has(washVariant))
       || (btuMin != null && btuMax != null && btuMax < btuMin)) {
     fail("INVALID_SERVICE_CONSTRAINTS", "Package service constraints are invalid");
   }

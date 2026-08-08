@@ -13,9 +13,29 @@
   let preflightEpoch = 0;
   let activeContainer = null;
   let visibilityRefresh = null;
+  let ticketCopyState = { status: "idle", error: "" };
+
+  function bookingTicketText(ticket) {
+    if (!ticket || !ticket.booking_code || !Array.isArray(ticket.components)) return "";
+    const lines = [ticket.heading || "CWF BOOKING TICKET", `รหัสการจอง: ${ticket.booking_code}`,
+      `ชื่อผู้ติดต่อ: ${ticket.customer_name || "-"}`, `เบอร์โทร: ${ticket.customer_phone || "-"}`, "รายการบริการ:"];
+    ticket.components.forEach((item) => lines.push(`- ${item.label} x ${item.quantity}`));
+    lines.push(`จำนวนรวม: ${ticket.total_machine_count} เครื่อง`, `วันเวลานัด: ${ticket.appointment_datetime}`,
+      `ยอดยืนยันจากระบบ: ${ticket.exact_total} บาท`, `สถานะ: ${ticket.public_status}`,
+      "ผู้ส่งยืนยันว่า LINE บัญชีนี้เป็นผู้ติดต่อสำหรับรายการจองนี้");
+    return lines.join("\n");
+  }
 
   function draft() {
     return root.state.draft.urgent || {};
+  }
+
+  function bundlePreview() {
+    return draft().service_package_bundle_preview || null;
+  }
+
+  function hasCompositePackage() {
+    return Array.isArray(draft().service_package_groups) && draft().service_package_groups.length > 0 && !!bundlePreview();
   }
 
   function canonicalCleaningLine(input) {
@@ -136,6 +156,12 @@
       ...(gps ? { gps_latitude: gps.latitude, gps_longitude: gps.longitude } : {}),
       ...payload,
       services: cleaningLines,
+      ...(Number.isSafeInteger(Number(d.catalog_item_id)) && Number(d.catalog_item_id) > 0
+        ? { catalog_item_id: Number(d.catalog_item_id) } : {}),
+      ...(Array.isArray(d.service_package_groups) && d.service_package_groups.length
+        ? { service_package_groups: d.service_package_groups.map((group) => ({
+          package_key: String(group.package_key || ""), btu: Number(group.btu), quantity: Number(group.quantity),
+        })) } : {}),
     };
   }
 
@@ -393,6 +419,18 @@
 
   function renderServicesStep() {
     const error = root.state.urgentFlow.error;
+    if (hasCompositePackage()) {
+      const preview = bundlePreview();
+      return `
+        <section class="card form-card urgent-card-fx" data-urgent-step-panel="services">
+          <div class="section-head"><span class="section-kicker">ขั้นตอน 1 จาก 3</span><h2>${root.utils.escapeHtml(preview.package_name || "แพ็กเกจบริการ")}</h2>
+            <p class="muted">สิทธิ์ ราคา และจำนวนยึดตามแพ็กเกจที่เลือกจากร้านค้า</p></div>
+          <div class="service-line-review-list">${(preview.groups || []).map((group) => `<div class="service-summary-box"><strong>${root.utils.escapeHtml(group.package_name || group.package_key)}</strong><small>${root.utils.escapeHtml(group.btu)} BTU · ${root.utils.escapeHtml(group.quantity)} เครื่อง</small></div>`).join("")}</div>
+          ${renderPricingSummary()}
+        </section>
+        ${error ? `<div class="state-box is-error" role="alert">${root.utils.escapeHtml(error)}</div>` : ""}
+        <div class="button-row"><button class="primary-btn btn-shine" type="button" data-urgent-action="to-details">กรอกข้อมูลหน้างาน</button></div>`;
+    }
     return `
       <section class="card form-card urgent-card-fx" data-urgent-step-panel="services">
         <div class="section-head">
@@ -594,6 +632,15 @@
   }
 
   async function refreshPricing(container) {
+    if (hasCompositePackage()) {
+      const preview = bundlePreview();
+      root.state.setUrgentFlow({ pricing: { status: "success", data: {
+        standard_price: Number(preview.fixed_total_price), active_price: Number(preview.fixed_total_price),
+        duration_min: Number(preview.duration_min), price_lines: [], package_snapshot: true,
+      }, error: "" } });
+      if (container) paint(container);
+      return;
+    }
     const payload = servicePayload();
     if (!payload) return;
     const requestEpoch = ++pricingEpoch;
@@ -710,6 +757,9 @@
     const canCancel = Boolean(cancellationToken)
       && ["pending", "fallback", "actionable"].includes(view.state)
       && flow.liveStatus?.can_cancel !== false;
+    const ticketText = bookingTicketText(result.booking_ticket);
+    const copied = ticketCopyState.status === "copied";
+    const manual = ticketCopyState.status === "manual";
     return `
       ${view.state === "pending" ? `
         <section class="card waiting-room waiting-room-fx" data-urgent-search-animation>
@@ -742,6 +792,13 @@
           <div class="data-row"><strong>เวลาที่ต้องการ</strong><span class="muted">${root.utils.escapeHtml(formatAppointment())}</span></div>
           <div class="data-row"><strong>สถานะ</strong><span class="muted">${root.utils.escapeHtml(view.statusLabel)}</span></div>
         </div>
+        ${ticketText ? `<div class="booking-ticket-handoff"><p>ส่ง Ticket นี้ใน LINE OA เพื่อให้แอดมินทราบว่า LINE นี้เป็นผู้ติดต่อของรายการจองใด</p>
+          <p class="muted">Ticket มีชื่อและเบอร์โทรที่ใช้จอง กรุณาตรวจสอบก่อนคัดลอก</p>
+          <div class="button-row"><button type="button" class="secondary-btn" data-urgent-action="copy-booking-ticket" ${ticketCopyState.status === "copying" ? "disabled" : ""}>${copied ? "คัดลอกแล้ว" : "คัดลอก Ticket ส่งให้แอดมิน"}</button>
+          ${copied ? '<a class="primary-btn" href="https://lin.ee/fG1Oq7y" target="_blank" rel="noopener noreferrer">เปิด LINE OA เพื่อส่ง Ticket</a>' : ""}</div>
+          <div role="status" aria-live="polite">${copied ? "คัดลอกแล้ว" : root.utils.escapeHtml(ticketCopyState.error || "")}</div>
+          ${manual ? `<label for="urgent-ticket-manual">คัดลอกข้อความด้านล่างด้วยตนเอง</label><textarea id="urgent-ticket-manual" class="input textarea" rows="10" readonly>${root.utils.escapeHtml(ticketText)}</textarea>` : ""}
+        </div>` : ""}
         ${flow.liveStatusError ? `<div class="state-box is-error" role="alert">${root.utils.escapeHtml(flow.liveStatusError)}</div>` : ""}
         <div class="button-row">
           ${flow.liveStatusError ? `<button class="primary-btn" type="button" data-urgent-action="retry-status">ลองตรวจสอบสถานะอีกครั้ง</button>` : ""}
@@ -779,6 +836,7 @@
     try {
       const result = await root.api.submitUrgentRequest(buildSubmitPayload());
       if (submitEpoch !== pollEpoch) return;
+      ticketCopyState = { status: "idle", error: "" };
       const trackingKey = trackingKeyFromResult(result);
       if (trackingKey) root.state.updateDraft("tracking", { trackingCode: trackingKey });
       root.state.setUrgentFlow({ step: "submitted", status: "success", error: "", result, liveStatus: null, liveStatusError: "" });
@@ -1050,6 +1108,7 @@
           root.state.setUrgentFlow({ liveStatusError: "" });
           paint(container);
         } else if (action === "new-request") {
+          ticketCopyState = { status: "idle", error: "" };
           root.state.resetUrgentDraft();
           paint(container);
           refreshPricing(container);
@@ -1058,6 +1117,19 @@
           root.state.updateDraft("tracking", { trackingCode: key });
           root.state.setTracking({ status: "idle", data: null, error: "" });
           root.utils.routeTo("tracking");
+        } else if (action === "copy-booking-ticket") {
+          if (ticketCopyState.status === "copying" || ticketCopyState.status === "copied") return;
+          const text = bookingTicketText(root.state.urgentFlow?.result?.booking_ticket);
+          ticketCopyState = { status: "copying", error: "" }; paint(container);
+          try {
+            if (!text || !navigator.clipboard?.writeText || window.isSecureContext === false) throw new Error("CLIPBOARD_UNAVAILABLE");
+            await navigator.clipboard.writeText(text);
+            ticketCopyState = { status: "copied", error: "" };
+          } catch (_) {
+            ticketCopyState = { status: "manual", error: "เบราว์เซอร์ไม่อนุญาตให้คัดลอกอัตโนมัติ กรุณาคัดลอกข้อความด้านล่าง" };
+          }
+          paint(container);
+          if (ticketCopyState.status === "manual") container.querySelector("#urgent-ticket-manual")?.select?.();
         } else if (action === "cancel-request") {
           await cancelUrgent(container);
         }

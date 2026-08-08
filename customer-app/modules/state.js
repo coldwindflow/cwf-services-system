@@ -120,6 +120,9 @@
       symptom: "",
       job_zone: String(source.job_zone || ""),
       urgent_request_key: "",
+      catalog_item_id: null,
+      service_package_groups: [],
+      service_package_bundle_preview: null,
     };
   }
 

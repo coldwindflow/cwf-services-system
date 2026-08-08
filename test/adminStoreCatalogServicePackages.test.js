@@ -38,14 +38,21 @@ test("same Admin page renders full package history lifecycle statuses and uses c
   assert.match(html, /id="package_catalog_list"/);
   for (const status of ["แบบร่าง", "ปิดใช้งาน", "ซ่อนจากลูกค้า", "ยังไม่ถึงวันขาย", "กำลังเปิดขาย", "ปิดการขายแล้ว", "หมดเขตใช้สิทธิ์"]) assert.match(js, new RegExp(status));
   for (const statusKey of ["draft", "disabled", "hidden", "upcoming", "on-sale", "sale-ended", "redeem-ended"]) assert.match(js, new RegExp(`(?:^|[" ])${statusKey}(?:[":]|$)`));
-  assert.match(html, /admin-store-catalog\.js\?v=20260809_store_service_package_bundles_v1/);
-  assert.match(html, /admin-store-catalog\.css\?v=20260809_store_service_package_bundles_v1/);
+  assert.match(html, /admin-store-catalog\.js\?v=20260809_issue267_admin_builder_v2/);
+  assert.match(html, /admin-store-catalog\.css\?v=20260809_issue267_admin_builder_v2/);
 });
 
-test("bundle controls keep taxonomy and stable keys in the atomic JSON contract", () => {
+test("bundle builder uses canonical taxonomy and preserves stable keys without product-specific JSON defaults", () => {
   const save = js.match(/async function saveBundle\(\)[\s\S]*?\r?\n}\r?\n/)[0];
   assert.match(save, /service-package-bundles/);
-  assert.match(js, /package_key\/tier_key/);
+  assert.match(js, /service-package-bundles\/taxonomy/);
+  assert.match(js, /data-bundle-action="variant-(?:up|down|archive)"/);
+  assert.match(js, /data-bundle-action="tier-(?:add|up|down|archive)"/);
+  assert.match(js, /variant\.package_key/);
+  assert.match(js, /tier\.tier_key/);
   for (const field of ["job_type", "ac_type", "wash_variant", "tier_key", "fixed_total_price"]) assert.match(js, new RegExp(field));
+  const fresh = js.match(/function newBundleVariant\(\)[\s\S]*?\r?\n}/)[0];
+  assert.doesNotMatch(fresh, /wall|premium|12000|18000|699|service_quantity:\s*1/);
+  assert.doesNotMatch(js, /id="bm_variants"/);
   assert.match(js, /loadCatalogItems\(\)/);
 });

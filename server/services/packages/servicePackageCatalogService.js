@@ -3,9 +3,7 @@
 const crypto = require("node:crypto");
 const repository = require("./servicePackageRepository");
 const { normalizeServiceType, normalizeAcType, normalizeWashVariantLabel, normalizeWashKey } = require("../../normalizers");
-
-const JOB_TYPES = new Set(["wash", "repair", "install"].map(normalizeServiceType));
-const AC_TYPES = new Set(["wall", "cassette", "floor", "ceiling"].map(normalizeAcType));
+const { JOB_TYPE_VALUES, AC_TYPE_VALUES, WASH_VARIANT_VALUES } = require("./servicePackageTaxonomy");
 const PG_INTEGER_MIN = -2147483648;
 const PG_INTEGER_MAX = 2147483647;
 const MAX_FIXED_TOTAL_CENTS = 999999999999n;
@@ -71,9 +69,10 @@ function validate(input) {
   }
   const jobType = normalizeServiceType(text(input.job_type, "job_type", 80));
   const acType = normalizeAcType(text(input.ac_type, "ac_type", 80));
-  if (!JOB_TYPES.has(jobType) || !AC_TYPES.has(acType)) fail("INVALID_SERVICE_CONSTRAINTS", "Unsupported job_type or ac_type");
+  if (!JOB_TYPE_VALUES.has(jobType) || !AC_TYPE_VALUES.has(acType)) fail("INVALID_SERVICE_CONSTRAINTS", "Unsupported job_type or ac_type");
   let washVariant = optionalText(input.wash_variant, 100);
   if (washVariant) washVariant = normalizeWashVariantLabel(washVariant);
+  if (washVariant && !WASH_VARIANT_VALUES.has(washVariant)) fail("INVALID_SERVICE_CONSTRAINTS", "Unsupported wash_variant");
   if (jobType === normalizeServiceType("wash") && acType === normalizeAcType("wall") && !normalizeWashKey(washVariant)) {
     fail("INVALID_SERVICE_CONSTRAINTS", "Wall cleaning packages require a supported wash_variant");
   }

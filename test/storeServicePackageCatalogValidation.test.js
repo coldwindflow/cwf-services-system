@@ -41,3 +41,21 @@ test("BTU gap and a non-Premium configuration are accepted", () => {
   assert.equal(result.item_name, "Maintenance Club");
   assert.equal(result.variants[1].tiers[0].fixed_total_price, "2500.00");
 });
+
+test("canonical Admin taxonomy accepts a non-wall package and derives service identity", () => {
+  const result = validate(bundle({ item_name: "Cassette Club", variants: [variant({
+    display_name: "Cassette seven", job_type: "wash", ac_type: "cassette", wash_variant: null,
+    btu_min: 15000, btu_max: 60000, service_unit_duration_minutes: 70,
+    tiers: [{ display_name: "7 units", service_quantity: 7, fixed_total_price: "8750.00", sort_order: 0, is_active: true }],
+  })] }));
+  assert.equal(result.variants[0].job_type, "ล้าง");
+  assert.equal(result.variants[0].ac_type, "สี่ทิศทาง");
+  assert.equal(result.variants[0].wash_variant, null);
+  assert.equal(result.variants[0].service_key, "wash-cassette");
+  assert.equal(result.variants[0].tiers[0].service_quantity, 7);
+});
+
+test("unknown free-text taxonomy is rejected before persistence", () => {
+  assert.throws(() => validate(bundle({ variants: [variant({ ac_type: "invented-ac-type" })] })),
+    { code: "INVALID_SERVICE_CONSTRAINTS" });
+});

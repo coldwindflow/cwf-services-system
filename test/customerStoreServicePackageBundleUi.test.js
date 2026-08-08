@@ -12,7 +12,9 @@ const admin = fs.readFileSync("admin-store-catalog.js", "utf8");
 test("Store renders one parent configurator with arbitrary nested variants and quantities beyond four", () => {
   assert.match(store, /service_package_variants\.map/);
   assert.match(store, /data-bundle-package/);
-  assert.match(store, /Array\.from\(\{ length: 11 \}/);
+  assert.match(store, /data-bundle-quantity[^>]*type="number"[^>]*min="0"/);
+  assert.doesNotMatch(store, /data-bundle-quantity[\s\S]{0,200}max=/);
+  assert.doesNotMatch(store, /tier\.quantity === 1[\s\S]{0,120}prior\.components/);
   assert.match(store, /service_package_groups: result\.groups/);
   assert.doesNotMatch(store, /Premium Day|premium-day/);
 });

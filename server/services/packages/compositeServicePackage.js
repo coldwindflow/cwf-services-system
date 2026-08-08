@@ -30,8 +30,8 @@ function allocateUnitMoney(totalMinor, quantity) {
 
 function comparePlan(a, b) {
   if (!b) return -1;
-  if (a.total !== b.total) return a.total < b.total ? -1 : 1;
   if (a.components.length !== b.components.length) return a.components.length - b.components.length;
+  if (a.total !== b.total) return a.total < b.total ? -1 : 1;
   const aq = a.components.map((x) => x.quantity).sort((x, y) => y - x);
   const bq = b.components.map((x) => x.quantity).sort((x, y) => y - x);
   for (let i = 0; i < Math.max(aq.length, bq.length); i += 1) {
@@ -59,10 +59,6 @@ function composeTiers(tiers, requestedQuantity) {
   for (let target = 1; target <= quantity; target += 1) {
     for (const tier of usable) {
       if (tier.quantity > target || !best[target - tier.quantity]) continue;
-      // A one-unit tier is an add-on remainder, not an endlessly repeatable way
-      // to undercut the configured multi-unit tiers. Larger tiers remain freely
-      // composable (for example 3+3 for six units).
-      if (tier.quantity === 1 && best[target - tier.quantity].components.some((part) => part.quantity === 1)) continue;
       const candidate = {
         total: best[target - tier.quantity].total + tier.priceMinor,
         components: [...best[target - tier.quantity].components, { tier, quantity: tier.quantity }],
@@ -118,6 +114,7 @@ function buildComponentSnapshot({ bundle, variant, tier, btu, appointmentDatetim
     sell_start_at: bundle.service_package_sell_start_at ? new Date(bundle.service_package_sell_start_at).toISOString() : null,
     sell_end_at: bundle.service_package_sell_end_at ? new Date(bundle.service_package_sell_end_at).toISOString() : null,
     redeem_until: bundle.service_package_redeem_until ? new Date(bundle.service_package_redeem_until).toISOString() : null,
+    booking_flow_policy: bundle.booking_flow_policy === "scheduled_and_urgent" ? "scheduled_and_urgent" : "scheduled_only",
     appointment_datetime: new Date(appointmentDatetime).toISOString(),
   };
 }
@@ -129,7 +126,7 @@ function serviceName(variant, btu, quantity) {
 async function resolveCompositeBooking({ body, bookingMode, appointmentDatetime, repository, db, identity = "customer", now = () => new Date() }) {
   const groups = normalizeGroups(body);
   if (!groups) return null;
-  if (bookingMode !== "scheduled") fail("PACKAGE_URGENT_UNSUPPORTED", 400);
+  if (bookingMode !== "scheduled" && bookingMode !== "urgent") fail("UNKNOWN_BOOKING_MODE", 400);
   const variants = await repository.findLinkedPackagesByKeys(db, groups.map((group) => group.packageKey));
   const byKey = new Map(variants.map((variant) => [variant.package_key, variant]));
   if (byKey.size !== new Set(groups.map((group) => group.packageKey)).size) fail("SERVICE_PACKAGE_NOT_AVAILABLE", 404);
@@ -140,6 +137,7 @@ async function resolveCompositeBooking({ body, bookingMode, appointmentDatetime,
       || bundle.booking_mode !== "service_package" || !inWindow(now(), bundle.service_package_sell_start_at, bundle.service_package_sell_end_at)) {
     fail("SERVICE_PACKAGE_NOT_AVAILABLE", 404);
   }
+  if (bookingMode === "urgent" && bundle.booking_flow_policy !== "scheduled_and_urgent") fail("PACKAGE_FLOW_NOT_ALLOWED", 409);
   if (!inWindow(appointmentDatetime, null, bundle.service_package_redeem_until)) fail("PACKAGE_REDEEM_WINDOW_EXCEEDED");
 
   let total = 0n;

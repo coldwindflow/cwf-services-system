@@ -66,5 +66,39 @@ integration("isolated PostgreSQL atomically persists one parent, two variants, e
     assert.equal(resolved.fixedTotal, "3198.00");
     assert.equal(resolved.items.length, 2);
     assert.ok(resolved.items.every((item) => item.snapshot.schema_version === 2 && item.snapshot.catalog_item.key === created.service_bundle_key));
+
+    // Generic configurability proof: a second campaign uses another supported
+    // AC type, no wall-wash variant, and non-1..4 tier quantities. It goes
+    // through the same Admin service and needs no seed SQL or product constant.
+    const generic = await service.create({
+      item_name: "TEST Cassette Care", short_description: "Configured entirely through Admin contract",
+      long_description: "Reusable Store package", highlights: ["Gallery-ready parent"], service_conditions: "TEST only",
+      sell_start_at: "2026-08-01T00:00:00+07:00", sell_end_at: "2026-08-31T23:59:59+07:00",
+      redeem_until: "2026-09-30T23:59:59+07:00", is_active: true, is_customer_visible: true,
+      is_featured: false, is_autoplay_enabled: false,
+      variants: [{
+        display_name: "Cassette maintenance", description: "Four-way cassette",
+        job_type: "wash", ac_type: "cassette", wash_variant: null, btu_min: 15000, btu_max: 60000,
+        service_unit_duration_minutes: 70, sort_order: 0, is_active: true, is_customer_visible: true,
+        tiers: [
+          { display_name: "2 units", service_quantity: 2, fixed_total_price: "2800.00", sort_order: 0, is_active: true },
+          { display_name: "5 units", service_quantity: 5, fixed_total_price: "6500.00", sort_order: 1, is_active: true },
+          { display_name: "7 units", service_quantity: 7, fixed_total_price: "8750.00", sort_order: 2, is_active: true },
+        ],
+      }],
+    });
+    assert.notEqual(generic.service_bundle_key, created.service_bundle_key);
+    assert.equal(generic.variants[0].ac_type, "สี่ทิศทาง");
+    assert.equal(generic.variants[0].wash_variant, null);
+    assert.deepEqual(generic.variants[0].tiers.map((tier) => tier.service_quantity), [2, 5, 7]);
+    assert.ok(generic.variants[0].tiers.every((tier) => typeof tier.fixed_total_price === "string"));
+    const genericRow = (await pool.query("SELECT * FROM catalog_items WHERE service_bundle_key=$1", [generic.service_bundle_key])).rows[0];
+    genericRow.images = [{ image_id: "TEST-image", image_url: "https://example.invalid/test-cassette.webp", is_primary: true }];
+    await catalogRoutes.attachCatalogServicePackages(pool, [genericRow], { customer: true });
+    const genericDto = catalogRoutes.serializeCatalogDetailRow(genericRow);
+    assert.equal(genericDto.service_package_variants[0].service.ac_type, "สี่ทิศทาง");
+    assert.equal(genericDto.images.length, 1);
+    assert.equal(genericDto.images[0].image_url, genericRow.images[0].image_url);
+    assert.equal(genericDto.images[0].is_primary, true);
   } finally { await pool.end(); }
 });

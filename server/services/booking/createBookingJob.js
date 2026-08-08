@@ -4,6 +4,9 @@ const crypto = require("crypto");
 const { JOB_STATUS, ASSIGNMENT_STATUS, OFFER_STATUS } = require("./bookingStatuses");
 const { ensureBookingJobUnits } = require("./bookingJobUnits");
 const { packageRequest, resolvePackageBooking, packageBookingFromSnapshot, compositeBookingFromSnapshots } = require("./servicePackageBooking");
+const { resolveCatalogBookingPolicy } = require("./catalogBookingPolicy");
+const { buildBookingTicket, loadBookingTicket } = require("./bookingTicket");
+const adminIdempotency = require("./adminBookingIdempotency");
 
 function safePackagePreview(selection) {
   const line = selection.service_lines[0];
@@ -168,6 +171,8 @@ function createBookingJobService(dependencies = {}) {
       promotion_id,
       override_price,
       override_duration_min,
+      catalog_item_id,
+      admin_request_key,
     } = body;
 
     // ✅ assign_mode (auto|single|team)
@@ -204,11 +209,22 @@ function createBookingJobService(dependencies = {}) {
           error.code = "PACKAGE_PROMOTION_UNSUPPORTED"; error.statusCode = 400; throw error;
         }
         packageBooking = await resolvePackageBooking({ body, bookingMode: bm, appointmentDatetime: apptIso,
-          resolver: createServicePackageResolver(pool), identity: "admin" });
+          resolver: createServicePackageResolver(pool), identity: Array.isArray(body.service_package_groups) ? "customer" : "admin" });
       } catch (error) {
         const code = String(error?.code || "PACKAGE_UNAVAILABLE").startsWith("PACKAGE_") ? String(error.code) : "PACKAGE_UNAVAILABLE";
         const status = Number(error?.statusCode || error?.status || 409);
         return res.status(status >= 400 && status < 500 ? status : 409).json({ error: code, code });
+      }
+    }
+    let catalogBooking = null;
+    if (!hasPackageRequest && catalog_item_id != null && String(catalog_item_id).trim() !== "") {
+      try {
+        catalogBooking = await resolveCatalogBookingPolicy(pool, {
+          catalogItemId: catalog_item_id, bookingMode: bm, jobType: job_type,
+          acType: ac_type, btu, washVariant: wash_variant,
+        }, { identity: "customer" });
+      } catch (error) {
+        return res.status(Number(error.statusCode || 409)).json({ error: error.code, code: error.code });
       }
     }
     // ✅ HOTFIX: allow_time_proposal may be omitted by older cached frontend/PWA.
@@ -221,6 +237,11 @@ function createBookingJobService(dependencies = {}) {
       String(allowTimeProposalRaw || "").trim() === "1"
     );
     const createdBySource = req.cwfBookSource === "customer" ? "customer" : "admin";
+    const rawAdminRequestKey = createdBySource === "admin" && admin_request_key != null ? String(admin_request_key).trim() : "";
+    const adminRequestKey = rawAdminRequestKey ? adminIdempotency.validateAdminRequestKey(rawAdminRequestKey) : null;
+    if (rawAdminRequestKey && !adminRequestKey) return res.status(400).json({ error: "INVALID_ADMIN_REQUEST_KEY", code: "INVALID_ADMIN_REQUEST_KEY" });
+    const adminRequestFingerprint = adminRequestKey ? adminIdempotency.requestFingerprint(body) : null;
+    const adminBookingToken = adminRequestKey ? adminIdempotency.bookingToken(adminRequestKey) : null;
     // Customer-sourced urgent requests carry a client-generated
     // urgent_request_key; deriving booking_token from it deterministically
     // (instead of a random genToken) lets the dedup check below find a
@@ -355,15 +376,38 @@ function createBookingJobService(dependencies = {}) {
     try {
       await client.query("BEGIN");
 
+      if (adminRequestKey) {
+        await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [adminRequestKey]);
+        const existingAdmin = await client.query(
+          `SELECT job_id, booking_code, admin_request_fingerprint FROM public.jobs WHERE admin_request_key=$1 LIMIT 1`,
+          [adminRequestKey]
+        );
+        if (existingAdmin.rows[0]) {
+          if (String(existingAdmin.rows[0].admin_request_fingerprint || "") !== adminRequestFingerprint) {
+            const conflict = new Error("ADMIN_IDEMPOTENCY_KEY_REUSED"); conflict.code = "ADMIN_IDEMPOTENCY_KEY_REUSED"; conflict.statusCode = 409; throw conflict;
+          }
+          await client.query("COMMIT");
+          return res.json({ success: true, replayed: true, job_id: existingAdmin.rows[0].job_id,
+            booking_code: existingAdmin.rows[0].booking_code, booking_mode: bm, dispatch_mode: mode });
+        }
+      }
+
       if (packageBooking) {
         const revalidated = await resolvePackageBooking({ body, bookingMode: bm, appointmentDatetime: apptIso,
-          resolver: createServicePackageResolver(client), identity: "admin" });
+          resolver: createServicePackageResolver(client), identity: Array.isArray(body.service_package_groups) ? "customer" : "admin" });
         if (JSON.stringify(revalidated) !== JSON.stringify(packageBooking)) {
           const error = new Error("PACKAGE_UNAVAILABLE");
           error.code = "PACKAGE_UNAVAILABLE"; error.statusCode = 409; throw error;
         }
         packageBooking = revalidated;
         payloadV2 = packageBooking.payload;
+      }
+
+      if (catalogBooking) {
+        catalogBooking = await resolveCatalogBookingPolicy(client, {
+          catalogItemId: catalogBooking.item_id, bookingMode: bm, jobType: job_type,
+          acType: ac_type, btu, washVariant: wash_variant,
+        }, { identity: "customer", lock: true });
       }
 
       // Durable, cross-instance idempotency for customer-sourced urgent
@@ -565,8 +609,9 @@ function createBookingJobService(dependencies = {}) {
          address_text, technician_team, technician_username, job_status,
          booking_token, job_source, dispatch_mode, customer_note,
          maps_url, job_zone, duration_min, booking_mode, admin_override_duration_min,
-         gps_latitude, gps_longitude, service_zone_code, service_zone_source, allow_time_proposal)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$22,$23,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
+         gps_latitude, gps_longitude, service_zone_code, service_zone_source, allow_time_proposal, catalog_item_id,
+         admin_request_key, admin_request_fingerprint)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$22,$23,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$24,$25,$26)
         RETURNING job_id
         `,
         [
@@ -591,8 +636,11 @@ function createBookingJobService(dependencies = {}) {
           detectedZoneCode,
           detectedZoneSource,
           allowTimeProposal,
-          publicBookingToken,
+          publicBookingToken || adminBookingToken,
           createdBySource,
+          packageBooking?.bundleId || catalogBooking?.item_id || null,
+          adminRequestKey,
+          adminRequestFingerprint,
         ]
       );
 
@@ -816,6 +864,9 @@ function createBookingJobService(dependencies = {}) {
       });
     } catch (e) {
       await client.query("ROLLBACK");
+      if (String(e?.code || "").startsWith("ADMIN_IDEMPOTENCY_")) {
+        return res.status(Number(e.statusCode || 409)).json({ error: String(e.code), code: String(e.code) });
+      }
       if (hasPackageRequest) {
         const code = String(e?.code || "PACKAGE_BOOKING_FAILED").startsWith("PACKAGE_") ? String(e.code) : "PACKAGE_BOOKING_FAILED";
         const status = Number(e?.statusCode || e?.status || 500);
@@ -840,6 +891,7 @@ function createBookingJobService(dependencies = {}) {
         `SELECT p.package_key, t.tier_key FROM public.service_packages p
          JOIN public.service_package_tiers t ON t.service_package_id=p.service_package_id
          WHERE p.is_active=TRUE AND t.is_active=TRUE
+           AND p.catalog_item_id IS NULL
            AND (p.sell_start_at IS NULL OR p.sell_start_at <= NOW())
            AND (p.sell_end_at IS NULL OR p.sell_end_at >= NOW())
          ORDER BY p.service_package_id, t.sort_order, t.service_package_tier_id`
@@ -1296,7 +1348,7 @@ function createBookingJobService(dependencies = {}) {
       hasPackageRequest = service_package_key != null || service_package_tier_key != null
         || req.body?.service_package_groups != null
         || req.body?.service_package_id != null || req.body?.service_package_tier_id != null;
-      if (canonicalBookingMode === "urgent" && hasPackageRequest) {
+      if (canonicalBookingMode === "urgent" && hasPackageRequest && !Array.isArray(req.body?.service_package_groups)) {
         return res.status(400).json({ error: "PACKAGE_URGENT_UNSUPPORTED", code: "PACKAGE_URGENT_UNSUPPORTED" });
       }
     } catch (_) {}
@@ -1339,7 +1391,6 @@ function createBookingJobService(dependencies = {}) {
     } catch (error) {
       return res.status(Number(error.statusCode || 400)).json({ error: error.code, code: error.code });
     }
-
     let customerSubForJob = null;
     try {
       const jwtSecretForBook = getJwtSecret();
@@ -1454,12 +1505,14 @@ function createBookingJobService(dependencies = {}) {
           });
         }
         const replayDuration = Number(prior.duration_min || historicalPackageBooking.durationMin || 0);
+        const replayTicket = await loadBookingTicket(pool, prior.job_id);
         return res.json({
           success: true, replayed: true, job_id: prior.job_id,
           booking_code: prior.booking_code, token: prior.booking_token,
           booking_mode: bm, dispatch_mode: prior.dispatch_mode || "normal",
           duration_min: replayDuration, effective_block_min: effectiveBlockMin(replayDuration),
           travel_buffer_min: TRAVEL_BUFFER_MIN, base_total: Number(prior.job_price || 0),
+          booking_ticket: replayTicket,
         });
       }
     }
@@ -1488,6 +1541,19 @@ function createBookingJobService(dependencies = {}) {
       }
     } catch (error) {
       return res.status(Number(error.statusCode || 400)).json({ error: error.code, code: error.code });
+    }
+    let catalogBooking = null;
+    if (!packageBooking && safeCatalogItemIdForJob) {
+      try {
+        catalogBooking = await resolveCatalogBookingPolicy(pool, {
+          catalogItemId: safeCatalogItemIdForJob, bookingMode: bm,
+          jobType: payloadV2.job_type, acType: payloadV2.ac_type,
+          btu: payloadV2.btu, washVariant: payloadV2.wash_variant,
+        }, { identity: "customer" });
+        safeCatalogItemIdForJob = catalogBooking.item_id;
+      } catch (error) {
+        return res.status(Number(error.statusCode || 409)).json({ error: error.code, code: error.code });
+      }
     }
     if (bm === "urgent") {
       if (!urgentPublicAdapter.isStrictUrgentCleaningPayload(payloadV2)) {
@@ -1605,6 +1671,7 @@ function createBookingJobService(dependencies = {}) {
             code: "IDEMPOTENCY_KEY_REUSED",
           });
         }
+        const replayTicket = await loadBookingTicket(pool, prior.job_id);
         return res.json({
           success: true,
           replayed: true,
@@ -1617,6 +1684,7 @@ function createBookingJobService(dependencies = {}) {
           effective_block_min: effectiveBlockMin(Number(prior.duration_min || duration_min_v2 || 0)),
           travel_buffer_min: TRAVEL_BUFFER_MIN,
           base_total: Number(prior.job_price || 0),
+          booking_ticket: replayTicket,
         });
       }
     }
@@ -1728,6 +1796,7 @@ function createBookingJobService(dependencies = {}) {
               code: "IDEMPOTENCY_KEY_REUSED",
             });
           }
+          const replayTicket = await loadBookingTicket(pool, row.job_id);
           return res.json({
             success: true,
             replayed: true,
@@ -1740,6 +1809,7 @@ function createBookingJobService(dependencies = {}) {
             effective_block_min: effectiveBlockMin(Number(row.duration_min || duration_min_v2 || 0)),
             travel_buffer_min: TRAVEL_BUFFER_MIN,
             base_total: Number(row.job_price || 0),
+            booking_ticket: replayTicket,
           });
         }
       }
@@ -1761,6 +1831,13 @@ function createBookingJobService(dependencies = {}) {
         }
         packageBooking = revalidatedPackageBooking;
         payloadV2 = packageBooking.payload;
+      }
+      if (catalogBooking) {
+        catalogBooking = await resolveCatalogBookingPolicy(client, {
+          catalogItemId: catalogBooking.item_id, bookingMode: bm,
+          jobType: payloadV2.job_type, acType: payloadV2.ac_type,
+          btu: payloadV2.btu, washVariant: payloadV2.wash_variant,
+        }, { identity: "customer", lock: true });
       }
 
       let draftReservationTech = null;
@@ -2059,6 +2136,11 @@ function createBookingJobService(dependencies = {}) {
             : "ขณะนี้ยังไม่มีช่างรับงาน คุณสามารถติดตามสถานะหรือติดต่อแอดมินได้",
         }
         : {};
+      const bookingTicket = buildBookingTicket({
+        job: { booking_code, customer_name: String(customer_name).trim(), customer_phone: String(customer_phone || "").trim(),
+          appointment_datetime, job_price: base_total, public_status: bm === "urgent" ? "กำลังค้นหาช่าง" : "รอแอดมินยืนยัน" },
+        items: computedItems,
+      });
       res.json({
         success: true,
         job_id,
@@ -2080,6 +2162,7 @@ function createBookingJobService(dependencies = {}) {
           discount: appliedDiscount,
         } : null,
         base_total: Number(base_total || 0),
+        booking_ticket: bookingTicket,
       });
     } catch (e) {
       await client.query("ROLLBACK");

@@ -124,7 +124,7 @@ function canonicalizeSelection(selection, body, appointmentDatetime) {
 async function resolvePackageBooking({ body, bookingMode, appointmentDatetime, resolver, identity = "customer" }) {
   const request = packageRequest(body);
   if (!request) return null;
-  if (bookingMode !== "scheduled") throw packageError("PACKAGE_URGENT_UNSUPPORTED", 400);
+  if (!request.composite && bookingMode !== "scheduled") throw packageError("PACKAGE_URGENT_UNSUPPORTED", 400);
   try {
     if (request.composite) {
       if (!resolver || typeof resolver.resolveComposite !== "function") throw packageError("PACKAGE_UNAVAILABLE", 409);
