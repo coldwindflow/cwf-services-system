@@ -1659,19 +1659,24 @@
     return ["home", "store", "booking", "tracking", "profile"].includes(route) ? route : "home";
   }
 
+  const ACCESSIBLE_ONLY_ROUTE_HEADINGS = new Set(["home", "store", "scheduled", "tracking"]);
+
   function ensureRouteHeading(container, route) {
     const page = routeIconPage(route);
-    const hideStandalone = route === "home" || route === "store" || route === "storeItem"
-      || /^storeItem-\d+$/.test(String(route || "")) || route === "scheduled" || route === "tracking";
+    const accessibleOnly = ACCESSIBLE_ONLY_ROUTE_HEADINGS.has(route);
     const screen = container.querySelector?.(".screen, .booking-wizard-page");
     if (screen && !screen.querySelector("[data-page-icon-heading]")) {
       const registry = window.CWFIconRegistry;
       const item = registry?.navigationItem?.(homepageConfig(), page) || { label: page };
-      screen.insertAdjacentHTML("afterbegin", `
-        <header class="route-page-heading${hideStandalone ? " is-accessible-only" : ""}" data-page-icon-heading="${root.utils.escapeHtml(page)}">
-          <h2 class="route-page-heading__title">${root.utils.escapeHtml(item.label)}</h2>
-        </header>
-      `);
+      const safePage = root.utils.escapeHtml(page);
+      const safeLabel = root.utils.escapeHtml(item.label);
+      screen.insertAdjacentHTML("afterbegin", accessibleOnly
+        ? `<h2 class="route-accessible-page-name" data-page-icon-heading="${safePage}">${safeLabel}</h2>`
+        : `
+          <header class="route-page-heading" data-page-icon-heading="${safePage}">
+            <h2 class="route-page-heading__title">${safeLabel}</h2>
+          </header>
+        `);
     }
   }
 

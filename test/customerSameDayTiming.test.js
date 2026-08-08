@@ -161,7 +161,7 @@ test("customer app disables availability HTTP cache and refreshes same-day slots
 });
 
 test("customer app build and service worker cache IDs changed", () => {
-  const id = "20260809_issue267_merchandising_v3";
+  const id = "20260809_issue267_heading_cleanup_v4";
   for (const file of [
     "customer-app/index.html",
     "customer-app/sw.js",

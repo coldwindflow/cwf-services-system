@@ -3,7 +3,7 @@
 
   const App = window.CWFCustomerAppV2;
   const BOOT_TIMEOUT_MS = 3500;
-  const BUILD_ID = "20260809_issue267_merchandising_v3";
+  const BUILD_ID = "20260809_issue267_heading_cleanup_v4";
 
   function withTimeout(promise, timeoutMs) {
     return Promise.race([

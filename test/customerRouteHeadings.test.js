@@ -6,6 +6,8 @@ const vm = require("node:vm");
 
 const ROOT = path.resolve(__dirname, "..");
 const UI_SOURCE = fs.readFileSync(path.join(ROOT, "customer-app/modules/ui.js"), "utf8");
+const CUSTOMER_INDEX = fs.readFileSync(path.join(ROOT, "customer-app/index.html"), "utf8");
+const ROUTER_SOURCE = fs.readFileSync(path.join(ROOT, "customer-app/modules/router.js"), "utf8");
 
 function escapeHtml(value) {
   return String(value == null ? "" : value)
@@ -80,7 +82,7 @@ test("Customer App UI module has no startup debug logging", () => {
   assert.doesNotMatch(UI_SOURCE, /\bconsole\.(?:debug|info|log)\s*\(/);
 });
 
-test("routes keep semantic headings while four redundant mobile rows are visually hidden", () => {
+test("only the four requested routes replace the redundant visible row with a no-layout accessible name", () => {
   const { app } = loadUi({
     utils: {
       iconSlot() { throw new Error("page heading must not request an icon slot"); },
@@ -105,13 +107,65 @@ test("routes keep semantic headings while four redundant mobile rows are visuall
 
     assert.equal(container.insertions.length, 1, `${route} heading should not be injected twice`);
     const html = container.insertions[0];
-    assert.match(html, /<header class="route-page-heading(?: is-accessible-only)?"/);
     assert.match(html, new RegExp(`data-page-icon-heading="${page}"`));
-    assert.match(html, new RegExp(`<h2 class="route-page-heading__title">${label}</h2>`));
-    const hidden = ["home", "store", "storeItem", "storeItem-42", "scheduled", "tracking"].includes(route);
-    assert.equal(/is-accessible-only/.test(html), hidden, `${route} standalone visibility`);
+    const accessibleOnly = ["home", "store", "scheduled", "tracking"].includes(route);
+    if (accessibleOnly) {
+      assert.match(html, new RegExp(`<h2 class="route-accessible-page-name"[^>]*>${label}</h2>`));
+      assert.doesNotMatch(html, /<header class="route-page-heading"/);
+    } else {
+      assert.match(html, /<header class="route-page-heading"/);
+      assert.match(html, new RegExp(`<h2 class="route-page-heading__title">${label}</h2>`));
+      assert.doesNotMatch(html, /route-accessible-page-name/);
+    }
     assert.doesNotMatch(html, /<svg\b|<img\b|cwf-icon-slot|data-(?:cwf-)?icon-slot/i);
   }
+});
+
+test("document title and all bottom navigation labels remain present", () => {
+  assert.match(CUSTOMER_INDEX, /<title>CWF Customer Service<\/title>/);
+  for (const [route, label] of [
+    ["home", "หน้าแรก"],
+    ["store", "ร้านค้า"],
+    ["booking", "จองบริการ"],
+    ["tracking", "ติดตามงาน"],
+    ["profile", "บัญชี"],
+  ]) {
+    assert.match(CUSTOMER_INDEX, new RegExp(`data-route="${route}"[^>]*>[\\s\\S]*?data-nav-label>${label}<\\/span>`));
+  }
+});
+
+test("router still maps Store detail to Store and exposes one active nav item", () => {
+  const navItems = ["home", "store", "booking", "tracking", "profile"].map((route) => {
+    const attributes = new Map([["data-route", route]]);
+    const classes = new Set();
+    return {
+      route,
+      attributes,
+      classes,
+      getAttribute(name) { return attributes.get(name) || null; },
+      setAttribute(name, value) { attributes.set(name, value); },
+      removeAttribute(name) { attributes.delete(name); },
+      classList: { toggle(name, enabled) { enabled ? classes.add(name) : classes.delete(name); } },
+    };
+  });
+  const app = {};
+  const document = {
+    addEventListener() {},
+    querySelectorAll(selector) {
+      assert.equal(selector, ".nav-item[data-route]");
+      return navItems;
+    },
+  };
+  const window = { CWFCustomerAppV2: app, addEventListener() {} };
+  vm.runInNewContext(ROUTER_SOURCE, { window, document, history: {} }, { filename: "router.js" });
+
+  app.router.updateNav("storeItem-42");
+  assert.deepEqual(navItems.filter((item) => item.classes.has("is-active")).map((item) => item.route), ["store"]);
+  assert.deepEqual(navItems.filter((item) => item.attributes.get("aria-current") === "page").map((item) => item.route), ["store"]);
+
+  app.router.updateNav("tracking");
+  assert.deepEqual(navItems.filter((item) => item.classes.has("is-active")).map((item) => item.route), ["tracking"]);
+  assert.deepEqual(navItems.filter((item) => item.attributes.get("aria-current") === "page").map((item) => item.route), ["tracking"]);
 });
 
 test("applyRouteIcons keeps profile slots, action decoration, and page-header binding", () => {
@@ -176,8 +230,8 @@ test("route heading layout stays aligned and mobile overflow guards remain activ
   assert.match(css, /\.route-page-heading__title\s*\{[^}]*max-width:\s*100%;[^}]*overflow-wrap:\s*anywhere;/s);
   assert.match(css, /\.booking-wizard-page\s*\{[^}]*padding:\s*12px 16px 20px;/s);
   assert.match(css, /\.booking-wizard-page > \.route-page-heading\s*\{[^}]*margin:\s*0;/s);
-  assert.match(css, /\.route-page-heading ~ \.page-header-mount:empty\s*\{\s*display:\s*none;/);
-  assert.match(css, /\.route-page-heading\.is-accessible-only\s*\{[^}]*position:\s*absolute;[^}]*width:\s*1px;[^}]*height:\s*1px;/s);
+  assert.match(css, /\.page-header-mount:empty\s*\{\s*display:\s*none;/);
+  assert.match(css, /\.route-accessible-page-name\s*\{[^}]*position:\s*absolute;[^}]*width:\s*1px;[^}]*height:\s*1px;[^}]*padding:\s*0;[^}]*margin:\s*-1px;[^}]*animation:\s*none\s*!important;/s);
   assert.match(css, /html\s*\{[^}]*overflow-x:\s*hidden;/s);
   assert.match(css, /body\s*\{[^}]*overflow-x:\s*hidden;/s);
   assert.doesNotMatch(css, /\.page-icon-heading/);

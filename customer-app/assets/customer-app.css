@@ -7282,9 +7282,10 @@ body.has-advisor-sheet { overflow: hidden; }
 .booking-wizard-page > .route-page-heading {
   margin: 0;
 }
-.route-page-heading ~ .page-header-mount:empty { display: none; }
-.route-page-heading ~ .page-header-mount .page-header-banner { margin-bottom: 0; }
-.route-page-heading.is-accessible-only {
+.page-header-mount:empty { display: none; }
+.route-page-heading ~ .page-header-mount .page-header-banner,
+.route-accessible-page-name ~ .page-header-mount .page-header-banner { margin-bottom: 0; }
+.route-accessible-page-name {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -7294,6 +7295,7 @@ body.has-advisor-sheet { overflow: hidden; }
   clip: rect(0 0 0 0);
   white-space: nowrap;
   border: 0;
+  animation: none !important;
 }
 .booking-ticket-handoff {
   margin-top: 16px;
