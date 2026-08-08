@@ -292,6 +292,10 @@ test("advisory-locked committed package replay bypasses unavailable current reso
   assert.equal(result.body.replayed, true);
   assert.equal(result.body.job_id, "501");
   assert.equal(result.body.base_total, 1399.5);
+  assert.equal(result.body.booking_ticket.booking_code, "CWF501");
+  assert.equal(result.body.booking_ticket.exact_total, "1399.50");
+  assert.equal(result.body.booking_ticket.total_machine_count, 2);
+  assert.doesNotMatch(JSON.stringify(result.body.booking_ticket), /job_id|booking_token|package_id|tier_id|snapshot|address|maps/i);
   assert.equal(resolverCalls, 0);
   assert.ok(calls.some((sql) => /pg_advisory_xact_lock/.test(sql)));
   assert.equal(calls.some((sql) => /\bINSERT\b|\bUPDATE\b|\bDELETE\b/.test(sql)), false);

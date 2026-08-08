@@ -623,6 +623,9 @@ dbTest("real PostgreSQL: scheduled retry replays the same job without duplicate 
   assert.equal(replay.statusCode, 200);
   assert.equal(replay.body.replayed, true);
   assert.equal(replay.body.job_id, first.body.job_id);
+  assert.deepEqual(replay.body.booking_ticket, first.body.booking_ticket);
+  assert.equal(first.body.booking_ticket.customer_phone, body.customer_phone.replace(/\D/g, ""));
+  assert.doesNotMatch(JSON.stringify(first.body.booking_ticket), /job_id|booking_token|package_id|tier_id|snapshot|address|maps/i);
   assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.jobs`)).rows[0].count), 1);
   assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_items`)).rows[0].count), 1);
 });
@@ -686,6 +689,9 @@ dbTest("real PostgreSQL: public urgent creates one offer set and notifies only a
   assert.equal(Object.hasOwn(first.body, "offers_count"), false);
   assert.equal(replay.body.replayed, true);
   assert.equal(replay.body.booking_code, first.body.booking_code);
+  assert.deepEqual(replay.body.booking_ticket, first.body.booking_ticket);
+  assert.equal(first.body.booking_ticket.public_status, "กำลังค้นหาช่าง");
+  assert.doesNotMatch(JSON.stringify(first.body.booking_ticket), /job_id|booking_token|package_id|tier_id|snapshot|address|maps/i);
   assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.jobs`)).rows[0].count), 1);
   assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_offers`)).rows[0].count), 2);
   assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_assignments`)).rows[0].count), 0);

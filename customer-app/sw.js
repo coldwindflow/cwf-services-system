@@ -1,6 +1,6 @@
 "use strict";
 
-const BUILD_ID = "20260809_issue267_heading_cleanup_v4";
+const BUILD_ID = "20260809_issue267_booking_ticket_v5";
 const CACHE_NAME = `cwf-customer-app-v2-${BUILD_ID}`;
 const APP_SHELL = [
   `./index.html?v=${BUILD_ID}`,
@@ -22,6 +22,7 @@ const APP_SHELL = [
   `./modules/auth.js?v=${BUILD_ID}`,
   `./modules/pricing.js?v=${BUILD_ID}`,
   `./modules/availability.js?v=${BUILD_ID}`,
+  `./modules/bookingTicket.js?v=${BUILD_ID}`,
   `./modules/bookingScheduled.js?v=${BUILD_ID}`,
   `./modules/bookingUrgent.js?v=${BUILD_ID}`,
   `./modules/tracking.js?v=${BUILD_ID}`,

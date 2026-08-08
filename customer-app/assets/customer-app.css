@@ -7306,6 +7306,14 @@ body.has-advisor-sheet { overflow: hidden; }
 .booking-ticket-handoff .button-row > button,
 .booking-ticket-handoff .button-row > a { min-height: 44px; }
 .booking-ticket-handoff textarea { width: 100%; margin-top: 8px; }
+@media (max-width: 390px) {
+  .booking-ticket-handoff { padding: 12px; }
+  .booking-ticket-handoff .button-row > button,
+  .booking-ticket-handoff .button-row > a { width: 100%; }
+}
+@media (max-width: 360px) {
+  .booking-ticket-handoff { padding-inline: 10px; overflow-wrap: anywhere; }
+}
 .profile-slot-icon { display: inline-flex; margin: 0 0 8px; color: var(--blue); }
 [data-cwf-action-icon] { display: inline-flex; margin-right: 6px; vertical-align: middle; }
 
