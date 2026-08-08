@@ -34,8 +34,10 @@ async function findTier(db, { packageId, tierId, tierKey }) {
 
 async function listCustomerVisiblePackages(db, { at = new Date() } = {}) {
   const result = await requireDb(db).query(
-    `SELECT p.*, COALESCE(json_agg(t ORDER BY t.sort_order, t.service_package_tier_id)
-       FILTER (WHERE t.service_package_tier_id IS NOT NULL), '[]'::json) AS tiers
+    `SELECT p.*, COALESCE(jsonb_agg(
+       to_jsonb(t) || jsonb_build_object('fixed_total_price', t.fixed_total_price::text)
+       ORDER BY t.sort_order, t.service_package_tier_id
+     ) FILTER (WHERE t.service_package_tier_id IS NOT NULL), '[]'::jsonb) AS tiers
      FROM public.service_packages p
      LEFT JOIN public.service_package_tiers t
        ON t.service_package_id=p.service_package_id AND t.is_active=TRUE
@@ -51,8 +53,10 @@ async function listCustomerVisiblePackages(db, { at = new Date() } = {}) {
 
 async function listCatalogPackages(db) {
   const result = await requireDb(db).query(
-    `SELECT p.*, COALESCE(json_agg(t ORDER BY t.sort_order, t.service_package_tier_id)
-       FILTER (WHERE t.service_package_tier_id IS NOT NULL), '[]'::json) AS tiers
+    `SELECT p.*, COALESCE(jsonb_agg(
+       to_jsonb(t) || jsonb_build_object('fixed_total_price', t.fixed_total_price::text)
+       ORDER BY t.sort_order, t.service_package_tier_id
+     ) FILTER (WHERE t.service_package_tier_id IS NOT NULL), '[]'::jsonb) AS tiers
      FROM public.service_packages p
      LEFT JOIN public.service_package_tiers t ON t.service_package_id=p.service_package_id
      GROUP BY p.service_package_id
