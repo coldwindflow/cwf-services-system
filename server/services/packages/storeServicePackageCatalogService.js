@@ -194,8 +194,8 @@ function createStoreServicePackageCatalogService({ pool, packageRepository = rep
              short_description=$7,long_description=$8,highlights=$9,service_conditions=$10,is_featured=$11,
              is_autoplay_enabled=$12,service_package_sell_start_at=$13,service_package_sell_end_at=$14,
              service_package_redeem_until=$15,promotion_badge_text=$16,promotion_theme_preset=$17,
-             promotion_effect_preset=$18,show_sale_countdown=$19,promotion_supporting_text=$20,booking_flow_policy=$21,
-             updated_at=NOW() WHERE item_id=$1 RETURNING *`,
+             promotion_effect_preset=$18,show_sale_countdown=$19,promotion_supporting_text=$20,booking_flow_policy=$21
+             WHERE item_id=$1 RETURNING *`,
           [parent.item_id, value.item_name, value.variants[0].job_type, value.variants[0].ac_type, value.is_active,
             value.is_customer_visible, value.short_description, value.long_description, JSON.stringify(value.highlights),
             value.service_conditions, value.is_featured, value.is_autoplay_enabled, value.sell_start_at, value.sell_end_at, value.redeem_until,
