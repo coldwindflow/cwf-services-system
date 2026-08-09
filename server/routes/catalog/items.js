@@ -883,6 +883,11 @@ function serializeCatalogRow(row) {
     ? orderedGalleryRows.map(serializeCatalogImage)
     : (row.image_url ? [{ image_id: null, image_url: row.image_url, alt_text: null, sort_order: 0, is_primary: true }] : []);
 
+  const isServicePackageBundle = Boolean(row.service_bundle_key);
+  const publicBookingMode = isServicePackageBundle
+    ? "service_package"
+    : (BOOKING_MODES.has(row.booking_mode) ? row.booking_mode : "contact_admin");
+
   return {
     item_id: row.item_id,
     item_name: row.item_name,
@@ -916,12 +921,12 @@ function serializeCatalogRow(row) {
     images,
     short_description: row.short_description || null,
     highlights: Array.isArray(row.highlights) ? row.highlights : [],
-    booking_mode: BOOKING_MODES.has(row.booking_mode) ? row.booking_mode : "contact_admin",
-    service_bundle_key: row.booking_mode === "service_package" ? (row.service_bundle_key || null) : null,
-    service_package_sell_start_at: row.booking_mode === "service_package" ? (row.service_package_sell_start_at || null) : null,
-    service_package_sell_end_at: row.booking_mode === "service_package" ? (row.service_package_sell_end_at || null) : null,
-    service_package_redeem_until: row.booking_mode === "service_package" ? (row.service_package_redeem_until || null) : null,
-    service_package_variants: row.booking_mode === "service_package" && Array.isArray(row.service_package_variants)
+    booking_mode: publicBookingMode,
+    service_bundle_key: isServicePackageBundle ? row.service_bundle_key : null,
+    service_package_sell_start_at: isServicePackageBundle ? (row.service_package_sell_start_at || null) : null,
+    service_package_sell_end_at: isServicePackageBundle ? (row.service_package_sell_end_at || null) : null,
+    service_package_redeem_until: isServicePackageBundle ? (row.service_package_redeem_until || null) : null,
+    service_package_variants: isServicePackageBundle && Array.isArray(row.service_package_variants)
       ? row.service_package_variants : [],
     // Needed on the list endpoint so the Store card's "book" button can build a
     // real booking draft without a follow-up detail fetch. booking_service_key is
@@ -960,7 +965,7 @@ function serializeCatalogDetailRow(row) {
     ...base,
     long_description: row.long_description || null,
     service_conditions: row.service_conditions || null,
-    booking_service_key: row.booking_mode === "bookable" ? (row.booking_service_key || null) : null,
+    booking_service_key: base.booking_mode === "bookable" ? (row.booking_service_key || null) : null,
   };
 }
 

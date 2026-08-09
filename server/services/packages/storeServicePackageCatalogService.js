@@ -115,7 +115,7 @@ async function loadBundle(db, bundleKey, { lock = false } = {}) {
 }
 
 async function listBundles(db) {
-  const result = await db.query("SELECT * FROM public.catalog_items WHERE booking_mode='service_package' ORDER BY item_id DESC");
+  const result = await db.query("SELECT * FROM public.catalog_items WHERE service_bundle_key IS NOT NULL ORDER BY item_id DESC");
   const rows = result.rows;
   const variants = await repository.listLinkedPackagesForCatalogItems(db, rows.map((row) => row.item_id));
   const byItem = new Map();
@@ -128,7 +128,7 @@ async function listBundles(db) {
     service_bundle_key: row.service_bundle_key, item_id: String(row.item_id), item_name: row.item_name,
     short_description: row.short_description, long_description: row.long_description,
     highlights: Array.isArray(row.highlights) ? row.highlights : [], service_conditions: row.service_conditions,
-    booking_mode: row.booking_mode, sell_start_at: row.service_package_sell_start_at,
+    booking_mode: "service_package", sell_start_at: row.service_package_sell_start_at,
     sell_end_at: row.service_package_sell_end_at, redeem_until: row.service_package_redeem_until,
     is_active: Boolean(row.is_active), is_customer_visible: Boolean(row.is_customer_visible),
     is_featured: Boolean(row.is_featured), is_autoplay_enabled: Boolean(row.is_autoplay_enabled),
@@ -179,7 +179,7 @@ function createStoreServicePackageCatalogService({ pool, packageRepository = rep
              short_description,long_description,highlights,service_conditions,booking_mode,is_featured,is_autoplay_enabled,
              service_bundle_key,service_package_sell_start_at,service_package_sell_end_at,service_package_redeem_until,
              promotion_badge_text,promotion_theme_preset,promotion_effect_preset,show_sale_countdown,promotion_supporting_text,booking_flow_policy)
-           VALUES ($1,'service',0,'package',$2,$3,$4,$5,$6,$7,$8,$9,'service_package',$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
+           VALUES ($1,'service',0,'package',$2,$3,$4,$5,$6,$7,$8,$9,'contact_admin',$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
            RETURNING *`,
           [value.item_name, value.variants[0].job_type, value.variants[0].ac_type, value.is_active, value.is_customer_visible,
             value.short_description, value.long_description, JSON.stringify(value.highlights), value.service_conditions,
