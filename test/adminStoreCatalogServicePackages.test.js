@@ -36,9 +36,13 @@ test("package tier editor is repeatable, supports inactive tiers and preserves f
 
 test("same Admin page renders full package history lifecycle statuses and uses cache-busted assets", () => {
   assert.match(html, /id="package_catalog_list"/);
+  assert.match(js, /\/admin\/service-packages\/catalog/);
+  assert.match(js, /standaloneServicePackages/);
+  assert.match(js, /data-edit-package/);
+  assert.match(js, /Legacy standalone package/);
   for (const status of ["แบบร่าง", "ปิดใช้งาน", "ซ่อนจากลูกค้า", "ยังไม่ถึงวันขาย", "กำลังเปิดขาย", "ปิดการขายแล้ว", "หมดเขตใช้สิทธิ์"]) assert.match(js, new RegExp(status));
   for (const statusKey of ["draft", "disabled", "hidden", "upcoming", "on-sale", "sale-ended", "redeem-ended"]) assert.match(js, new RegExp(`(?:^|[" ])${statusKey}(?:[":]|$)`));
-  assert.match(html, /admin-store-catalog\.js\?v=20260809_issue267_merchandising_v3/);
+  assert.match(html, /admin-store-catalog\.js\?v=20260809_issue267_merchandising_v4/);
   assert.match(html, /admin-store-catalog\.css\?v=20260809_issue267_merchandising_v3/);
 });
 
