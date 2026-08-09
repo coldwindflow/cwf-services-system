@@ -152,10 +152,14 @@ test("public urgent preflight serializes only safe dispatch fields and never can
   assert.equal(reply.statusCode, 200);
   assert.deepEqual(Object.keys(reply.body).sort(), [
     "can_dispatch",
+    "duration_min",
+    "machine_count",
     "nearby_times",
     "reason",
     "resolved_zone",
   ]);
+  assert.equal(reply.body.duration_min, 60);
+  assert.equal(reply.body.machine_count, 1);
   assert.equal(reply.body.can_dispatch, false);
   assert.equal(reply.body.reason, "time_unavailable");
   assert.equal(reply.body.resolved_zone.service_zone_code, "A");

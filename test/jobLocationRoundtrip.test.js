@@ -216,7 +216,7 @@ test("Test 14: check-in 500 m + accuracy policy is unchanged", () => {
 
 test("Test 15: PWA + admin cache build IDs are bumped consistently", () => {
   const BUILD = "20260712_job_location_roundtrip_v1";
-  const ADMIN_ADD_BUILD = "20260809_issue267_catalog_flow_v2";
+  const ADMIN_ADD_BUILD = "20260809_issue267_catalog_flow_v8";
   const URGENT_REVIEW_BUILD = "20260726_urgent_preferred_time_gps_v1";
   assert.match(read("app.js"), new RegExp(`__CWF_TECH_APP_VERSION__ = "${BUILD}"`));
   assert.match(read("sw.js"), new RegExp(`CWF_TECH_BUILD_ID = "${BUILD}"`));

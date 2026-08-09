@@ -50,6 +50,7 @@ function createCustomerCatalogQuoteService({ pool, createServicePackageResolver,
     const payload = buildCatalogBookingPayload(booking);
     return {
       kind: "bookable",
+      catalog_item_id: booking.item_id,
       booking_flow_policy: booking.booking_flow_policy,
       fixed_total_price: booking.pricing.exact_total,
       unit_price: booking.pricing.unit_price,

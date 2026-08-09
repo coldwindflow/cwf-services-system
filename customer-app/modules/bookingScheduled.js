@@ -174,7 +174,12 @@
   function clearPriceCalendarSlots() {
     availabilityRequestSeq += 1;
     calendarRequestSeq += 1;
-    root.state.updateDraft("scheduled", { selectedSlot: null });
+    root.state.updateDraft("scheduled", {
+      selectedSlot: null,
+      catalog_item_id: null,
+      catalog_booking_quote: null,
+      catalog_booking_pricing: null,
+    });
     root.state.setScheduledPreview("pricing", { status: "idle", data: null, error: "" });
     root.state.setScheduledPreview("availability", { status: "idle", data: null, error: "", query_key: "", loaded_at: "" });
     root.state.setScheduledPreview("calendar", { status: "idle", data: null, error: "", query_key: "", loaded_at: "" });
@@ -827,6 +832,7 @@
     const ticketText = root.bookingTicket?.formatText?.(result.booking_ticket) || "";
     const copied = ticketCopyState.status === "copied";
     const manual = ticketCopyState.status === "manual";
+    const confirmedNetTotal = root.bookingTicket?.confirmedNetTotal?.(result) || "0.00";
     return `
       <section class="card success-card booking-result-card">
         <div class="success-mark">✓</div>
@@ -837,7 +843,7 @@
         <div class="data-list">
           <div class="data-row"><strong>รหัสการจอง</strong><span class="booking-code-value">${root.utils.escapeHtml(result.booking_code || "-")}</span></div>
           <div class="data-row"><strong>วันและเวลา</strong><span class="muted">${root.utils.escapeHtml(selected.date || draft().date || "-")} · ${root.utils.escapeHtml(selected.start || "-")}-${root.utils.escapeHtml(selected.end || "-")} น.</span></div>
-          <div class="data-row"><strong>ราคา</strong><span class="muted">${root.utils.formatBaht(result.base_total)}</span></div>
+          <div class="data-row"><strong>ราคา</strong><span class="muted">${root.utils.escapeHtml(confirmedNetTotal)} บาท</span></div>
           <div class="data-row"><strong>เวลาทำงาน</strong><span class="muted">${root.utils.escapeHtml(result.duration_min || "-")} นาที</span></div>
           <div class="data-row"><strong>สถานะ</strong><span class="muted">รอแอดมินยืนยัน</span></div>
         </div>
@@ -846,7 +852,7 @@
           <p class="muted">Ticket มีชื่อและเบอร์โทรที่ใช้จอง กรุณาตรวจสอบก่อนคัดลอก</p>
           <div class="button-row">
             <button type="button" class="secondary-btn" data-action="copy-booking-ticket" ${ticketCopyState.status === "copying" || copied ? "disabled" : ""}>${copied ? "คัดลอกแล้ว" : "คัดลอก Ticket ส่งให้แอดมิน"}</button>
-            ${copied ? '<a class="primary-btn" href="https://lin.ee/fG1Oq7y" target="_blank" rel="noopener noreferrer">เปิด LINE OA เพื่อส่ง Ticket</a>' : ""}
+            <a class="primary-btn" href="https://lin.ee/fG1Oq7y" target="_blank" rel="noopener noreferrer">เปิด LINE OA เพื่อส่ง Ticket</a>
           </div>
           <div role="status" aria-live="polite">${copied ? "คัดลอกแล้ว" : root.utils.escapeHtml(ticketCopyState.error || "")}</div>
           ${manual ? `<label for="booking-ticket-manual">คัดลอกข้อความด้านล่างด้วยตนเอง</label><textarea id="booking-ticket-manual" class="input textarea" rows="10" readonly>${root.utils.escapeHtml(ticketText)}</textarea>` : ""}
@@ -951,6 +957,13 @@
       if (!preview) throw new Error("แพ็กเกจยังไม่พร้อม");
       const data = { duration_min: hasCompositeSelection() ? Number(preview.duration_min) : Number(preview.quantity) * Number(preview.unit_duration_minutes), fixed_total_price: preview.fixed_total_price };
       root.state.setScheduledPreview("pricing", { status: "success", data, error: "" });
+      if (!opts.preserveDependents) clearCalendarSlots();
+      paint(container);
+      return data;
+    }
+    if (root.services.catalogQuoteMatchesDraft(draft(), "scheduled") && draft().catalog_booking_pricing) {
+      const data = draft().catalog_booking_pricing;
+      root.state.setScheduledPreview("pricing", { status: "success", data, error: "", verified: true });
       if (!opts.preserveDependents) clearCalendarSlots();
       paint(container);
       return data;

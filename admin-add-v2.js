@@ -13,6 +13,7 @@ let state = {
   standard_price: 0,
   normal_price: 0,
   active_price: 0,
+  exact_total: "",
   customer_price_label: "",
   campaign_name: "",
   customer_price_source: "",
@@ -1431,6 +1432,7 @@ function renderServiceBundleGroups() {
 async function previewServiceBundle() {
   state.service_bundle_quote = null;
   state.service_bundle_quote_fingerprint = "";
+  state.exact_total = "";
   const groups = selectedBundleGroups();
   const panel = el("store_service_bundle_quote");
   if (!bundleSelected() || !groups.length) { if (panel) panel.textContent = "Select at least one quantity"; return; }
@@ -1441,7 +1443,8 @@ async function previewServiceBundle() {
   }) });
   state.service_bundle_quote = quote;
   state.service_bundle_quote_fingerprint = bundleFingerprint();
-  state.standard_price = Number(quote.fixed_total_price); state.normal_price = state.standard_price;
+  state.exact_total = String(quote.fixed_total_price || "");
+  state.standard_price = Number(state.exact_total); state.normal_price = state.standard_price;
   state.duration_min = Number(quote.duration_minutes); state.effective_block_min = state.duration_min + Number(state.travel_buffer_min || 30);
   if (panel) panel.textContent = `${quote.machine_count} units | ${quote.fixed_total_price} | ${quote.duration_minutes} min | ${(quote.components || []).map((x) => `${x.tier_name} x ${x.quantity}`).join(", ")}`;
   updateTotalPreview();
@@ -1453,6 +1456,7 @@ function invalidateServicePackagePreview({ loading = false } = {}) {
   state.service_package_preview_selection = null;
   state.service_bundle_quote = null;
   state.service_bundle_quote_fingerprint = "";
+  state.exact_total = "";
   state.standard_price = 0;
   state.normal_price = 0;
   state.duration_min = 0;
@@ -1521,7 +1525,8 @@ async function previewServicePackage() {
   el("service_package_btu_wrap").style.display = "";
   const panel = el("service_package_preview"); panel.style.display = "";
   panel.textContent = `${preview.package_name} / ${preview.tier_name} | ${preview.service.service_name} | quantity ${preview.quantity} | duration ${preview.duration_minutes} min | fixed total ${preview.fixed_total_price} | BTU ${c.btu_min || "any"}-${c.btu_max || "any"} | redeem by ${preview.redeem_until || "no limit"}`;
-  state.standard_price = Number(preview.fixed_total_price); state.normal_price = state.standard_price;
+  state.exact_total = String(preview.fixed_total_price || "");
+  state.standard_price = Number(state.exact_total); state.normal_price = state.standard_price;
   state.duration_min = Number(preview.duration_minutes); state.effective_block_min = state.duration_min + Number(state.travel_buffer_min || 30);
   setPackageControlsLocked(true);
   el("btnSubmit").disabled = false;
@@ -1557,9 +1562,9 @@ async function refreshPreview() {
     if (packagePreviewIsFresh()) {
       el("pv_duration").textContent = String(state.duration_min);
       el("pv_block").textContent = String(state.effective_block_min);
-      el("pv_price").textContent = fmtMoney(state.standard_price);
-      el("pv_normal_price").textContent = fmtMoney(state.standard_price);
-      el("pv_line_total").textContent = fmtMoney(state.standard_price);
+      el("pv_price").textContent = state.exact_total || fmtMoney(state.standard_price);
+      el("pv_normal_price").textContent = state.exact_total || fmtMoney(state.standard_price);
+      el("pv_line_total").textContent = state.exact_total || fmtMoney(state.standard_price);
       if (el("appt_date").value) loadAvailability();
     }
     return;
@@ -1586,7 +1591,8 @@ async function refreshPreview() {
         machine_count: payload.machine_count,
       }) });
       state.normal_price = Number(quote.normal_unit_price || quote.unit_price || 0) * Number(quote.machine_count || 1);
-      state.active_price = Number(quote.exact_total || 0);
+      state.exact_total = String(quote.exact_total || "");
+      state.active_price = Number(state.exact_total || 0);
       state.standard_price = state.active_price;
       state.customer_price_label = quote.price_label || "";
       state.campaign_name = quote.campaign_name || "";
@@ -1596,13 +1602,13 @@ async function refreshPreview() {
       state.travel_buffer_min = Number(quote.travel_buffer_min || 30);
       el("pv_duration").textContent = String(state.duration_min);
       el("pv_block").textContent = String(state.effective_block_min);
-      el("pv_price").textContent = fmtMoney(state.standard_price);
+      el("pv_price").textContent = state.exact_total || fmtMoney(state.standard_price);
       if (el("pv_normal_price")) el("pv_normal_price").textContent = fmtMoney(state.normal_price);
       if (el("pv_price_source")) {
         const campaign = state.campaign_name || state.customer_price_label || "-";
         el("pv_price_source").textContent = `แคมเปญที่ใช้: ${campaign} • แหล่งราคา: Store catalog`;
       }
-      if (el("pv_line_total")) el("pv_line_total").textContent = fmtMoney(state.standard_price);
+      if (el("pv_line_total")) el("pv_line_total").textContent = state.exact_total || fmtMoney(state.standard_price);
       updateTotalPreview();
       if (el("appt_date").value) loadAvailability();
     } catch (e) {
@@ -1616,6 +1622,7 @@ async function refreshPreview() {
     }
     return;
   }
+  state.exact_total = "";
   if (!validateRequiredForPreview()) {
     el("pv_duration").textContent = "-";
     el("pv_block").textContent = "-";
@@ -1662,6 +1669,7 @@ async function refreshPreview() {
       loadAvailability();
     }
   } catch (e) {
+    state.exact_total = "";
     el("pv_duration").textContent = "-";
     el("pv_block").textContent = "-";
     el("pv_price").textContent = "-";
@@ -1692,6 +1700,12 @@ function updateTotalPreview() {
     if (discount > subtotal) discount = subtotal;
   }
   const total = Math.max(0, subtotal - discount);
+  if (state.selected_store_catalog_item_id && state.exact_total) {
+    const pd = el("pv_discount"); if (pd) pd.textContent = "0.00";
+    const ps = el("pv_subtotal"); if (ps) ps.textContent = state.exact_total;
+    const tp = el("total_preview"); if (tp) tp.value = state.exact_total;
+    return;
+  }
   // pv_total removed (use total_preview)
 
   const srcBox = el("pv_price_source");

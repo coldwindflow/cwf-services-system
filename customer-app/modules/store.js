@@ -11,6 +11,8 @@
   let reviewsRequestSeq = 0;
   let eligibilityRequestSeq = 0;
   let reviewSubmitSeq = 0;
+  let ordinaryQuoteRequestSeq = 0;
+  const ordinaryQuotesInFlight = new Set();
 
   console.info("[customer-store] payment-security 20260705 loaded");
 
@@ -189,6 +191,13 @@
     const draftItem = root.services.catalogItemToCommerceDraft(item);
     if (!draftItem) return false;
     const line = draftItem.draft;
+    const requestKey = `${scope}:${item.item_id}`;
+    if (ordinaryQuotesInFlight.has(requestKey)) return false;
+    ordinaryQuotesInFlight.add(requestKey);
+    const requestId = ++ordinaryQuoteRequestSeq;
+    const routeAtStart = root.state.currentRoute;
+    container.querySelectorAll(`[data-store-book="${item.item_id}"], [data-store-urgent="${item.item_id}"], [data-store-detail-book], [data-store-detail-urgent]`)
+      .forEach((button) => { button.disabled = true; button.setAttribute("aria-busy", "true"); });
     let status = container.querySelector("[data-catalog-quote-status]");
     if (!status && typeof document.createElement === "function") {
       status = document.createElement("div");
@@ -199,18 +208,30 @@
     }
     if (status) status.textContent = "กำลังตรวจสอบราคาและสิทธิ์จากระบบ...";
     try {
-      await root.api.quoteCatalogBooking({ catalog_item_id: Number(item.item_id), booking_mode: scope,
+      const quote = await root.api.quoteCatalogBooking({ catalog_item_id: Number(item.item_id), booking_mode: scope,
         job_type: line.job_type, ac_type: line.ac_type, btu: line.btu,
         wash_variant: line.wash_variant, machine_count: line.machine_count });
+      if (requestId !== ordinaryQuoteRequestSeq || root.state.currentRoute !== routeAtStart) return false;
+      const verifiedDraft = root.services.catalogQuoteToCommerceDraft(item, quote, scope);
+      if (!verifiedDraft || !root.services.applyCommerceDraft(scope, verifiedDraft)) throw new Error("CATALOG_QUOTE_MISMATCH");
+      if (scope === "scheduled") {
+        root.state.setScheduledPreview("pricing", { status: "success", data: verifiedDraft.pricing, error: "", verified: true });
+      } else {
+        root.state.setUrgentFlow({ pricing: { status: "success", data: verifiedDraft.pricing, error: "" } });
+      }
+      if (status) status.textContent = "";
+      trackItemEvent(scope === "urgent" ? "cwf_store_begin_urgent_booking" : "cwf_store_begin_booking", item, { source });
+      root.utils.routeTo(scope);
+      return true;
     } catch (_) {
+      if (requestId !== ordinaryQuoteRequestSeq) return false;
       if (status) status.textContent = "ไม่สามารถยืนยันราคาและสิทธิ์ได้ กรุณากดจองเพื่อลองใหม่";
       return false;
+    } finally {
+      ordinaryQuotesInFlight.delete(requestKey);
+      container.querySelectorAll(`[data-store-book="${item.item_id}"], [data-store-urgent="${item.item_id}"], [data-store-detail-book], [data-store-detail-urgent]`)
+        .forEach((button) => { button.disabled = false; button.removeAttribute("aria-busy"); });
     }
-    if (status) status.textContent = "";
-    if (!root.services.applyCommerceDraft(scope, draftItem)) return false;
-    trackItemEvent(scope === "urgent" ? "cwf_store_begin_urgent_booking" : "cwf_store_begin_booking", item, { source });
-    root.utils.routeTo(scope);
-    return true;
   }
 
   // Physical product the customer can buy (e.g. an AC unit) — gets a "ซื้อ"
@@ -2357,7 +2378,8 @@
   };
 
   store._test = { loadDetail, loadReviewsList, loadEligibility, detailItemId, renderDetailBody, renderReviewsSectionBody,
-    composeBundleTiers, renderBundleConfigurator, collectBundleDraft, bindCampaignCountdowns, clearCampaignCountdowns };
+    composeBundleTiers, renderBundleConfigurator, collectBundleDraft, beginOrdinaryBooking,
+    bindCampaignCountdowns, clearCampaignCountdowns };
 
   root.store = store;
 })();

@@ -37,4 +37,13 @@ test("Admin Add Job selects Store parents, quotes arbitrary mixed groups and ret
   assert.match(policy, /ci\.job_category AS booking_job_type/);
   assert.match(policy, /exact_total/);
   assert.match(guard, /STORE_PROMOTION_STACKING_UNSUPPORTED/);
+  assert.match(booking, /pricing\.total_exact/);
+  assert.match(booking, /total_exact: pricing\.total_exact/);
+  assert.match(js, /state\.exact_total = String\(quote\.exact_total/);
+  assert.match(js, /state\.exact_total \|\| fmtMoney/);
+});
+
+test("Admin Add Job runtime uses the deploy-safe Issue 267 v8 asset URL", () => {
+  assert.match(html, /admin-add-v2\.js\?v=20260809_issue267_catalog_flow_v8/);
+  assert.doesNotMatch(html, /admin-add-v2\.js\?v=20260809_issue267_catalog_flow_v2/);
 });

@@ -9,6 +9,7 @@ const { buildBookingTicket, loadBookingTicket, exactMoney } = require("./booking
 const adminIdempotency = require("./adminBookingIdempotency");
 const persistedBookingReplay = require("./persistedBookingReplay");
 const { validateAdminStorePromotionRequest } = require("./adminStorePromotionPolicy");
+const { resolveUrgentCompositePreflight } = require("./urgentCompositePreflight");
 
 function safePackagePreview(selection) {
   const line = selection.service_lines[0];
@@ -218,10 +219,7 @@ function createBookingJobService(dependencies = {}) {
         if (String(existingAdmin.admin_request_fingerprint || "") !== adminRequestFingerprint) {
           return res.status(409).json({ error: "ADMIN_IDEMPOTENCY_KEY_REUSED", code: "ADMIN_IDEMPOTENCY_KEY_REUSED" });
         }
-        return res.json({ success: true, replayed: true, job_id: existingAdmin.job_id,
-          booking_code: existingAdmin.booking_code,
-          booking_mode: existingAdmin.booking_mode || bm,
-          dispatch_mode: existingAdmin.dispatch_mode || mode });
+        return res.json(persistedBookingReplay.adminReplayResponse(existingAdmin, { bookingMode: bm, dispatchMode: mode }));
       }
     }
     try {
@@ -403,7 +401,8 @@ function createBookingJobService(dependencies = {}) {
       if (adminRequestKey) {
         await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [adminRequestKey]);
         const existingAdmin = await client.query(
-          `SELECT job_id, booking_code, admin_request_fingerprint FROM public.jobs WHERE admin_request_key=$1 LIMIT 1`,
+          `SELECT job_id, booking_code, booking_mode, dispatch_mode, duration_min, job_price,
+                  admin_request_fingerprint FROM public.jobs WHERE admin_request_key=$1 LIMIT 1`,
           [adminRequestKey]
         );
         if (existingAdmin.rows[0]) {
@@ -411,8 +410,7 @@ function createBookingJobService(dependencies = {}) {
             const conflict = new Error("ADMIN_IDEMPOTENCY_KEY_REUSED"); conflict.code = "ADMIN_IDEMPOTENCY_KEY_REUSED"; conflict.statusCode = 409; throw conflict;
           }
           await client.query("COMMIT");
-          return res.json({ success: true, replayed: true, job_id: existingAdmin.rows[0].job_id,
-            booking_code: existingAdmin.rows[0].booking_code, booking_mode: bm, dispatch_mode: mode });
+          return res.json(persistedBookingReplay.adminReplayResponse(existingAdmin.rows[0], { bookingMode: bm, dispatchMode: mode }));
         }
       }
 
@@ -644,7 +642,7 @@ function createBookingJobService(dependencies = {}) {
           (customer_phone || "").toString().trim(),
           String(packageBooking ? payloadV2.job_type : job_type).trim(),
           apptIso,
-          Number(pricing.total || 0),
+          pricing.total_exact,
           String(address_text).trim(),
           (!isUrgentOffer && mode === "forced") ? selectedTech : null,
           isUrgentOffer ? null : selectedTech,
@@ -748,7 +746,7 @@ function createBookingJobService(dependencies = {}) {
           `INSERT INTO public.job_promotions (job_id, promo_id, applied_discount)
            VALUES ($1,$2,$3)
            ON CONFLICT (job_id) DO UPDATE SET promo_id=EXCLUDED.promo_id, applied_discount=EXCLUDED.applied_discount`,
-          [job_id, promo.promo_id, Number(pricing.discount || 0)]
+          [job_id, promo.promo_id, pricing.discount_exact]
         );
       }
 
@@ -852,7 +850,7 @@ function createBookingJobService(dependencies = {}) {
         duration_min,
         effective_block_min: effectiveBlockMin(duration_min),
         standard_price,
-        total: pricing.total,
+        total: pricing.total_exact,
         promo_id: promo?.promo_id || null,
       });
 
@@ -870,6 +868,9 @@ function createBookingJobService(dependencies = {}) {
         subtotal: Number(pricing.subtotal || 0),
         discount: Number(pricing.discount || 0),
         total: Number(pricing.total || 0),
+        subtotal_exact: pricing.subtotal_exact,
+        discount_exact: pricing.discount_exact,
+        total_exact: pricing.total_exact,
         booking_mode: bm,
         dispatch_mode: mode,
         service_zone_code: detectedZoneCode,
@@ -1253,7 +1254,7 @@ function createBookingJobService(dependencies = {}) {
     if (!gps.ok) {
       return { status: 400, error: "ข้อมูล GPS ไม่ถูกต้อง", code: "INVALID_GPS" };
     }
-    const payload = {
+    let payload = {
       job_type: incoming.job_type,
       ac_type: incoming.ac_type,
       btu: Number(incoming.btu || 0),
@@ -1263,7 +1264,15 @@ function createBookingJobService(dependencies = {}) {
       services: incoming.services,
       admin_override_duration_min: 0,
     };
-    const durationMin = computeDurationMinMulti(payload, {
+    const composite = Array.isArray(incoming.service_package_groups)
+      ? await resolveUrgentCompositePreflight({
+          input: incoming,
+          appointmentDatetime: appointment,
+          resolver: createServicePackageResolver(pool),
+        })
+      : null;
+    if (composite) payload = composite.payload;
+    const durationMin = composite?.durationMin || computeDurationMinMulti(payload, {
       source: "public_urgent_preflight",
       conservative: true,
     });
@@ -1319,6 +1328,7 @@ function createBookingJobService(dependencies = {}) {
       } : null,
       nearby_times: preflight.nearby_times,
       duration_min: durationMin,
+      machine_count: composite?.machineCount || Number(payload.machine_count || 0),
       internal: preflight.internal,
     };
   }
@@ -1341,8 +1351,15 @@ function createBookingJobService(dependencies = {}) {
         resolved_zone: result.zone,
         reason: result.reason,
         nearby_times: result.nearby_times,
+        duration_min: result.duration_min,
+        machine_count: result.machine_count,
       });
     } catch (error) {
+      const domainStatus = Number(error?.statusCode || error?.status || 0);
+      if (domainStatus >= 400 && domainStatus < 500) {
+        const code = String(error?.code || "URGENT_PREFLIGHT_REJECTED");
+        return res.status(domainStatus).json({ error: code, code });
+      }
       console.error("[public_urgent_preflight] failed", { message: error?.message });
       return res.status(503).json({
         error: "ระบบตรวจสอบช่างขัดข้องชั่วคราว กรุณาลองอีกครั้ง",
@@ -1546,12 +1563,14 @@ function createBookingJobService(dependencies = {}) {
           return res.status(409).json({ error: "This request key was already used for another booking. Start a new booking.", code: "IDEMPOTENCY_KEY_REUSED" });
         }
         const replayDuration = Number(prior.duration_min || 0);
+        const replayTicket = await loadBookingTicket(pool, prior.job_id);
         return res.json({ success: true, replayed: true, job_id: prior.job_id,
           booking_code: prior.booking_code, token: prior.booking_token,
           booking_mode: prior.booking_mode || bm, dispatch_mode: prior.dispatch_mode || (bm === "urgent" ? "offer" : "normal"),
           duration_min: replayDuration, effective_block_min: effectiveBlockMin(replayDuration),
           travel_buffer_min: TRAVEL_BUFFER_MIN, base_total: Number(prior.job_price || 0),
-          booking_ticket: await loadBookingTicket(pool, prior.job_id) });
+          base_total_exact: exactMoney(prior.job_price), net_total: replayTicket?.exact_total || exactMoney(prior.job_price),
+          booking_ticket: replayTicket });
       }
     }
 
@@ -1608,6 +1627,7 @@ function createBookingJobService(dependencies = {}) {
           booking_mode: bm, dispatch_mode: prior.dispatch_mode || "normal",
           duration_min: replayDuration, effective_block_min: effectiveBlockMin(replayDuration),
           travel_buffer_min: TRAVEL_BUFFER_MIN, base_total: Number(prior.job_price || 0),
+          base_total_exact: exactMoney(prior.job_price), net_total: replayTicket?.exact_total || exactMoney(prior.job_price),
           booking_ticket: replayTicket,
         });
       }
@@ -1786,6 +1806,8 @@ function createBookingJobService(dependencies = {}) {
           effective_block_min: effectiveBlockMin(Number(prior.duration_min || duration_min_v2 || 0)),
           travel_buffer_min: TRAVEL_BUFFER_MIN,
           base_total: Number(prior.job_price || 0),
+          base_total_exact: exactMoney(prior.job_price),
+          net_total: replayTicket?.exact_total || exactMoney(prior.job_price),
           booking_ticket: replayTicket,
         });
       }
@@ -1885,12 +1907,14 @@ function createBookingJobService(dependencies = {}) {
               return res.status(409).json({ error: "This request key was already used for another booking. Start a new booking.", code: "IDEMPOTENCY_KEY_REUSED" });
             }
             const replayDuration = Number(row.duration_min || 0);
+            const replayTicket = await loadBookingTicket(pool, row.job_id);
             return res.json({ success: true, replayed: true, job_id: row.job_id,
               booking_code: row.booking_code, token: row.booking_token, booking_mode: bm,
               dispatch_mode: row.dispatch_mode || (bm === "urgent" ? "offer" : "normal"),
               duration_min: replayDuration, effective_block_min: effectiveBlockMin(replayDuration),
               travel_buffer_min: TRAVEL_BUFFER_MIN, base_total: Number(row.job_price || 0),
-              booking_ticket: await loadBookingTicket(pool, row.job_id) });
+              base_total_exact: exactMoney(row.job_price), net_total: replayTicket?.exact_total || exactMoney(row.job_price),
+              booking_ticket: replayTicket });
           }
           const replayPackageBooking = hasPackageRequest
             ? await historicalPackageBookingForReplay(pool, row.job_id, packageRequestBody, appointment_datetime)
@@ -1925,6 +1949,8 @@ function createBookingJobService(dependencies = {}) {
             effective_block_min: effectiveBlockMin(Number(row.duration_min || duration_min_v2 || 0)),
             travel_buffer_min: TRAVEL_BUFFER_MIN,
             base_total: Number(row.job_price || 0),
+            base_total_exact: exactMoney(row.job_price),
+            net_total: replayTicket?.exact_total || exactMoney(row.job_price),
             booking_ticket: replayTicket,
           });
         }
@@ -2283,6 +2309,8 @@ function createBookingJobService(dependencies = {}) {
           discount: appliedDiscount,
         } : null,
         base_total: Number(base_total || 0),
+        base_total_exact: exactMoney(base_total),
+        net_total: bookingTicket.exact_total,
         booking_ticket: bookingTicket,
       });
     } catch (e) {

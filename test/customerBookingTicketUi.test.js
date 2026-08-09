@@ -11,6 +11,8 @@ const urgent = fs.readFileSync("customer-app/modules/bookingUrgent.js", "utf8");
 const css = fs.readFileSync("customer-app/assets/customer-app.css", "utf8");
 const index = fs.readFileSync("customer-app/index.html", "utf8");
 const sw = fs.readFileSync("customer-app/sw.js", "utf8");
+const manifest = fs.readFileSync("customer-app/manifest.webmanifest", "utf8");
+const appEntry = fs.readFileSync("customer-app/assets/customer-app.js", "utf8");
 
 function loadTicketModule({ secure = true, writeText = async () => {} } = {}) {
   const writes = [];
@@ -86,12 +88,25 @@ test("clipboard success and unsupported/denied/insecure fallbacks are determinis
   assert.deepEqual(insecure.writes, []);
 });
 
-test("scheduled and urgent success actions cannot call booking APIs and reveal LINE only after copy", () => {
+test("success and replay use one server-confirmed exact net total without browser discount math", () => {
+  const { api } = loadTicketModule();
+  const initial = { base_total: 1399.5, base_total_exact: "1399.50", net_total: "1299.95",
+    booking_ticket: safeTicket({ exact_total: "1299.95" }) };
+  const replay = { ...initial, replayed: true };
+  assert.equal(api.confirmedNetTotal(initial), "1299.95");
+  assert.equal(api.confirmedNetTotal(replay), "1299.95");
+  assert.equal(api.confirmedNetTotal({ base_total: 1399.5, booking_ticket: safeTicket({ exact_total: "1299.95" }) }), "1299.95");
+  assert.doesNotMatch(scheduled, /formatBaht\(result\.base_total\)/);
+  assert.match(scheduled, /confirmedNetTotal\?\.\(result\)/);
+});
+
+test("scheduled and urgent success actions cannot call booking APIs and keep LINE available during manual fallback", () => {
   for (const source of [scheduled, urgent]) {
     assert.match(source, /root\.bookingTicket\?\.formatText\?\./);
     assert.match(source, /คัดลอก Ticket ส่งให้แอดมิน/);
     assert.match(source, /Ticket มีชื่อและเบอร์โทร/);
-    assert.match(source, /copied \? '<a class="primary-btn" href="https:\/\/lin\.ee\/fG1Oq7y"/);
+    assert.match(source, /<a class="primary-btn" href="https:\/\/lin\.ee\/fG1Oq7y"/);
+    assert.doesNotMatch(source, /copied \? '<a class="primary-btn" href="https:\/\/lin\.ee\/fG1Oq7y"/);
     assert.match(source, /readonly/);
     assert.match(source, /aria-live="polite"/);
     const start = source.indexOf('action === "copy-booking-ticket"');
@@ -112,4 +127,8 @@ test("ticket handoff keeps tracking/new-booking actions, 44px controls, mobile l
   assert.match(css, /@media \(max-width:\s*360px\)[\s\S]*\.booking-ticket-handoff/);
   assert.match(index, /modules\/bookingTicket\.js\?v=/);
   assert.match(sw, /modules\/bookingTicket\.js\?v=\$\{BUILD_ID\}/);
+  for (const source of [index, sw, manifest, appEntry]) {
+    assert.match(source, /20260809_issue267_catalog_flow_v8/);
+    assert.doesNotMatch(source, /20260809_issue267_catalog_flow_v7/);
+  }
 });

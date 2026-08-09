@@ -13,6 +13,19 @@
       .slice(0, maxLength);
   }
 
+  function exactMoney(value) {
+    const match = /^(\d+)(?:\.(\d{1,2}))?$/.exec(safeText(value, 40));
+    return match ? `${match[1]}.${String(match[2] || "").padEnd(2, "0")}` : "";
+  }
+
+  function confirmedNetTotal(result) {
+    return exactMoney(result?.net_total)
+      || exactMoney(result?.booking_ticket?.exact_total)
+      || exactMoney(result?.base_total_exact)
+      || exactMoney(result?.base_total)
+      || "0.00";
+  }
+
   function formatText(ticket) {
     if (!ticket || typeof ticket !== "object" || Array.isArray(ticket)) return "";
     const bookingCode = safeText(ticket.booking_code, 40);
@@ -58,5 +71,6 @@
     lineUrl: LINE_OA_URL,
     formatText,
     copyText,
+    confirmedNetTotal,
   });
 })();

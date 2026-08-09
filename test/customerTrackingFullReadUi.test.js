@@ -1191,7 +1191,7 @@ test("tracking UI exposes loading, not-found, rate-limit and offline states", ()
 });
 
 test("tracking assets share the full-read cache build id", () => {
-  const build = "20260809_issue267_catalog_flow_v7";
+  const build = "20260809_issue267_catalog_flow_v8";
   for (const file of [
     "customer-app/index.html",
     "customer-app/sw.js",

@@ -124,10 +124,34 @@ class FakeButton {
   }
   getAttribute(name) { return this.attrs[name] || ""; }
   hasAttribute(name) { return Object.prototype.hasOwnProperty.call(this.attrs, name); }
+  setAttribute(name, value) { this.attrs[name] = String(value); }
+  removeAttribute(name) { delete this.attrs[name]; }
   addEventListener(type, listener) { this.listeners[type] = listener; }
   async click() {
     if (this.listeners.click) await this.listeners.click({ preventDefault() {} });
   }
+}
+
+function stubOrdinaryCatalogQuotes(root, items) {
+  root.api.quoteCatalogBooking = async ({ catalog_item_id, booking_mode }) => {
+    const item = items.find((candidate) => Number(candidate.item_id) === Number(catalog_item_id));
+    const mapped = root.services.catalogItemToCommerceDraft(item);
+    assert.ok(mapped, "test fixture must map to an ordinary booking draft");
+    const total = Number(item.display_price || item.base_price || 0).toFixed(2);
+    return {
+      kind: "bookable",
+      catalog_item_id: Number(item.item_id),
+      booking_mode,
+      fixed_total_price: total,
+      unit_price: total,
+      normal_unit_price: total,
+      duration_minutes: 45,
+      machine_count: 1,
+      price_label: "Server quote",
+      campaign_name: "",
+      service: { ...mapped.draft },
+    };
+  };
 }
 
 class HomeContainer {
@@ -311,7 +335,7 @@ test("Customer App build id is consistent across shell and service worker", () =
   const sw = read("customer-app/sw.js");
   const app = read("customer-app/assets/customer-app.js");
   const manifest = read("customer-app/manifest.webmanifest");
-  const build = "20260809_issue267_catalog_flow_v7";
+  const build = "20260809_issue267_catalog_flow_v8";
 
   assert.match(index, new RegExp(`customer-app\\.css\\?v=${build}`));
   assert.match(index, new RegExp(`modules\\/api\\.js\\?v=${build}`));
@@ -329,7 +353,7 @@ test("Customer App build id is consistent across shell and service worker", () =
 test("store module is loaded in index.html and precached in the service worker app shell", () => {
   const index = read("customer-app/index.html");
   const sw = read("customer-app/sw.js");
-  const build = "20260809_issue267_catalog_flow_v7";
+  const build = "20260809_issue267_catalog_flow_v8";
 
   assert.match(index, new RegExp(`modules/store\\.js\\?v=${build}`));
   assert.match(sw, /`\.\/modules\/store\.js\?v=\$\{BUILD_ID\}`/);
@@ -2277,12 +2301,14 @@ test("product detail escapes hostile text in description, highlight, and image a
 test("clicking a bookable card's book button prefills the real scheduled draft from the catalog item's booking fields", async () => {
   const context = makeContext();
   const root = loadCustomerFrontend(context);
-  root.api.loadCatalogItems = async () => [
+  const items = [
     {
       item_id: 1, item_name: "ล้างแอร์แขวนพรีเมียม", item_category: "ล้างแอร์", base_price: 900, unit_label: "เครื่อง",
       booking_mode: "bookable", booking_ac_type: "แขวน", booking_btu: 18000, booking_wash_variant: "ล้างพรีเมียม",
     },
   ];
+  root.api.loadCatalogItems = async () => items;
+  stubOrdinaryCatalogQuotes(root, items);
 
   const container = new FakeMount();
   root.store.render(container);
@@ -2655,6 +2681,7 @@ test("BTU/spec variant selector routes to the sibling's own detail URL on select
   let listCalls = 0;
   root.api.loadCatalogItem = async (id) => { detailCalls += 1; return itemsById.get(String(id)); };
   root.api.loadCatalogItems = async () => { listCalls += 1; return items; };
+  stubOrdinaryCatalogQuotes(root, items);
 
   const container = new FakeMount();
   root.store.renderDetail(container);
@@ -2836,6 +2863,7 @@ test("legacy rows with no booking_wash_variant resolve ล้างปกติ/
   const itemsById = new Map(items.map((it) => [String(it.item_id), it]));
   root.api.loadCatalogItem = async (id) => itemsById.get(String(id));
   root.api.loadCatalogItems = async () => items;
+  stubOrdinaryCatalogQuotes(root, items);
 
   const container = new FakeMount();
   root.store.renderDetail(container);
@@ -3122,6 +3150,7 @@ test("store funnel analytics: cwf_store_begin_booking and cwf_store_contact_admi
     { item_id: 302, item_name: "ติดตั้งแอร์ใหม่", booking_mode: "contact", display_price: 0, base_price: 0 },
   ];
   root.api.loadCatalogItems = async () => items;
+  stubOrdinaryCatalogQuotes(root, items);
 
   const container = new FakeMount();
   root.store.render(container);

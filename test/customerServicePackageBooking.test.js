@@ -293,6 +293,8 @@ test("advisory-locked committed package replay bypasses unavailable current reso
   assert.equal(result.body.replayed, true);
   assert.equal(result.body.job_id, "501");
   assert.equal(result.body.base_total, 1399.5);
+  assert.equal(result.body.base_total_exact, "1399.50");
+  assert.equal(result.body.net_total, "1399.50");
   assert.equal(result.body.booking_ticket.booking_code, "CWF501");
   assert.equal(result.body.booking_ticket.exact_total, "1399.50");
   assert.equal(result.body.booking_ticket.total_machine_count, 2);
@@ -335,6 +337,7 @@ test("ordinary Store replay uses its persisted fingerprint before a disabled cat
   assert.equal(replay.statusCode, 200);
   assert.equal(replay.body.replayed, true);
   assert.equal(replay.body.booking_ticket.exact_total, "699.00");
+  assert.equal(replay.body.net_total, "699.00");
   assert.equal(calls.some((sql) => /catalog_items|customer_service_price_rules|promotions_v2/.test(sql)), false);
   assert.equal(calls.some((sql) => /\bINSERT\b|\bUPDATE\b|\bDELETE\b/.test(sql)), false);
 

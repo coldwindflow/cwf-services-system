@@ -16,8 +16,9 @@ test("ordinary Store quote uses the catalog policy and returns a customer-safe e
     ac_type: "wall", btu: 12000, wash_variant: "normal", machine_count: 2 });
   assert.equal(quote.fixed_total_price, "1398.00");
   assert.equal(typeof quote.fixed_total_price, "string");
+  assert.equal(quote.catalog_item_id, 9);
   assert.equal(quote.duration_minutes, 45);
-  assert.doesNotMatch(JSON.stringify(quote), /item_id|job_id|snapshot|token|address|maps/i);
+  assert.doesNotMatch(JSON.stringify(quote), /job_id|package_id|tier_id|snapshot|token|address|maps/i);
 });
 
 test("composite quote strips internal ids and snapshots", async () => {
@@ -37,4 +38,6 @@ test("Customer Store waits for server quotes, handles stale/error state, and nev
   assert.match(store, /requestId !== bundleQuoteRequestId/);
   assert.match(store, /ไม่สามารถยืนยันราคาและสิทธิ์ได้ กรุณาลองใหม่/);
   assert.doesNotMatch(store, /verified:\s*true[\s\S]{0,160}composeBundleTiers/);
+  assert.match(store, /catalogQuoteToCommerceDraft\(item, quote, scope\)/);
+  assert.match(store, /ordinaryQuotesInFlight\.has\(requestKey\)/);
 });
