@@ -48,11 +48,12 @@ integration("isolated PostgreSQL atomically persists one parent, two variants, e
     assert.deepEqual(identitiesAfter.rows, identitiesBefore.rows);
     assert.equal(updated.item_name, "TEST Premium Day updated");
     const counts = await pool.query(`SELECT
-      (SELECT COUNT(*)::int FROM catalog_items WHERE booking_mode='service_package') AS parents,
+      (SELECT COUNT(*)::int FROM catalog_items WHERE service_bundle_key IS NOT NULL) AS parents,
       (SELECT COUNT(*)::int FROM service_packages WHERE catalog_item_id IS NOT NULL) AS variants,
       (SELECT COUNT(*)::int FROM service_package_tiers) AS tiers`);
     assert.deepEqual(counts.rows[0], { parents: 1, variants: 2, tiers: 8 });
     const publicRowResult = await pool.query("SELECT * FROM catalog_items WHERE service_bundle_key=$1", [created.service_bundle_key]);
+    assert.equal(publicRowResult.rows[0].booking_mode, "contact_admin");
     await catalogRoutes.attachCatalogServicePackages(pool, publicRowResult.rows, { customer: true });
     const publicDto = catalogRoutes.serializeCatalogDetailRow(publicRowResult.rows[0]);
     assert.equal(publicDto.booking_mode, "service_package");
