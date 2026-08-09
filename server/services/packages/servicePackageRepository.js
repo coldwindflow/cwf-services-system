@@ -65,7 +65,8 @@ async function listCustomerVisiblePackages(db, { at = new Date() } = {}) {
 async function findLinkedPackagesByKeys(db, packageKeys) {
   if (!Array.isArray(packageKeys) || !packageKeys.length) return [];
   const result = await requireDb(db).query(
-    `SELECT p.*, ci.item_id, ci.item_name, ci.service_bundle_key, ci.booking_mode,
+    `SELECT p.*, ci.item_id, ci.item_name, ci.service_bundle_key,
+            CASE WHEN ci.service_bundle_key IS NOT NULL THEN 'service_package' ELSE ci.booking_mode END AS booking_mode,
             ci.is_active AS catalog_is_active,
             ci.is_customer_visible AS catalog_is_customer_visible,
             ci.service_package_sell_start_at, ci.service_package_sell_end_at,

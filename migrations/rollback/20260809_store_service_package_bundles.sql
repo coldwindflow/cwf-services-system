@@ -24,6 +24,3 @@ ALTER TABLE public.catalog_items DROP COLUMN IF EXISTS service_package_redeem_un
 ALTER TABLE public.catalog_items DROP COLUMN IF EXISTS service_package_sell_end_at;
 ALTER TABLE public.catalog_items DROP COLUMN IF EXISTS service_package_sell_start_at;
 ALTER TABLE public.catalog_items DROP COLUMN IF EXISTS service_bundle_key;
-ALTER TABLE public.catalog_items DROP CONSTRAINT IF EXISTS catalog_items_booking_mode_check;
-ALTER TABLE public.catalog_items ADD CONSTRAINT catalog_items_booking_mode_check
-  CHECK (booking_mode IN ('bookable', 'contact_admin', 'purchase'));

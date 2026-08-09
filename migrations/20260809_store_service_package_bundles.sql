@@ -1,11 +1,11 @@
 -- Store service-package bundles. A catalog item owns presentation/media and
 -- sale/redeem windows; linked service_packages are selectable BTU variants.
 -- Existing unlinked service packages remain valid and keep their own windows.
-
-ALTER TABLE public.catalog_items DROP CONSTRAINT IF EXISTS catalog_items_booking_mode_check;
-ALTER TABLE public.catalog_items
-  ADD CONSTRAINT catalog_items_booking_mode_check
-  CHECK (booking_mode IN ('bookable', 'contact_admin', 'purchase', 'service_package'));
+--
+-- Bundle parents keep the existing stored booking_mode='contact_admin'. The
+-- application exposes the bounded virtual mode 'service_package' whenever a
+-- non-null service_bundle_key is present. This keeps the migration additive and
+-- compatible with the deploy controller's expand-only lane.
 
 ALTER TABLE public.catalog_items ADD COLUMN IF NOT EXISTS service_bundle_key TEXT;
 ALTER TABLE public.catalog_items ADD COLUMN IF NOT EXISTS service_package_sell_start_at TIMESTAMPTZ;
