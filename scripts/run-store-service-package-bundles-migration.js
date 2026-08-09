@@ -27,7 +27,7 @@ function createClientConfig(env = process.env) {
   return { host: clean(env.DB_HOST), port: Number(env.DB_PORT || 5432), user: clean(env.DB_USER), password: env.DB_PASSWORD,
     database: clean(env.DB_NAME), options: "-c timezone=Asia/Bangkok", ssl: env.CWF_E2E_TEST_MODE === "1" ? false : { rejectUnauthorized: false } };
 }
-async function verifySchema(client) {
+async function readSchemaStatus(client) {
   const result = await client.query(`
     SELECT
       EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='service_packages' AND column_name='catalog_item_id') AS linked,
@@ -41,9 +41,15 @@ async function verifySchema(client) {
       EXISTS (SELECT 1 FROM pg_constraint WHERE conname='catalog_items_promotion_theme_check') AS presentation_check,
       EXISTS (SELECT 1 FROM pg_constraint WHERE conname='catalog_items_booking_flow_policy_check') AS flow_policy_check
   `);
-  const row = result.rows[0] || {};
-  if (!row.linked || !row.parent_key || !row.presentation || !row.flow_policy || !row.admin_request_key || !row.booking_request_fingerprint || !row.admin_request_unique || !row.parent_fk
-      || !row.presentation_check || !row.flow_policy_check) {
+  return result.rows[0] || {};
+}
+function schemaStatusIsCurrent(row) {
+  return Boolean(row.linked && row.parent_key && row.presentation && row.flow_policy && row.admin_request_key
+    && row.booking_request_fingerprint && row.admin_request_unique && row.parent_fk
+    && row.presentation_check && row.flow_policy_check);
+}
+async function verifySchema(client) {
+  if (!schemaStatusIsCurrent(await readSchemaStatus(client))) {
     throw new Error("store service-package bundle schema verification failed");
   }
 }
@@ -52,6 +58,10 @@ async function runMigration({ env = process.env, logger = console, clientFactory
   logger.log("STORE_SERVICE_PACKAGE_BUNDLES_MIGRATION_START");
   try {
     await client.connect(); await client.query("SELECT pg_advisory_lock($1::bigint)", [ADVISORY_LOCK_KEY]); locked = true;
+    if (schemaStatusIsCurrent(await readSchemaStatus(client))) {
+      logger.log("STORE_SERVICE_PACKAGE_BUNDLES_MIGRATION_OK");
+      return;
+    }
     await client.query("BEGIN");
     try {
       await client.query(fs.readFileSync(resolveMigrationPath(repoRoot), "utf8")); await verifySchema(client);
@@ -71,4 +81,5 @@ async function runCli(options = {}) {
   catch (error) { (options.logger || console).error(`STORE_SERVICE_PACKAGE_BUNDLES_MIGRATION_FAILED: ${safeErrorMessage(error)}`); return 1; }
 }
 if (require.main === module) runCli().then((code) => { process.exitCode = code; });
-module.exports = { MIGRATION_RELATIVE_PATH, ADVISORY_LOCK_KEY, safeErrorMessage, resolveMigrationPath, createClientConfig, verifySchema, runMigration, runCli };
+module.exports = { MIGRATION_RELATIVE_PATH, ADVISORY_LOCK_KEY, safeErrorMessage, resolveMigrationPath, createClientConfig,
+  readSchemaStatus, schemaStatusIsCurrent, verifySchema, runMigration, runCli };
