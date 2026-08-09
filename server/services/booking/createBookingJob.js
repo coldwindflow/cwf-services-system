@@ -3,7 +3,13 @@
 const crypto = require("crypto");
 const { JOB_STATUS, ASSIGNMENT_STATUS, OFFER_STATUS } = require("./bookingStatuses");
 const { ensureBookingJobUnits } = require("./bookingJobUnits");
-const { packageRequest, resolvePackageBooking, packageBookingFromSnapshot } = require("./servicePackageBooking");
+const { packageRequest, resolvePackageBooking, packageBookingFromSnapshot, compositeBookingFromSnapshots } = require("./servicePackageBooking");
+const { resolveCatalogBookingPolicy, buildCatalogBookingItem, buildCatalogBookingPayload } = require("./catalogBookingPolicy");
+const { buildBookingTicket, loadBookingTicket, exactMoney } = require("./bookingTicket");
+const adminIdempotency = require("./adminBookingIdempotency");
+const persistedBookingReplay = require("./persistedBookingReplay");
+const { validateAdminStorePromotionRequest } = require("./adminStorePromotionPolicy");
+const { resolveUrgentCompositePreflight } = require("./urgentCompositePreflight");
 
 function safePackagePreview(selection) {
   const line = selection.service_lines[0];
@@ -138,6 +144,7 @@ function createBookingJobService(dependencies = {}) {
   async function handleAdminBookV2(req, res) {
     const body = req.body || {};
     const hasPackageRequest = body.service_package_key != null || body.service_package_tier_key != null
+      || body.service_package_groups != null
       || body.service_package_id != null || body.service_package_tier_id != null;
     let packageBooking = null;
     const {
@@ -167,6 +174,8 @@ function createBookingJobService(dependencies = {}) {
       promotion_id,
       override_price,
       override_duration_min,
+      catalog_item_id,
+      admin_request_key,
     } = body;
 
     // ✅ assign_mode (auto|single|team)
@@ -196,6 +205,28 @@ function createBookingJobService(dependencies = {}) {
     const bm = isUrgentOffer ? "urgent" : rawBm;
     const ttype = (tech_type || (bm === "urgent" ? "partner" : "company")).toString().trim().toLowerCase();
     const mode = isUrgentOffer ? "offer" : rawMode;
+    const createdBySource = req.cwfBookSource === "customer" ? "customer" : "admin";
+    const rawAdminRequestKey = createdBySource === "admin" && admin_request_key != null ? String(admin_request_key).trim() : "";
+    const adminRequestKey = rawAdminRequestKey ? adminIdempotency.validateAdminRequestKey(rawAdminRequestKey) : null;
+    if (rawAdminRequestKey && !adminRequestKey) return res.status(400).json({ error: "INVALID_ADMIN_REQUEST_KEY", code: "INVALID_ADMIN_REQUEST_KEY" });
+    const adminRequestFingerprint = adminRequestKey ? adminIdempotency.requestFingerprint(body) : null;
+    const adminBookingToken = adminRequestKey ? adminIdempotency.bookingToken(adminRequestKey) : null;
+    // A committed replay is independent of today's catalog/package/promotion
+    // eligibility. Compare the durable material fingerprint before resolving it.
+    if (adminRequestKey) {
+      const existingAdmin = await persistedBookingReplay.findAdminReplay(pool, adminRequestKey);
+      if (existingAdmin) {
+        if (String(existingAdmin.admin_request_fingerprint || "") !== adminRequestFingerprint) {
+          return res.status(409).json({ error: "ADMIN_IDEMPOTENCY_KEY_REUSED", code: "ADMIN_IDEMPOTENCY_KEY_REUSED" });
+        }
+        return res.json(persistedBookingReplay.adminReplayResponse(existingAdmin, { bookingMode: bm, dispatchMode: mode }));
+      }
+    }
+    try {
+      validateAdminStorePromotionRequest(body, { createdBySource });
+    } catch (error) {
+      return res.status(Number(error.statusCode || 400)).json({ error: error.code, code: error.code });
+    }
     if (hasPackageRequest) {
       try {
         if (promotion_id) {
@@ -203,11 +234,22 @@ function createBookingJobService(dependencies = {}) {
           error.code = "PACKAGE_PROMOTION_UNSUPPORTED"; error.statusCode = 400; throw error;
         }
         packageBooking = await resolvePackageBooking({ body, bookingMode: bm, appointmentDatetime: apptIso,
-          resolver: createServicePackageResolver(pool), identity: "admin" });
+          resolver: createServicePackageResolver(pool), identity: Array.isArray(body.service_package_groups) ? "customer" : "admin" });
       } catch (error) {
         const code = String(error?.code || "PACKAGE_UNAVAILABLE").startsWith("PACKAGE_") ? String(error.code) : "PACKAGE_UNAVAILABLE";
         const status = Number(error?.statusCode || error?.status || 409);
         return res.status(status >= 400 && status < 500 ? status : 409).json({ error: code, code });
+      }
+    }
+    let catalogBooking = null;
+    if (!hasPackageRequest && catalog_item_id != null && String(catalog_item_id).trim() !== "") {
+      try {
+        catalogBooking = await resolveCatalogBookingPolicy(pool, {
+          catalogItemId: catalog_item_id, bookingMode: bm, jobType: job_type,
+          acType: ac_type, btu, washVariant: wash_variant, machineCount: machine_count,
+        }, { identity: "customer" });
+      } catch (error) {
+        return res.status(Number(error.statusCode || 409)).json({ error: error.code, code: error.code });
       }
     }
     // ✅ HOTFIX: allow_time_proposal may be omitted by older cached frontend/PWA.
@@ -219,7 +261,6 @@ function createBookingJobService(dependencies = {}) {
       String(allowTimeProposalRaw || "").trim().toLowerCase() === "true" ||
       String(allowTimeProposalRaw || "").trim() === "1"
     );
-    const createdBySource = req.cwfBookSource === "customer" ? "customer" : "admin";
     // Customer-sourced urgent requests carry a client-generated
     // urgent_request_key; deriving booking_token from it deterministically
     // (instead of a random genToken) lets the dedup check below find a
@@ -284,6 +325,7 @@ function createBookingJobService(dependencies = {}) {
       admin_override_duration_min: Math.max(0, coerceNumber(override_duration_min, 0)),
     };
     if (packageBooking) payloadV2 = packageBooking.payload;
+    if (catalogBooking) payloadV2 = buildCatalogBookingPayload(catalogBooking);
 
     // CWF Spec: Always use conservative duration for booking/collision (no parallel/team reduction)
     let duration_min = packageBooking ? packageBooking.durationMin : computeDurationMinMulti(payloadV2, { source: "admin_book_v2", conservative: true });
@@ -296,8 +338,10 @@ function createBookingJobService(dependencies = {}) {
       duration_min = Math.max(1, Math.floor(coerceNumber(override_duration_min, duration_min)));
     }
 
-    const customerPrice = packageBooking ? null : await customerPricingHelpers.resolveCustomerPricingMulti(payloadV2, pool);
-    const standard_price = packageBooking ? Number(packageBooking.fixedTotal) : Number(customerPrice.active_price ?? customerPrice.standard_price ?? 0);
+    const customerPrice = packageBooking || catalogBooking ? null : await customerPricingHelpers.resolveCustomerPricingMulti(payloadV2, pool);
+    let standard_price = packageBooking ? Number(packageBooking.fixedTotal)
+      : catalogBooking ? Number(catalogBooking.pricing.exact_total)
+        : Number(customerPrice.active_price ?? customerPrice.standard_price ?? 0);
 
 
   // Blocker: explicit admin coordinates must be validated at the BACKEND, not just
@@ -354,15 +398,39 @@ function createBookingJobService(dependencies = {}) {
     try {
       await client.query("BEGIN");
 
+      if (adminRequestKey) {
+        await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [adminRequestKey]);
+        const existingAdmin = await client.query(
+          `SELECT job_id, booking_code, booking_mode, dispatch_mode, duration_min, job_price,
+                  admin_request_fingerprint FROM public.jobs WHERE admin_request_key=$1 LIMIT 1`,
+          [adminRequestKey]
+        );
+        if (existingAdmin.rows[0]) {
+          if (String(existingAdmin.rows[0].admin_request_fingerprint || "") !== adminRequestFingerprint) {
+            const conflict = new Error("ADMIN_IDEMPOTENCY_KEY_REUSED"); conflict.code = "ADMIN_IDEMPOTENCY_KEY_REUSED"; conflict.statusCode = 409; throw conflict;
+          }
+          await client.query("COMMIT");
+          return res.json(persistedBookingReplay.adminReplayResponse(existingAdmin.rows[0], { bookingMode: bm, dispatchMode: mode }));
+        }
+      }
+
       if (packageBooking) {
         const revalidated = await resolvePackageBooking({ body, bookingMode: bm, appointmentDatetime: apptIso,
-          resolver: createServicePackageResolver(client), identity: "admin" });
+          resolver: createServicePackageResolver(client), identity: Array.isArray(body.service_package_groups) ? "customer" : "admin" });
         if (JSON.stringify(revalidated) !== JSON.stringify(packageBooking)) {
           const error = new Error("PACKAGE_UNAVAILABLE");
           error.code = "PACKAGE_UNAVAILABLE"; error.statusCode = 409; throw error;
         }
         packageBooking = revalidated;
         payloadV2 = packageBooking.payload;
+      }
+
+      if (catalogBooking) {
+        catalogBooking = await resolveCatalogBookingPolicy(client, {
+          catalogItemId: catalogBooking.item_id, bookingMode: bm, jobType: job_type,
+          acType: ac_type, btu, washVariant: wash_variant, machineCount: machine_count,
+        }, { identity: "customer", lock: true });
+        standard_price = Number(catalogBooking.pricing.exact_total);
       }
 
       // Durable, cross-instance idempotency for customer-sourced urgent
@@ -408,7 +476,7 @@ function createBookingJobService(dependencies = {}) {
 
       // promo
       let promo = null;
-      if (!packageBooking && promotion_id) {
+      if (!packageBooking && !catalogBooking && promotion_id) {
         const pr = await client.query(
           `SELECT promo_id, promo_name, promo_type, promo_value
            FROM public.promotions
@@ -419,9 +487,9 @@ function createBookingJobService(dependencies = {}) {
       }
 
       // resolve items
-  const computedItems = packageBooking ? [packageBooking.item] : [];
+      const computedItems = packageBooking ? packageBooking.items : (catalogBooking ? [buildCatalogBookingItem(catalogBooking)] : []);
 
-  const serviceLineItems = packageBooking ? [] : await customerPricingHelpers.buildCustomerServiceLineItemsFromPayload(
+      const serviceLineItems = packageBooking || catalogBooking ? [] : await customerPricingHelpers.buildCustomerServiceLineItemsFromPayload(
     (payloadV2.services && Array.isArray(payloadV2.services))
       ? payloadV2
       : { ...payloadV2, services: [{
@@ -436,16 +504,16 @@ function createBookingJobService(dependencies = {}) {
     client
   );
 
-  if (!packageBooking && coerceNumber(override_price, 0) > 0) {
+      if (!packageBooking && !catalogBooking && coerceNumber(override_price, 0) > 0) {
     // Customer override price only. Payroll must never use this as technician income.
     computedItems.push({ item_id: null, item_name: `ค่าบริการ (override)`, qty: 1, unit_price: coerceNumber(override_price, 0), line_total: coerceNumber(override_price, 0), is_service: false, customer_price_source: 'manual_override' });
-  } else if (serviceLineItems.length) {
+      } else if (!catalogBooking && serviceLineItems.length) {
     for (const it of serviceLineItems) computedItems.push(it);
-  } else if (standard_price > 0) {
+  } else if (!packageBooking && !catalogBooking && standard_price > 0) {
     computedItems.push({ item_id: null, item_name: `ค่าบริการมาตรฐาน (${payloadV2.job_type || '-'})`, qty: 1, unit_price: Number(standard_price), line_total: Number(standard_price), is_service: false });
   }
 
-      if (!packageBooking && itemIdQty.length) {
+      if (!packageBooking && !catalogBooking && itemIdQty.length) {
         const ids = itemIdQty.map((x) => x.item_id);
         const catR = await client.query(
           `SELECT item_id, item_name, base_price
@@ -564,8 +632,9 @@ function createBookingJobService(dependencies = {}) {
          address_text, technician_team, technician_username, job_status,
          booking_token, job_source, dispatch_mode, customer_note,
          maps_url, job_zone, duration_min, booking_mode, admin_override_duration_min,
-         gps_latitude, gps_longitude, service_zone_code, service_zone_source, allow_time_proposal)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$22,$23,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
+         gps_latitude, gps_longitude, service_zone_code, service_zone_source, allow_time_proposal, catalog_item_id,
+         admin_request_key, admin_request_fingerprint)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$22,$23,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$24,$25,$26)
         RETURNING job_id
         `,
         [
@@ -573,7 +642,7 @@ function createBookingJobService(dependencies = {}) {
           (customer_phone || "").toString().trim(),
           String(packageBooking ? payloadV2.job_type : job_type).trim(),
           apptIso,
-          Number(pricing.total || 0),
+          pricing.total_exact,
           String(address_text).trim(),
           (!isUrgentOffer && mode === "forced") ? selectedTech : null,
           isUrgentOffer ? null : selectedTech,
@@ -590,8 +659,11 @@ function createBookingJobService(dependencies = {}) {
           detectedZoneCode,
           detectedZoneSource,
           allowTimeProposal,
-          publicBookingToken,
+          publicBookingToken || adminBookingToken,
           createdBySource,
+          packageBooking?.bundleId || catalogBooking?.item_id || null,
+          adminRequestKey,
+          adminRequestFingerprint,
         ]
       );
 
@@ -659,7 +731,7 @@ function createBookingJobService(dependencies = {}) {
           it.customer_price_label || null, it.customer_campaign_name || null,
           it.customer_price_source || null,
         ];
-        if (packageBooking) itemParams.push(packageBooking.packageId, packageBooking.tierId, JSON.stringify(packageBooking.snapshot));
+        if (packageBooking) itemParams.push(it.packageId, it.tierId, JSON.stringify(it.snapshot));
         await client.query(
           `INSERT INTO public.job_items
             (job_id, item_id, item_name, qty, unit_price, line_total, assigned_technician_username, is_service,
@@ -674,7 +746,7 @@ function createBookingJobService(dependencies = {}) {
           `INSERT INTO public.job_promotions (job_id, promo_id, applied_discount)
            VALUES ($1,$2,$3)
            ON CONFLICT (job_id) DO UPDATE SET promo_id=EXCLUDED.promo_id, applied_discount=EXCLUDED.applied_discount`,
-          [job_id, promo.promo_id, Number(pricing.discount || 0)]
+          [job_id, promo.promo_id, pricing.discount_exact]
         );
       }
 
@@ -778,7 +850,7 @@ function createBookingJobService(dependencies = {}) {
         duration_min,
         effective_block_min: effectiveBlockMin(duration_min),
         standard_price,
-        total: pricing.total,
+        total: pricing.total_exact,
         promo_id: promo?.promo_id || null,
       });
 
@@ -796,6 +868,9 @@ function createBookingJobService(dependencies = {}) {
         subtotal: Number(pricing.subtotal || 0),
         discount: Number(pricing.discount || 0),
         total: Number(pricing.total || 0),
+        subtotal_exact: pricing.subtotal_exact,
+        discount_exact: pricing.discount_exact,
+        total_exact: pricing.total_exact,
         booking_mode: bm,
         dispatch_mode: mode,
         service_zone_code: detectedZoneCode,
@@ -815,6 +890,9 @@ function createBookingJobService(dependencies = {}) {
       });
     } catch (e) {
       await client.query("ROLLBACK");
+      if (String(e?.code || "").startsWith("ADMIN_IDEMPOTENCY_")) {
+        return res.status(Number(e.statusCode || 409)).json({ error: String(e.code), code: String(e.code) });
+      }
       if (hasPackageRequest) {
         const code = String(e?.code || "PACKAGE_BOOKING_FAILED").startsWith("PACKAGE_") ? String(e.code) : "PACKAGE_BOOKING_FAILED";
         const status = Number(e?.statusCode || e?.status || 500);
@@ -839,6 +917,7 @@ function createBookingJobService(dependencies = {}) {
         `SELECT p.package_key, t.tier_key FROM public.service_packages p
          JOIN public.service_package_tiers t ON t.service_package_id=p.service_package_id
          WHERE p.is_active=TRUE AND t.is_active=TRUE
+           AND p.catalog_item_id IS NULL
            AND (p.sell_start_at IS NULL OR p.sell_start_at <= NOW())
            AND (p.sell_end_at IS NULL OR p.sell_end_at >= NOW())
          ORDER BY p.service_package_id, t.sort_order, t.service_package_tier_id`
@@ -871,6 +950,52 @@ function createBookingJobService(dependencies = {}) {
     } catch (error) {
       const code = error?.code === "PACKAGE_IDENTITY_MALFORMED" ? "INVALID_PACKAGE_SELECTION" : "SERVICE_PACKAGE_NOT_AVAILABLE";
       return res.status(code === "INVALID_PACKAGE_SELECTION" ? 400 : 404).json({ error: code, code });
+    }
+  }
+
+  async function handleAdminCatalogBookingPreview(req, res) {
+    try {
+      const body = req.body || {};
+      const booking = await resolveCatalogBookingPolicy(pool, {
+        catalogItemId: body.catalog_item_id,
+        bookingMode: body.booking_mode,
+        jobType: body.job_type,
+        acType: body.ac_type,
+        btu: body.btu,
+        washVariant: body.wash_variant,
+        machineCount: body.machine_count,
+      }, { identity: "customer" });
+      const timingPayload = {
+        job_type: booking.job_type,
+        ac_type: booking.ac_type,
+        btu: booking.btu,
+        wash_variant: booking.wash_variant,
+        machine_count: booking.machine_count,
+        admin_override_duration_min: 0,
+      };
+      const durationMin = computeDurationMinMulti(timingPayload, { source: "admin_catalog_booking_preview", conservative: true });
+      if (durationMin <= 0) {
+        return res.status(409).json({ error: "CATALOG_DURATION_UNAVAILABLE", code: "CATALOG_DURATION_UNAVAILABLE" });
+      }
+      return res.json({
+        catalog_item_id: booking.item_id,
+        booking_flow_policy: booking.booking_flow_policy,
+        machine_count: booking.machine_count,
+        unit_price: booking.pricing.unit_price,
+        normal_unit_price: booking.pricing.normal_unit_price,
+        exact_total: booking.pricing.exact_total,
+        price_rule_id: booking.pricing.price_rule_id,
+        price_label: booking.pricing.price_label,
+        campaign_name: booking.pricing.campaign_name,
+        price_source: booking.pricing.source,
+        duration_min: durationMin,
+        effective_block_min: effectiveBlockMin(durationMin),
+        travel_buffer_min: TRAVEL_BUFFER_MIN,
+      });
+    } catch (error) {
+      const status = Number(error?.statusCode || 409);
+      const code = error?.code || "CATALOG_ITEM_UNAVAILABLE";
+      return res.status(status >= 400 && status < 500 ? status : 409).json({ error: code, code });
     }
   }
 
@@ -931,10 +1056,12 @@ function createBookingJobService(dependencies = {}) {
   // Rebuild the incoming service + extra lines with the SAME normalizer used to
   // create a booking, so an identical service payload yields an identical
   // signature (and any material change yields a different one). Read-only.
-  async function buildIncomingBookingLineSignature(db, payloadV2, itemIdQty, standardPrice, packageBooking) {
+  async function buildIncomingBookingLineSignature(db, payloadV2, itemIdQty, standardPrice, packageBooking, catalogBooking) {
     let computed = [];
     let total = Number(standardPrice || 0);
-    const serviceLines = packageBooking ? [packageBooking.item] : await customerPricingHelpers.buildCustomerServiceLineItemsFromPayload(
+    const serviceLines = packageBooking ? packageBooking.items
+      : catalogBooking ? [buildCatalogBookingItem(catalogBooking)]
+        : await customerPricingHelpers.buildCustomerServiceLineItemsFromPayload(
       (payloadV2.services && Array.isArray(payloadV2.services))
         ? payloadV2
         : {
@@ -999,6 +1126,8 @@ function createBookingJobService(dependencies = {}) {
     const incomingLng = incoming.gps_longitude == null || String(incoming.gps_longitude).trim() === "" ? null : Number(incoming.gps_longitude);
     if (storedLat !== incomingLat || storedLng !== incomingLng) return false;
     if (Number(jobRow.duration_min || 0) !== Number(incoming.duration_min || 0)) return false;
+    if (incoming.catalog_item_id !== undefined
+        && Number(jobRow.catalog_item_id || 0) !== Number(incoming.catalog_item_id || 0)) return false;
     return true;
   }
 
@@ -1007,17 +1136,25 @@ function createBookingJobService(dependencies = {}) {
   async function scheduledPayloadMatchesExisting(db, jobRow, incoming, options = {}) {
     if (!scheduledScalarsMatch(jobRow, incoming, options)) return false;
     if (incoming.packageBooking) {
-      const packageLink = await db.query(
-        `SELECT 1 FROM public.job_items
-          WHERE job_id=$1 AND service_package_id=$2 AND service_package_tier_id=$3
-          LIMIT 1`,
-        [jobRow.job_id, incoming.packageBooking.packageId, incoming.packageBooking.tierId]
-      );
-      if (!packageLink.rows[0]) return false;
+      if (incoming.packageBooking.bundleId) {
+        const packageLinks = await db.query(
+          `SELECT service_package_id::text AS package_id, service_package_tier_id::text AS tier_id
+             FROM public.job_items WHERE job_id=$1 AND service_package_id IS NOT NULL`, [jobRow.job_id]
+        );
+        const actual = packageLinks.rows.map((row) => `${row.package_id}:${row.tier_id}`).sort();
+        const expected = incoming.packageBooking.items.map((item) => `${item.packageId}:${item.tierId}`).sort();
+        if (actual.length !== expected.length || actual.some((value, index) => value !== expected[index])) return false;
+      } else {
+        const packageLink = await db.query(
+          `SELECT 1 FROM public.job_items WHERE job_id=$1 AND service_package_id=$2 AND service_package_tier_id=$3 LIMIT 1`,
+          [jobRow.job_id, incoming.packageBooking.packageId, incoming.packageBooking.tierId]
+        );
+        if (!packageLink.rows[0]) return false;
+      }
     }
     const storedSig = await loadStoredBookingLineSignature(db, jobRow.job_id);
     const incomingSig = await buildIncomingBookingLineSignature(
-      db, incoming.payloadV2, incoming.itemIdQty, incoming.standardPrice, incoming.packageBooking
+      db, incoming.payloadV2, incoming.itemIdQty, incoming.standardPrice, incoming.packageBooking, incoming.catalogBooking
     );
     return storedSig === incomingSig;
   }
@@ -1030,11 +1167,14 @@ function createBookingJobService(dependencies = {}) {
           AND service_package_id IS NOT NULL
           AND service_package_tier_id IS NOT NULL
           AND service_package_snapshot IS NOT NULL
-        LIMIT 1`,
+        ORDER BY job_item_id`,
       [jobId]
     );
     const item = result.rows[0];
     if (!item) return null;
+    if (Object.prototype.hasOwnProperty.call(body || {}, "service_package_groups")) {
+      return compositeBookingFromSnapshots({ body, appointmentDatetime, snapshots: result.rows });
+    }
     return packageBookingFromSnapshot({
       body,
       appointmentDatetime,
@@ -1114,7 +1254,7 @@ function createBookingJobService(dependencies = {}) {
     if (!gps.ok) {
       return { status: 400, error: "ข้อมูล GPS ไม่ถูกต้อง", code: "INVALID_GPS" };
     }
-    const payload = {
+    let payload = {
       job_type: incoming.job_type,
       ac_type: incoming.ac_type,
       btu: Number(incoming.btu || 0),
@@ -1124,7 +1264,15 @@ function createBookingJobService(dependencies = {}) {
       services: incoming.services,
       admin_override_duration_min: 0,
     };
-    const durationMin = computeDurationMinMulti(payload, {
+    const composite = Array.isArray(incoming.service_package_groups)
+      ? await resolveUrgentCompositePreflight({
+          input: incoming,
+          appointmentDatetime: appointment,
+          resolver: createServicePackageResolver(pool),
+        })
+      : null;
+    if (composite) payload = composite.payload;
+    const durationMin = composite?.durationMin || computeDurationMinMulti(payload, {
       source: "public_urgent_preflight",
       conservative: true,
     });
@@ -1180,6 +1328,7 @@ function createBookingJobService(dependencies = {}) {
       } : null,
       nearby_times: preflight.nearby_times,
       duration_min: durationMin,
+      machine_count: composite?.machineCount || Number(payload.machine_count || 0),
       internal: preflight.internal,
     };
   }
@@ -1202,8 +1351,15 @@ function createBookingJobService(dependencies = {}) {
         resolved_zone: result.zone,
         reason: result.reason,
         nearby_times: result.nearby_times,
+        duration_min: result.duration_min,
+        machine_count: result.machine_count,
       });
     } catch (error) {
+      const domainStatus = Number(error?.statusCode || error?.status || 0);
+      if (domainStatus >= 400 && domainStatus < 500) {
+        const code = String(error?.code || "URGENT_PREFLIGHT_REJECTED");
+        return res.status(domainStatus).json({ error: code, code });
+      }
       console.error("[public_urgent_preflight] failed", { message: error?.message });
       return res.status(503).json({
         error: "ระบบตรวจสอบช่างขัดข้องชั่วคราว กรุณาลองอีกครั้ง",
@@ -1282,8 +1438,9 @@ function createBookingJobService(dependencies = {}) {
       packageRequestBody = { ...(req.body || {}) };
       // Parse before urgent routing so package keys can never reach or alter urgent dispatch.
       hasPackageRequest = service_package_key != null || service_package_tier_key != null
+        || req.body?.service_package_groups != null
         || req.body?.service_package_id != null || req.body?.service_package_tier_id != null;
-      if (canonicalBookingMode === "urgent" && hasPackageRequest) {
+      if (canonicalBookingMode === "urgent" && hasPackageRequest && !Array.isArray(req.body?.service_package_groups)) {
         return res.status(400).json({ error: "PACKAGE_URGENT_UNSUPPORTED", code: "PACKAGE_URGENT_UNSUPPORTED" });
       }
     } catch (_) {}
@@ -1326,7 +1483,6 @@ function createBookingJobService(dependencies = {}) {
     } catch (error) {
       return res.status(Number(error.statusCode || 400)).json({ error: error.code, code: error.code });
     }
-
     let customerSubForJob = null;
     try {
       const jwtSecretForBook = getJwtSecret();
@@ -1341,7 +1497,7 @@ function createBookingJobService(dependencies = {}) {
       customerSubForJob = null;
     }
     const catalogItemIdForJob = Number(catalog_item_id);
-    const safeCatalogItemIdForJob = Number.isFinite(catalogItemIdForJob) && catalogItemIdForJob > 0 ? catalogItemIdForJob : null;
+    let safeCatalogItemIdForJob = Number.isFinite(catalogItemIdForJob) && catalogItemIdForJob > 0 ? catalogItemIdForJob : null;
 
     // ✅ sanitize items (ไม่เชื่อราคา/ชื่อจากฝั่งลูกค้า)
     const safeItemsIn = Array.isArray(items) ? items : [];
@@ -1380,6 +1536,7 @@ function createBookingJobService(dependencies = {}) {
       : null;
     const bookingRequestKey = scheduledRequestKey || urgentRequestKey;
     const deterministicToken = scheduledDeterministicToken || urgentDeterministicToken;
+    const publicRequestFingerprint = bookingRequestKey ? adminIdempotency.requestFingerprint(req.body || {}) : null;
     if (deterministicToken) token = deterministicToken;
     const allowAdminScheduleFallback = allow_admin_schedule_fallback === true || String(allow_admin_schedule_fallback || "").trim() === "true";
     const canUseAdminScheduleFallback = bm === "scheduled" && allowAdminScheduleFallback;
@@ -1395,9 +1552,31 @@ function createBookingJobService(dependencies = {}) {
     const persistedGpsLatitude = bm === "urgent" && gps_latitude != null ? Number(gps_latitude) : null;
     const persistedGpsLongitude = bm === "urgent" && gps_longitude != null ? Number(gps_longitude) : null;
 
+    // New bookings persist a canonical request fingerprint. A replay can be
+    // returned before resolving mutable package/catalog/promotion state.
+    if (bookingRequestKey && deterministicToken && publicRequestFingerprint) {
+      const prior = await persistedBookingReplay.findPublicReplay(pool, {
+        requestKey: bookingRequestKey, bookingToken: deterministicToken, bookingMode: bm,
+      });
+      if (prior?.booking_request_fingerprint) {
+        if (String(prior.booking_request_fingerprint) !== publicRequestFingerprint) {
+          return res.status(409).json({ error: "This request key was already used for another booking. Start a new booking.", code: "IDEMPOTENCY_KEY_REUSED" });
+        }
+        const replayDuration = Number(prior.duration_min || 0);
+        const replayTicket = await loadBookingTicket(pool, prior.job_id);
+        return res.json({ success: true, replayed: true, job_id: prior.job_id,
+          booking_code: prior.booking_code, token: prior.booking_token,
+          booking_mode: prior.booking_mode || bm, dispatch_mode: prior.dispatch_mode || (bm === "urgent" ? "offer" : "normal"),
+          duration_min: replayDuration, effective_block_min: effectiveBlockMin(replayDuration),
+          travel_buffer_min: TRAVEL_BUFFER_MIN, base_total: Number(prior.job_price || 0),
+          base_total_exact: exactMoney(prior.job_price), net_total: replayTicket?.exact_total || exactMoney(prior.job_price),
+          booking_ticket: replayTicket });
+      }
+    }
+
     // A committed package retry is resolved from immutable booking history before
     // consulting today's package sale/configuration state.
-    if (bm === "scheduled" && hasPackageRequest && deterministicToken) {
+    if (hasPackageRequest && deterministicToken) {
       const idem = await pool.connect();
       let prior = null;
       try {
@@ -1441,12 +1620,15 @@ function createBookingJobService(dependencies = {}) {
           });
         }
         const replayDuration = Number(prior.duration_min || historicalPackageBooking.durationMin || 0);
+        const replayTicket = await loadBookingTicket(pool, prior.job_id);
         return res.json({
           success: true, replayed: true, job_id: prior.job_id,
           booking_code: prior.booking_code, token: prior.booking_token,
           booking_mode: bm, dispatch_mode: prior.dispatch_mode || "normal",
           duration_min: replayDuration, effective_block_min: effectiveBlockMin(replayDuration),
           travel_buffer_min: TRAVEL_BUFFER_MIN, base_total: Number(prior.job_price || 0),
+          base_total_exact: exactMoney(prior.job_price), net_total: replayTicket?.exact_total || exactMoney(prior.job_price),
+          booking_ticket: replayTicket,
         });
       }
     }
@@ -1469,9 +1651,29 @@ function createBookingJobService(dependencies = {}) {
         appointmentDatetime: appointment_datetime,
         resolver: hasPackageRequest ? createServicePackageResolver(pool) : null,
       });
-      if (packageBooking) payloadV2 = packageBooking.payload;
+      if (packageBooking) {
+        payloadV2 = packageBooking.payload;
+        if (packageBooking.bundleId) safeCatalogItemIdForJob = Number(packageBooking.bundleId);
+      }
     } catch (error) {
       return res.status(Number(error.statusCode || 400)).json({ error: error.code, code: error.code });
+    }
+    let catalogBooking = null;
+    if (!packageBooking && safeCatalogItemIdForJob) {
+      try {
+        catalogBooking = await resolveCatalogBookingPolicy(pool, {
+          catalogItemId: safeCatalogItemIdForJob, bookingMode: bm,
+          jobType: payloadV2.job_type, acType: payloadV2.ac_type,
+          btu: payloadV2.btu, washVariant: payloadV2.wash_variant, machineCount: payloadV2.machine_count,
+        }, { identity: "customer" });
+        safeCatalogItemIdForJob = catalogBooking.item_id;
+        payloadV2 = buildCatalogBookingPayload(catalogBooking);
+      } catch (error) {
+        return res.status(Number(error.statusCode || 409)).json({ error: error.code, code: error.code });
+      }
+    }
+    if (catalogBooking && itemIdQty.length) {
+      return res.status(400).json({ error: "CATALOG_STACKING_UNSUPPORTED", code: "CATALOG_STACKING_UNSUPPORTED" });
     }
     if (bm === "urgent") {
       if (!urgentPublicAdapter.isStrictUrgentCleaningPayload(payloadV2)) {
@@ -1521,10 +1723,11 @@ function createBookingJobService(dependencies = {}) {
         });
       }
     }
-    const customerPrice = packageBooking ? null : await customerPricingHelpers.resolveCustomerPricingMulti(payloadV2, pool);
+    const customerPrice = packageBooking || catalogBooking ? null : await customerPricingHelpers.resolveCustomerPricingMulti(payloadV2, pool);
     const standard_price = packageBooking
       ? packageBooking.fixedTotal
-      : Number(customerPrice.active_price ?? customerPrice.standard_price ?? 0);
+      : catalogBooking ? catalogBooking.pricing.exact_total
+        : Number(customerPrice.active_price ?? customerPrice.standard_price ?? 0);
 
   // ✅ Parse lat/lng from maps_url or address_text (fail-open)
   const parsedLL = parseLatLngFromText(maps_url) || parseLatLngFromText(address_text);
@@ -1556,7 +1759,7 @@ function createBookingJobService(dependencies = {}) {
         await idem.query("BEGIN");
         await idem.query("SELECT pg_advisory_xact_lock(hashtext($1))", [bookingRequestKey]);
         const r = await idem.query(
-          `SELECT job_id, booking_code, booking_token, dispatch_mode, duration_min, job_price,
+          `SELECT job_id, booking_code, booking_token, dispatch_mode, duration_min, job_price, catalog_item_id,
                   appointment_datetime, customer_phone, customer_name, address_text, maps_url,
                   job_zone, job_type, customer_note, allow_time_proposal, gps_latitude, gps_longitude
              FROM public.jobs
@@ -1581,6 +1784,7 @@ function createBookingJobService(dependencies = {}) {
           job_zone, job_type: packageBooking ? payloadV2.job_type : job_type, customer_note, allow_time_proposal: allowTimeProposal,
           gps_latitude: persistedGpsLatitude, gps_longitude: persistedGpsLongitude,
           duration_min: duration_min_v2, payloadV2, itemIdQty, standardPrice: standard_price, packageBooking,
+          catalogBooking, catalog_item_id: catalogBooking ? catalogBooking.item_id : undefined,
         };
         if (!(await scheduledPayloadMatchesExisting(pool, prior, incomingBooking))) {
           // Same key, materially different booking. No mutation, no identifiers/PII.
@@ -1589,6 +1793,7 @@ function createBookingJobService(dependencies = {}) {
             code: "IDEMPOTENCY_KEY_REUSED",
           });
         }
+        const replayTicket = await loadBookingTicket(pool, prior.job_id);
         return res.json({
           success: true,
           replayed: true,
@@ -1601,6 +1806,9 @@ function createBookingJobService(dependencies = {}) {
           effective_block_min: effectiveBlockMin(Number(prior.duration_min || duration_min_v2 || 0)),
           travel_buffer_min: TRAVEL_BUFFER_MIN,
           base_total: Number(prior.job_price || 0),
+          base_total_exact: exactMoney(prior.job_price),
+          net_total: replayTicket?.exact_total || exactMoney(prior.job_price),
+          booking_ticket: replayTicket,
         });
       }
     }
@@ -1677,9 +1885,9 @@ function createBookingJobService(dependencies = {}) {
         await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [bookingRequestKey]);
         const existing = await client.query(
           `SELECT job_id, booking_code, booking_token, booking_mode, dispatch_mode,
-                  duration_min, job_price, appointment_datetime, customer_phone, customer_name,
+                  duration_min, job_price, catalog_item_id, appointment_datetime, customer_phone, customer_name,
                   address_text, maps_url, job_zone, job_type, customer_note, allow_time_proposal,
-                  gps_latitude, gps_longitude
+                  gps_latitude, gps_longitude, booking_request_fingerprint
              FROM public.jobs
             WHERE booking_token=$1
               AND job_source='customer'
@@ -1694,6 +1902,20 @@ function createBookingJobService(dependencies = {}) {
           // (no mutation, no identifiers/PII). Same comparison as the pre-flight path.
           const row = existing.rows[0];
           await client.query("COMMIT");
+          if (row.booking_request_fingerprint) {
+            if (String(row.booking_request_fingerprint) !== publicRequestFingerprint) {
+              return res.status(409).json({ error: "This request key was already used for another booking. Start a new booking.", code: "IDEMPOTENCY_KEY_REUSED" });
+            }
+            const replayDuration = Number(row.duration_min || 0);
+            const replayTicket = await loadBookingTicket(pool, row.job_id);
+            return res.json({ success: true, replayed: true, job_id: row.job_id,
+              booking_code: row.booking_code, token: row.booking_token, booking_mode: bm,
+              dispatch_mode: row.dispatch_mode || (bm === "urgent" ? "offer" : "normal"),
+              duration_min: replayDuration, effective_block_min: effectiveBlockMin(replayDuration),
+              travel_buffer_min: TRAVEL_BUFFER_MIN, base_total: Number(row.job_price || 0),
+              base_total_exact: exactMoney(row.job_price), net_total: replayTicket?.exact_total || exactMoney(row.job_price),
+              booking_ticket: replayTicket });
+          }
           const replayPackageBooking = hasPackageRequest
             ? await historicalPackageBookingForReplay(pool, row.job_id, packageRequestBody, appointment_datetime)
             : null;
@@ -1705,6 +1927,8 @@ function createBookingJobService(dependencies = {}) {
             payloadV2: replayPackageBooking ? replayPackageBooking.payload : payloadV2,
             itemIdQty, standardPrice: replayPackageBooking ? replayPackageBooking.fixedTotal : standard_price,
             packageBooking: replayPackageBooking,
+            catalogBooking: replayPackageBooking ? null : catalogBooking,
+            catalog_item_id: catalogBooking ? catalogBooking.item_id : undefined,
           };
           if (!incomingBooking || !(await scheduledPayloadMatchesExisting(pool, row, incomingBooking))) {
             return res.status(409).json({
@@ -1712,6 +1936,7 @@ function createBookingJobService(dependencies = {}) {
               code: "IDEMPOTENCY_KEY_REUSED",
             });
           }
+          const replayTicket = await loadBookingTicket(pool, row.job_id);
           return res.json({
             success: true,
             replayed: true,
@@ -1724,6 +1949,9 @@ function createBookingJobService(dependencies = {}) {
             effective_block_min: effectiveBlockMin(Number(row.duration_min || duration_min_v2 || 0)),
             travel_buffer_min: TRAVEL_BUFFER_MIN,
             base_total: Number(row.job_price || 0),
+            base_total_exact: exactMoney(row.job_price),
+            net_total: replayTicket?.exact_total || exactMoney(row.job_price),
+            booking_ticket: replayTicket,
           });
         }
       }
@@ -1746,6 +1974,13 @@ function createBookingJobService(dependencies = {}) {
         packageBooking = revalidatedPackageBooking;
         payloadV2 = packageBooking.payload;
       }
+      if (catalogBooking) {
+        catalogBooking = await resolveCatalogBookingPolicy(client, {
+          catalogItemId: catalogBooking.item_id, bookingMode: bm,
+          jobType: payloadV2.job_type, acType: payloadV2.ac_type,
+          btu: payloadV2.btu, washVariant: payloadV2.wash_variant, machineCount: payloadV2.machine_count,
+        }, { identity: "customer", lock: true });
+      }
 
       let draftReservationTech = null;
       if (bm === "scheduled") {
@@ -1763,7 +1998,9 @@ function createBookingJobService(dependencies = {}) {
       }
 
       // 1) ดึงราคา base_price จาก DB
-  const serviceLineItems = packageBooking ? [packageBooking.item] : await customerPricingHelpers.buildCustomerServiceLineItemsFromPayload(
+  const serviceLineItems = packageBooking ? packageBooking.items
+    : catalogBooking ? [buildCatalogBookingItem(catalogBooking)]
+      : await customerPricingHelpers.buildCustomerServiceLineItemsFromPayload(
     (payloadV2.services && Array.isArray(payloadV2.services))
       ? payloadV2
       : { ...payloadV2, services: [{
@@ -1828,9 +2065,9 @@ function createBookingJobService(dependencies = {}) {
       // - jobs.job_price เก็บ base_total เท่านั้น
       // - ส่วนลดบันทึกแยกที่ job_promotions.applied_discount
       const base_total = packageBooking ? packageBooking.fixedTotal : Number(total || 0);
-      const promoPick = packageBooking ? null : await findBestCustomerPromotion(payloadV2, base_total, client);
+      const promoPick = packageBooking || catalogBooking ? null : await findBestCustomerPromotion(payloadV2, base_total, client);
       const appliedPromo = promoPick?.promo || null;
-      const appliedDiscount = Math.min(Number(base_total || 0), Number(promoPick?.discount || 0));
+      const appliedDiscount = exactMoney(Math.min(Number(base_total || 0), Number(promoPick?.discount || 0)).toFixed(2));
 
       // ✅ dispatch_mode:
       // - scheduled (ลูกค้าจองปกติ) => normal (ให้เข้าแอดมิน/คิวตามปกติ)
@@ -1844,8 +2081,9 @@ function createBookingJobService(dependencies = {}) {
         "booking_token", "job_source", "dispatch_mode", "customer_note",
         "maps_url", "job_zone", "duration_min", "booking_mode", "allow_time_proposal",
         "gps_latitude", "gps_longitude", "service_zone_code", "service_zone_source",
+        "booking_request_fingerprint",
       ];
-      const jobInsertValuesSql = ["$1", "$2", "$3", "$4", "$5", "$6", "NULL", "$16", "$11", "$7", "'customer'", "$14", "$8", "$9", "$10", "$12", "$13", "$15", "$17", "$18", "$19", "$20"];
+      const jobInsertValuesSql = ["$1", "$2", "$3", "$4", "$5", "$6", "NULL", "$16", "$11", "$7", "'customer'", "$14", "$8", "$9", "$10", "$12", "$13", "$15", "$17", "$18", "$19", "$20", "$21"];
       const jobInsertParams = [
         String(customer_name).trim(),
         (customer_phone || "").toString().trim(),
@@ -1867,6 +2105,7 @@ function createBookingJobService(dependencies = {}) {
         persistedGpsLongitude,
         publicUrgentZone?.service_zone_code || null,
         publicUrgentZone?.service_zone_source || null,
+        publicRequestFingerprint,
       ];
       if (catalogLinkReady) {
         jobInsertColumns.push("catalog_item_id", "customer_sub");
@@ -1885,13 +2124,13 @@ function createBookingJobService(dependencies = {}) {
       );
 
       // attach promo to job (if any)
-      if(appliedPromo && appliedDiscount > 0){
+      if(appliedPromo && Number(appliedDiscount) > 0){
         try{
           await client.query(
             `INSERT INTO public.job_promotions (job_id, promo_id, applied_discount)
              VALUES ($1,$2,$3)
              ON CONFLICT (job_id) DO UPDATE SET promo_id=EXCLUDED.promo_id, applied_discount=EXCLUDED.applied_discount`,
-            [r.rows[0].job_id, Number(appliedPromo.promo_id), Number(appliedDiscount)]
+            [r.rows[0].job_id, Number(appliedPromo.promo_id), appliedDiscount]
           );
         }catch(e){
           // fail-open: don't break booking
@@ -1983,7 +2222,7 @@ function createBookingJobService(dependencies = {}) {
           : "";
         const packageValues = packageBooking ? ",$14,$15,$16" : "";
         if (packageBooking) {
-          itemParams.push(packageBooking.packageId, packageBooking.tierId, JSON.stringify(packageBooking.snapshot));
+          itemParams.push(it.packageId, it.tierId, JSON.stringify(it.snapshot));
         }
         await client.query(
           `INSERT INTO public.job_items
@@ -2043,6 +2282,12 @@ function createBookingJobService(dependencies = {}) {
             : "ขณะนี้ยังไม่มีช่างรับงาน คุณสามารถติดตามสถานะหรือติดต่อแอดมินได้",
         }
         : {};
+      const bookingTicket = buildBookingTicket({
+        job: { booking_code, customer_name: String(customer_name).trim(), customer_phone: String(customer_phone || "").trim(),
+          appointment_datetime, job_price: base_total, applied_discount: appliedDiscount,
+          public_status: bm === "urgent" ? "กำลังค้นหาช่าง" : "รอแอดมินยืนยัน" },
+        items: computedItems,
+      });
       res.json({
         success: true,
         job_id,
@@ -2056,7 +2301,7 @@ function createBookingJobService(dependencies = {}) {
         duration_min: duration_min_v2,
         effective_block_min: effectiveBlockMin(duration_min_v2),
         travel_buffer_min: TRAVEL_BUFFER_MIN,
-        applied_promo: (appliedPromo && appliedDiscount > 0) ? {
+        applied_promo: (appliedPromo && Number(appliedDiscount) > 0) ? {
           promo_id: appliedPromo.promo_id,
           promo_name: appliedPromo.promo_name,
           promo_type: appliedPromo.promo_type,
@@ -2064,6 +2309,9 @@ function createBookingJobService(dependencies = {}) {
           discount: appliedDiscount,
         } : null,
         base_total: Number(base_total || 0),
+        base_total_exact: exactMoney(base_total),
+        net_total: bookingTicket.exact_total,
+        booking_ticket: bookingTicket,
       });
     } catch (e) {
       await client.query("ROLLBACK");
@@ -2091,6 +2339,7 @@ function createBookingJobService(dependencies = {}) {
     handleAdminBookV2,
     handleAdminServicePackageList,
     handleAdminServicePackagePreview,
+    handleAdminCatalogBookingPreview,
     handleInternalBookFromAi,
     handlePublicCustomerUrgentBook,
     handlePublicUrgentPreflight,

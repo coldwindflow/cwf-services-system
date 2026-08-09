@@ -109,6 +109,30 @@ test("package payload contains only keys and actual BTU while availability is se
   assert.equal("services" in query, false);
 });
 
+test("composite Store selection submits only stable package keys, BTU, quantity, and keeps duplicate-submit key", () => {
+  const root = loadBooking();
+  const previewData = { package_name: "Bundle", fixed_total_price: "3198.00", duration_min: 180,
+    redeem_until: "2027-01-31T16:59:59.000Z", groups: [], payload: { services: [
+      { job_type: "wash", ac_type: "wall", btu: 12000, machine_count: 2, wash_variant: "premium", repair_variant: "" },
+      { job_type: "wash", ac_type: "wall", btu: 18000, machine_count: 2, wash_variant: "premium", repair_variant: "" },
+    ] } };
+  root.state.updateDraft("scheduled", { customer_name: "TEST", customer_phone: "0812345678", address_text: "TEST",
+    selectedSlot: { date: root.state.draft.scheduled.date, start: "09:00" },
+    catalog_item_id: 51,
+    service_package_groups: [{ package_key: "small", btu: 12000, quantity: 2 }, { package_key: "large", btu: 18000, quantity: 2 }],
+    service_package_bundle_preview: previewData, services: [] });
+  root.state.setScheduledPreview("package", { status: "success", data: previewData, error: "", verified: true });
+  const payload = root.bookingScheduled._test.buildSubmitPayload();
+  assert.equal(payload.service_package_groups.length, 2);
+  assert.deepEqual(JSON.parse(JSON.stringify(payload.service_package_groups)), [
+    { package_key: "small", btu: 12000, quantity: 2 }, { package_key: "large", btu: 18000, quantity: 2 },
+  ]);
+  assert.match(payload.scheduled_request_key, /^[A-Za-z0-9_-]{16,128}$/);
+  assert.equal(payload.catalog_item_id, 51);
+  for (const forbidden of ["fixed_total_price", "duration_min", "snapshot", "service_package_id"]) assert.equal(forbidden in payload, false);
+  assert.equal(root.bookingScheduled._test.validateServiceStep(), "");
+});
+
 test("ordinary payload remains ordinary and package horizon is isolated", () => {
   const root = loadBooking();
   const ordinaryMax = root.bookingScheduled._test.maxBookingDate();
@@ -168,7 +192,7 @@ test("build id is coordinated and service worker privacy/network behavior remain
   const app = read("customer-app/assets/customer-app.js");
   const manifest = read("customer-app/manifest.webmanifest");
   const build = sw.match(/BUILD_ID = "([^"]+)"/)[1];
-  assert.equal(build, "20260808_homepage_service_packages_v2");
+  assert.equal(build, "20260809_issue267_catalog_flow_v9");
   assert.match(index, new RegExp(build));
   assert.match(app, new RegExp(`BUILD_ID = "${build}"`));
   assert.match(manifest, new RegExp(`index\\.html\\?v=${build}#home`));

@@ -22,6 +22,9 @@ const { loadCustomerScheduledLoadMap } = require("../server/services/public/cust
 const { registerPublicCustomerBookingRoutes } = require("../server/routes/public/customerBookings");
 const { registerAdminBookingRoutes } = require("../server/routes/admin/adminBookings");
 const urgentPublicAdapterBase = require("../server/services/urgentPublicAdapter");
+const { resolveCatalogBookingPolicy, buildCatalogBookingItem } = require("../server/services/booking/catalogBookingPolicy");
+const { calcBookingPricing } = require("../server/services/booking/exactPricing");
+const { createServicePackageResolver } = require("../server/services/packages/servicePackageResolver");
 
 const REPO_ROOT = path.resolve(__dirname, "..");
 
@@ -72,6 +75,7 @@ test("public/admin/internal routes and urgent alias preserve registration and no
     async handleAdminBookV2(req, res) { calls.push(["admin", req.body]); return res.json({ ok: true }); },
     async handleAdminServicePackageList(_req, res) { return res.json({ service_packages: [] }); },
     async handleAdminServicePackagePreview(_req, res) { return res.json({}); },
+    async handleAdminCatalogBookingPreview(_req, res) { return res.json({}); },
     async handleInternalBookFromAi(req, res) { calls.push(["internal", req.body]); return res.json({ ok: true }); },
   };
   const requireAdminSession = () => {};
@@ -85,20 +89,22 @@ test("public/admin/internal routes and urgent alias preserve registration and no
     "/admin/book_v2",
     "/admin/service-packages",
     "/admin/service-packages/preview",
+    "/admin/catalog-booking-preview",
     "/admin/urgent_broadcast_v2",
     "/internal/book_from_ai",
   ]);
   assert.equal(registrations[2].handlers[0], requireAdminSession);
   assert.equal(registrations[5].handlers[0], requireAdminSession);
-  assert.equal(registrations[6].handlers[0], requireInternalApiKeyOnly);
+  assert.equal(registrations[6].handlers[0], requireAdminSession);
+  assert.equal(registrations[7].handlers[0], requireInternalApiKeyOnly);
 
   const res = responseHarness();
-  await registrations[5].handlers.at(-1)({ body: { customer_name: "Alias" } }, res);
+  await registrations[6].handlers.at(-1)({ body: { customer_name: "Alias" } }, res);
   assert.equal(calls.at(-1)[0], "admin");
   assert.equal(calls.at(-1)[1].booking_mode, "urgent");
   assert.equal(calls.at(-1)[1].dispatch_mode, "offer");
 
-  await registrations[6].handlers.at(-1)({ body: { customer_name: "AI" } }, res);
+  await registrations[7].handlers.at(-1)({ body: { customer_name: "AI" } }, res);
   assert.equal(calls.at(-1)[0], "internal");
 });
 
@@ -195,7 +201,8 @@ test.before(async () => {
     DROP TABLE IF EXISTS public.technician_special_slots_v2, public.technician_workdays_v2,
       public.technician_monthly_work_calendar, public.technician_service_matrix,
       public.job_updates_v2, public.job_units, public.job_promotions, public.job_offers, public.job_assignments,
-      public.job_team_members, public.job_items, public.catalog_items,
+      public.job_team_members, public.job_items, public.service_package_tiers, public.service_packages,
+      public.catalog_items, public.customer_service_price_rules,
       public.technician_profiles, public.users, public.jobs CASCADE
   `);
   await pool.query(`
@@ -231,6 +238,9 @@ test.before(async () => {
       ,approved_by_admin TEXT
       ,approved_at TIMESTAMPTZ
       ,cancel_reason TEXT
+      ,catalog_item_id BIGINT
+      ,admin_request_key TEXT
+      ,admin_request_fingerprint TEXT
     )
   `);
   await pool.query(`
@@ -248,7 +258,10 @@ test.before(async () => {
       normal_unit_price NUMERIC,
       customer_price_label TEXT,
       customer_campaign_name TEXT,
-      customer_price_source TEXT
+      customer_price_source TEXT,
+      service_package_id BIGINT,
+      service_package_tier_id BIGINT,
+      service_package_snapshot JSONB
     )
   `);
   await pool.query(`CREATE TABLE public.job_team_members (job_id BIGINT, username TEXT, is_primary BOOLEAN, UNIQUE(job_id, username))`);
@@ -275,7 +288,32 @@ test.before(async () => {
     )
   `);
   await pool.query(`CREATE TABLE public.job_updates_v2 (update_id BIGSERIAL PRIMARY KEY, job_id BIGINT, action TEXT, payload_json JSONB)`);
-  await pool.query(`CREATE TABLE public.catalog_items (item_id BIGSERIAL PRIMARY KEY, item_name TEXT, base_price NUMERIC, is_active BOOLEAN, is_customer_visible BOOLEAN)`);
+  await pool.query(`CREATE TABLE public.customer_service_price_rules (
+    rule_id BIGSERIAL PRIMARY KEY, job_type TEXT, ac_type TEXT, wash_variant TEXT,
+    btu_min INT, btu_max INT, machine_min INT, machine_max INT,
+    normal_price NUMERIC(12,2), active_price NUMERIC(12,2), label TEXT, campaign_name TEXT,
+    effective_from TIMESTAMPTZ, effective_to TIMESTAMPTZ, is_active BOOLEAN
+  )`);
+  await pool.query(`CREATE TABLE public.catalog_items (
+    item_id BIGSERIAL PRIMARY KEY, item_name TEXT, base_price NUMERIC(12,2),
+    job_category TEXT, booking_mode TEXT, booking_flow_policy TEXT,
+    booking_ac_type TEXT, booking_btu INT, booking_wash_variant TEXT,
+    price_rule_id BIGINT, is_active BOOLEAN, is_customer_visible BOOLEAN,
+    service_bundle_key TEXT, service_package_sell_start_at TIMESTAMPTZ,
+    service_package_sell_end_at TIMESTAMPTZ, service_package_redeem_until TIMESTAMPTZ
+  )`);
+  await pool.query(`CREATE TABLE public.service_packages (
+    service_package_id BIGSERIAL PRIMARY KEY, package_key TEXT UNIQUE, display_name TEXT,
+    description TEXT, service_key TEXT, service_name TEXT, job_type TEXT, ac_type TEXT,
+    wash_variant TEXT, btu_min INT, btu_max INT, service_unit_duration_minutes INT,
+    sell_start_at TIMESTAMPTZ, sell_end_at TIMESTAMPTZ, redeem_until TIMESTAMPTZ,
+    is_active BOOLEAN, is_customer_visible BOOLEAN, catalog_item_id BIGINT, sort_order INT DEFAULT 0
+  )`);
+  await pool.query(`CREATE TABLE public.service_package_tiers (
+    service_package_tier_id BIGSERIAL PRIMARY KEY, service_package_id BIGINT,
+    tier_key TEXT, display_name TEXT, service_quantity INT, fixed_total_price NUMERIC(12,2),
+    sort_order INT DEFAULT 0, is_active BOOLEAN
+  )`);
   await pool.query(`CREATE TABLE public.users (username TEXT PRIMARY KEY, role TEXT)`);
   await pool.query(`
     CREATE TABLE public.technician_profiles (
@@ -318,7 +356,8 @@ test.after(async () => {
     DROP TABLE IF EXISTS public.technician_special_slots_v2, public.technician_workdays_v2,
       public.technician_monthly_work_calendar, public.technician_service_matrix,
       public.job_updates_v2, public.job_units, public.job_promotions, public.job_offers, public.job_assignments,
-      public.job_team_members, public.job_items, public.catalog_items,
+      public.job_team_members, public.job_items, public.service_package_tiers, public.service_packages,
+      public.catalog_items, public.customer_service_price_rules,
       public.technician_profiles, public.users, public.jobs CASCADE
   `);
   await pool.end();
@@ -329,7 +368,8 @@ test.beforeEach(async () => {
   await pool.query(`TRUNCATE public.technician_special_slots_v2, public.technician_workdays_v2,
     public.technician_monthly_work_calendar, public.technician_service_matrix,
     public.job_updates_v2, public.job_units, public.job_promotions, public.job_offers, public.job_assignments,
-    public.job_team_members, public.job_items, public.catalog_items,
+    public.job_team_members, public.job_items, public.service_package_tiers, public.service_packages,
+    public.catalog_items, public.customer_service_price_rules,
     public.technician_profiles, public.users, public.jobs RESTART IDENTITY CASCADE`);
 });
 
@@ -339,6 +379,42 @@ function dbTest(name, fn) {
     return fn(t);
   });
 }
+
+dbTest("real PostgreSQL: selected catalog policy locks its parent and preserves exact campaign price", async () => {
+  const rule = await pool.query(
+    `INSERT INTO public.customer_service_price_rules
+      (job_type,ac_type,wash_variant,btu_min,btu_max,machine_min,machine_max,normal_price,active_price,label,campaign_name,effective_from,effective_to,is_active)
+     VALUES ('wash','cassette','',18000,NULL,1,NULL,950.00,699.00,'TEST exact','TEST selected catalog','2000-01-01','2099-12-31',TRUE)
+     RETURNING rule_id`
+  );
+  const item = await pool.query(
+    `INSERT INTO public.catalog_items
+      (item_name,base_price,job_category,booking_mode,booking_flow_policy,booking_ac_type,booking_btu,booking_wash_variant,price_rule_id,is_active,is_customer_visible)
+     VALUES ('TEST Catalog Cassette',850.00,'wash','bookable','scheduled_and_urgent','cassette',24000,'',$1,TRUE,TRUE)
+     RETURNING item_id`,
+    [rule.rows[0].rule_id]
+  );
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const resolved = await resolveCatalogBookingPolicy(client, {
+      catalogItemId: item.rows[0].item_id, bookingMode: "urgent", jobType: "wash",
+      acType: "cassette", btu: 24000, washVariant: "", machineCount: 2,
+    }, { identity: "customer", lock: true });
+    assert.equal(resolved.pricing.unit_price, "699.00");
+    assert.equal(resolved.pricing.exact_total, "1398.00");
+    assert.equal(typeof resolved.pricing.exact_total, "string");
+    assert.deepEqual(buildCatalogBookingItem(resolved), {
+      item_id: null, item_name: "TEST Catalog Cassette", qty: 2, unit_price: "699.00", line_total: "1398.00",
+      is_service: true, customer_price_rule_id: Number(rule.rows[0].rule_id), normal_unit_price: "950.00",
+      customer_price_label: "TEST exact", customer_campaign_name: "TEST selected catalog",
+      customer_price_source: "catalog_price_rule",
+    });
+    await client.query("ROLLBACK");
+  } finally {
+    client.release();
+  }
+});
 
 function makeDependencies(overrides = {}) {
   let bookingCodeSequence = 0;
@@ -361,10 +437,7 @@ function makeDependencies(overrides = {}) {
     parseLatLngFromText: () => null,
     resolveMapsUrlToLatLng: async () => null,
     expireTechnicianAcceptStatuses: async () => {},
-    calcPricing: (items) => {
-      const subtotal = items.reduce((sum, item) => sum + Number(item.line_total || 0), 0);
-      return { subtotal, discount: 0, total: subtotal };
-    },
+    calcPricing: calcBookingPricing,
     rankTechniciansForServiceZone: (rows) => rows,
     buildOffMapForDate: async () => new Map(),
     isTechOffOnDate: () => false,
@@ -391,6 +464,7 @@ function makeDependencies(overrides = {}) {
     },
     publicCustomerAvailabilityDeps: () => ({}),
     findBestCustomerPromotion: async () => ({ promo: null, discount: 0 }),
+    createServicePackageResolver: (db) => createServicePackageResolver({ db }),
     availabilityEngine: {
       buildCriteriaList: (payload) => [{ job: "wash", ac: payload.ac_type || "wall", wash: payload.wash_variant || "normal" }],
       validateCriteriaList: () => true,
@@ -419,6 +493,69 @@ function makeDependencies(overrides = {}) {
     ...overrides,
   };
 }
+
+dbTest("real PostgreSQL: Admin package exact total persists through transaction, HTTP response, and replay", async () => {
+  const parent = await pool.query(
+    `INSERT INTO public.catalog_items
+      (item_name,base_price,job_category,booking_mode,booking_flow_policy,is_active,is_customer_visible,
+       service_bundle_key,service_package_sell_start_at,service_package_sell_end_at,service_package_redeem_until)
+     VALUES ('TEST Exact Bundle',0.00,'wash','service_package','scheduled_and_urgent',TRUE,TRUE,
+       'test-exact-bundle','2026-08-01','2026-08-31','2027-01-31') RETURNING item_id`
+  );
+  const packageRow = await pool.query(
+    `INSERT INTO public.service_packages
+      (package_key,display_name,service_key,service_name,job_type,ac_type,wash_variant,btu_min,btu_max,
+       service_unit_duration_minutes,is_active,is_customer_visible,catalog_item_id,sort_order)
+     VALUES ('test-exact-q4','TEST Exact Variant','test-exact-service','TEST Exact Service','wash','wall','premium',
+       NULL,12000,45,TRUE,TRUE,$1,0) RETURNING service_package_id`,
+    [parent.rows[0].item_id]
+  );
+  await pool.query(
+    `INSERT INTO public.service_package_tiers
+      (service_package_id,tier_key,display_name,service_quantity,fixed_total_price,sort_order,is_active)
+     VALUES ($1,'test-q4','TEST 4 units',4,1399.50,0,TRUE)`,
+    [packageRow.rows[0].service_package_id]
+  );
+
+  const service = createBookingJobService(makeDependencies());
+  const request = {
+    customer_name: "TEST Admin Exact",
+    customer_phone: "0812345678",
+    appointment_datetime: "2026-08-20T10:00:00+07:00",
+    address_text: "TEST isolated PostgreSQL",
+    booking_mode: "scheduled",
+    dispatch_mode: "normal",
+    assign_mode: "single",
+    technician_username: "tech-exact",
+    tech_type: "company",
+    admin_request_key: "admin-exact-package-q4-0001",
+    service_package_groups: [{ package_key: "test-exact-q4", btu: 12000, quantity: 4 }],
+  };
+  const initial = await invoke(service.handleAdminBookV2, request);
+  const replay = await invoke(service.handleAdminBookV2, request);
+
+  assert.equal(initial.statusCode, 200);
+  assert.equal(initial.body.total_exact, "1399.50");
+  assert.equal(initial.body.subtotal_exact, "1399.50");
+  assert.equal(initial.body.discount_exact, "0.00");
+  assert.equal(replay.statusCode, 200);
+  assert.equal(replay.body.replayed, true);
+  assert.equal(replay.body.job_id, initial.body.job_id);
+  assert.equal(replay.body.booking_code, initial.body.booking_code);
+  assert.equal(replay.body.total_exact, "1399.50");
+
+  const jobs = await pool.query("SELECT job_price::text AS total FROM public.jobs WHERE admin_request_key=$1", [request.admin_request_key]);
+  const lines = await pool.query(
+    `SELECT qty::int AS quantity, line_total::text AS total, service_package_snapshot
+       FROM public.job_items WHERE job_id=$1`,
+    [initial.body.job_id]
+  );
+  assert.deepEqual(jobs.rows, [{ total: "1399.50" }]);
+  assert.equal(lines.rows.length, 1);
+  assert.equal(lines.rows[0].quantity, 4);
+  assert.equal(lines.rows[0].total, "1399.50");
+  assert.equal(lines.rows[0].service_package_snapshot.fixed_total_price, "1399.50");
+});
 
 async function seedTechnicians() {
   await pool.query(`INSERT INTO public.users (username, role) VALUES ('tech-a','technician'),('tech-b','technician')`);
@@ -554,7 +691,7 @@ dbTest("real PostgreSQL: public scheduled success preserves response, status, it
   assert.deepEqual(Object.keys(result.body), [
     "success", "job_id", "booking_code", "token", "booking_mode", "dispatch_mode",
     "offers_count", "urgent_offer_enabled", "duration_min", "effective_block_min",
-    "travel_buffer_min", "applied_promo", "base_total",
+    "travel_buffer_min", "applied_promo", "base_total", "base_total_exact", "net_total", "booking_ticket",
   ]);
   assert.equal(result.body.booking_mode, "scheduled");
   assert.equal(result.body.base_total, 600);
@@ -623,6 +760,9 @@ dbTest("real PostgreSQL: scheduled retry replays the same job without duplicate 
   assert.equal(replay.statusCode, 200);
   assert.equal(replay.body.replayed, true);
   assert.equal(replay.body.job_id, first.body.job_id);
+  assert.deepEqual(replay.body.booking_ticket, first.body.booking_ticket);
+  assert.equal(first.body.booking_ticket.customer_phone, body.customer_phone.replace(/\D/g, ""));
+  assert.doesNotMatch(JSON.stringify(first.body.booking_ticket), /job_id|booking_token|package_id|tier_id|snapshot|address|maps/i);
   assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.jobs`)).rows[0].count), 1);
   assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_items`)).rows[0].count), 1);
 });
@@ -686,6 +826,9 @@ dbTest("real PostgreSQL: public urgent creates one offer set and notifies only a
   assert.equal(Object.hasOwn(first.body, "offers_count"), false);
   assert.equal(replay.body.replayed, true);
   assert.equal(replay.body.booking_code, first.body.booking_code);
+  assert.deepEqual(replay.body.booking_ticket, first.body.booking_ticket);
+  assert.equal(first.body.booking_ticket.public_status, "กำลังค้นหาช่าง");
+  assert.doesNotMatch(JSON.stringify(first.body.booking_ticket), /job_id|booking_token|package_id|tier_id|snapshot|address|maps/i);
   assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.jobs`)).rows[0].count), 1);
   assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_offers`)).rows[0].count), 2);
   assert.equal(Number((await pool.query(`SELECT COUNT(*) FROM public.job_assignments`)).rows[0].count), 0);

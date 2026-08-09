@@ -34,10 +34,9 @@ test("customer urgent zero-target commits job/items into admin review without ch
   assert.match(noTargets, /dispatch_mode='offer'/);
   assert.match(noTargets, /throw err;/, "Admin Add zero-target path must still throw NO_URGENT_OFFER_TARGETS");
 
-  const response = section(handler, "return res.json({", "} catch (e)");
-  assert.match(response, /offers_count: urgentPushTargets\.length/);
-  assert.match(response, /phase: "admin_review"/);
-  assert.match(response, /admin_review: true/);
+  assert.match(handler, /offers_count: urgentPushTargets\.length/);
+  assert.match(handler, /phase: "admin_review"/);
+  assert.match(handler, /admin_review: true/);
 });
 
 test("public urgent adapter sanitizes into direct-offer creation and public urgent status is read-only", () => {

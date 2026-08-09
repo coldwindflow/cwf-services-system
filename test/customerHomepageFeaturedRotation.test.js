@@ -255,7 +255,7 @@ test("render contract exposes exactly one active six-card page and accessible in
   assert.equal((html.match(/aria-hidden="true"/g) || []).length, 2);
   assert.equal((html.match(/data-featured-dot="/g) || []).length, 3);
   assert.equal((html.match(/aria-selected="true"/g) || []).length, 1);
-  assert.equal((html.match(/class="homepage-service-card"/g) || []).length, 18);
+  assert.equal((html.match(/class="homepage-service-card(?:\s[^"]*)?"/g) || []).length, 18);
   assert.match(html, /data-featured-page="1"[\s\S]*?data-home-featured-detail="7"/);
   assert.match(html, /data-featured-page="2"[\s\S]*?data-home-featured-detail="13"/);
   assert.doesNotMatch(html, /homepage-featured-page[\s\S]*grid-template-columns[^]*repeat\(4/);
@@ -418,6 +418,6 @@ test("compact CSS and cache build remain consistent with six-card rotation", () 
   assert.match(css, /\.homepage-featured-page\s*\{[^}]*grid-area:\s*1\s*\/\s*1/s);
   assert.match(css, /transition:\s*opacity 350ms/);
   assert.match(css, /prefers-reduced-motion:\s*reduce/);
-  const build = "20260808_homepage_service_packages_v2";
+  const build = "20260809_issue267_catalog_flow_v9";
   for (const source of [html, sw, boot, manifest]) assert.match(source, new RegExp(build));
 });

@@ -13,29 +13,47 @@
   let preflightEpoch = 0;
   let activeContainer = null;
   let visibilityRefresh = null;
+  let ticketCopyState = { status: "idle", error: "" };
 
   function draft() {
     return root.state.draft.urgent || {};
   }
 
-  function canonicalCleaningLine(input) {
-    const line = root.services.normalizeServiceLine(input || {});
-    return root.services.createServiceLine({
+  function bundlePreview() {
+    return draft().service_package_bundle_preview || null;
+  }
+
+  function hasCompositePackage() {
+    return Array.isArray(draft().service_package_groups) && draft().service_package_groups.length > 0
+      && bundlePreview()?.server_verified === true;
+  }
+
+  function canonicalCleaningLine(input, composite = false) {
+    const line = composite
+      ? root.services.normalizeCompositeServiceLine(input || {})
+      : root.services.normalizeServiceLine(input || {});
+    if (!line) return null;
+    return {
       line_id: line.line_id,
       job_type: "ล้าง",
       ac_type: line.ac_type,
       btu: line.btu,
       machine_count: line.machine_count,
       wash_variant: line.wash_variant,
-    });
+      repair_variant: "",
+    };
   }
 
   function sanitizeUrgentDraft() {
     const current = draft();
-    const sourceLines = Array.isArray(current.services) && current.services.length
-      ? current.services
+    const composite = hasCompositePackage();
+    const authoritativeLines = composite && Array.isArray(bundlePreview()?.payload?.services)
+      ? bundlePreview().payload.services
+      : current.services;
+    const sourceLines = Array.isArray(authoritativeLines) && authoritativeLines.length
+      ? authoritativeLines
       : [current];
-    const lines = sourceLines.slice(0, 10).map(canonicalCleaningLine);
+    const lines = sourceLines.slice(0, 10).map((line) => canonicalCleaningLine(line, composite)).filter(Boolean);
     const first = lines[0] || canonicalCleaningLine({});
     const patch = {
       service_kind: "clean",
@@ -51,7 +69,10 @@
     const scalarChanged = Object.entries(patch)
       .filter(([key]) => key !== "services")
       .some(([key, value]) => String(current[key] ?? "") !== String(value));
-    const linesChanged = JSON.stringify(root.services.normalizeServiceLines(current).map((line) => ({
+    const normalizedCurrentLines = composite
+      ? (current.services || []).map(root.services.normalizeCompositeServiceLine).filter(Boolean)
+      : root.services.normalizeServiceLines(current);
+    const linesChanged = JSON.stringify(normalizedCurrentLines.map((line) => ({
       line_id: line.line_id,
       job_type: line.job_type,
       ac_type: line.ac_type,
@@ -64,10 +85,13 @@
   }
 
   function services() {
-    return root.services.normalizeServiceLines(sanitizeUrgentDraft());
+    const sanitized = sanitizeUrgentDraft();
+    if (hasCompositePackage()) return (sanitized.services || []).map(root.services.normalizeCompositeServiceLine).filter(Boolean);
+    return root.services.normalizeServiceLines(sanitized);
   }
 
   function servicePayload() {
+    if (hasCompositePackage()) return root.services.payloadFromCompositeServiceLines(services());
     return root.services.payloadFromServiceLines(services());
   }
 
@@ -76,6 +100,9 @@
   }
 
   function serviceSummary() {
+    if (hasCompositePackage()) {
+      return (bundlePreview()?.groups || []).map((group) => `${group.package_name || group.package_key} • ${group.btu} BTU • ${group.quantity} เครื่อง`).join(" • ");
+    }
     return services().map((line) => root.services.serviceLabel(line)).join(" • ");
   }
 
@@ -136,6 +163,12 @@
       ...(gps ? { gps_latitude: gps.latitude, gps_longitude: gps.longitude } : {}),
       ...payload,
       services: cleaningLines,
+      ...(Number.isSafeInteger(Number(d.catalog_item_id)) && Number(d.catalog_item_id) > 0
+        ? { catalog_item_id: Number(d.catalog_item_id) } : {}),
+      ...(Array.isArray(d.service_package_groups) && d.service_package_groups.length
+        ? { service_package_groups: d.service_package_groups.map((group) => ({
+          package_key: String(group.package_key || ""), btu: Number(group.btu), quantity: Number(group.quantity),
+        })) } : {}),
     };
   }
 
@@ -222,11 +255,15 @@
   }
 
   function dispatchFingerprint() {
+    const canonicalPayload = servicePayload();
     return JSON.stringify({
       zone: zoneFingerprint(),
       appointment_datetime: appointmentDatetime(),
       allow_time_proposal: draft().allow_time_proposal === true,
-      services: services().map((line) => root.services.normalizeServiceLine(line)),
+      services: canonicalPayload?.services || [],
+      catalog_item_id: Number(draft().catalog_item_id || 0) || null,
+      service_package_groups: Array.isArray(draft().service_package_groups) ? draft().service_package_groups : [],
+      authoritative_duration_min: Number(bundlePreview()?.duration_min || 0),
     });
   }
 
@@ -246,6 +283,13 @@
       delete payload.urgent_request_key;
       const result = await root.api.preflightUrgentDispatch(payload);
       if (requestEpoch !== preflightEpoch || dispatchFingerprint() !== fingerprint) return null;
+      if (hasCompositePackage()) {
+        const expectedQuantity = draft().service_package_groups.reduce((sum, group) => sum + Number(group.quantity || 0), 0);
+        if (Number(result?.duration_min) !== Number(bundlePreview()?.duration_min)
+            || Number(result?.machine_count) !== expectedQuantity) {
+          throw new Error("PACKAGE_PREFLIGHT_MISMATCH");
+        }
+      }
       const canDispatch = result?.can_dispatch === true;
       const error = canDispatch
         ? ""
@@ -371,6 +415,12 @@
   }
 
   function renderServiceReviewList() {
+    if (hasCompositePackage()) {
+      const preview = bundlePreview();
+      return `<div class="service-line-review-list">${(preview.groups || []).map((group) => `
+        <div class="service-summary-box"><span>${root.utils.escapeHtml(group.package_name || group.package_key)}</span>
+          <strong>${root.utils.escapeHtml(String(group.btu))} BTU · ${root.utils.escapeHtml(String(group.quantity))} เครื่อง</strong></div>`).join("")}</div>`;
+    }
     return `
       <div class="service-line-review-list">
         ${services().map((line, index) => {
@@ -393,6 +443,18 @@
 
   function renderServicesStep() {
     const error = root.state.urgentFlow.error;
+    if (hasCompositePackage()) {
+      const preview = bundlePreview();
+      return `
+        <section class="card form-card urgent-card-fx" data-urgent-step-panel="services">
+          <div class="section-head"><span class="section-kicker">ขั้นตอน 1 จาก 3</span><h2>${root.utils.escapeHtml(preview.package_name || "แพ็กเกจบริการ")}</h2>
+            <p class="muted">สิทธิ์ ราคา และจำนวนยึดตามแพ็กเกจที่เลือกจากร้านค้า</p></div>
+          <div class="service-line-review-list">${(preview.groups || []).map((group) => `<div class="service-summary-box"><strong>${root.utils.escapeHtml(group.package_name || group.package_key)}</strong><small>${root.utils.escapeHtml(group.btu)} BTU · ${root.utils.escapeHtml(group.quantity)} เครื่อง</small></div>`).join("")}</div>
+          ${renderPricingSummary()}
+        </section>
+        ${error ? `<div class="state-box is-error" role="alert">${root.utils.escapeHtml(error)}</div>` : ""}
+        <div class="button-row"><button class="primary-btn btn-shine" type="button" data-urgent-action="to-details">กรอกข้อมูลหน้างาน</button></div>`;
+    }
     return `
       <section class="card form-card urgent-card-fx" data-urgent-step-panel="services">
         <div class="section-head">
@@ -594,6 +656,20 @@
   }
 
   async function refreshPricing(container) {
+    if (hasCompositePackage()) {
+      const preview = bundlePreview();
+      root.state.setUrgentFlow({ pricing: { status: "success", data: {
+        standard_price: preview.fixed_total_price, active_price: preview.fixed_total_price,
+        duration_min: Number(preview.duration_min), price_lines: [], package_snapshot: true,
+      }, error: "" } });
+      if (container) paint(container);
+      return;
+    }
+    if (root.services.catalogQuoteMatchesDraft(draft(), "urgent") && draft().catalog_booking_pricing) {
+      root.state.setUrgentFlow({ pricing: { status: "success", data: draft().catalog_booking_pricing, error: "" } });
+      if (container) paint(container);
+      return;
+    }
     const payload = servicePayload();
     if (!payload) return;
     const requestEpoch = ++pricingEpoch;
@@ -615,6 +691,11 @@
   function invalidatePricing() {
     pricingEpoch += 1;
     root.state.setUrgentFlow({ pricing: { status: "idle", data: null, error: "" }, error: "" });
+    if (!hasCompositePackage()) root.state.updateDraft("urgent", {
+      catalog_item_id: null,
+      catalog_booking_quote: null,
+      catalog_booking_pricing: null,
+    });
     markPayloadChanged();
   }
 
@@ -710,6 +791,11 @@
     const canCancel = Boolean(cancellationToken)
       && ["pending", "fallback", "actionable"].includes(view.state)
       && flow.liveStatus?.can_cancel !== false;
+    const ticketText = root.bookingTicket?.formatText?.(result.booking_ticket) || "";
+    const copied = ticketCopyState.status === "copied";
+    const manual = ticketCopyState.status === "manual";
+    const showLineHandoff = copied || manual;
+    const confirmedNetTotal = root.bookingTicket?.confirmedNetTotal?.(result) || "0.00";
     return `
       ${view.state === "pending" ? `
         <section class="card waiting-room waiting-room-fx" data-urgent-search-animation>
@@ -740,8 +826,16 @@
           <div class="data-row"><strong>รหัสการจอง</strong><span class="booking-code-value">${root.utils.escapeHtml(result.booking_code || "-")}</span></div>
           <div class="data-row"><strong>บริการ</strong><span class="muted">${root.utils.escapeHtml(serviceSummary())}</span></div>
           <div class="data-row"><strong>เวลาที่ต้องการ</strong><span class="muted">${root.utils.escapeHtml(formatAppointment())}</span></div>
+          <div class="data-row"><strong>ราคา</strong><span class="muted">${root.utils.escapeHtml(confirmedNetTotal)} บาท</span></div>
           <div class="data-row"><strong>สถานะ</strong><span class="muted">${root.utils.escapeHtml(view.statusLabel)}</span></div>
         </div>
+        ${ticketText ? `<div class="booking-ticket-handoff"><p>ส่ง Ticket นี้ใน LINE OA เพื่อให้แอดมินทราบว่า LINE นี้เป็นผู้ติดต่อของรายการจองใด</p>
+          <p class="muted">Ticket มีชื่อและเบอร์โทรที่ใช้จอง กรุณาตรวจสอบก่อนคัดลอก</p>
+          <div class="button-row"><button type="button" class="secondary-btn" data-urgent-action="copy-booking-ticket" ${ticketCopyState.status === "copying" || copied ? "disabled" : ""}>${copied ? "คัดลอกแล้ว" : "คัดลอก Ticket ส่งให้แอดมิน"}</button>
+          ${showLineHandoff ? '<a class="primary-btn" href="https://lin.ee/fG1Oq7y" target="_blank" rel="noopener noreferrer">เปิด LINE OA เพื่อส่ง Ticket</a>' : ""}</div>
+          <div role="status" aria-live="polite">${copied ? "คัดลอกแล้ว" : root.utils.escapeHtml(ticketCopyState.error || "")}</div>
+          ${manual ? `<label for="urgent-ticket-manual">คัดลอกข้อความด้านล่างด้วยตนเอง</label><textarea id="urgent-ticket-manual" class="input textarea" rows="10" readonly>${root.utils.escapeHtml(ticketText)}</textarea>` : ""}
+        </div>` : ""}
         ${flow.liveStatusError ? `<div class="state-box is-error" role="alert">${root.utils.escapeHtml(flow.liveStatusError)}</div>` : ""}
         <div class="button-row">
           ${flow.liveStatusError ? `<button class="primary-btn" type="button" data-urgent-action="retry-status">ลองตรวจสอบสถานะอีกครั้ง</button>` : ""}
@@ -779,6 +873,7 @@
     try {
       const result = await root.api.submitUrgentRequest(buildSubmitPayload());
       if (submitEpoch !== pollEpoch) return;
+      ticketCopyState = { status: "idle", error: "" };
       const trackingKey = trackingKeyFromResult(result);
       if (trackingKey) root.state.updateDraft("tracking", { trackingCode: trackingKey });
       root.state.setUrgentFlow({ step: "submitted", status: "success", error: "", result, liveStatus: null, liveStatusError: "" });
@@ -1050,6 +1145,7 @@
           root.state.setUrgentFlow({ liveStatusError: "" });
           paint(container);
         } else if (action === "new-request") {
+          ticketCopyState = { status: "idle", error: "" };
           root.state.resetUrgentDraft();
           paint(container);
           refreshPricing(container);
@@ -1058,6 +1154,15 @@
           root.state.updateDraft("tracking", { trackingCode: key });
           root.state.setTracking({ status: "idle", data: null, error: "" });
           root.utils.routeTo("tracking");
+        } else if (action === "copy-booking-ticket") {
+          if (ticketCopyState.status === "copying" || ticketCopyState.status === "copied") return;
+          const text = root.bookingTicket?.formatText?.(root.state.urgentFlow?.result?.booking_ticket) || "";
+          ticketCopyState = { status: "copying", error: "" }; paint(container);
+          ticketCopyState = text
+            ? await root.bookingTicket.copyText(text)
+            : { status: "manual", error: "ไม่พบข้อมูล Ticket ที่ยืนยันจากระบบ" };
+          paint(container);
+          if (ticketCopyState.status === "manual") container.querySelector("#urgent-ticket-manual")?.select?.();
         } else if (action === "cancel-request") {
           await cancelUrgent(container);
         }

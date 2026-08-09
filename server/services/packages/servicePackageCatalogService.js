@@ -3,9 +3,7 @@
 const crypto = require("node:crypto");
 const repository = require("./servicePackageRepository");
 const { normalizeServiceType, normalizeAcType, normalizeWashVariantLabel, normalizeWashKey } = require("../../normalizers");
-
-const JOB_TYPES = new Set(["wash", "repair", "install"].map(normalizeServiceType));
-const AC_TYPES = new Set(["wall", "cassette", "floor", "ceiling"].map(normalizeAcType));
+const { JOB_TYPE_VALUES, AC_TYPE_VALUES, WASH_VARIANT_VALUES } = require("./servicePackageTaxonomy");
 const PG_INTEGER_MIN = -2147483648;
 const PG_INTEGER_MAX = 2147483647;
 const MAX_FIXED_TOTAL_CENTS = 999999999999n;
@@ -71,9 +69,10 @@ function validate(input) {
   }
   const jobType = normalizeServiceType(text(input.job_type, "job_type", 80));
   const acType = normalizeAcType(text(input.ac_type, "ac_type", 80));
-  if (!JOB_TYPES.has(jobType) || !AC_TYPES.has(acType)) fail("INVALID_SERVICE_CONSTRAINTS", "Unsupported job_type or ac_type");
+  if (!JOB_TYPE_VALUES.has(jobType) || !AC_TYPE_VALUES.has(acType)) fail("INVALID_SERVICE_CONSTRAINTS", "Unsupported job_type or ac_type");
   let washVariant = optionalText(input.wash_variant, 100);
   if (washVariant) washVariant = normalizeWashVariantLabel(washVariant);
+  if (washVariant && !WASH_VARIANT_VALUES.has(washVariant)) fail("INVALID_SERVICE_CONSTRAINTS", "Unsupported wash_variant");
   if (jobType === normalizeServiceType("wash") && acType === normalizeAcType("wall") && !normalizeWashKey(washVariant)) {
     fail("INVALID_SERVICE_CONSTRAINTS", "Wall cleaning packages require a supported wash_variant");
   }
@@ -126,7 +125,7 @@ function dto(row, at) {
     sell_start_at: row.sell_start_at, sell_end_at: row.sell_end_at, redeem_until: row.redeem_until,
     is_active: row.is_active, is_customer_visible: row.is_customer_visible, lifecycle_status: lifecycle(row, at),
     tiers: (row.tiers || []).map((tier) => ({ tier_key: tier.tier_key, display_name: tier.display_name,
-      service_quantity: Number(tier.service_quantity), fixed_total_price: Number(tier.fixed_total_price).toFixed(2),
+      service_quantity: Number(tier.service_quantity), fixed_total_price: String(tier.fixed_total_price),
       sort_order: Number(tier.sort_order), is_active: tier.is_active })) };
 }
 
@@ -143,6 +142,7 @@ function createServicePackageCatalogService({ pool, packageRepository = reposito
       if (packageKey) {
         packageRow = await packageRepository.findPackageByKeyForUpdate(client, packageKey);
         if (!packageRow) fail("PACKAGE_NOT_FOUND", "Service package was not found", 404);
+        if (packageRow.catalog_item_id != null) fail("LINKED_PACKAGE_REQUIRES_BUNDLE_ENDPOINT", "Linked variants must be edited through their Store parent", 409);
         existingTiers = await packageRepository.listTiersForUpdate(client, packageRow.service_package_id);
         packageRow = await packageRepository.updatePackage(client, packageRow.service_package_id, value);
       } else {

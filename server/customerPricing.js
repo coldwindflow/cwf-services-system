@@ -32,18 +32,38 @@ function boolish(value, fallback = false) {
   return fallback;
 }
 
-const SUPPORTED_JOB_TYPES = new Set([
-  normalizeServiceType("clean"),
-  normalizeServiceType("repair"),
-  normalizeServiceType("install"),
-]);
-const SUPPORTED_AC_TYPES = new Set([
-  normalizeAcType("wall"),
-  normalizeAcType("cassette"),
-  normalizeAcType("hanging"),
-  normalizeAcType("concealed"),
-]);
-const SUPPORTED_WASH_KEYS = new Set(["normal", "premium", "coil", "overhaul"]);
+// Canonical service values already enforced by the shared customer price-book
+// contract. Other catalog features consume this contract instead of carrying
+// product-specific copies of the same taxonomy.
+const SUPPORTED_SERVICE_TAXONOMY = Object.freeze({
+  job_types: Object.freeze([
+    Object.freeze({ key: "wash", value: normalizeServiceType("clean") }),
+    Object.freeze({ key: "repair", value: normalizeServiceType("repair") }),
+    Object.freeze({ key: "install", value: normalizeServiceType("install") }),
+  ]),
+  ac_types: Object.freeze([
+    Object.freeze({ key: "wall", value: normalizeAcType("wall") }),
+    Object.freeze({ key: "cassette", value: normalizeAcType("cassette") }),
+    Object.freeze({ key: "hanging", value: normalizeAcType("hanging") }),
+    Object.freeze({ key: "concealed", value: normalizeAcType("concealed") }),
+  ]),
+  wash_variants: Object.freeze([
+    Object.freeze({ key: "normal", value: normalizeWashVariantLabel("normal") }),
+    Object.freeze({ key: "premium", value: normalizeWashVariantLabel("premium") }),
+    Object.freeze({ key: "coil", value: normalizeWashVariantLabel("coil") }),
+    Object.freeze({ key: "overhaul", value: normalizeWashVariantLabel("overhaul") }),
+  ]),
+});
+const SUPPORTED_JOB_TYPES = new Set(SUPPORTED_SERVICE_TAXONOMY.job_types.map((entry) => entry.value));
+const SUPPORTED_AC_TYPES = new Set(SUPPORTED_SERVICE_TAXONOMY.ac_types.map((entry) => entry.value));
+const SUPPORTED_WASH_KEYS = new Set(SUPPORTED_SERVICE_TAXONOMY.wash_variants.map((entry) => entry.key));
+
+function supportedServiceTaxonomy() {
+  return Object.fromEntries(Object.entries(SUPPORTED_SERVICE_TAXONOMY).map(([name, entries]) => [
+    name,
+    entries.map((entry) => ({ ...entry, label: entry.value })),
+  ]));
+}
 const MAX_RULE_PRIORITY = 1000;
 const MIN_RULE_PRIORITY = -1000;
 
@@ -927,4 +947,5 @@ module.exports = {
   canonicalFallbackUnitForRule,
   validateServicePriceRuleForWrite,
   annotateRuleRisks,
+  supportedServiceTaxonomy,
 };
