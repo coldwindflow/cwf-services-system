@@ -4,7 +4,10 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
-const { validate } = require("../server/services/packages/storeServicePackageCatalogService");
+const {
+  validate,
+  createStoreServicePackageCatalogService,
+} = require("../server/services/packages/storeServicePackageCatalogService");
 
 function variant(overrides = {}) {
   return {
@@ -60,6 +63,71 @@ test("canonical Admin taxonomy accepts a non-wall package and derives service id
 test("unknown free-text taxonomy is rejected before persistence", () => {
   assert.throws(() => validate(bundle({ variants: [variant({ ac_type: "invented-ac-type" })] })),
     { code: "INVALID_SERVICE_CONSTRAINTS" });
+});
+
+test("updating a bundle does not require a catalog_items.updated_at column", async () => {
+  const parent = {
+    item_id: "1", service_bundle_key: "bundle-existing", item_name: "Premium Day updated",
+    is_active: true, is_customer_visible: true, highlights: [],
+  };
+  const tierRow = {
+    service_package_tier_id: "21", tier_key: "tier-existing", display_name: "1 unit",
+    service_quantity: 1, fixed_total_price: "699.00", sort_order: 0, is_active: true,
+  };
+  const packageRow = {
+    service_package_id: "11", catalog_item_id: "1", package_key: "pkg-existing",
+    display_name: "Small", service_key: "wash-wall-premium", service_name: "Premium wash",
+    job_type: "ล้าง", ac_type: "ผนัง", wash_variant: "ล้างพรีเมียม", btu_min: null, btu_max: 12000,
+    service_unit_duration_minutes: 45, sort_order: 0, is_active: true, is_customer_visible: true,
+    tiers: [tierRow],
+  };
+  const catalogUpdates = [];
+  const client = {
+    async query(statement) {
+      const sql = String(statement);
+      if (sql === "BEGIN" || sql === "COMMIT" || sql === "ROLLBACK") return { rows: [] };
+      if (/WHERE service_bundle_key=\$1 FOR UPDATE/.test(sql)) return { rows: [parent] };
+      if (/UPDATE public\.catalog_items/.test(sql)) {
+        catalogUpdates.push(sql);
+        if (/\bupdated_at\b/.test(sql)) {
+          const error = new Error('column "updated_at" of relation "catalog_items" does not exist');
+          error.code = "42703";
+          throw error;
+        }
+        return { rows: [parent] };
+      }
+      if (/SELECT \* FROM public\.service_packages WHERE catalog_item_id=\$1 FOR UPDATE/.test(sql)) {
+        return { rows: [packageRow] };
+      }
+      if (/UPDATE public\.service_packages SET is_active=FALSE/.test(sql)) return { rows: [] };
+      if (/SELECT \* FROM public\.catalog_items WHERE service_bundle_key IS NOT NULL/.test(sql)) return { rows: [parent] };
+      if (/FROM public\.service_packages p[\s\S]*JOIN public\.catalog_items ci/.test(sql)) return { rows: [packageRow] };
+      throw new Error(`Unexpected SQL in bundle-update regression: ${sql}`);
+    },
+    release() {},
+  };
+  const packageRepository = {
+    listTiersForUpdate: async () => [tierRow],
+    updatePackage: async () => packageRow,
+    updateTier: async () => tierRow,
+    deactivateTiers: async () => {},
+    listLinkedPackagesForCatalogItems: async () => [packageRow],
+  };
+  const service = createStoreServicePackageCatalogService({
+    pool: { connect: async () => client },
+    packageRepository,
+  });
+  const updated = await service.update("bundle-existing", bundle({
+    item_name: "Premium Day updated",
+    variants: [variant({
+      package_key: "pkg-existing",
+      tiers: [{ ...tierRow }],
+    })],
+  }));
+
+  assert.equal(updated.item_name, "Premium Day updated");
+  assert.equal(catalogUpdates.length, 1);
+  assert.doesNotMatch(catalogUpdates[0], /\bupdated_at\b/);
 });
 
 test("bundle taxonomy reuses the canonical price-book contract without campaign defaults", () => {
