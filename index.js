@@ -50,6 +50,8 @@ const customerAvailability = require("./server/services/public/customerAvailabil
 const { registerPublicCustomerAvailabilityRoutes } = require("./server/routes/public/customerAvailability");
 const { registerAdminAvailabilityRoutes } = require("./server/routes/admin/adminAvailability");
 const { createBookingJobService } = require("./server/services/booking/createBookingJob");
+const { createCustomerCatalogQuoteService } = require("./server/services/booking/customerCatalogQuote");
+const { calcBookingPricing } = require("./server/services/booking/exactPricing");
 const { pendingCustomerScheduledReservationSql } = require("./server/services/booking/bookingStatuses");
 const { createBookingApprovalService } = require("./server/services/booking/bookingApprovalService");
 const { registerBookingApprovalRoutes } = require("./server/routes/admin/bookingApprovals");
@@ -60,6 +62,8 @@ const { createPublicServicePackageService } = require("./server/services/public/
 const { registerAdminBookingRoutes } = require("./server/routes/admin/adminBookings");
 const { createServicePackageCatalogService } = require("./server/services/packages/servicePackageCatalogService");
 const { createServicePackageCatalogRoutes } = require("./server/routes/admin/servicePackageCatalog");
+const { createStoreServicePackageCatalogService } = require("./server/services/packages/storeServicePackageCatalogService");
+const { createStoreServicePackageCatalogRoutes } = require("./server/routes/admin/storeServicePackageCatalog");
 const { createTechnicianJobMoneyHelpers } = require("./server/technicianJobMoneySummary");
 const createSystemRoutes = require("./server/routes/system");
 const createTechnicianDirectoryRoutes = require("./server/routes/users/technicians");
@@ -12712,27 +12716,7 @@ ensureSchema();
 // 🧮 Helper: pricing
 // =======================================
 function calcPricing(items, promo) {
-  const safeItems = Array.isArray(items) ? items : [];
-  const subtotal = safeItems.reduce((sum, it) => {
-    const qty = Number(it.qty || 0);
-    const price = Number(it.unit_price || 0);
-    const line = Math.max(0, qty) * Math.max(0, price);
-    return sum + line;
-  }, 0);
-
-  let discount = 0;
-  if (promo) {
-    const v = Number(promo.promo_value || 0);
-    if (promo.promo_type === "percent") discount = subtotal * (Math.max(0, v) / 100);
-    if (promo.promo_type === "amount") discount = Math.max(0, v);
-  }
-
-  const total = Math.max(0, subtotal - discount);
-  return {
-    subtotal: Number(subtotal.toFixed(2)),
-    discount: Number(discount.toFixed(2)),
-    total: Number(total.toFixed(2)),
-  };
+  return calcBookingPricing(items, promo);
 }
 
 // =======================================
@@ -12978,6 +12962,10 @@ app.use(createCatalogItemRoutes({
 }));
 app.use(createServicePackageCatalogRoutes({
   service: createServicePackageCatalogService({ pool }),
+  requireAdminSession,
+}));
+app.use(createStoreServicePackageCatalogRoutes({
+  service: createStoreServicePackageCatalogService({ pool }),
   requireAdminSession,
 }));
 app.use(createCatalogReviewRoutes({ pool, requireCustomerJwt, requireAdminSession }));
@@ -24093,7 +24081,14 @@ registerAdminAvailabilityRoutes(app, {
   requireAdminSession,
 });
 
-registerPublicCustomerBookingRoutes(app, { service: bookingJobService });
+registerPublicCustomerBookingRoutes(app, {
+  service: bookingJobService,
+  quoteService: createCustomerCatalogQuoteService({
+    pool,
+    createServicePackageResolver: (db) => createServicePackageResolver({ db }),
+    computeDurationMinMulti,
+  }),
+});
 registerPublicServicePackageRoutes(app, {
   service: createPublicServicePackageService({ resolver: createServicePackageResolver({ db: pool }) }),
 });

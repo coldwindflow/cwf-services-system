@@ -275,3 +275,28 @@
 @media (max-width: 360px) {
   .asc-item-thumb{ width:72px; height:72px; min-width:72px; }
 }
+.asc-mobile-preview { width: min(100%, 390px); margin-inline: auto; }
+.asc-campaign-preview { border:1px solid var(--line,#d8e1e8); border-radius:16px; overflow:hidden; background:#fff; }
+.asc-campaign-preview-card { display:grid; gap:0; }
+.asc-campaign-preview-media { min-height:112px; display:grid; place-items:center; background:#eef3f5; color:#66737b; }
+.asc-campaign-preview-copy { display:grid; gap:8px; padding:12px; }
+.asc-campaign-preview-copy .primary { min-height:44px; }
+.asc-campaign-badge { width:max-content; max-width:100%; padding:4px 10px; border-radius:999px; background:#0d6b58; color:#fff; font-size:.78rem; font-weight:800; }
+.asc-campaign-support { color:#445066; font-size:.82rem; overflow-wrap:anywhere; }
+.asc-campaign-countdown { color:#8b3d13; font-size:.8rem; font-weight:750; }
+.asc-campaign-theme-premium { border-color:#b78a31; }
+.asc-campaign-theme-limited_time { border-color:#bd4b35; }
+.asc-campaign-theme-new { border-color:#247b68; }
+.asc-campaign-effect-soft_glow { animation:asc-campaign-glow 2.8s ease-in-out infinite; }
+.asc-campaign-effect-shimmer_border { background-image:linear-gradient(110deg,transparent 20%,rgba(255,255,255,.6) 45%,transparent 70%); background-size:250% 100%; animation:asc-campaign-shimmer 4s linear infinite; }
+.asc-campaign-effect-badge_pulse .asc-campaign-badge { animation:asc-campaign-pulse 2.4s ease-in-out infinite; }
+@keyframes asc-campaign-glow { 50% { box-shadow:0 0 0 3px rgba(183,138,49,.2); } }
+@keyframes asc-campaign-shimmer { to { background-position:-250% 0; } }
+@keyframes asc-campaign-pulse { 50% { opacity:.78; } }
+@media (prefers-reduced-motion: reduce) {
+  .asc-campaign-effect-soft_glow,
+  .asc-campaign-effect-shimmer_border,
+  .asc-campaign-effect-badge_pulse .asc-campaign-badge { animation:none !important; }
+}
+@media (max-width:390px) { .asc-campaign-preview-copy { padding:10px; } }
+@media (max-width:360px) { .asc-campaign-preview-copy { padding:8px; } }

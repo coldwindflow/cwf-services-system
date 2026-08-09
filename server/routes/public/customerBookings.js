@@ -7,6 +7,9 @@ function registerPublicCustomerBookingRoutes(app, options = {}) {
   }
 
   app.post("/public/urgent-dispatch-preflight", service.handlePublicUrgentPreflight);
+  if (options.quoteService && typeof options.quoteService.handle === "function") {
+    app.post("/public/catalog-booking-quote", options.quoteService.handle);
+  }
   app.post("/public/book", service.handlePublicBook);
 }
 

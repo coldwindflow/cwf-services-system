@@ -12,6 +12,7 @@
   let sameDayVisibilityRefresh = null;
   let scheduledLifecycleEpoch = 0;
   let latestContainer = null;
+  let ticketCopyState = { status: "idle", error: "" };
 
   function draft() {
     return root.state.draft.scheduled || {};
@@ -22,11 +23,15 @@
   }
 
   function hasPackageSelection() {
-    return Boolean(String(draft().service_package_key || "").trim() && String(draft().service_package_tier_key || "").trim());
+    return hasCompositeSelection() || Boolean(String(draft().service_package_key || "").trim() && String(draft().service_package_tier_key || "").trim());
+  }
+
+  function hasCompositeSelection() {
+    return Array.isArray(draft().service_package_groups) && draft().service_package_groups.length > 0;
   }
 
   function packagePreview() {
-    return root.state.scheduledPreview.package?.data || null;
+    return draft().service_package_bundle_preview || root.state.scheduledPreview.package?.data || null;
   }
 
   function packageBtuOptions(preview = packagePreview()) {
@@ -53,6 +58,7 @@
   function payloadFromDraft() {
     if (hasPackageSelection()) {
       const preview = packagePreview();
+      if (hasCompositeSelection()) return preview?.payload || null;
       if (!preview || !packageBtuIsValid(preview)) return null;
       const constraints = preview.service?.constraints || {};
       return {
@@ -168,7 +174,12 @@
   function clearPriceCalendarSlots() {
     availabilityRequestSeq += 1;
     calendarRequestSeq += 1;
-    root.state.updateDraft("scheduled", { selectedSlot: null });
+    root.state.updateDraft("scheduled", {
+      selectedSlot: null,
+      catalog_item_id: null,
+      catalog_booking_quote: null,
+      catalog_booking_pricing: null,
+    });
     root.state.setScheduledPreview("pricing", { status: "idle", data: null, error: "" });
     root.state.setScheduledPreview("availability", { status: "idle", data: null, error: "", query_key: "", loaded_at: "" });
     root.state.setScheduledPreview("calendar", { status: "idle", data: null, error: "", query_key: "", loaded_at: "" });
@@ -339,7 +350,8 @@
   }
 
   function clearPackageSelection() {
-    root.state.updateDraft("scheduled", { service_package_key: "", service_package_tier_key: "", service_package_btu: "", service_package_preview: null, scheduled_request_key: "" });
+    root.state.updateDraft("scheduled", { service_package_key: "", service_package_tier_key: "", service_package_btu: "", service_package_preview: null,
+      service_package_groups: [], service_package_bundle_preview: null, scheduled_request_key: "" });
     root.state.setScheduledPreview("package", { status: "idle", data: null, error: "", verified: false });
     clearPriceCalendarSlots();
   }
@@ -394,6 +406,10 @@
   function renderSelectedPackage() {
     const preview = packagePreview();
     if (!hasPackageSelection() || !preview) return "";
+    if (hasCompositeSelection()) {
+      const groups = Array.isArray(preview.groups) ? preview.groups : [];
+      return `<div class="selected-package-summary"><strong>${root.utils.escapeHtml(preview.package_name || "แพ็กเกจบริการ")}</strong>${groups.map((group) => `<span>${root.utils.escapeHtml(group.package_name || group.package_key)} · ${root.utils.escapeHtml(String(group.btu))} BTU · ${root.utils.escapeHtml(String(group.quantity))} เครื่อง</span>`).join("")}<span>ยอดรวม ${root.utils.escapeHtml(String(preview.fixed_total_price))} บาท · ${root.utils.escapeHtml(String(preview.duration_min))} นาที</span>${preview.redeem_until ? `<small>เลือกวันใช้บริการได้ถึง ${root.utils.escapeHtml(String(preview.redeem_until).slice(0, 10))}</small>` : ""}</div>`;
+    }
     return `<div class="selected-package-summary"><strong>${root.utils.escapeHtml(preview.package_name || "แพ็กเกจบริการ")} · ${root.utils.escapeHtml(preview.tier_name || "")}</strong><span>${root.utils.escapeHtml(preview.service?.service_name || "")} · ${root.utils.escapeHtml(String(preview.quantity))} เครื่อง</span><span>ยอดรวม ${root.utils.escapeHtml(String(preview.fixed_total_price))} บาท · ${root.utils.escapeHtml(String(Number(preview.quantity) * Number(preview.unit_duration_minutes)))} นาที</span>${preview.redeem_until ? `<small>เลือกวันใช้บริการได้ถึง ${root.utils.escapeHtml(String(preview.redeem_until).slice(0, 10))}</small>` : ""}<div class="field field-wide"><label>BTU จริงของเครื่องปรับอากาศ</label>${choiceGroup("service_package_btu", packageBtuOptions(preview), draft().service_package_btu, "btu-choice-grid", "package")}</div></div>`;
   }
 
@@ -448,7 +464,8 @@
     if (hasPackageSelection()) {
       const preview = packagePreview();
       if (!preview) return root.utils.stateBox("", "กรุณาเลือกแพ็กเกจและรอการตรวจสอบ");
-      return `<div class="wizard-price-summary"><div><span>ยอดรวมแพ็กเกจ</span><strong>${root.utils.escapeHtml(String(preview.fixed_total_price))} บาท</strong></div><div><span>เวลาทำงานรวม</span><strong>${root.utils.escapeHtml(String(Number(preview.quantity) * Number(preview.unit_duration_minutes)))} นาที</strong></div></div>`;
+      const minutes = hasCompositeSelection() ? Number(preview.duration_min) : Number(preview.quantity) * Number(preview.unit_duration_minutes);
+      return `<div class="wizard-price-summary"><div><span>ยอดรวมแพ็กเกจ</span><strong>${root.utils.escapeHtml(String(preview.fixed_total_price))} บาท</strong></div><div><span>เวลาทำงานรวม</span><strong>${root.utils.escapeHtml(String(minutes))} นาที</strong></div></div>`;
     }
     const pricing = root.state.scheduledPreview.pricing;
     const data = pricing.data;
@@ -750,6 +767,9 @@
     const pricing = root.state.scheduledPreview.pricing.data || {};
     if (hasPackageSelection()) {
       const preview = packagePreview() || {};
+      if (hasCompositeSelection()) {
+        return `<div class="data-list review-data-list"><div class="data-row"><strong>แพ็กเกจ</strong><span class="muted">${root.utils.escapeHtml(preview.package_name || "-")}</span></div>${(preview.groups || []).map((group) => `<div class="data-row"><strong>${root.utils.escapeHtml(group.package_name || group.package_key)}</strong><span class="muted">${root.utils.escapeHtml(String(group.btu))} BTU · ${root.utils.escapeHtml(String(group.quantity))} เครื่อง</span></div>`).join("")}<div class="data-row"><strong>ยอดรวมคงที่</strong><span class="muted">${root.utils.escapeHtml(String(preview.fixed_total_price || "-"))} บาท</span></div><div class="data-row"><strong>ผู้ติดต่อ</strong><span class="muted">${root.utils.escapeHtml(d.customer_name || "-")} · ${root.utils.escapeHtml(d.customer_phone || "-")}</span></div><div class="data-row"><strong>ที่อยู่</strong><span class="muted">${root.utils.escapeHtml(d.address_text || "-")}</span></div><div class="data-row"><strong>วันและเวลา</strong><span class="muted">${root.utils.escapeHtml(d.date || "-")} · ${root.utils.escapeHtml(selected.start || "-")}-${root.utils.escapeHtml(selected.end || "-")} น.</span></div></div>`;
+      }
       return `<div class="data-list review-data-list">
         <div class="data-row"><strong>แพ็กเกจ</strong><span class="muted">${root.utils.escapeHtml(preview.package_name || "-")} · ${root.utils.escapeHtml(preview.tier_name || "-")}</span></div>
         <div class="data-row"><strong>บริการและจำนวน</strong><span class="muted">${root.utils.escapeHtml(preview.service?.service_name || "-")} · ${root.utils.escapeHtml(String(preview.quantity || "-"))} เครื่อง</span></div>
@@ -809,6 +829,11 @@
     const result = root.state.scheduledSubmit.result || {};
     const selected = draft().selectedSlot || {};
     const trackingKey = result.token || result.booking_code || "";
+    const ticketText = root.bookingTicket?.formatText?.(result.booking_ticket) || "";
+    const copied = ticketCopyState.status === "copied";
+    const manual = ticketCopyState.status === "manual";
+    const showLineHandoff = copied || manual;
+    const confirmedNetTotal = root.bookingTicket?.confirmedNetTotal?.(result) || "0.00";
     return `
       <section class="card success-card booking-result-card">
         <div class="success-mark">✓</div>
@@ -819,10 +844,20 @@
         <div class="data-list">
           <div class="data-row"><strong>รหัสการจอง</strong><span class="booking-code-value">${root.utils.escapeHtml(result.booking_code || "-")}</span></div>
           <div class="data-row"><strong>วันและเวลา</strong><span class="muted">${root.utils.escapeHtml(selected.date || draft().date || "-")} · ${root.utils.escapeHtml(selected.start || "-")}-${root.utils.escapeHtml(selected.end || "-")} น.</span></div>
-          <div class="data-row"><strong>ราคา</strong><span class="muted">${root.utils.formatBaht(result.base_total)}</span></div>
+          <div class="data-row"><strong>ราคา</strong><span class="muted">${root.utils.escapeHtml(confirmedNetTotal)} บาท</span></div>
           <div class="data-row"><strong>เวลาทำงาน</strong><span class="muted">${root.utils.escapeHtml(result.duration_min || "-")} นาที</span></div>
           <div class="data-row"><strong>สถานะ</strong><span class="muted">รอแอดมินยืนยัน</span></div>
         </div>
+        ${ticketText ? `<div class="booking-ticket-handoff">
+          <p>ส่ง Ticket นี้ใน LINE OA เพื่อให้แอดมินทราบว่า LINE นี้เป็นผู้ติดต่อของรายการจองใด</p>
+          <p class="muted">Ticket มีชื่อและเบอร์โทรที่ใช้จอง กรุณาตรวจสอบก่อนคัดลอก</p>
+          <div class="button-row">
+            <button type="button" class="secondary-btn" data-action="copy-booking-ticket" ${ticketCopyState.status === "copying" || copied ? "disabled" : ""}>${copied ? "คัดลอกแล้ว" : "คัดลอก Ticket ส่งให้แอดมิน"}</button>
+            ${showLineHandoff ? '<a class="primary-btn" href="https://lin.ee/fG1Oq7y" target="_blank" rel="noopener noreferrer">เปิด LINE OA เพื่อส่ง Ticket</a>' : ""}
+          </div>
+          <div role="status" aria-live="polite">${copied ? "คัดลอกแล้ว" : root.utils.escapeHtml(ticketCopyState.error || "")}</div>
+          ${manual ? `<label for="booking-ticket-manual">คัดลอกข้อความด้านล่างด้วยตนเอง</label><textarea id="booking-ticket-manual" class="input textarea" rows="10" readonly>${root.utils.escapeHtml(ticketText)}</textarea>` : ""}
+        </div>` : ""}
         <div class="button-row">
           <button type="button" class="primary-btn" data-action="track-created" data-tracking-key="${root.utils.escapeHtml(trackingKey)}">ติดตามสถานะงาน</button>
           <button type="button" class="secondary-btn" data-action="new-cleaning-booking">จองล้างแอร์เพิ่ม</button>
@@ -845,6 +880,7 @@
   function validateServiceStep() {
     if (hasPackageSelection()) {
       if (root.state.scheduledPreview.package?.verified !== true || !packagePreview()) return "กรุณารอให้ระบบตรวจสอบแพ็กเกจอีกครั้ง";
+      if (hasCompositeSelection()) return "";
       if (!packageBtuIsValid()) return "กรุณาเลือก BTU จริงที่อยู่ในช่วงของแพ็กเกจ";
       return "";
     }
@@ -902,6 +938,9 @@
       catalog_item_id: catalogItemId,
     };
     if (hasPackageSelection()) {
+      if (hasCompositeSelection()) return { ...common,
+        ...(Number.isSafeInteger(Number(d.catalog_item_id)) && Number(d.catalog_item_id) > 0 ? { catalog_item_id: Number(d.catalog_item_id) } : {}),
+        service_package_groups: draft().service_package_groups.map((group) => ({ package_key: group.package_key, btu: Number(group.btu), quantity: Number(group.quantity) })) };
       delete common.catalog_item_id;
       return {
         ...common,
@@ -917,8 +956,15 @@
     if (hasPackageSelection()) {
       const preview = packagePreview();
       if (!preview) throw new Error("แพ็กเกจยังไม่พร้อม");
-      const data = { duration_min: Number(preview.quantity) * Number(preview.unit_duration_minutes), fixed_total_price: preview.fixed_total_price };
+      const data = { duration_min: hasCompositeSelection() ? Number(preview.duration_min) : Number(preview.quantity) * Number(preview.unit_duration_minutes), fixed_total_price: preview.fixed_total_price };
       root.state.setScheduledPreview("pricing", { status: "success", data, error: "" });
+      if (!opts.preserveDependents) clearCalendarSlots();
+      paint(container);
+      return data;
+    }
+    if (root.services.catalogQuoteMatchesDraft(draft(), "scheduled") && draft().catalog_booking_pricing) {
+      const data = draft().catalog_booking_pricing;
+      root.state.setScheduledPreview("pricing", { status: "success", data, error: "", verified: true });
       if (!opts.preserveDependents) clearCalendarSlots();
       paint(container);
       return data;
@@ -1103,6 +1149,7 @@
       const result = await root.api.submitScheduledBooking(buildSubmitPayload());
       if (lifecycleEpoch !== scheduledLifecycleEpoch) return;
       if (!result?.success || (!result.booking_code && !result.token)) throw new Error("ระบบไม่ได้ส่งรหัสติดตามกลับมา");
+      ticketCopyState = { status: "idle", error: "" };
       root.state.setScheduledSubmit({ status: "success", error: "", result });
       try {
         window.sessionStorage.removeItem("cwf_customer_app_v2_scheduled_v5");
@@ -1327,12 +1374,22 @@
           paint(container);
         }
         if (action === "submit-scheduled") await submit(container);
+        if (action === "copy-booking-ticket") {
+          if (ticketCopyState.status === "copying" || ticketCopyState.status === "copied") return;
+          const ticketText = root.bookingTicket?.formatText?.(root.state.scheduledSubmit.result?.booking_ticket) || "";
+          if (!ticketText) { ticketCopyState = { status: "manual", error: "ไม่พบข้อมูล Ticket ที่ยืนยันจากระบบ" }; paint(container); return; }
+          ticketCopyState = { status: "copying", error: "" }; paint(container);
+          ticketCopyState = await root.bookingTicket.copyText(ticketText);
+          paint(container);
+          if (ticketCopyState.status === "manual") container.querySelector("#booking-ticket-manual")?.select?.();
+        }
         if (action === "track-created") {
           const key = button.getAttribute("data-tracking-key") || "";
           if (key) root.state.updateDraft("tracking", { trackingCode: key });
           root.utils.routeTo("tracking");
         }
         if (action === "new-cleaning-booking") {
+          ticketCopyState = { status: "idle", error: "" };
           root.state.resetScheduledDraft();
           paint(container);
         }
@@ -1347,7 +1404,7 @@
   async function recoverScheduledDependencies(container) {
     if (recoveryInFlight) return;
     if (step() < 2) return;
-    if (hasPackageSelection() && root.state.scheduledPreview.package?.verified !== true) {
+    if (hasPackageSelection() && !hasCompositeSelection() && root.state.scheduledPreview.package?.verified !== true) {
       const restoredBtu = draft().service_package_btu;
       const restored = await selectServicePackage(draft().service_package_key, draft().service_package_tier_key, container, { restoredBtu, restore: true });
       if (!restored) return;
@@ -1383,7 +1440,7 @@
     paint(container);
     if (root.state.scheduledPreview.packages.status === "idle") loadServicePackages(container);
     if (step() === 1) {
-      if (hasPackageSelection() && root.state.scheduledPreview.package?.verified !== true) {
+      if (hasPackageSelection() && !hasCompositeSelection() && root.state.scheduledPreview.package?.verified !== true) {
         selectServicePackage(draft().service_package_key, draft().service_package_tier_key, container, { restoredBtu: draft().service_package_btu, restore: true });
         return;
       }

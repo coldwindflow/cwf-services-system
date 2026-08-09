@@ -51,7 +51,7 @@ test("Admin package rejects missing BTU, ordinary lines, extras, promotion, and 
   const admin = source.slice(source.indexOf("async function handleAdminBookV2"), source.indexOf("async function handleAdminServicePackageList"));
   assert.match(admin, /PACKAGE_PROMOTION_UNSUPPORTED/);
   assert.match(admin, /service_package_snapshot/);
-  assert.match(admin, /resolvePackageBooking[\s\S]*createServicePackageResolver\(client\)[\s\S]*identity: "admin"/);
+  assert.match(admin, /resolvePackageBooking[\s\S]*createServicePackageResolver\(client\)[\s\S]*Array\.isArray\(body\.service_package_groups\) \? "customer" : "admin"/);
   assert.match(admin, /ROLLBACK/);
   assert.match(admin, /if \(hasPackageRequest\)[\s\S]*json\(\{ error: code, code \}\)/);
 });

@@ -4,13 +4,15 @@ function registerAdminBookingRoutes(app, options = {}) {
   const service = options.service;
   const requireAdminSession = options.requireAdminSession;
   const requireInternalApiKeyOnly = options.requireInternalApiKeyOnly;
-  if (!service || typeof service.handleAdminBookV2 !== "function" || typeof service.handleInternalBookFromAi !== "function") {
+  if (!service || typeof service.handleAdminBookV2 !== "function" || typeof service.handleInternalBookFromAi !== "function"
+      || typeof service.handleAdminCatalogBookingPreview !== "function") {
     throw new TypeError("admin booking service is required");
   }
 
   app.post("/admin/book_v2", requireAdminSession, service.handleAdminBookV2);
   app.get("/admin/service-packages", requireAdminSession, service.handleAdminServicePackageList);
   app.post("/admin/service-packages/preview", requireAdminSession, service.handleAdminServicePackagePreview);
+  app.post("/admin/catalog-booking-preview", requireAdminSession, service.handleAdminCatalogBookingPreview);
   app.post("/admin/urgent_broadcast_v2", requireAdminSession, (req, res) => {
     req.body = {
       ...(req.body || {}),
