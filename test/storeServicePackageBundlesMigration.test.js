@@ -16,6 +16,7 @@ const packageRepository = require("../server/services/packages/servicePackageRep
 
 test("bundle migration links variants to Store parent through additive schema", () => {
   const executableSql = sql.split("\n").filter((line) => !line.trim().startsWith("--")).join("\n");
+  const flattenedSql = executableSql.replace(/\n/g, " ");
   assert.match(sql, /service_package/);
   assert.match(sql, /ADD COLUMN IF NOT EXISTS catalog_item_id BIGINT/);
   assert.match(sql, /REFERENCES public\.catalog_items\(item_id\) ON DELETE RESTRICT/);
@@ -31,6 +32,7 @@ test("bundle migration links variants to Store parent through additive schema", 
   assert.match(sql, /CREATE UNIQUE INDEX IF NOT EXISTS uq_jobs_admin_request_key/);
   assert.doesNotMatch(executableSql, /\b(?:DELETE FROM|TRUNCATE|DROP TABLE|DROP COLUMN)\b/i);
   assert.doesNotMatch(executableSql, /DROP\s+CONSTRAINT|booking_mode_check/i);
+  assert.doesNotMatch(flattenedSql, /(^|[;\s])(BEGIN|COMMIT|ROLLBACK)([\s;]|$)/i);
 });
 
 test("deploy catalog approves only the forward expand migration by exact SHA", () => {
@@ -71,6 +73,7 @@ test("migration runner is advisory locked, verified, and redacts credentials", (
   assert.doesNotMatch(runner.safeErrorMessage(new Error("password=oops")), /oops/);
   const source = fs.readFileSync("scripts/run-store-service-package-bundles-migration.js", "utf8");
   assert.match(source, /pg_advisory_lock/);
+  assert.match(source, /schemaStatusIsCurrent\(await readSchemaStatus\(client\)\)[\s\S]*return;[\s\S]*query\("BEGIN"\)/);
   assert.match(source, /query\("BEGIN"\)[\s\S]*verifySchema[\s\S]*query\("COMMIT"\)/);
   assert.match(source, /query\("ROLLBACK"\)/);
 });
