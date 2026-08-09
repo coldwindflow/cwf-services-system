@@ -31,6 +31,7 @@ let state = {
   service_bundles: [],
   service_bundle_quote: null,
   service_bundle_quote_fingerprint: "",
+  service_bundle_quote_request_id: 0,
   selected_store_catalog_item_id: null,
   admin_request_key: "",
   admin_request_fingerprint: "",
@@ -1430,28 +1431,39 @@ function renderServiceBundleGroups() {
 }
 
 async function previewServiceBundle() {
+  const requestId = ++state.service_bundle_quote_request_id;
   state.service_bundle_quote = null;
   state.service_bundle_quote_fingerprint = "";
   state.exact_total = "";
+  state.standard_price = 0;
+  state.normal_price = 0;
+  state.duration_min = 0;
+  state.effective_block_min = 0;
   const groups = selectedBundleGroups();
   const panel = el("store_service_bundle_quote");
   if (!bundleSelected() || !groups.length) { if (panel) panel.textContent = "Select at least one quantity"; return; }
+  const fingerprint = bundleFingerprint();
+  if (panel) panel.textContent = "Loading package price and duration...";
+  const submit = el("btnSubmit"); if (submit) submit.disabled = true;
   const appointment = localDatetimeToBangkokISO(String(el("appointment_datetime")?.value || "").trim()) || new Date(Date.now() + 86400000).toISOString();
   const quote = await apiFetch("/admin/catalog/service-package-bundles/quote", { method: "POST", body: JSON.stringify({
     catalog_item_id: state.selected_store_catalog_item_id,
     service_package_groups: groups, booking_mode: String(el("booking_mode")?.value || "scheduled"), appointment_datetime: appointment,
   }) });
+  if (requestId !== state.service_bundle_quote_request_id || fingerprint !== bundleFingerprint()) return;
   state.service_bundle_quote = quote;
-  state.service_bundle_quote_fingerprint = bundleFingerprint();
+  state.service_bundle_quote_fingerprint = fingerprint;
   state.exact_total = String(quote.fixed_total_price || "");
   state.standard_price = Number(state.exact_total); state.normal_price = state.standard_price;
   state.duration_min = Number(quote.duration_minutes); state.effective_block_min = state.duration_min + Number(state.travel_buffer_min || 30);
   if (panel) panel.textContent = `${quote.machine_count} units | ${quote.fixed_total_price} | ${quote.duration_minutes} min | ${(quote.components || []).map((x) => `${x.tier_name} x ${x.quantity}`).join(", ")}`;
-  updateTotalPreview();
+  if (submit) submit.disabled = false;
+  await refreshPreview();
 }
 
 function invalidateServicePackagePreview({ loading = false } = {}) {
   state.service_package_preview_request_id += 1;
+  state.service_bundle_quote_request_id += 1;
   state.service_package_preview = null;
   state.service_package_preview_selection = null;
   state.service_bundle_quote = null;
@@ -1469,8 +1481,9 @@ function invalidateServicePackagePreview({ loading = false } = {}) {
   if (btuWrap) btuWrap.style.display = "none";
   const panel = el("service_package_preview");
   if (panel) {
-    panel.style.display = packageSelected() ? "" : "none";
-    panel.textContent = packageSelected()
+    const legacySelected = !!String(el("service_package_key")?.value || "").trim();
+    panel.style.display = legacySelected ? "" : "none";
+    panel.textContent = legacySelected
       ? (loading ? "Loading package price and duration..." : "Package price and duration unavailable")
       : "";
   }
