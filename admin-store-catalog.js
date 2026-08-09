@@ -11,6 +11,7 @@ let galleryUploadQueue = [];
 let galleryPickNotice = "";
 let deleteModalItemId = null;
 let servicePackages = [];
+let standaloneServicePackages = [];
 let editingPackageKey = null;
 let packageTierDrafts = [];
 const BOOKING_MODES = ["bookable", "contact_admin", "purchase", "service_package"];
@@ -1480,7 +1481,7 @@ function updatePackageTierDraft(event) {
 function openPackageModal(packageKey = null) {
   ensurePackageModal();
   editingPackageKey = packageKey;
-  const item = packageKey ? servicePackages.find((p) => p.package_key === packageKey) : null;
+  const item = packageKey ? standaloneServicePackages.find((p) => p.package_key === packageKey) : null;
   el("package_modal_title").textContent = item ? `แก้ไข ${item.display_name}` : "สร้างโปรโมชั่นแพ็กเกจใหม่";
   el("pm_key_field").classList.toggle("hidden", !item);
   el("pm_package_key").value = item?.package_key || "";
@@ -1525,22 +1526,41 @@ async function saveServicePackage() {
 
 function renderServicePackages() {
   const box = el("package_catalog_list");
-  box.innerHTML = servicePackages.length ? servicePackages.map((item) => `<div class="asc-item-card">
+  const bundleCards = servicePackages.map((item) => `<div class="asc-item-card">
     <div class="asc-item-main"><div class="asc-item-title">${escapeHtml(item.item_name)} <span class="asc-badge asc-package-badge">Store service package</span></div>
       <div class="asc-item-meta">${item.variants.length} BTU variants · ${item.variants.reduce((sum, variant) => sum + variant.tiers.length, 0)} tiers</div>
       <div class="asc-item-meta">รหัสสินค้าแม่: ${escapeHtml(item.service_bundle_key)}</div>
       <div class="asc-badges"><span class="asc-badge">${item.is_active ? "เปิดใช้งาน" : "แบบร่าง"}</span><span class="asc-badge">${item.is_customer_visible ? "แสดงใน Store" : "ซ่อน"}</span></div></div>
-    <div class="asc-item-actions"><button class="secondary btn-small" data-edit-bundle="${escapeHtml(item.service_bundle_key)}" type="button">แก้ไข</button></div></div>`).join("") : `<div class="asc-empty">ยังไม่มี Store service package</div>`;
+    <div class="asc-item-actions"><button class="secondary btn-small" data-edit-bundle="${escapeHtml(item.service_bundle_key)}" type="button">แก้ไข</button></div></div>`).join("");
+  const standaloneCards = standaloneServicePackages.map((item) => `<div class="asc-item-card">
+    <div class="asc-item-main"><div class="asc-item-title">${escapeHtml(item.display_name)} <span class="asc-badge asc-package-badge">Legacy standalone package</span></div>
+      <div class="asc-item-meta">${item.tiers.length} tiers · รหัสแพ็กเกจ: ${escapeHtml(item.package_key)}</div>
+      <div class="asc-badges"><span class="asc-badge">${packageLifecycleLabel(item.lifecycle_status)}</span><span class="asc-badge">${item.is_active ? "เปิดใช้งาน" : "ปิดใช้งาน"}</span><span class="asc-badge">${item.is_customer_visible ? "แสดงต่อลูกค้า" : "ซ่อนจากลูกค้า"}</span></div></div>
+    <div class="asc-item-actions"><button class="secondary btn-small" data-edit-package="${escapeHtml(item.package_key)}" type="button">แก้ไข</button></div></div>`).join("");
+  box.innerHTML = bundleCards + standaloneCards || `<div class="asc-empty">ยังไม่มี Store service package</div>`;
 }
 
 async function loadServicePackages() {
   const box = el("package_catalog_list"); box.innerHTML = `<div class="asc-loading">กำลังโหลดโปรโมชั่น...</div>`;
-  try { const result = await apiFetch("/admin/catalog/service-package-bundles"); servicePackages = Array.isArray(result?.bundles) ? result.bundles : []; renderServicePackages(); }
+  try {
+    const [bundleResult, standaloneResult] = await Promise.all([
+      apiFetch("/admin/catalog/service-package-bundles"),
+      apiFetch("/admin/service-packages/catalog"),
+    ]);
+    servicePackages = Array.isArray(bundleResult?.bundles) ? bundleResult.bundles : [];
+    standaloneServicePackages = Array.isArray(standaloneResult) ? standaloneResult : [];
+    renderServicePackages();
+  }
   catch (_error) { box.innerHTML = `<div class="asc-error">ไม่สามารถโหลดโปรโมชั่นแพ็กเกจได้ โปรดลองอีกครั้ง</div>`; }
 }
 
 function bindServicePackageActions() {
-  el("package_catalog_list").addEventListener("click", (event) => { const button = event.target.closest("[data-edit-bundle]"); if (button) openBundleModal(button.dataset.editBundle); });
+  el("package_catalog_list").addEventListener("click", (event) => {
+    const bundleButton = event.target.closest("[data-edit-bundle]");
+    if (bundleButton) return openBundleModal(bundleButton.dataset.editBundle);
+    const packageButton = event.target.closest("[data-edit-package]");
+    if (packageButton) openPackageModal(packageButton.dataset.editPackage);
+  });
 }
 
 /* ---------- Review moderation ---------- */
