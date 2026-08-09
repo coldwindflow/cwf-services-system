@@ -41,3 +41,11 @@ test("Store grid binds urgent actions with policy and runtime availability gates
   assert.match(grid, /urgentBookingAvailable/);
   assert.doesNotMatch(detail, /querySelectorAll\("\[data-store-urgent\]"\)/);
 });
+
+test("sale expiry gates actions independently from countdown presentation", () => {
+  assert.match(store, /data-campaign-sale-end/);
+  assert.match(store, /querySelectorAll\("\[data-campaign-sale-end\]"\)/);
+  assert.match(store, /querySelector\("\[data-campaign-countdown\]"\)/);
+  assert.match(store, /button\.disabled = true/);
+  assert.match(store, /Math\.min\(60000, Math\.max\(1, remaining\)\)/);
+});

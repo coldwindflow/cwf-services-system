@@ -24,7 +24,8 @@
   }
 
   function hasCompositePackage() {
-    return Array.isArray(draft().service_package_groups) && draft().service_package_groups.length > 0 && !!bundlePreview();
+    return Array.isArray(draft().service_package_groups) && draft().service_package_groups.length > 0
+      && bundlePreview()?.server_verified === true;
   }
 
   function canonicalCleaningLine(input) {

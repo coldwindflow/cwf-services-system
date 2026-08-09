@@ -35,6 +35,7 @@ async function verifySchema(client) {
       EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='catalog_items' AND column_name='promotion_theme_preset') AS presentation,
       EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='catalog_items' AND column_name='booking_flow_policy') AS flow_policy,
       EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='jobs' AND column_name='admin_request_key') AS admin_request_key,
+      EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='jobs' AND column_name='booking_request_fingerprint') AS booking_request_fingerprint,
       EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname='public' AND indexname='uq_jobs_admin_request_key') AS admin_request_unique,
       EXISTS (SELECT 1 FROM pg_constraint WHERE conname='service_packages_catalog_item_fk') AS parent_fk,
       EXISTS (SELECT 1 FROM pg_constraint WHERE conname='catalog_items_promotion_theme_check') AS presentation_check,
@@ -42,7 +43,7 @@ async function verifySchema(client) {
       COALESCE((SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='catalog_items_booking_mode_check' LIMIT 1),'') AS booking_mode_def
   `);
   const row = result.rows[0] || {};
-  if (!row.linked || !row.parent_key || !row.presentation || !row.flow_policy || !row.admin_request_key || !row.admin_request_unique || !row.parent_fk
+  if (!row.linked || !row.parent_key || !row.presentation || !row.flow_policy || !row.admin_request_key || !row.booking_request_fingerprint || !row.admin_request_unique || !row.parent_fk
       || !row.presentation_check || !row.flow_policy_check || !/service_package/.test(row.booking_mode_def)) {
     throw new Error("store service-package bundle schema verification failed");
   }

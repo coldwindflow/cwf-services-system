@@ -118,6 +118,7 @@ test("composite Store selection submits only stable package keys, BTU, quantity,
     ] } };
   root.state.updateDraft("scheduled", { customer_name: "TEST", customer_phone: "0812345678", address_text: "TEST",
     selectedSlot: { date: root.state.draft.scheduled.date, start: "09:00" },
+    catalog_item_id: 51,
     service_package_groups: [{ package_key: "small", btu: 12000, quantity: 2 }, { package_key: "large", btu: 18000, quantity: 2 }],
     service_package_bundle_preview: previewData, services: [] });
   root.state.setScheduledPreview("package", { status: "success", data: previewData, error: "", verified: true });
@@ -127,7 +128,8 @@ test("composite Store selection submits only stable package keys, BTU, quantity,
     { package_key: "small", btu: 12000, quantity: 2 }, { package_key: "large", btu: 18000, quantity: 2 },
   ]);
   assert.match(payload.scheduled_request_key, /^[A-Za-z0-9_-]{16,128}$/);
-  for (const forbidden of ["catalog_item_id", "fixed_total_price", "duration_min", "snapshot", "service_package_id"]) assert.equal(forbidden in payload, false);
+  assert.equal(payload.catalog_item_id, 51);
+  for (const forbidden of ["fixed_total_price", "duration_min", "snapshot", "service_package_id"]) assert.equal(forbidden in payload, false);
   assert.equal(root.bookingScheduled._test.validateServiceStep(), "");
 });
 
@@ -190,7 +192,7 @@ test("build id is coordinated and service worker privacy/network behavior remain
   const app = read("customer-app/assets/customer-app.js");
   const manifest = read("customer-app/manifest.webmanifest");
   const build = sw.match(/BUILD_ID = "([^"]+)"/)[1];
-  assert.equal(build, "20260809_issue267_catalog_flow_v6");
+  assert.equal(build, "20260809_issue267_catalog_flow_v7");
   assert.match(index, new RegExp(build));
   assert.match(app, new RegExp(`BUILD_ID = "${build}"`));
   assert.match(manifest, new RegExp(`index\\.html\\?v=${build}#home`));

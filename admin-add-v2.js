@@ -1436,6 +1436,7 @@ async function previewServiceBundle() {
   if (!bundleSelected() || !groups.length) { if (panel) panel.textContent = "Select at least one quantity"; return; }
   const appointment = localDatetimeToBangkokISO(String(el("appointment_datetime")?.value || "").trim()) || new Date(Date.now() + 86400000).toISOString();
   const quote = await apiFetch("/admin/catalog/service-package-bundles/quote", { method: "POST", body: JSON.stringify({
+    catalog_item_id: state.selected_store_catalog_item_id,
     service_package_groups: groups, booking_mode: String(el("booking_mode")?.value || "scheduled"), appointment_datetime: appointment,
   }) });
   state.service_bundle_quote = quote;
@@ -3318,7 +3319,7 @@ function wireEvents() {
     el("promotion_id").value = "";
     el("override_price").value = "0";
     el("override_duration_min").value = "0";
-    el("job_type").value = item.booking_job_type || "";
+    el("job_type").value = item.job_category || "";
     el("ac_type").value = item.booking_ac_type || "";
     buildVariantUI();
     el("btu").value = String(item.booking_btu || "");
@@ -3330,7 +3331,8 @@ function wireEvents() {
   el("store_service_bundle_key")?.addEventListener("change", () => {
     const selected = bundleSelected();
     if (selected) {
-      state.selected_store_catalog_item_id = null;
+      const bundle = state.service_bundles.find((item) => item.service_bundle_key === selected);
+      state.selected_store_catalog_item_id = bundle ? Number(bundle.item_id) : null;
       if (el("store_bookable_item_id")) el("store_bookable_item_id").value = "";
       el("service_package_key").value = "";
       el("service_package_tier_key").innerHTML = '<option value="">Select tier</option>';

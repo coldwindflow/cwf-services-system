@@ -9,6 +9,10 @@ class CompositePackageError extends Error {
   }
 }
 
+// Keep public quantity expansion within the booking domain's safe upper bound.
+// This check must run before allocating the dynamic-programming table.
+const MAX_COMPOSITE_PACKAGE_QUANTITY = 99;
+
 function fail(code, statusCode) { throw new CompositePackageError(code, statusCode); }
 
 function parseMoney(value) {
@@ -30,8 +34,8 @@ function allocateUnitMoney(totalMinor, quantity) {
 
 function comparePlan(a, b) {
   if (!b) return -1;
-  if (a.components.length !== b.components.length) return a.components.length - b.components.length;
   if (a.total !== b.total) return a.total < b.total ? -1 : 1;
+  if (a.components.length !== b.components.length) return a.components.length - b.components.length;
   const aq = a.components.map((x) => x.quantity).sort((x, y) => y - x);
   const bq = b.components.map((x) => x.quantity).sort((x, y) => y - x);
   for (let i = 0; i < Math.max(aq.length, bq.length); i += 1) {
@@ -42,7 +46,9 @@ function comparePlan(a, b) {
 
 function composeTiers(tiers, requestedQuantity) {
   const quantity = Number(requestedQuantity);
-  if (!Number.isSafeInteger(quantity) || quantity <= 0) fail("INVALID_PACKAGE_QUANTITY", 400);
+  if (!Number.isSafeInteger(quantity) || quantity <= 0 || quantity > MAX_COMPOSITE_PACKAGE_QUANTITY) {
+    fail("INVALID_PACKAGE_QUANTITY", 400);
+  }
   const usable = (Array.isArray(tiers) ? tiers : []).filter((tier) => tier.is_active !== false).map((tier) => ({
     ...tier,
     quantity: Number(tier.service_quantity),
@@ -72,19 +78,25 @@ function composeTiers(tiers, requestedQuantity) {
 }
 
 function normalizeGroups(body = {}) {
-  if (body.service_package_id != null || body.service_package_tier_id != null || body.catalog_item_id != null) {
+  if (body.service_package_id != null || body.service_package_tier_id != null) {
     fail("PACKAGE_IDENTITY_MALFORMED", 400);
   }
   if (!Object.prototype.hasOwnProperty.call(body, "service_package_groups")) return null;
   if (!Array.isArray(body.service_package_groups) || !body.service_package_groups.length) fail("INVALID_PACKAGE_SELECTION", 400);
-  return body.service_package_groups.map((group) => {
+  let totalQuantity = 0;
+  const groups = body.service_package_groups.map((group) => {
     const packageKey = String(group?.package_key || "").trim();
     const btu = Number(group?.btu);
     const quantity = Number(group?.quantity);
     if (!packageKey || packageKey.length > 128 || !Number.isSafeInteger(btu) || btu <= 0
-        || !Number.isSafeInteger(quantity) || quantity <= 0) fail("INVALID_PACKAGE_SELECTION", 400);
+        || !Number.isSafeInteger(quantity) || quantity <= 0 || quantity > MAX_COMPOSITE_PACKAGE_QUANTITY) {
+      fail("INVALID_PACKAGE_SELECTION", 400);
+    }
+    totalQuantity += quantity;
     return { packageKey, btu, quantity };
   });
+  if (totalQuantity > MAX_COMPOSITE_PACKAGE_QUANTITY) fail("INVALID_PACKAGE_SELECTION", 400);
+  return groups;
 }
 
 function inWindow(value, start, end) {
@@ -131,8 +143,11 @@ async function resolveCompositeBooking({ body, bookingMode, appointmentDatetime,
   const byKey = new Map(variants.map((variant) => [variant.package_key, variant]));
   if (byKey.size !== new Set(groups.map((group) => group.packageKey)).size) fail("SERVICE_PACKAGE_NOT_AVAILABLE", 404);
   const bundleIds = new Set(variants.map((variant) => String(variant.catalog_item_id || "")));
-  if (bundleIds.size !== 1 || bundleIds.has("")) fail("PACKAGE_PARENT_MISMATCH", 400);
+  if (bundleIds.size !== 1 || bundleIds.has("")) fail("PACKAGE_IDENTITY_MALFORMED", 400);
   const bundle = variants[0];
+  if (body.catalog_item_id != null && String(body.catalog_item_id).trim() !== String(bundle.catalog_item_id)) {
+    fail("PACKAGE_IDENTITY_MALFORMED", 400);
+  }
   if (!bundle.catalog_is_active || (identity === "customer" && !bundle.catalog_is_customer_visible)
       || bundle.booking_mode !== "service_package" || !inWindow(now(), bundle.service_package_sell_start_at, bundle.service_package_sell_end_at)) {
     fail("SERVICE_PACKAGE_NOT_AVAILABLE", 404);
@@ -183,5 +198,5 @@ async function resolveCompositeBooking({ body, bookingMode, appointmentDatetime,
 
 module.exports = {
   CompositePackageError, parseMoney, formatMoney, allocateUnitMoney, composeTiers, normalizeGroups,
-  buildComponentSnapshot, resolveCompositeBooking,
+  buildComponentSnapshot, resolveCompositeBooking, MAX_COMPOSITE_PACKAGE_QUANTITY,
 };

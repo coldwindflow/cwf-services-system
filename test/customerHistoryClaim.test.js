@@ -845,7 +845,7 @@ test("Customer History search and preview keep 360px and 390px width contracts",
 });
 
 test("Customer App cache version is bumped consistently", () => {
-  const expected = "20260809_issue267_catalog_flow_v6";
+  const expected = "20260809_issue267_catalog_flow_v7";
   for (const file of [
     "customer-app/index.html",
     "customer-app/sw.js",

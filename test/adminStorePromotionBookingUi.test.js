@@ -17,6 +17,8 @@ test("Admin Add Job selects Store parents, quotes arbitrary mixed groups and ret
   assert.match(js, /\/admin\/catalog\/service-package-bundles\/quote/);
   assert.match(js, /service_package_groups = selectedBundleGroups/);
   assert.match(js, /catalog_item_id: state\.selected_store_catalog_item_id/);
+  assert.match(js, /el\("job_type"\)\.value = item\.job_category \|\| ""/);
+  assert.doesNotMatch(js, /el\("job_type"\)\.value = item\.booking_job_type/);
   assert.match(js, /admin_request_key/);
   assert.doesNotMatch(js, /data-admin-bundle-quantity[^\n]+max=/);
   assert.match(booking, /AND p\.catalog_item_id IS NULL/);

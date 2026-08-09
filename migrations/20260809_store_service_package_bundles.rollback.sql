@@ -1,5 +1,6 @@
 -- PRE-DATA ROLLBACK ONLY. Never run after a service-package bundle or booking exists.
 DROP INDEX IF EXISTS public.uq_jobs_admin_request_key;
+ALTER TABLE public.jobs DROP COLUMN IF EXISTS booking_request_fingerprint;
 ALTER TABLE public.jobs DROP COLUMN IF EXISTS admin_request_fingerprint;
 ALTER TABLE public.jobs DROP COLUMN IF EXISTS admin_request_key;
 DROP INDEX IF EXISTS public.idx_service_packages_catalog_item;

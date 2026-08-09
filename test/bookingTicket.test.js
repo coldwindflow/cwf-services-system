@@ -76,3 +76,17 @@ test("phone and line normalization are deterministic and invalid appointments st
   assert.equal(ticket.appointment_datetime, "");
   assert.doesNotThrow(() => formatBookingTicket(ticket));
 });
+
+test("initial and replay tickets show exact net total after the persisted discount", async () => {
+  const job = { job_id: 12, booking_code: "CWF-NET", customer_name: "TEST", customer_phone: "0812345678",
+    appointment_datetime: "2026-08-10T09:00:00+07:00", job_price: "1399.50", applied_discount: "99.55",
+    booking_mode: "scheduled", job_status: JOB_STATUS.CUSTOMER_SCHEDULED_REVIEW };
+  const items = [{ item_name: "TEST service", qty: 4, is_service: true }];
+  assert.equal(buildBookingTicket({ job, items }).exact_total, "1299.95");
+  const db = { async query(sql) {
+    if (/FROM public\.jobs/.test(sql)) return { rows: [job] };
+    if (/FROM public\.job_items/.test(sql)) return { rows: items };
+    throw new Error("unexpected query");
+  } };
+  assert.equal((await loadBookingTicket(db, 12)).exact_total, "1299.95");
+});

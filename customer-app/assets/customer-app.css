@@ -7352,6 +7352,7 @@ body.has-advisor-sheet { overflow: hidden; }
 
 /* Catalog-configured promotion presentation: bounded server presets only. */
 .store-campaign-presentation { display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:10px 14px 0; }
+.store-campaign-presentation.is-expiry-sentinel { display:none; padding:0; }
 .store-campaign-badge { display:inline-flex; min-height:28px; align-items:center; padding:4px 10px; border-radius:999px; background:#0d6b58; color:#fff; font-size:.78rem; font-weight:800; }
 .store-campaign-support { color:#445066; font-size:.82rem; }
 .store-campaign-countdown { color:#8b3d13; font-size:.8rem; font-weight:750; }

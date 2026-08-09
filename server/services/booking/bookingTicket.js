@@ -14,6 +14,17 @@ function exactMoney(value) {
   return `${match[1]}.${String(match[2] || "").padEnd(2, "0")}`;
 }
 
+function moneyMinor(value) {
+  const [whole, fraction] = exactMoney(value).split(".");
+  return (BigInt(whole) * 100n) + BigInt(fraction);
+}
+
+function netMoney(base, discount) {
+  const result = moneyMinor(base) - moneyMinor(discount);
+  const safe = result < 0n ? 0n : result;
+  return `${safe / 100n}.${String(safe % 100n).padStart(2, "0")}`;
+}
+
 const PUBLIC_STATUS = Object.freeze({
   scheduled: "รอแอดมินยืนยัน",
   urgent: "กำลังค้นหาช่าง",
@@ -56,16 +67,17 @@ function buildBookingTicket({ job = {}, items = [] } = {}) {
     components,
     total_machine_count: components.reduce((sum, item) => sum + item.quantity, 0),
     appointment_datetime: appointmentIso(job.appointment_datetime),
-    exact_total: exactMoney(job.job_price),
+    exact_total: netMoney(job.job_price, job.applied_discount),
     public_status: publicStatusForJob(job),
   };
 }
 
 async function loadBookingTicket(db, jobId) {
   const jobResult = await db.query(
-    `SELECT booking_code, customer_name, customer_phone, appointment_datetime, job_price,
-            booking_mode, job_status
-       FROM public.jobs WHERE job_id=$1 LIMIT 1`, [jobId]
+    `SELECT j.booking_code, j.customer_name, j.customer_phone, j.appointment_datetime, j.job_price,
+            j.booking_mode, j.job_status,
+            COALESCE((SELECT jp.applied_discount::text FROM public.job_promotions jp WHERE jp.job_id=j.job_id LIMIT 1), '0.00') AS applied_discount
+       FROM public.jobs j WHERE j.job_id=$1 LIMIT 1`, [jobId]
   );
   const job = jobResult.rows[0];
   if (!job) return null;
@@ -90,6 +102,7 @@ module.exports = {
   loadBookingTicket,
   formatBookingTicket,
   exactMoney,
+  netMoney,
   normalizedPhone,
   publicStatusForJob,
 };

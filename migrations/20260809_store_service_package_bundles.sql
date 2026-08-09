@@ -94,7 +94,8 @@ CREATE INDEX IF NOT EXISTS idx_service_packages_catalog_item
 
 ALTER TABLE public.jobs
   ADD COLUMN IF NOT EXISTS admin_request_key VARCHAR(128),
-  ADD COLUMN IF NOT EXISTS admin_request_fingerprint CHAR(64);
+  ADD COLUMN IF NOT EXISTS admin_request_fingerprint CHAR(64),
+  ADD COLUMN IF NOT EXISTS booking_request_fingerprint CHAR(64);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_jobs_admin_request_key
   ON public.jobs(admin_request_key) WHERE admin_request_key IS NOT NULL;
 

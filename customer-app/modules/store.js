@@ -99,6 +99,7 @@
   }
 
   function composeBundleTiers(tiers, requestedQuantity) {
+    if (!Number.isSafeInteger(requestedQuantity) || requestedQuantity <= 0 || requestedQuantity > 99) return null;
     const usable = (tiers || []).filter((tier) => tier.is_active !== false).map((tier) => ({
       ...tier, quantity: Number(tier.quantity), minor: BigInt(String(tier.fixed_total_price).replace(".", "")),
     })).filter((tier) => Number.isInteger(tier.quantity) && tier.quantity > 0);
@@ -106,8 +107,8 @@
     if (exact) return { minor: exact.minor, components: [exact] };
     const compare = (candidate, current) => {
       if (!current) return -1;
-      if (candidate.components.length !== current.components.length) return candidate.components.length - current.components.length;
       if (candidate.minor !== current.minor) return candidate.minor < current.minor ? -1 : 1;
+      if (candidate.components.length !== current.components.length) return candidate.components.length - current.components.length;
       const left = candidate.components.map((item) => item.quantity).sort((a, b) => b - a);
       const right = current.components.map((item) => item.quantity).sort((a, b) => b - a);
       for (let index = 0; index < Math.max(left.length, right.length); index += 1) {
@@ -137,45 +138,79 @@
   }
 
   function collectBundleDraft(container, item) {
-    const groups = []; const previewGroups = []; const services = [];
-    let total = 0n; let durationMin = 0;
+    const groups = [];
     container.querySelectorAll("[data-bundle-package]").forEach((row) => {
       const quantity = Number(row.querySelector("[data-bundle-quantity]")?.value || 0);
-      if (!Number.isSafeInteger(quantity) || quantity < 0) throw new Error("จำนวนเครื่องต้องเป็นจำนวนเต็มตั้งแต่ 0 ขึ้นไป");
+      if (!Number.isSafeInteger(quantity) || quantity < 0 || quantity > 99) throw new Error("จำนวนเครื่องต้องเป็นจำนวนเต็มระหว่าง 0 ถึง 99");
       if (!quantity) return;
       const packageKey = row.getAttribute("data-bundle-package");
       const variant = item.service_package_variants.find((entry) => entry.package_key === packageKey);
       const btu = Number(row.querySelector("[data-bundle-btu]")?.value || 0);
-      const plan = variant ? composeBundleTiers(variant.tiers, quantity) : null;
-      if (!variant || !plan || !btu) throw new Error("จำนวนที่เลือกไม่สามารถจัดเป็นแพ็กเกจได้");
-      total += plan.minor; durationMin += quantity * Number(variant.unit_duration_minutes);
+      if (!variant || !btu) throw new Error("ข้อมูลแพ็กเกจไม่ครบ กรุณาลองใหม่");
       groups.push({ package_key: packageKey, btu, quantity });
-      previewGroups.push({ package_key: packageKey, package_name: variant.package_name, btu, quantity });
-      services.push({ job_type: variant.service.job_type, ac_type: variant.service.ac_type, btu, machine_count: quantity,
-        wash_variant: variant.service.wash_variant || "", repair_variant: "" });
     });
     if (!groups.length) throw new Error("กรุณาเลือกอย่างน้อย 1 เครื่อง");
-    const fixedTotal = `${total / 100n}.${String(total % 100n).padStart(2, "0")}`;
-    return { groups, preview: { package_name: item.item_name, groups: previewGroups, fixed_total_price: fixedTotal,
-      duration_min: durationMin, redeem_until: item.service_package_redeem_until, payload: { services } } };
+    if (groups.reduce((sum, group) => sum + group.quantity, 0) > 99) throw new Error("หนึ่งงานรองรับได้ไม่เกิน 99 เครื่อง");
+    return { groups };
   }
 
-  function beginBundleBooking(container, item, scope = "scheduled") {
+  let bundleQuoteRequestId = 0;
+  async function beginBundleBooking(container, item, scope = "scheduled") {
     const errorBox = container.querySelector("[data-bundle-error]");
+    const requestId = ++bundleQuoteRequestId;
     try {
       const result = collectBundleDraft(container, item);
+      if (errorBox) errorBox.textContent = "กำลังตรวจสอบราคาและสิทธิ์จากระบบ...";
+      const quote = await root.api.quoteCatalogBooking({
+        catalog_item_id: Number(item.item_id), service_package_groups: result.groups, booking_mode: scope,
+      });
+      if (requestId !== bundleQuoteRequestId || String(root.state.storeDetail?.data?.item_id) !== String(item.item_id)) return;
+      const preview = { package_name: item.item_name, groups: quote.groups, components: quote.components,
+        fixed_total_price: quote.fixed_total_price, duration_min: quote.duration_minutes,
+        redeem_until: item.service_package_redeem_until, payload: { services: quote.services }, server_verified: true };
       const common = { catalog_item_id: Number(item.item_id), service_package_key: "", service_package_tier_key: "", service_package_btu: "",
-        service_package_groups: result.groups, service_package_bundle_preview: result.preview,
-        services: result.preview.payload.services, selectedSlot: null };
+        service_package_groups: result.groups, service_package_bundle_preview: preview,
+        services: quote.services, selectedSlot: null };
       root.state.updateDraft(scope, scope === "urgent" ? { ...common, urgent_request_key: "" } : { ...common, scheduled_request_key: "" });
       if (scope === "scheduled") {
-        root.state.setScheduledPreview("package", { status: "success", data: result.preview, error: "", verified: true });
+        root.state.setScheduledPreview("package", { status: "success", data: preview, error: "", verified: true });
         root.state.setScheduledPreview("pricing", { status: "idle", data: null, error: "" });
       }
+      if (errorBox) errorBox.textContent = "";
       root.utils.routeTo(scope);
     } catch (error) {
-      if (errorBox) errorBox.textContent = error.message;
+      if (requestId !== bundleQuoteRequestId) return;
+      if (scope === "scheduled") root.state.setScheduledPreview("package", { status: "error", data: null, error: "ไม่สามารถยืนยันแพ็กเกจได้ กรุณาลองใหม่", verified: false });
+      if (errorBox) errorBox.textContent = "ไม่สามารถยืนยันราคาและสิทธิ์ได้ กรุณาลองใหม่";
     }
+  }
+
+  async function beginOrdinaryBooking(container, item, scope, source) {
+    const draftItem = root.services.catalogItemToCommerceDraft(item);
+    if (!draftItem) return false;
+    const line = draftItem.draft;
+    let status = container.querySelector("[data-catalog-quote-status]");
+    if (!status && typeof document.createElement === "function") {
+      status = document.createElement("div");
+      status.className = "inline-error";
+      status.setAttribute("data-catalog-quote-status", "");
+      status.setAttribute("aria-live", "polite");
+      container.prepend(status);
+    }
+    if (status) status.textContent = "กำลังตรวจสอบราคาและสิทธิ์จากระบบ...";
+    try {
+      await root.api.quoteCatalogBooking({ catalog_item_id: Number(item.item_id), booking_mode: scope,
+        job_type: line.job_type, ac_type: line.ac_type, btu: line.btu,
+        wash_variant: line.wash_variant, machine_count: line.machine_count });
+    } catch (_) {
+      if (status) status.textContent = "ไม่สามารถยืนยันราคาและสิทธิ์ได้ กรุณากดจองเพื่อลองใหม่";
+      return false;
+    }
+    if (status) status.textContent = "";
+    if (!root.services.applyCommerceDraft(scope, draftItem)) return false;
+    trackItemEvent(scope === "urgent" ? "cwf_store_begin_urgent_booking" : "cwf_store_begin_booking", item, { source });
+    root.utils.routeTo(scope);
+    return true;
   }
 
   // Physical product the customer can buy (e.g. an AC unit) — gets a "ซื้อ"
@@ -536,9 +571,10 @@
     const support = String(item?.promotion_supporting_text || "").trim();
     const end = campaignSaleEnd(item);
     const countdown = item?.show_sale_countdown === true && end
-      ? `<span class="store-campaign-countdown" data-campaign-countdown="${root.utils.escapeHtml(end)}" aria-label="เวลาที่เหลือของโปรโมชั่น"></span>` : "";
-    if (!badge && !support && !countdown) return "";
-    return `<div class="store-campaign-presentation">${badge ? `<span class="store-campaign-badge">${root.utils.escapeHtml(badge)}</span>` : ""}${support ? `<span class="store-campaign-support">${root.utils.escapeHtml(support)}</span>` : ""}${countdown}</div>`;
+      ? `<span class="store-campaign-countdown" data-campaign-countdown aria-label="เวลาที่เหลือของโปรโมชั่น"></span>` : "";
+    if (!badge && !support && !countdown && !end) return "";
+    const sentinel = !badge && !support && !countdown ? " is-expiry-sentinel" : "";
+    return `<div class="store-campaign-presentation${sentinel}"${end ? ` data-campaign-sale-end="${root.utils.escapeHtml(end)}"` : ""}>${badge ? `<span class="store-campaign-badge">${root.utils.escapeHtml(badge)}</span>` : ""}${support ? `<span class="store-campaign-support">${root.utils.escapeHtml(support)}</span>` : ""}${countdown}</div>`;
   }
 
   // Real review aggregates only. item.rating_average/review_count come straight
@@ -879,8 +915,8 @@
   }
   function bindCampaignCountdowns(scope) {
     clearCampaignCountdowns();
-    scope.querySelectorAll("[data-campaign-countdown]").forEach((node) => {
-      const end = new Date(node.getAttribute("data-campaign-countdown"));
+    scope.querySelectorAll("[data-campaign-sale-end]").forEach((node) => {
+      const end = new Date(node.getAttribute("data-campaign-sale-end"));
       if (!Number.isFinite(end.getTime())) return;
       let timer = null;
       let disposed = false;
@@ -892,7 +928,10 @@
         stop();
         const remaining = end.getTime() - Date.now();
         if (remaining <= 0) {
-          node.textContent = "ปิดรับจองแล้ว";
+          const countdown = typeof node.querySelector === "function" ? node.querySelector("[data-campaign-countdown]") : node;
+          if (countdown) countdown.textContent = "ปิดรับจองแล้ว";
+          node.querySelectorAll(".store-campaign-badge, .store-campaign-support").forEach((part) => { part.hidden = true; });
+          node.classList.add("is-expired");
           node.closest(".store-card, .store-detail-screen, .homepage-service-card")
             ?.querySelectorAll("[data-store-book], [data-store-urgent], [data-store-detail-book], [data-store-detail-urgent], [data-home-featured-action]")
             .forEach((button) => { button.disabled = true; button.setAttribute("aria-disabled", "true"); });
@@ -901,8 +940,9 @@
         }
         const minutes = Math.ceil(remaining / 60000);
         const days = Math.floor(minutes / 1440); const hours = Math.floor((minutes % 1440) / 60); const mins = minutes % 60;
-        node.textContent = days ? `เหลือ ${days} วัน ${hours} ชม.` : `เหลือ ${hours} ชม. ${mins} นาที`;
-        if (!document.hidden) timer = setTimeout(tick, 60000);
+        const countdown = typeof node.querySelector === "function" ? node.querySelector("[data-campaign-countdown]") : node;
+        if (countdown) countdown.textContent = days ? `เหลือ ${days} วัน ${hours} ชม.` : `เหลือ ${hours} ชม. ${mins} นาที`;
+        if (!document.hidden) timer = setTimeout(tick, Math.min(60000, Math.max(1, remaining)));
       };
       const onVisibility = () => { if (document.hidden) stop(); else tick(); };
       cleanup = () => {
@@ -955,33 +995,28 @@
       });
     });
     container.querySelectorAll("[data-store-book]").forEach((button) => {
-      button.addEventListener("click", (event) => {
+      button.addEventListener("click", async (event) => {
         event.stopPropagation && event.stopPropagation();
         const id = button.getAttribute("data-store-book");
         const item = (root.state.catalog.items || []).find((it) => String(it.item_id) === String(id));
         if (isServicePackageBundle(item)) { goToDetail(id); return; }
-        const draftItem = root.services.catalogItemToCommerceDraft(item);
-        if (!draftItem || !root.services.applyCommerceDraft("scheduled", draftItem)) {
+        if (!root.services.catalogItemToCommerceDraft(item)) {
           trackItemEvent("cwf_store_contact_admin", item, { source: "store_list" });
           root.ui.openContactSheet(container, { title: item?.item_name || "รายการนี้" });
           return;
         }
-        trackItemEvent("cwf_store_begin_booking", item, { source: "store_list" });
-        root.utils.routeTo("scheduled");
+        await beginOrdinaryBooking(container, item, "scheduled", "store_list");
       });
     });
     container.querySelectorAll("[data-store-urgent]").forEach((button) => {
-      button.addEventListener("click", (event) => {
+      button.addEventListener("click", async (event) => {
         event.stopPropagation && event.stopPropagation();
         if (button.disabled) return;
         const id = button.getAttribute("data-store-urgent");
         const item = (root.state.catalog.items || []).find((it) => String(it.item_id) === String(id));
         if (!item || !allowsUrgentBooking(item) || !urgentBookingAvailable()) return;
         if (isServicePackageBundle(item)) { goToDetail(id); return; }
-        const draftItem = root.services.catalogItemToCommerceDraft(item);
-        if (!draftItem || !root.services.applyCommerceDraft("urgent", draftItem)) return;
-        trackItemEvent("cwf_store_begin_urgent_booking", item, { source: "store_list" });
-        root.utils.routeTo("urgent");
+        await beginOrdinaryBooking(container, item, "urgent", "store_list");
       });
     });
     container.querySelectorAll("[data-store-buy]").forEach((button) => {
@@ -1747,18 +1782,16 @@
     const retry = container.querySelector("[data-store-detail-retry]");
     if (retry) retry.addEventListener("click", () => loadDetail(container, detailItemId()));
     container.querySelectorAll("[data-store-detail-book]").forEach((bookButton) => {
-      bookButton.addEventListener("click", () => {
+      bookButton.addEventListener("click", async () => {
         const item = root.state.storeDetail?.data;
         if (!item) return;
         if (isServicePackageBundle(item)) { beginBundleBooking(container, item); return; }
-        const draftItem = root.services.catalogItemToCommerceDraft(item);
-        if (!draftItem || !root.services.applyCommerceDraft("scheduled", draftItem)) {
+        if (!root.services.catalogItemToCommerceDraft(item)) {
           trackItemEvent("cwf_store_contact_admin", item, { source: "store_detail" });
           root.ui.openContactSheet(container, { title: item?.item_name || "รายการนี้" });
           return;
         }
-        trackItemEvent("cwf_store_begin_booking", item, { source: "store_detail" });
-        root.utils.routeTo("scheduled");
+        await beginOrdinaryBooking(container, item, "scheduled", "store_detail");
       });
     });
     container.querySelectorAll("[data-bundle-quantity], [data-bundle-btu]").forEach((control) => {
@@ -1769,22 +1802,19 @@
         if (error) error.textContent = "";
         try {
           const result = collectBundleDraft(container, item);
-          if (total) total.textContent = `รวม ${result.preview.groups.reduce((sum, group) => sum + group.quantity, 0)} เครื่อง · ${result.preview.fixed_total_price} บาท · ${result.preview.duration_min} นาที`;
+          if (total) total.textContent = `รวม ${result.groups.reduce((sum, group) => sum + group.quantity, 0)} เครื่อง · ระบบจะยืนยันราคาเมื่อกดจอง`;
         } catch (cause) {
           if (total) total.textContent = cause.message;
         }
       });
     });
     container.querySelectorAll("[data-store-detail-urgent]").forEach((bookButton) => {
-      bookButton.addEventListener("click", () => {
+      bookButton.addEventListener("click", async () => {
         if (bookButton.disabled) return;
         const item = root.state.storeDetail?.data;
         if (!item || !allowsUrgentBooking(item)) return;
         if (isServicePackageBundle(item)) { beginBundleBooking(container, item, "urgent"); return; }
-        const draftItem = root.services.catalogItemToCommerceDraft(item);
-        if (!draftItem || !root.services.applyCommerceDraft("urgent", draftItem)) return;
-        trackItemEvent("cwf_store_begin_urgent_booking", item, { source: "store_detail" });
-        root.utils.routeTo("urgent");
+        await beginOrdinaryBooking(container, item, "urgent", "store_detail");
       });
     });
     container.querySelectorAll("[data-store-detail-contact]").forEach((contactButton) => {

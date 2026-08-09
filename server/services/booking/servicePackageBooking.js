@@ -201,6 +201,7 @@ function compositeBookingFromSnapshots({ body, snapshots }) {
   });
   if (storedGroups.size !== requestedGroups.size
       || [...storedGroups].some(([key, quantity]) => requestedGroups.get(key) !== quantity)) return null;
+  if (body.catalog_item_id != null && String(body.catalog_item_id).trim() !== bundleId) return null;
   const first = items[0].snapshot;
   return {
     bundleId, bundleKey, fixedTotal: formatMoney(total), durationMin, items,

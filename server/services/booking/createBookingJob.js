@@ -5,8 +5,9 @@ const { JOB_STATUS, ASSIGNMENT_STATUS, OFFER_STATUS } = require("./bookingStatus
 const { ensureBookingJobUnits } = require("./bookingJobUnits");
 const { packageRequest, resolvePackageBooking, packageBookingFromSnapshot, compositeBookingFromSnapshots } = require("./servicePackageBooking");
 const { resolveCatalogBookingPolicy, buildCatalogBookingItem, buildCatalogBookingPayload } = require("./catalogBookingPolicy");
-const { buildBookingTicket, loadBookingTicket } = require("./bookingTicket");
+const { buildBookingTicket, loadBookingTicket, exactMoney } = require("./bookingTicket");
 const adminIdempotency = require("./adminBookingIdempotency");
+const persistedBookingReplay = require("./persistedBookingReplay");
 const { validateAdminStorePromotionRequest } = require("./adminStorePromotionPolicy");
 
 function safePackagePreview(selection) {
@@ -204,6 +205,25 @@ function createBookingJobService(dependencies = {}) {
     const ttype = (tech_type || (bm === "urgent" ? "partner" : "company")).toString().trim().toLowerCase();
     const mode = isUrgentOffer ? "offer" : rawMode;
     const createdBySource = req.cwfBookSource === "customer" ? "customer" : "admin";
+    const rawAdminRequestKey = createdBySource === "admin" && admin_request_key != null ? String(admin_request_key).trim() : "";
+    const adminRequestKey = rawAdminRequestKey ? adminIdempotency.validateAdminRequestKey(rawAdminRequestKey) : null;
+    if (rawAdminRequestKey && !adminRequestKey) return res.status(400).json({ error: "INVALID_ADMIN_REQUEST_KEY", code: "INVALID_ADMIN_REQUEST_KEY" });
+    const adminRequestFingerprint = adminRequestKey ? adminIdempotency.requestFingerprint(body) : null;
+    const adminBookingToken = adminRequestKey ? adminIdempotency.bookingToken(adminRequestKey) : null;
+    // A committed replay is independent of today's catalog/package/promotion
+    // eligibility. Compare the durable material fingerprint before resolving it.
+    if (adminRequestKey) {
+      const existingAdmin = await persistedBookingReplay.findAdminReplay(pool, adminRequestKey);
+      if (existingAdmin) {
+        if (String(existingAdmin.admin_request_fingerprint || "") !== adminRequestFingerprint) {
+          return res.status(409).json({ error: "ADMIN_IDEMPOTENCY_KEY_REUSED", code: "ADMIN_IDEMPOTENCY_KEY_REUSED" });
+        }
+        return res.json({ success: true, replayed: true, job_id: existingAdmin.job_id,
+          booking_code: existingAdmin.booking_code,
+          booking_mode: existingAdmin.booking_mode || bm,
+          dispatch_mode: existingAdmin.dispatch_mode || mode });
+      }
+    }
     try {
       validateAdminStorePromotionRequest(body, { createdBySource });
     } catch (error) {
@@ -243,11 +263,6 @@ function createBookingJobService(dependencies = {}) {
       String(allowTimeProposalRaw || "").trim().toLowerCase() === "true" ||
       String(allowTimeProposalRaw || "").trim() === "1"
     );
-    const rawAdminRequestKey = createdBySource === "admin" && admin_request_key != null ? String(admin_request_key).trim() : "";
-    const adminRequestKey = rawAdminRequestKey ? adminIdempotency.validateAdminRequestKey(rawAdminRequestKey) : null;
-    if (rawAdminRequestKey && !adminRequestKey) return res.status(400).json({ error: "INVALID_ADMIN_REQUEST_KEY", code: "INVALID_ADMIN_REQUEST_KEY" });
-    const adminRequestFingerprint = adminRequestKey ? adminIdempotency.requestFingerprint(body) : null;
-    const adminBookingToken = adminRequestKey ? adminIdempotency.bookingToken(adminRequestKey) : null;
     // Customer-sourced urgent requests carry a client-generated
     // urgent_request_key; deriving booking_token from it deterministically
     // (instead of a random genToken) lets the dedup check below find a
@@ -1504,6 +1519,7 @@ function createBookingJobService(dependencies = {}) {
       : null;
     const bookingRequestKey = scheduledRequestKey || urgentRequestKey;
     const deterministicToken = scheduledDeterministicToken || urgentDeterministicToken;
+    const publicRequestFingerprint = bookingRequestKey ? adminIdempotency.requestFingerprint(req.body || {}) : null;
     if (deterministicToken) token = deterministicToken;
     const allowAdminScheduleFallback = allow_admin_schedule_fallback === true || String(allow_admin_schedule_fallback || "").trim() === "true";
     const canUseAdminScheduleFallback = bm === "scheduled" && allowAdminScheduleFallback;
@@ -1519,9 +1535,29 @@ function createBookingJobService(dependencies = {}) {
     const persistedGpsLatitude = bm === "urgent" && gps_latitude != null ? Number(gps_latitude) : null;
     const persistedGpsLongitude = bm === "urgent" && gps_longitude != null ? Number(gps_longitude) : null;
 
+    // New bookings persist a canonical request fingerprint. A replay can be
+    // returned before resolving mutable package/catalog/promotion state.
+    if (bookingRequestKey && deterministicToken && publicRequestFingerprint) {
+      const prior = await persistedBookingReplay.findPublicReplay(pool, {
+        requestKey: bookingRequestKey, bookingToken: deterministicToken, bookingMode: bm,
+      });
+      if (prior?.booking_request_fingerprint) {
+        if (String(prior.booking_request_fingerprint) !== publicRequestFingerprint) {
+          return res.status(409).json({ error: "This request key was already used for another booking. Start a new booking.", code: "IDEMPOTENCY_KEY_REUSED" });
+        }
+        const replayDuration = Number(prior.duration_min || 0);
+        return res.json({ success: true, replayed: true, job_id: prior.job_id,
+          booking_code: prior.booking_code, token: prior.booking_token,
+          booking_mode: prior.booking_mode || bm, dispatch_mode: prior.dispatch_mode || (bm === "urgent" ? "offer" : "normal"),
+          duration_min: replayDuration, effective_block_min: effectiveBlockMin(replayDuration),
+          travel_buffer_min: TRAVEL_BUFFER_MIN, base_total: Number(prior.job_price || 0),
+          booking_ticket: await loadBookingTicket(pool, prior.job_id) });
+      }
+    }
+
     // A committed package retry is resolved from immutable booking history before
     // consulting today's package sale/configuration state.
-    if (bm === "scheduled" && hasPackageRequest && deterministicToken) {
+    if (hasPackageRequest && deterministicToken) {
       const idem = await pool.connect();
       let prior = null;
       try {
@@ -1829,7 +1865,7 @@ function createBookingJobService(dependencies = {}) {
           `SELECT job_id, booking_code, booking_token, booking_mode, dispatch_mode,
                   duration_min, job_price, catalog_item_id, appointment_datetime, customer_phone, customer_name,
                   address_text, maps_url, job_zone, job_type, customer_note, allow_time_proposal,
-                  gps_latitude, gps_longitude
+                  gps_latitude, gps_longitude, booking_request_fingerprint
              FROM public.jobs
             WHERE booking_token=$1
               AND job_source='customer'
@@ -1844,6 +1880,18 @@ function createBookingJobService(dependencies = {}) {
           // (no mutation, no identifiers/PII). Same comparison as the pre-flight path.
           const row = existing.rows[0];
           await client.query("COMMIT");
+          if (row.booking_request_fingerprint) {
+            if (String(row.booking_request_fingerprint) !== publicRequestFingerprint) {
+              return res.status(409).json({ error: "This request key was already used for another booking. Start a new booking.", code: "IDEMPOTENCY_KEY_REUSED" });
+            }
+            const replayDuration = Number(row.duration_min || 0);
+            return res.json({ success: true, replayed: true, job_id: row.job_id,
+              booking_code: row.booking_code, token: row.booking_token, booking_mode: bm,
+              dispatch_mode: row.dispatch_mode || (bm === "urgent" ? "offer" : "normal"),
+              duration_min: replayDuration, effective_block_min: effectiveBlockMin(replayDuration),
+              travel_buffer_min: TRAVEL_BUFFER_MIN, base_total: Number(row.job_price || 0),
+              booking_ticket: await loadBookingTicket(pool, row.job_id) });
+          }
           const replayPackageBooking = hasPackageRequest
             ? await historicalPackageBookingForReplay(pool, row.job_id, packageRequestBody, appointment_datetime)
             : null;
@@ -1993,7 +2041,7 @@ function createBookingJobService(dependencies = {}) {
       const base_total = packageBooking ? packageBooking.fixedTotal : Number(total || 0);
       const promoPick = packageBooking || catalogBooking ? null : await findBestCustomerPromotion(payloadV2, base_total, client);
       const appliedPromo = promoPick?.promo || null;
-      const appliedDiscount = Math.min(Number(base_total || 0), Number(promoPick?.discount || 0));
+      const appliedDiscount = exactMoney(Math.min(Number(base_total || 0), Number(promoPick?.discount || 0)).toFixed(2));
 
       // ✅ dispatch_mode:
       // - scheduled (ลูกค้าจองปกติ) => normal (ให้เข้าแอดมิน/คิวตามปกติ)
@@ -2007,8 +2055,9 @@ function createBookingJobService(dependencies = {}) {
         "booking_token", "job_source", "dispatch_mode", "customer_note",
         "maps_url", "job_zone", "duration_min", "booking_mode", "allow_time_proposal",
         "gps_latitude", "gps_longitude", "service_zone_code", "service_zone_source",
+        "booking_request_fingerprint",
       ];
-      const jobInsertValuesSql = ["$1", "$2", "$3", "$4", "$5", "$6", "NULL", "$16", "$11", "$7", "'customer'", "$14", "$8", "$9", "$10", "$12", "$13", "$15", "$17", "$18", "$19", "$20"];
+      const jobInsertValuesSql = ["$1", "$2", "$3", "$4", "$5", "$6", "NULL", "$16", "$11", "$7", "'customer'", "$14", "$8", "$9", "$10", "$12", "$13", "$15", "$17", "$18", "$19", "$20", "$21"];
       const jobInsertParams = [
         String(customer_name).trim(),
         (customer_phone || "").toString().trim(),
@@ -2030,6 +2079,7 @@ function createBookingJobService(dependencies = {}) {
         persistedGpsLongitude,
         publicUrgentZone?.service_zone_code || null,
         publicUrgentZone?.service_zone_source || null,
+        publicRequestFingerprint,
       ];
       if (catalogLinkReady) {
         jobInsertColumns.push("catalog_item_id", "customer_sub");
@@ -2048,13 +2098,13 @@ function createBookingJobService(dependencies = {}) {
       );
 
       // attach promo to job (if any)
-      if(appliedPromo && appliedDiscount > 0){
+      if(appliedPromo && Number(appliedDiscount) > 0){
         try{
           await client.query(
             `INSERT INTO public.job_promotions (job_id, promo_id, applied_discount)
              VALUES ($1,$2,$3)
              ON CONFLICT (job_id) DO UPDATE SET promo_id=EXCLUDED.promo_id, applied_discount=EXCLUDED.applied_discount`,
-            [r.rows[0].job_id, Number(appliedPromo.promo_id), Number(appliedDiscount)]
+            [r.rows[0].job_id, Number(appliedPromo.promo_id), appliedDiscount]
           );
         }catch(e){
           // fail-open: don't break booking
@@ -2208,7 +2258,8 @@ function createBookingJobService(dependencies = {}) {
         : {};
       const bookingTicket = buildBookingTicket({
         job: { booking_code, customer_name: String(customer_name).trim(), customer_phone: String(customer_phone || "").trim(),
-          appointment_datetime, job_price: base_total, public_status: bm === "urgent" ? "กำลังค้นหาช่าง" : "รอแอดมินยืนยัน" },
+          appointment_datetime, job_price: base_total, applied_discount: appliedDiscount,
+          public_status: bm === "urgent" ? "กำลังค้นหาช่าง" : "รอแอดมินยืนยัน" },
         items: computedItems,
       });
       res.json({
@@ -2224,7 +2275,7 @@ function createBookingJobService(dependencies = {}) {
         duration_min: duration_min_v2,
         effective_block_min: effectiveBlockMin(duration_min_v2),
         travel_buffer_min: TRAVEL_BUFFER_MIN,
-        applied_promo: (appliedPromo && appliedDiscount > 0) ? {
+        applied_promo: (appliedPromo && Number(appliedDiscount) > 0) ? {
           promo_id: appliedPromo.promo_id,
           promo_name: appliedPromo.promo_name,
           promo_type: appliedPromo.promo_type,

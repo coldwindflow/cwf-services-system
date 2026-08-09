@@ -931,8 +931,10 @@
       catalog_item_id: catalogItemId,
     };
     if (hasPackageSelection()) {
+      if (hasCompositeSelection()) return { ...common,
+        ...(Number.isSafeInteger(Number(d.catalog_item_id)) && Number(d.catalog_item_id) > 0 ? { catalog_item_id: Number(d.catalog_item_id) } : {}),
+        service_package_groups: draft().service_package_groups.map((group) => ({ package_key: group.package_key, btu: Number(group.btu), quantity: Number(group.quantity) })) };
       delete common.catalog_item_id;
-      if (hasCompositeSelection()) return { ...common, service_package_groups: draft().service_package_groups.map((group) => ({ package_key: group.package_key, btu: Number(group.btu), quantity: Number(group.quantity) })) };
       return {
         ...common,
         service_package_key: String(d.service_package_key).trim(),

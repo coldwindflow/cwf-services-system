@@ -11,6 +11,7 @@ const {
   packageBookingFromSnapshot,
 } = require("../server/services/booking/servicePackageBooking");
 const { createBookingJobService } = require("../server/services/booking/createBookingJob");
+const adminIdempotency = require("../server/services/booking/adminBookingIdempotency");
 
 function responseHarness() {
   return {
@@ -266,7 +267,7 @@ test("advisory-locked committed package replay bypasses unavailable current reso
     async connect() { return client; },
     async query(sql) {
       calls.push(sql);
-      if (/FROM public\.jobs WHERE job_id=\$1/.test(sql)) return { rows: [prior] };
+      if (/FROM public\.jobs(?: j)? WHERE (?:j\.)?job_id=\$1/.test(sql)) return { rows: [prior] };
       if (/service_package_snapshot/.test(sql)) return { rows: [{
         service_package_id: "41", service_package_tier_id: "73",
         service_package_snapshot: historical.snapshot,
@@ -308,6 +309,38 @@ test("advisory-locked committed package replay bypasses unavailable current reso
   assert.equal(changed.body.code, "IDEMPOTENCY_KEY_REUSED");
   assert.equal(resolverCalls, 0);
   assert.equal(calls.some((sql) => /\bINSERT\b|\bUPDATE\b|\bDELETE\b/.test(sql)), false);
+});
+
+test("ordinary Store replay uses its persisted fingerprint before a disabled catalog or promotion is resolved", async () => {
+  const request = scheduledRequest({ customer_phone: "0812345678", job_type: "wash", ac_type: "wall", btu: 12000,
+    wash_variant: "normal", machine_count: 1, catalog_item_id: 77 });
+  const prior = { job_id: "777", booking_code: "CWF777", booking_token: "stored", booking_mode: "scheduled",
+    dispatch_mode: "normal", duration_min: 45, job_price: "699.00",
+    booking_request_fingerprint: adminIdempotency.requestFingerprint(request) };
+  const calls = [];
+  const client = { async query(sql) { calls.push(sql); return /FROM public\.jobs/.test(sql) ? { rows: [prior] } : { rows: [] }; }, release() {} };
+  const pool = {
+    async connect() { return client; },
+    async query(sql) {
+      calls.push(sql);
+      if (/FROM public\.jobs j/.test(sql)) return { rows: [{ ...prior, customer_name: "Package customer",
+        customer_phone: "0812345678", appointment_datetime: request.appointment_datetime,
+        applied_discount: "0.00", job_status: "customer_scheduled_review" }] };
+      if (/FROM public\.job_items/.test(sql)) return { rows: [{ item_name: "TEST Store service", qty: 1, is_service: true }] };
+      throw new Error(`unexpected query: ${sql}`);
+    },
+  };
+  const service = bookingService({ pool, effectiveBlockMin: (value) => value });
+  const replay = await invoke(service.handlePublicBook, request);
+  assert.equal(replay.statusCode, 200);
+  assert.equal(replay.body.replayed, true);
+  assert.equal(replay.body.booking_ticket.exact_total, "699.00");
+  assert.equal(calls.some((sql) => /catalog_items|customer_service_price_rules|promotions_v2/.test(sql)), false);
+  assert.equal(calls.some((sql) => /\bINSERT\b|\bUPDATE\b|\bDELETE\b/.test(sql)), false);
+
+  const changed = await invoke(service.handlePublicBook, { ...request, machine_count: 2 });
+  assert.equal(changed.statusCode, 409);
+  assert.equal(changed.body.code, "IDEMPOTENCY_KEY_REUSED");
 });
 
 test("mixed ordinary lines and urgent package booking are rejected", async () => {

@@ -145,7 +145,7 @@ async function listBundles(db) {
 function createStoreServicePackageCatalogService({ pool, packageRepository = repository }) {
   async function quote(input = {}) {
     const booking = await resolveCompositeBooking({
-      body: { service_package_groups: input.service_package_groups },
+      body: { catalog_item_id: input.catalog_item_id, service_package_groups: input.service_package_groups },
       bookingMode: String(input.booking_mode || "scheduled"),
       appointmentDatetime: input.appointment_datetime,
       repository: packageRepository, db: pool, identity: "customer",
