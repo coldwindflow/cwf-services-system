@@ -43,7 +43,20 @@ test("Admin Add Job selects Store parents, quotes arbitrary mixed groups and ret
   assert.match(js, /state\.exact_total \|\| fmtMoney/);
 });
 
-test("Admin Add Job runtime uses the deploy-safe Issue 267 v8 asset URL", () => {
-  assert.match(html, /admin-add-v2\.js\?v=20260809_issue267_catalog_flow_v8/);
+test("Admin Add Job runtime uses the deploy-safe Issue 267 v9 asset URL", () => {
+  assert.match(html, /admin-add-v2\.js\?v=20260809_issue267_catalog_flow_v9/);
   assert.doesNotMatch(html, /admin-add-v2\.js\?v=20260809_issue267_catalog_flow_v2/);
+});
+
+test("Admin Store bundle quote ignores stale responses and refreshes the authoritative summary", () => {
+  const preview = js.match(/async function previewServiceBundle\(\)[\s\S]*?\n}\n/)[0];
+  const invalidate = js.match(/function invalidateServicePackagePreview\([\s\S]*?\n}\n/)[0];
+  assert.match(js, /service_bundle_quote_request_id: 0/);
+  assert.match(preview, /const requestId = \+\+state\.service_bundle_quote_request_id/);
+  assert.match(preview, /requestId !== state\.service_bundle_quote_request_id \|\| fingerprint !== bundleFingerprint\(\)/);
+  assert.match(preview, /state\.service_bundle_quote_fingerprint = fingerprint/);
+  assert.match(preview, /await refreshPreview\(\)/);
+  assert.match(invalidate, /state\.service_bundle_quote_request_id \+= 1/);
+  assert.match(invalidate, /const legacySelected =/);
+  assert.match(invalidate, /panel\.style\.display = legacySelected/);
 });
