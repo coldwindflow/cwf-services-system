@@ -794,6 +794,7 @@
     const ticketText = root.bookingTicket?.formatText?.(result.booking_ticket) || "";
     const copied = ticketCopyState.status === "copied";
     const manual = ticketCopyState.status === "manual";
+    const showLineHandoff = copied || manual;
     const confirmedNetTotal = root.bookingTicket?.confirmedNetTotal?.(result) || "0.00";
     return `
       ${view.state === "pending" ? `
@@ -831,7 +832,7 @@
         ${ticketText ? `<div class="booking-ticket-handoff"><p>ส่ง Ticket นี้ใน LINE OA เพื่อให้แอดมินทราบว่า LINE นี้เป็นผู้ติดต่อของรายการจองใด</p>
           <p class="muted">Ticket มีชื่อและเบอร์โทรที่ใช้จอง กรุณาตรวจสอบก่อนคัดลอก</p>
           <div class="button-row"><button type="button" class="secondary-btn" data-urgent-action="copy-booking-ticket" ${ticketCopyState.status === "copying" || copied ? "disabled" : ""}>${copied ? "คัดลอกแล้ว" : "คัดลอก Ticket ส่งให้แอดมิน"}</button>
-          <a class="primary-btn" href="https://lin.ee/fG1Oq7y" target="_blank" rel="noopener noreferrer">เปิด LINE OA เพื่อส่ง Ticket</a></div>
+          ${showLineHandoff ? '<a class="primary-btn" href="https://lin.ee/fG1Oq7y" target="_blank" rel="noopener noreferrer">เปิด LINE OA เพื่อส่ง Ticket</a>' : ""}</div>
           <div role="status" aria-live="polite">${copied ? "คัดลอกแล้ว" : root.utils.escapeHtml(ticketCopyState.error || "")}</div>
           ${manual ? `<label for="urgent-ticket-manual">คัดลอกข้อความด้านล่างด้วยตนเอง</label><textarea id="urgent-ticket-manual" class="input textarea" rows="10" readonly>${root.utils.escapeHtml(ticketText)}</textarea>` : ""}
         </div>` : ""}

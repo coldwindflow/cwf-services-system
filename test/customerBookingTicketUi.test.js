@@ -51,6 +51,149 @@ function safeTicket(overrides = {}) {
   };
 }
 
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function moduleWithTicketState(source, status, error = "") {
+  const initial = 'let ticketCopyState = { status: "idle", error: "" };';
+  assert.equal(source.includes(initial), true, "ticket state initializer must stay testable");
+  return source.replace(
+    initial,
+    `let ticketCopyState = { status: ${JSON.stringify(status)}, error: ${JSON.stringify(error)} };`
+  );
+}
+
+function renderScheduledTicketState(status, error = "") {
+  const { api } = loadTicketModule();
+  const root = {
+    state: {
+      draft: {
+        scheduled: {
+          date: "2026-08-10",
+          selectedSlot: { date: "2026-08-10", start: "09:00", end: "09:45" },
+        },
+      },
+      scheduledSubmit: {
+        result: {
+          booking_code: "CWF-TEST-267",
+          token: "public-tracking-key",
+          duration_min: 45,
+          net_total: "3198.00",
+          booking_ticket: safeTicket(),
+        },
+      },
+      scheduledPreview: { pricing: { data: null }, package: { data: null } },
+    },
+    bookingTicket: api,
+    utils: { escapeHtml },
+    services: { normalizeServiceLines: () => [], bookableBtuOptions: [] },
+    availability: { bangkokTodayYmd: () => "2026-08-09" },
+  };
+  const window = { CWFCustomerAppV2: root };
+  vm.runInNewContext(moduleWithTicketState(scheduled, status, error), { window, console }, {
+    filename: "bookingScheduled.js",
+  });
+  return root.bookingScheduled._test.renderSuccess();
+}
+
+function renderUrgentTicketState(status, error = "") {
+  const { api } = loadTicketModule();
+  const serviceLine = {
+    line_id: "line-1",
+    job_type: "wash",
+    ac_type: "wall",
+    btu: 12000,
+    machine_count: 1,
+    wash_variant: "standard",
+    repair_variant: "",
+  };
+  const services = {
+    normalizeServiceLine(input = {}) {
+      return { ...serviceLine, ...input, line_id: input.line_id || serviceLine.line_id };
+    },
+    normalizeCompositeServiceLine(input = {}) {
+      return services.normalizeServiceLine(input);
+    },
+    normalizeServiceLines(source = {}) {
+      return (source.services || [serviceLine]).map((line) => services.normalizeServiceLine(line));
+    },
+    serviceLabel: () => "TEST wall wash 12000 BTU",
+    payloadFromServiceLines: () => null,
+    payloadFromCompositeServiceLines: () => null,
+  };
+  const root = {
+    state: {
+      draft: {
+        urgent: {
+          date: "2026-08-10",
+          time: "09:00",
+          services: [serviceLine],
+          service_package_groups: [],
+        },
+      },
+      urgentFlow: {
+        result: {
+          booking_code: "CWF-TEST-267",
+          token: "public-tracking-key",
+          net_total: "3198.00",
+          booking_ticket: safeTicket(),
+        },
+        liveStatus: { can_cancel: false },
+        liveStatusError: "",
+      },
+      updateDraft(scope, patch) {
+        Object.assign(this.draft[scope], patch);
+      },
+      setUrgentFlow(patch) {
+        Object.assign(this.urgentFlow, patch);
+      },
+    },
+    bookingTicket: api,
+    utils: { escapeHtml },
+    services,
+    customerCopy: {
+      urgentSubmittedView: () => ({
+        state: "terminal",
+        cardClass: "is-success",
+        mark: "OK",
+        kicker: "TEST",
+        title: "TEST submitted",
+        boxClass: "is-success",
+        message: "TEST confirmed",
+        detail: "TEST detail",
+        statusLabel: "TEST status",
+        showAdminContact: false,
+      }),
+    },
+  };
+  const window = { CWFCustomerAppV2: root };
+  vm.runInNewContext(moduleWithTicketState(urgent, status, error), { window, console }, {
+    filename: "bookingUrgent.js",
+  });
+  return root.bookingUrgent._test.renderSubmitted(root.customerCopy.urgentSubmittedView());
+}
+
+function assertTicketState(html, status, textareaId) {
+  if (status === "idle" || status === "copying") {
+    assert.doesNotMatch(html, /href="https:\/\/lin\.ee\/fG1Oq7y"/);
+    assert.doesNotMatch(html, new RegExp(`id="${textareaId}"`));
+    return;
+  }
+  assert.match(html, /href="https:\/\/lin\.ee\/fG1Oq7y"/);
+  if (status === "manual") {
+    assert.match(html, new RegExp(`<textarea id="${textareaId}"[^>]*readonly`));
+    assert.match(html, /CWF BOOKING TICKET/);
+  } else {
+    assert.doesNotMatch(html, new RegExp(`id="${textareaId}"`));
+  }
+}
+
 test("shared formatter uses only the safe server ticket DTO for ordinary/composite/mixed bookings", () => {
   const { api } = loadTicketModule();
   const text = api.formatText(safeTicket());
@@ -100,13 +243,40 @@ test("success and replay use one server-confirmed exact net total without browse
   assert.match(scheduled, /confirmedNetTotal\?\.\(result\)/);
 });
 
-test("scheduled and urgent success actions cannot call booking APIs and keep LINE available during manual fallback", () => {
+test("scheduled and urgent render LINE only after the copy attempt", () => {
+  for (const [renderState, textareaId] of [
+    [renderScheduledTicketState, "booking-ticket-manual"],
+    [renderUrgentTicketState, "urgent-ticket-manual"],
+  ]) {
+    for (const status of ["idle", "copying", "copied", "manual"]) {
+      const error = status === "manual" ? "Copy failed" : "";
+      assertTicketState(renderState(status, error), status, textareaId);
+    }
+  }
+});
+
+test("clipboard unavailable, thrown, and rejected attempts expose manual Ticket plus LINE", async () => {
+  const expected = loadTicketModule().api.formatText(safeTicket());
+  const cases = [
+    loadTicketModule({ writeText: null }),
+    loadTicketModule({ writeText: () => { throw new Error("clipboard threw"); } }),
+    loadTicketModule({ writeText: async () => Promise.reject(new Error("clipboard rejected")) }),
+  ];
+  for (const clipboard of cases) {
+    const result = await clipboard.api.copyText(expected);
+    assert.equal(result.status, "manual");
+    assertTicketState(renderScheduledTicketState(result.status, result.error), "manual", "booking-ticket-manual");
+    assertTicketState(renderUrgentTicketState(result.status, result.error), "manual", "urgent-ticket-manual");
+  }
+});
+
+test("scheduled and urgent Ticket actions cannot call booking APIs", () => {
   for (const source of [scheduled, urgent]) {
     assert.match(source, /root\.bookingTicket\?\.formatText\?\./);
     assert.match(source, /คัดลอก Ticket ส่งให้แอดมิน/);
     assert.match(source, /Ticket มีชื่อและเบอร์โทร/);
-    assert.match(source, /<a class="primary-btn" href="https:\/\/lin\.ee\/fG1Oq7y"/);
-    assert.doesNotMatch(source, /copied \? '<a class="primary-btn" href="https:\/\/lin\.ee\/fG1Oq7y"/);
+    assert.match(source, /const showLineHandoff = copied \|\| manual;/);
+    assert.match(source, /showLineHandoff \? '<a class="primary-btn" href="https:\/\/lin\.ee\/fG1Oq7y"/);
     assert.match(source, /readonly/);
     assert.match(source, /aria-live="polite"/);
     const start = source.indexOf('action === "copy-booking-ticket"');
@@ -119,16 +289,21 @@ test("scheduled and urgent success actions cannot call booking APIs and keep LIN
 });
 
 test("ticket handoff keeps tracking/new-booking actions, 44px controls, mobile layout, and PWA wiring", () => {
-  assert.match(scheduled, /data-action="track-created"/);
-  assert.match(scheduled, /data-action="new-cleaning-booking"/);
-  assert.match(urgent, /data-urgent-action="track-created"/);
+  const scheduledCopied = renderScheduledTicketState("copied");
+  const urgentCopied = renderUrgentTicketState("copied");
+  assert.match(scheduledCopied, /CWF-TEST-267/);
+  assert.match(scheduledCopied, /data-action="track-created"/);
+  assert.match(scheduledCopied, /data-action="new-cleaning-booking"/);
+  assert.match(urgentCopied, /CWF-TEST-267/);
+  assert.match(urgentCopied, /data-urgent-action="track-created"/);
+  assert.match(urgentCopied, /data-urgent-action="new-request"/);
   assert.match(css, /\.booking-ticket-handoff[\s\S]*min-height:\s*44px/);
   assert.match(css, /@media \(max-width:\s*390px\)[\s\S]*\.booking-ticket-handoff/);
   assert.match(css, /@media \(max-width:\s*360px\)[\s\S]*\.booking-ticket-handoff/);
   assert.match(index, /modules\/bookingTicket\.js\?v=/);
   assert.match(sw, /modules\/bookingTicket\.js\?v=\$\{BUILD_ID\}/);
   for (const source of [index, sw, manifest, appEntry]) {
-    assert.match(source, /20260809_issue267_catalog_flow_v8/);
-    assert.doesNotMatch(source, /20260809_issue267_catalog_flow_v7/);
+    assert.match(source, /20260809_issue267_catalog_flow_v9/);
+    assert.doesNotMatch(source, /20260809_issue267_catalog_flow_v8/);
   }
 });
