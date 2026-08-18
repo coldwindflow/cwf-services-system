@@ -225,8 +225,8 @@
     const line = normalizeServiceLine(item.draft);
     const catalogItemId = Number.isFinite(Number(item.id)) && Number(item.id) > 0 ? Number(item.id) : null;
     root.state.updateDraft(scope, {
-      service_kind: "clean",
-      job_type: "ล้าง",
+      service_kind: line.job_type === "ล้าง" ? "clean" : line.job_type,
+      job_type: line.job_type,
       ac_type: line.ac_type,
       btu: String(line.btu),
       machine_count: line.machine_count,
@@ -234,7 +234,10 @@
       services: [line],
       selectedSlot: null,
       catalog_item_id: catalogItemId,
+      catalog_booking_quote: item.catalog_quote || null,
+      catalog_booking_pricing: item.pricing || null,
       ...(scope === "scheduled" ? { scheduled_request_key: "" } : {}),
+      ...(scope === "urgent" ? { urgent_request_key: "", service_package_groups: [], service_package_bundle_preview: null } : {}),
     });
     root.state.selectedService = { id: item.id || item.title || "", route: scope };
     if (scope === "scheduled") {
@@ -305,6 +308,106 @@
     };
   }
 
+  function normalizeCompositeServiceLine(line) {
+    const normalized = normalizeServiceLine({ ...(line || {}), machine_count: 1 });
+    const quantity = Number(line?.machine_count);
+    if (!Number.isSafeInteger(quantity) || quantity <= 0 || quantity > 99) return null;
+    return { ...normalized, machine_count: quantity };
+  }
+
+  function payloadFromCompositeServiceLines(lines) {
+    const normalized = (Array.isArray(lines) ? lines : []).map(normalizeCompositeServiceLine);
+    if (!normalized.length || normalized.some((line) => !line || line.needs_admin_estimate)) return null;
+    const backend = normalized.map((line) => ({
+      job_type: line.job_type,
+      ac_type: line.ac_type,
+      btu: line.btu,
+      machine_count: line.machine_count,
+      ...(line.ac_type === WALL_AC && line.wash_variant ? { wash_variant: line.wash_variant } : {}),
+    }));
+    const first = backend[0];
+    return {
+      job_type: first.job_type,
+      ac_type: first.ac_type,
+      btu: first.btu,
+      machine_count: backend.reduce((sum, line) => sum + line.machine_count, 0),
+      wash_variant: first.wash_variant || "",
+      repair_variant: "",
+      services: backend,
+    };
+  }
+
+  function exactMoneyText(value) {
+    const match = /^(\d+)(?:\.(\d{1,2}))?$/.exec(String(value == null ? "" : value).trim());
+    return match ? `${match[1]}.${String(match[2] || "").padEnd(2, "0")}` : "";
+  }
+
+  function catalogQuoteToCommerceDraft(catalogItem, quote, bookingMode) {
+    const item = catalogItemToCommerceDraft(catalogItem);
+    const totalExact = exactMoneyText(quote?.fixed_total_price);
+    const durationMin = Number(quote?.duration_minutes);
+    const machineCount = Number(quote?.machine_count);
+    const selected = item?.draft || {};
+    const service = quote?.service || {};
+    if (!item || quote?.kind !== "bookable" || Number(quote?.catalog_item_id) !== Number(catalogItem.item_id)
+        || !totalExact || !Number.isSafeInteger(machineCount)
+        || machineCount <= 0 || !Number.isSafeInteger(durationMin) || durationMin <= 0) return null;
+    if (String(service.job_type || "") !== String(selected.job_type || "")
+        || String(service.ac_type || "") !== String(selected.ac_type || "")
+        || Number(service.btu) !== Number(selected.btu)
+        || String(service.wash_variant || "") !== String(selected.wash_variant || "")
+        || machineCount !== Number(selected.machine_count)) return null;
+    const scope = String(bookingMode || "scheduled") === "urgent" ? "urgent" : "scheduled";
+    const quoteState = Object.freeze({
+      catalog_item_id: Number(catalogItem.item_id),
+      booking_mode: scope,
+      fixed_total_price: totalExact,
+      duration_min: durationMin,
+      machine_count: machineCount,
+      unit_price: exactMoneyText(quote.unit_price),
+      normal_unit_price: exactMoneyText(quote.normal_unit_price),
+      price_label: String(quote.price_label || ""),
+      campaign_name: String(quote.campaign_name || ""),
+      service: Object.freeze({
+        job_type: String(service.job_type || ""),
+        ac_type: String(service.ac_type || ""),
+        btu: Number(service.btu),
+        wash_variant: String(service.wash_variant || ""),
+        machine_count: machineCount,
+      }),
+      server_verified: true,
+    });
+    const pricing = {
+      standard_price: totalExact,
+      active_price: totalExact,
+      fixed_total_price: totalExact,
+      duration_min: durationMin,
+      price_lines: [{ line_total: totalExact }],
+      ...(quoteState.campaign_name || quoteState.price_label ? { promo: {
+        promo_name: quoteState.campaign_name || quoteState.price_label,
+        total_after_discount: totalExact,
+      } } : {}),
+      catalog_quote: quoteState,
+    };
+    return { ...item, catalog_quote: quoteState, pricing };
+  }
+
+  function catalogQuoteMatchesDraft(source, scope) {
+    const d = source || {};
+    const quote = d.catalog_booking_quote;
+    if (!quote || quote.server_verified !== true || quote.booking_mode !== scope
+        || Number(quote.catalog_item_id) !== Number(d.catalog_item_id)) return false;
+    const lines = normalizeServiceLines(d);
+    const line = lines[0];
+    const service = quote.service || {};
+    return lines.length === 1
+      && String(line.job_type || "") === String(service.job_type || "")
+      && String(line.ac_type || "") === String(service.ac_type || "")
+      && Number(line.btu) === Number(service.btu)
+      && String(line.wash_variant || "") === String(service.wash_variant || "")
+      && Number(line.machine_count) === Number(quote.machine_count);
+  }
+
   root.services = {
     UNKNOWN_AC,
     UNKNOWN_BTU,
@@ -336,11 +439,15 @@
     commerceItem,
     applyCommerceDraft,
     catalogItemToCommerceDraft,
+    catalogQuoteToCommerceDraft,
+    catalogQuoteMatchesDraft,
     createServiceLine,
     normalizeServiceLine,
+    normalizeCompositeServiceLine,
     normalizeServiceLines,
     linePatchToDraftServices,
     payloadFromServiceLines,
+    payloadFromCompositeServiceLines,
     payloadFromScheduledDraft,
     normalizeServiceDraft,
     payloadFromServiceDraft,

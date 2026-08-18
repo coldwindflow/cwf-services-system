@@ -66,6 +66,12 @@ function sanitizeCustomerUrgentBody(body) {
   const services = Array.isArray(src.services) && src.services.length
     ? src.services.slice(0, 10).map(sanitizeCustomerServiceLine)
     : null;
+  const servicePackageGroups = Array.isArray(src.service_package_groups) && src.service_package_groups.length
+    ? src.service_package_groups.slice(0, 50).map((group) => ({
+      package_key: String(group?.package_key || "").trim(),
+      btu: coerceNumber(group?.btu, 0),
+      quantity: coerceNumber(group?.quantity, 0),
+    })) : undefined;
   return {
     customer_name: String(src.customer_name || "").trim(),
     customer_phone: String(src.customer_phone || "").trim(),
@@ -86,6 +92,9 @@ function sanitizeCustomerUrgentBody(body) {
     services,
     client_app: "customer_app_v2",
     urgent_request_key: String(src.urgent_request_key || "").trim(),
+    ...(Number.isSafeInteger(Number(src.catalog_item_id)) && Number(src.catalog_item_id) > 0
+      ? { catalog_item_id: Number(src.catalog_item_id) } : {}),
+    ...(servicePackageGroups ? { service_package_groups: servicePackageGroups } : {}),
   };
 }
 

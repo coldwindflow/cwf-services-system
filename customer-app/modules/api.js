@@ -108,6 +108,14 @@
       });
     },
 
+    async quoteCatalogBooking(payload) {
+      return requestJson("/public/catalog-booking-quote", {
+        method: "POST",
+        body: payload || {},
+        cache: "no-store",
+      });
+    },
+
     async loadServicePackages() {
       return requestJson("/public/service-packages", { cache: "no-store" });
     },

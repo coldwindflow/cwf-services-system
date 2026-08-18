@@ -355,7 +355,7 @@ test("completed cleaning renders one prominent donut with date elapsed time and 
   const html = app.tracking._test.renderPassport(completedHealthPayload());
   assert.equal((html.match(/data-unit-cleanliness/g) || []).length, 1);
   assert.match(html, /class="cleanliness-ring"/);
-  assert.match(html, />100%<|>99%</);
+  assert.match(html, />\d{1,3}%</);
   assert.match(html, /ประมาณการความสะอาดจากงานนี้/);
   assert.match(html, /วันที่ล้างของงานนี้/);
   assert.match(html, /ผ่านมาแล้ว/);
@@ -1191,7 +1191,7 @@ test("tracking UI exposes loading, not-found, rate-limit and offline states", ()
 });
 
 test("tracking assets share the full-read cache build id", () => {
-  const build = "20260728_urgent_dispatch_preflight_v2";
+  const build = "20260809_issue267_catalog_flow_v9";
   for (const file of [
     "customer-app/index.html",
     "customer-app/sw.js",

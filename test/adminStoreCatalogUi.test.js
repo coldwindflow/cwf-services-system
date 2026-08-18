@@ -176,8 +176,8 @@ test("admin-store-catalog.css defines the page-local responsive modal contract",
 });
 
 test("admin-store-catalog.html cache versions stay coherent with unchanged JavaScript", () => {
-  assert.match(catalogHtmlSource, /admin-store-catalog\.css\?v=20260808_service_packages_responsive_v2/);
-  assert.match(catalogHtmlSource, /admin-store-catalog\.js\?v=20260808_service_packages_th_v1/);
+  assert.match(catalogHtmlSource, /admin-store-catalog\.css\?v=20260809_issue267_merchandising_v3/);
+  assert.match(catalogHtmlSource, /admin-store-catalog\.js\?v=20260809_issue267_merchandising_v4/);
 });
 
 test("openCatalogModalForEdit populates cm_effective_from and cm_effective_to from raw pricing fields with fallback", () => {
@@ -387,8 +387,8 @@ test("gallery delete and set-primary actions ask for confirmation only on delete
 });
 
 test("admin-store-catalog.html keeps CSS cache and bumps JS cache for pricing safety", () => {
-  assert.match(catalogHtmlSource, /admin-store-catalog\.css\?v=20260808_service_packages_responsive_v2/);
-  assert.match(catalogHtmlSource, /admin-store-catalog\.js\?v=20260808_service_packages_th_v1/);
+  assert.match(catalogHtmlSource, /admin-store-catalog\.css\?v=20260809_issue267_merchandising_v3/);
+  assert.match(catalogHtmlSource, /admin-store-catalog\.js\?v=20260809_issue267_merchandising_v4/);
 });
 
 test("the item_category field is a service/product dropdown, not free text", () => {

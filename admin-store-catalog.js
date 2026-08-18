@@ -11,9 +11,10 @@ let galleryUploadQueue = [];
 let galleryPickNotice = "";
 let deleteModalItemId = null;
 let servicePackages = [];
+let standaloneServicePackages = [];
 let editingPackageKey = null;
 let packageTierDrafts = [];
-const BOOKING_MODES = ["bookable", "contact_admin", "purchase"];
+const BOOKING_MODES = ["bookable", "contact_admin", "purchase", "service_package"];
 // Must mirror the backend's MAX_CATALOG_IMAGES_PER_ITEM (server/routes/catalog/items.js)
 const MAX_GALLERY_IMAGES = 4;
 
@@ -231,6 +232,15 @@ function ensureCatalogModal() {
               </select>
             </div>
           </div>
+          <div class="asc-field"><label>ช่องทางการจองบริการ *</label><select id="cm_booking_flow_policy"><option value="scheduled_only">จองล่วงหน้าเท่านั้น</option><option value="scheduled_and_urgent">จองล่วงหน้า + จองด่วน</option></select></div>
+          <div class="asc-grid2"><div class="asc-field"><label>ข้อความป้ายโปรโมชั่น</label><input id="cm_promotion_badge_text" maxlength="80"></div><div class="asc-field"><label>ข้อความสนับสนุนโปรโมชั่น</label><input id="cm_promotion_supporting_text" maxlength="200"></div></div>
+          <div class="asc-grid2"><div class="asc-field"><label>ธีม</label><select id="cm_promotion_theme_preset"><option value="default">ปกติ</option><option value="premium">พรีเมียม</option><option value="limited_time">เวลาจำกัด</option><option value="new">ใหม่</option></select></div><div class="asc-field"><label>เอฟเฟกต์</label><select id="cm_promotion_effect_preset"><option value="none">ไม่มี</option><option value="soft_glow">แสงนุ่ม</option><option value="shimmer_border">ขอบประกาย</option><option value="badge_pulse">ป้ายเต้นเบา</option></select></div></div>
+          <div class="asc-field"><label>นับถอยหลังถึงเวลาปิดขาย</label><select id="cm_show_sale_countdown"><option value="0">ไม่แสดง</option><option value="1">แสดงจากเวลาปิดขายจริง</option></select></div>
+        </div>
+
+        <div class="asc-section">
+          <div class="asc-section-title">ตัวอย่างโปรโมชั่นบนมือถือก่อนเผยแพร่</div>
+          <div id="cm_campaign_preview" class="asc-mobile-preview asc-campaign-preview" aria-live="polite"></div>
         </div>
 
         <details class="asc-section asc-accordion">
@@ -267,7 +277,62 @@ function ensureCatalogModal() {
   el("cm_image_delete").addEventListener("click", onCatalogImageDeleteClick);
   el("cm_booking_mode").addEventListener("change", updateBookingFieldsVisibility);
   el("cm_booking_ac_type").addEventListener("change", updateBookingFieldsVisibility);
+  bindAdminCampaignPreview("cm");
   bindGalleryActions();
+}
+
+const ADMIN_CAMPAIGN_THEMES = new Set(["default", "premium", "limited_time", "new"]);
+const ADMIN_CAMPAIGN_EFFECTS = new Set(["none", "soft_glow", "shimmer_border", "badge_pulse"]);
+function renderAdminCampaignPreview(prefix) {
+  const box = el(`${prefix}_campaign_preview`);
+  if (!box) return;
+  const bundle = prefix === "bm";
+  const name = String(el(`${prefix}_item_name`)?.value || "").trim() || "ตัวอย่างชื่อสินค้า";
+  const badge = String(el(`${prefix}_promotion_badge_text`)?.value || "").trim();
+  const support = String(el(`${prefix}_promotion_supporting_text`)?.value || "").trim();
+  const themeValue = String(el(`${prefix}_promotion_theme_preset`)?.value || "default");
+  const effectValue = String(el(`${prefix}_promotion_effect_preset`)?.value || "none");
+  const theme = ADMIN_CAMPAIGN_THEMES.has(themeValue) ? themeValue : "default";
+  const effect = ADMIN_CAMPAIGN_EFFECTS.has(effectValue) ? effectValue : "none";
+  const featuredId = bundle ? "bm_featured" : "cm_is_featured";
+  const endId = bundle ? "bm_sell_end" : "cm_effective_to";
+  const showCountdown = el(`${prefix}_show_sale_countdown`)?.value === "1";
+  const endValue = String(el(endId)?.value || "").trim();
+  let countdown = "";
+  if (showCountdown) {
+    const parsed = endValue ? new Date(endValue) : null;
+    const label = parsed && Number.isFinite(parsed.getTime())
+      ? `นับถอยหลังถึง ${parsed.toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" })}`
+      : "จะแสดงเวลานับถอยหลังเมื่อระบุเวลาปิดขาย";
+    countdown = `<span class="asc-campaign-countdown">${escapeHtml(label)}</span>`;
+  }
+  box.className = `asc-mobile-preview asc-campaign-preview asc-campaign-theme-${theme} asc-campaign-effect-${effect}`;
+  box.innerHTML = `<article class="asc-campaign-preview-card">
+    <div class="asc-campaign-preview-media" aria-hidden="true">รูปสินค้า/แกลเลอรีเดิม</div>
+    <div class="asc-campaign-preview-copy">
+      ${el(featuredId)?.value === "1" ? `<span class="asc-badge asc-badge-featured">Featured Services</span>` : ""}
+      ${badge ? `<span class="asc-campaign-badge">${escapeHtml(badge)}</span>` : ""}
+      <strong>${escapeHtml(name)}</strong>
+      ${support ? `<span class="asc-campaign-support">${escapeHtml(support)}</span>` : ""}
+      ${countdown}
+      <button class="primary" type="button" disabled aria-disabled="true">ตัวอย่างปุ่มหลัก</button>
+    </div>
+  </article>`;
+}
+function bindAdminCampaignPreview(prefix) {
+  const bundle = prefix === "bm";
+  const ids = [
+    `${prefix}_item_name`, bundle ? "bm_featured" : "cm_is_featured",
+    `${prefix}_promotion_badge_text`, `${prefix}_promotion_supporting_text`,
+    `${prefix}_promotion_theme_preset`, `${prefix}_promotion_effect_preset`,
+    `${prefix}_show_sale_countdown`, bundle ? "bm_sell_end" : "cm_effective_to",
+  ];
+  ids.forEach((id) => {
+    const input = el(id);
+    input?.addEventListener("input", () => renderAdminCampaignPreview(prefix));
+    input?.addEventListener("change", () => renderAdminCampaignPreview(prefix));
+  });
+  renderAdminCampaignPreview(prefix);
 }
 
 function updateBookingFieldsVisibility() {
@@ -356,6 +421,12 @@ function resetCatalogModalFields() {
   el("cm_booking_wash_variant").value = "";
   el("cm_is_featured").value = "0";
   el("cm_is_hot").value = "0";
+  el("cm_booking_flow_policy").value = "scheduled_only";
+  el("cm_promotion_badge_text").value = "";
+  el("cm_promotion_supporting_text").value = "";
+  el("cm_promotion_theme_preset").value = "default";
+  el("cm_promotion_effect_preset").value = "none";
+  el("cm_show_sale_countdown").value = "0";
   el("cm_short_description").value = "";
   el("cm_long_description").value = "";
   el("cm_highlights").value = "";
@@ -367,6 +438,7 @@ function resetCatalogModalFields() {
   galleryPickNotice = "";
   renderGalleryManager();
   hideCatalogModalError();
+  renderAdminCampaignPreview("cm");
 }
 
 function openCatalogModalForNew() {
@@ -423,12 +495,19 @@ function openCatalogModalForEdit(itemId) {
   el("cm_booking_wash_variant").value = item.booking_wash_variant || "";
   el("cm_is_featured").value = item.is_featured ? "1" : "0";
   el("cm_is_hot").value = item.is_hot ? "1" : "0";
+  el("cm_booking_flow_policy").value = item.booking_flow_policy === "scheduled_and_urgent" ? "scheduled_and_urgent" : "scheduled_only";
+  el("cm_promotion_badge_text").value = item.promotion_badge_text || "";
+  el("cm_promotion_supporting_text").value = item.promotion_supporting_text || "";
+  el("cm_promotion_theme_preset").value = item.promotion_theme_preset || "default";
+  el("cm_promotion_effect_preset").value = item.promotion_effect_preset || "none";
+  el("cm_show_sale_countdown").value = item.show_sale_countdown ? "1" : "0";
   el("cm_short_description").value = item.short_description || "";
   el("cm_long_description").value = item.long_description || "";
   el("cm_highlights").value = Array.isArray(item.highlights) ? item.highlights.join("\n") : "";
   el("cm_service_conditions").value = item.service_conditions || "";
   updateBookingFieldsVisibility();
   loadGalleryImages(itemId);
+  renderAdminCampaignPreview("cm");
   el("catalog_modal_backdrop").classList.remove("hidden");
 }
 
@@ -463,6 +542,12 @@ function catalogModalPayload() {
     booking_wash_variant: trimmedOrEmpty("cm_booking_wash_variant"),
     is_featured: el("cm_is_featured").value === "1",
     is_hot: el("cm_is_hot").value === "1",
+    booking_flow_policy: el("cm_booking_flow_policy").value,
+    promotion_badge_text: trimmedOrEmpty("cm_promotion_badge_text"),
+    promotion_supporting_text: trimmedOrEmpty("cm_promotion_supporting_text"),
+    promotion_theme_preset: el("cm_promotion_theme_preset").value,
+    promotion_effect_preset: el("cm_promotion_effect_preset").value,
+    show_sale_countdown: el("cm_show_sale_countdown").value === "1",
     short_description: trimmedOrEmpty("cm_short_description"),
     long_description: trimmedOrEmpty("cm_long_description"),
     highlights: (el("cm_highlights").value || "").split("\n").map((line) => line.trim()).filter(Boolean),
@@ -1047,7 +1132,7 @@ function renderCatalogPreview() {
     box.innerHTML = `<div class="muted2">ยังไม่มีรายการที่จะแสดงในร้านค้าลูกค้าในขณะนี้</div>`;
     return;
   }
-  box.innerHTML = visibleItems.map(catalogItemCard).join("");
+  box.innerHTML = `<div class="asc-mobile-preview" aria-label="ตัวอย่างหน้าลูกค้าความกว้างมือถือ 390 พิกเซล">${visibleItems.map(catalogItemCard).join("")}</div>`;
 }
 
 async function loadCatalogItems() {
@@ -1071,7 +1156,8 @@ function bindCatalogListActions() {
     const item = catalogItems.find((x) => Number(x.item_id) === id);
     if (!item) return;
     const act = button.getAttribute("data-act");
-    if (act === "edit") openCatalogModalForEdit(id);
+    if (act === "edit" && item.booking_mode === "service_package") openBundleModal(item.service_bundle_key);
+    else if (act === "edit") openCatalogModalForEdit(id);
     else if (act === "more") openMoreSheet(id);
   });
 }
@@ -1131,13 +1217,209 @@ function ensureCreateTypeChooser() {
   </div></div>`;
   document.body.appendChild(wrap.firstElementChild);
   el("new_ordinary_item").addEventListener("click", () => { el("catalog_type_backdrop").classList.add("hidden"); openCatalogModalForNew(); });
-  el("new_package_item").addEventListener("click", () => { el("catalog_type_backdrop").classList.add("hidden"); openPackageModal(); });
+  el("new_package_item").addEventListener("click", () => { el("catalog_type_backdrop").classList.add("hidden"); openBundleModal(); });
   el("new_type_cancel").addEventListener("click", () => el("catalog_type_backdrop").classList.add("hidden"));
 }
 
 function openCreateTypeChooser() {
   ensureCreateTypeChooser();
   el("catalog_type_backdrop").classList.remove("hidden");
+}
+
+function ensureBundleModal() {
+  if (el("bundle_modal_backdrop")) return;
+  const wrap = document.createElement("div");
+  wrap.innerHTML = `<div id="bundle_modal_backdrop" class="cwf-modal-backdrop hidden"><div class="cwf-modal">
+    <div class="cwf-modal-head"><div id="bundle_modal_title" class="cwf-modal-title">สร้าง Store service package</div><button id="bundle_modal_close" class="cwf-modal-close" type="button">×</button></div>
+    <div class="cwf-modal-body"><div class="asc-section"><div class="asc-section-title">สินค้าแม่ใน Store</div>
+      <div class="asc-field"><label>ชื่อสินค้า *</label><input id="bm_item_name"></div>
+      <div class="asc-field"><label>คำอธิบายสั้น</label><textarea id="bm_short_description" rows="2"></textarea></div>
+      <div class="asc-field"><label>รายละเอียด</label><textarea id="bm_long_description" rows="3"></textarea></div>
+      <div class="asc-field"><label>จุดเด่น (หนึ่งรายการต่อบรรทัด)</label><textarea id="bm_highlights" rows="3"></textarea></div>
+      <div class="asc-field"><label>เงื่อนไขบริการ</label><textarea id="bm_service_conditions" rows="2"></textarea></div>
+      <div class="asc-grid2"><div class="asc-field"><label>เริ่มขาย</label><input id="bm_sell_start" type="datetime-local"></div><div class="asc-field"><label>สิ้นสุดการขาย</label><input id="bm_sell_end" type="datetime-local"></div></div>
+      <div class="asc-field"><label>ใช้สิทธิ์ได้ถึง</label><input id="bm_redeem_until" type="datetime-local"></div>
+      <div class="asc-grid2"><div class="asc-field"><label>สถานะ</label><select id="bm_active"><option value="0">แบบร่าง</option><option value="1">เปิดใช้งาน</option></select></div><div class="asc-field"><label>Store</label><select id="bm_visible"><option value="0">ซ่อน</option><option value="1">แสดง</option></select></div></div>
+      <div class="asc-grid2"><div class="asc-field"><label>แสดงใน Featured Services</label><select id="bm_featured"><option value="0">ไม่แสดง</option><option value="1">แสดง</option></select></div><div class="asc-field"><label>อนุญาตการหมุนภาพเดิม</label><select id="bm_autoplay"><option value="1">อนุญาต</option><option value="0">ปิด</option></select></div></div>
+      <div class="asc-field"><label>ช่องทางการจองบริการ *</label><select id="bm_booking_flow_policy"><option value="scheduled_only">จองล่วงหน้าเท่านั้น</option><option value="scheduled_and_urgent">จองล่วงหน้า + จองด่วน</option></select></div>
+      <div class="asc-grid2"><div class="asc-field"><label>ข้อความป้ายโปรโมชั่น</label><input id="bm_promotion_badge_text" maxlength="80"></div><div class="asc-field"><label>ข้อความสนับสนุนโปรโมชั่น</label><input id="bm_promotion_supporting_text" maxlength="200"></div></div>
+      <div class="asc-grid2"><div class="asc-field"><label>ธีม</label><select id="bm_promotion_theme_preset"><option value="default">ปกติ</option><option value="premium">พรีเมียม</option><option value="limited_time">เวลาจำกัด</option><option value="new">ใหม่</option></select></div><div class="asc-field"><label>เอฟเฟกต์</label><select id="bm_promotion_effect_preset"><option value="none">ไม่มี</option><option value="soft_glow">แสงนุ่ม</option><option value="shimmer_border">ขอบประกาย</option><option value="badge_pulse">ป้ายเต้นเบา</option></select></div></div>
+      <div class="asc-field"><label>นับถอยหลังถึงเวลาปิดขาย</label><select id="bm_show_sale_countdown"><option value="0">ไม่แสดง</option><option value="1">แสดงจากเวลาปิดขายจริง</option></select></div>
+      <div class="asc-section-title">ตัวอย่างโปรโมชั่นบนมือถือก่อนเผยแพร่</div><div id="bm_campaign_preview" class="asc-mobile-preview asc-campaign-preview" aria-live="polite"></div>
+      <div class="asc-field"><label>เพิ่มรูปภาพ/แกลเลอรี</label><input id="bm_images" type="file" accept="image/jpeg,image/png,image/webp" multiple><p class="muted2 mini">ใช้ระบบรูปภาพ catalog เดิม รูปที่มีอยู่จะไม่ถูกลบเมื่อบันทึก</p></div>
+    </div><div class="asc-section"><div class="asc-toolbar-row"><div><div class="asc-section-title">รูปแบบบริการและระดับราคา</div><p class="muted2 mini">เลือก taxonomy จากระบบ เพิ่มจำนวน variant/tier ได้ตามต้องการ ระบบรักษารหัสเดิมและเก็บรายการที่ปิดใช้งาน</p></div><button id="bm_add_variant" class="secondary btn-small" type="button">+ เพิ่มรูปแบบบริการ</button></div><div id="bm_variant_editor"></div></div>
+    <div id="bundle_modal_error" class="asc-modal-error"></div></div>
+    <div class="cwf-modal-foot"><button id="bundle_modal_cancel" class="secondary" type="button">ยกเลิก</button><button id="bundle_modal_save" class="primary" type="button">บันทึกสินค้าและแพ็กเกจ</button></div>
+  </div></div>`;
+  document.body.appendChild(wrap.firstElementChild);
+  const close = () => { if (!isSaving) el("bundle_modal_backdrop").classList.add("hidden"); };
+  el("bundle_modal_close").addEventListener("click", close);
+  el("bundle_modal_cancel").addEventListener("click", close);
+  el("bundle_modal_save").addEventListener("click", saveBundle);
+  el("bm_add_variant").addEventListener("click", () => { bundleVariantDrafts.push(newBundleVariant()); renderBundleVariantEditor(); });
+  el("bm_variant_editor").addEventListener("input", updateBundleVariantDraft);
+  el("bm_variant_editor").addEventListener("change", updateBundleVariantDraft);
+  el("bm_variant_editor").addEventListener("click", handleBundleEditorAction);
+  bindAdminCampaignPreview("bm");
+}
+
+let editingBundleKey = null;
+let bundleTaxonomy = null;
+let bundleVariantDrafts = [];
+
+async function loadBundleTaxonomy() {
+  if (!bundleTaxonomy) bundleTaxonomy = await apiFetch("/admin/catalog/service-package-bundles/taxonomy");
+  return bundleTaxonomy;
+}
+function taxonomyOptions(entries, selected, blankLabel = "") {
+  const blank = blankLabel ? `<option value="">${escapeHtml(blankLabel)}</option>` : "";
+  return blank + (entries || []).map((entry) => `<option value="${escapeHtml(entry.value)}" ${entry.value === selected ? "selected" : ""}>${escapeHtml(entry.label)}</option>`).join("");
+}
+function newBundleVariant() {
+  return {
+    display_name: "", description: null,
+    job_type: bundleTaxonomy?.job_types?.[0]?.value || "",
+    ac_type: bundleTaxonomy?.ac_types?.[0]?.value || "",
+    wash_variant: null, btu_min: null, btu_max: null, service_unit_duration_minutes: "",
+    sort_order: bundleVariantDrafts.length, is_active: false, is_customer_visible: false, tiers: [],
+  };
+}
+function bundleVariantDraft(value = {}, index = 0) {
+  return {
+    ...value, description: value.description || null, wash_variant: value.wash_variant || null,
+    sort_order: Number.isInteger(Number(value.sort_order)) ? Number(value.sort_order) : index,
+    tiers: (value.tiers || []).map((tier, tierIndex) => ({ ...tier,
+      sort_order: Number.isInteger(Number(tier.sort_order)) ? Number(tier.sort_order) : tierIndex })),
+  };
+}
+function renderBundleVariantEditor() {
+  const host = el("bm_variant_editor");
+  host.innerHTML = bundleVariantDrafts.length ? bundleVariantDrafts.map((variant, variantIndex) => `<article class="asc-package-tier asc-bundle-variant" data-bundle-variant-index="${variantIndex}">
+    <div class="asc-toolbar-row"><div><b>รูปแบบบริการ ${variantIndex + 1}</b>${variant.package_key ? `<div class="muted2 mini">รหัสถาวร: ${escapeHtml(variant.package_key)}</div>` : `<div class="muted2 mini">ระบบจะสร้างรหัสถาวรเมื่อบันทึก</div>`}</div><div class="asc-item-actions"><button class="secondary btn-small" data-bundle-action="variant-up" type="button" ${variantIndex === 0 ? "disabled" : ""}>↑</button><button class="secondary btn-small" data-bundle-action="variant-down" type="button" ${variantIndex === bundleVariantDrafts.length - 1 ? "disabled" : ""}>↓</button><button class="secondary btn-small" data-bundle-action="variant-archive" type="button">${variant.package_key ? "ปิดใช้งาน" : "นำออก"}</button></div></div>
+    <div class="asc-grid2"><div class="asc-field"><label>ชื่อตัวเลือกที่ลูกค้าเห็น *</label><input data-variant-field="display_name" value="${escapeHtml(variant.display_name || "")}"></div><div class="asc-field"><label>คำอธิบายช่วยเลือก</label><input data-variant-field="description" value="${escapeHtml(variant.description || "")}"></div></div>
+    <div class="asc-grid2"><div class="asc-field"><label>ประเภทงาน *</label><select data-variant-field="job_type">${taxonomyOptions(bundleTaxonomy.job_types, variant.job_type)}</select></div><div class="asc-field"><label>ประเภทแอร์ *</label><select data-variant-field="ac_type">${taxonomyOptions(bundleTaxonomy.ac_types, variant.ac_type)}</select></div></div>
+    <div class="asc-field"><label>รูปแบบล้าง/บริการ</label><select data-variant-field="wash_variant">${taxonomyOptions(bundleTaxonomy.wash_variants, variant.wash_variant || "", "ไม่ระบุ")}</select></div>
+    <div class="asc-grid2"><div class="asc-field"><label>BTU ต่ำสุด (เว้นว่างได้)</label><input data-variant-field="btu_min" type="number" min="1" step="1" value="${variant.btu_min == null ? "" : variant.btu_min}"></div><div class="asc-field"><label>BTU สูงสุด (เว้นว่างได้)</label><input data-variant-field="btu_max" type="number" min="1" step="1" value="${variant.btu_max == null ? "" : variant.btu_max}"></div></div>
+    <div class="asc-grid2"><div class="asc-field"><label>เวลาต่อเครื่อง (นาที) *</label><input data-variant-field="service_unit_duration_minutes" type="number" min="1" step="1" value="${escapeHtml(variant.service_unit_duration_minutes || "")}"></div><div class="asc-field"><label>สถานะ</label><select data-variant-field="is_active"><option value="0" ${variant.is_active ? "" : "selected"}>ปิดใช้งาน</option><option value="1" ${variant.is_active ? "selected" : ""}>เปิดใช้งาน</option></select></div></div>
+    <div class="asc-field"><label>แสดงต่อลูกค้า</label><select data-variant-field="is_customer_visible"><option value="0" ${variant.is_customer_visible ? "" : "selected"}>ซ่อน</option><option value="1" ${variant.is_customer_visible ? "selected" : ""}>แสดง</option></select></div>
+    <div class="asc-toolbar-row"><b>ระดับราคา</b><button class="secondary btn-small" data-bundle-action="tier-add" type="button">+ เพิ่มระดับราคา</button></div>
+    <div class="asc-bundle-tiers">${(variant.tiers || []).map((tier, tierIndex) => `<div class="asc-package-tier" data-bundle-tier-index="${tierIndex}">${tier.tier_key ? `<div class="muted2 mini">รหัสถาวร: ${escapeHtml(tier.tier_key)}</div>` : ""}<div class="asc-grid2"><div class="asc-field"><label>ชื่อลูกค้าเห็น *</label><input data-tier-field="display_name" value="${escapeHtml(tier.display_name || "")}"></div><div class="asc-field"><label>จำนวน *</label><input data-tier-field="service_quantity" type="number" min="1" step="1" value="${escapeHtml(tier.service_quantity || "")}"></div></div><div class="asc-grid2"><div class="asc-field"><label>ราคารวมคงที่ *</label><input data-tier-field="fixed_total_price" inputmode="decimal" placeholder="0.00" value="${escapeHtml(tier.fixed_total_price || "")}"></div><div class="asc-field"><label>สถานะ</label><select data-tier-field="is_active"><option value="0" ${tier.is_active ? "" : "selected"}>ปิดใช้งาน</option><option value="1" ${tier.is_active ? "selected" : ""}>เปิดใช้งาน</option></select></div></div><div class="asc-item-actions"><button class="secondary btn-small" data-bundle-action="tier-up" type="button" ${tierIndex === 0 ? "disabled" : ""}>↑</button><button class="secondary btn-small" data-bundle-action="tier-down" type="button" ${tierIndex === variant.tiers.length - 1 ? "disabled" : ""}>↓</button><button class="secondary btn-small" data-bundle-action="tier-archive" type="button">${tier.tier_key ? "ปิดใช้งาน" : "นำออก"}</button></div></div>`).join("") || `<div class="muted2 mini">ยังไม่มีระดับราคา เพิ่มได้โดยไม่จำกัดจำนวนระดับ</div>`}</div>
+  </article>`).join("") : `<div class="asc-empty">ยังไม่มีรูปแบบบริการ กด “เพิ่มรูปแบบบริการ” เพื่อเริ่มกำหนดแพ็กเกจ</div>`;
+}
+function updateBundleVariantDraft(event) {
+  const variantRow = event.target.closest("[data-bundle-variant-index]");
+  if (!variantRow) return;
+  const variant = bundleVariantDrafts[Number(variantRow.dataset.bundleVariantIndex)];
+  const variantField = event.target.dataset.variantField;
+  if (variantField) {
+    if (["is_active", "is_customer_visible"].includes(variantField)) variant[variantField] = event.target.value === "1";
+    else variant[variantField] = event.target.value === "" ? null : event.target.value;
+  }
+  const tierRow = event.target.closest("[data-bundle-tier-index]");
+  const tierField = event.target.dataset.tierField;
+  if (tierRow && tierField) {
+    const tier = variant.tiers[Number(tierRow.dataset.bundleTierIndex)];
+    tier[tierField] = tierField === "is_active" ? event.target.value === "1" : event.target.value;
+  }
+}
+function moveDraft(list, index, direction) {
+  const target = index + direction;
+  if (target < 0 || target >= list.length) return;
+  [list[index], list[target]] = [list[target], list[index]];
+  list.forEach((entry, order) => { entry.sort_order = order; });
+}
+function handleBundleEditorAction(event) {
+  const button = event.target.closest("[data-bundle-action]");
+  if (!button) return;
+  const variantRow = button.closest("[data-bundle-variant-index]");
+  const variantIndex = Number(variantRow?.dataset.bundleVariantIndex);
+  const variant = bundleVariantDrafts[variantIndex];
+  const tierRow = button.closest("[data-bundle-tier-index]");
+  const tierIndex = Number(tierRow?.dataset.bundleTierIndex);
+  const action = button.dataset.bundleAction;
+  if (action === "variant-up") moveDraft(bundleVariantDrafts, variantIndex, -1);
+  if (action === "variant-down") moveDraft(bundleVariantDrafts, variantIndex, 1);
+  if (action === "variant-archive") variant.package_key ? Object.assign(variant, { is_active: false, is_customer_visible: false }) : bundleVariantDrafts.splice(variantIndex, 1);
+  if (action === "tier-add") variant.tiers.push({ display_name: "", service_quantity: "", fixed_total_price: "", sort_order: variant.tiers.length, is_active: false });
+  if (action === "tier-up") moveDraft(variant.tiers, tierIndex, -1);
+  if (action === "tier-down") moveDraft(variant.tiers, tierIndex, 1);
+  if (action === "tier-archive") variant.tiers[tierIndex].tier_key ? (variant.tiers[tierIndex].is_active = false) : variant.tiers.splice(tierIndex, 1);
+  renderBundleVariantEditor();
+}
+async function openBundleModal(bundleKey = null) {
+  try { await loadBundleTaxonomy(); } catch (_) { showToast("ไม่สามารถโหลดตัวเลือกประเภทบริการจากระบบได้", "error"); return; }
+  ensureBundleModal(); editingBundleKey = bundleKey;
+  const bundle = bundleKey ? servicePackages.find((item) => item.service_bundle_key === bundleKey) : null;
+  el("bundle_modal_title").textContent = bundle ? `แก้ไข ${bundle.item_name}` : "สร้าง Store service package";
+  el("bm_item_name").value = bundle?.item_name || "";
+  el("bm_short_description").value = bundle?.short_description || "";
+  el("bm_long_description").value = bundle?.long_description || "";
+  el("bm_highlights").value = (bundle?.highlights || []).join("\n");
+  el("bm_service_conditions").value = bundle?.service_conditions || "";
+  el("bm_sell_start").value = dateTimeLocalValue(bundle?.sell_start_at);
+  el("bm_sell_end").value = dateTimeLocalValue(bundle?.sell_end_at);
+  el("bm_redeem_until").value = dateTimeLocalValue(bundle?.redeem_until);
+  el("bm_active").value = bundle?.is_active ? "1" : "0";
+  el("bm_visible").value = bundle?.is_customer_visible ? "1" : "0";
+  el("bm_featured").value = bundle?.is_featured ? "1" : "0";
+  el("bm_autoplay").value = bundle?.is_autoplay_enabled === false ? "0" : "1";
+  el("bm_booking_flow_policy").value = bundle?.booking_flow_policy === "scheduled_and_urgent" ? "scheduled_and_urgent" : "scheduled_only";
+  el("bm_promotion_badge_text").value = bundle?.promotion_badge_text || "";
+  el("bm_promotion_supporting_text").value = bundle?.promotion_supporting_text || "";
+  el("bm_promotion_theme_preset").value = bundle?.promotion_theme_preset || "default";
+  el("bm_promotion_effect_preset").value = bundle?.promotion_effect_preset || "none";
+  el("bm_show_sale_countdown").value = bundle?.show_sale_countdown ? "1" : "0";
+  bundleVariantDrafts = (bundle?.variants || []).map(bundleVariantDraft);
+  renderBundleVariantEditor();
+  renderAdminCampaignPreview("bm");
+  el("bundle_modal_error").style.display = "none";
+  el("bundle_modal_backdrop").classList.remove("hidden");
+}
+function bundleDateValue(id) { const value = el(id).value; return value ? new Date(value).toISOString() : null; }
+function bundlePayload() {
+  const optionalInteger = (value) => value == null || value === "" ? null : Number(value);
+  return {
+    item_name: el("bm_item_name").value.trim(), short_description: el("bm_short_description").value.trim() || null,
+    long_description: el("bm_long_description").value.trim() || null,
+    highlights: el("bm_highlights").value.split(/\r?\n/).map((value) => value.trim()).filter(Boolean),
+    service_conditions: el("bm_service_conditions").value.trim() || null,
+    sell_start_at: bundleDateValue("bm_sell_start"), sell_end_at: bundleDateValue("bm_sell_end"), redeem_until: bundleDateValue("bm_redeem_until"),
+    is_active: el("bm_active").value === "1", is_customer_visible: el("bm_visible").value === "1",
+    is_featured: el("bm_featured").value === "1", is_autoplay_enabled: el("bm_autoplay").value === "1",
+    booking_flow_policy: el("bm_booking_flow_policy").value,
+    promotion_badge_text: el("bm_promotion_badge_text").value.trim() || null,
+    promotion_supporting_text: el("bm_promotion_supporting_text").value.trim() || null,
+    promotion_theme_preset: el("bm_promotion_theme_preset").value,
+    promotion_effect_preset: el("bm_promotion_effect_preset").value,
+    show_sale_countdown: el("bm_show_sale_countdown").value === "1",
+    variants: bundleVariantDrafts.map((variant, variantIndex) => ({
+      ...(variant.package_key ? { package_key: variant.package_key } : {}), display_name: String(variant.display_name || "").trim(),
+      description: String(variant.description || "").trim() || null, job_type: variant.job_type, ac_type: variant.ac_type,
+      wash_variant: variant.wash_variant || null, btu_min: optionalInteger(variant.btu_min), btu_max: optionalInteger(variant.btu_max),
+      service_unit_duration_minutes: Number(variant.service_unit_duration_minutes), sort_order: variantIndex,
+      is_active: Boolean(variant.is_active), is_customer_visible: Boolean(variant.is_customer_visible),
+      tiers: (variant.tiers || []).map((tier, tierIndex) => ({ ...(tier.tier_key ? { tier_key: tier.tier_key } : {}),
+        display_name: String(tier.display_name || "").trim(), service_quantity: Number(tier.service_quantity),
+        fixed_total_price: String(tier.fixed_total_price || "").trim(), sort_order: tierIndex, is_active: Boolean(tier.is_active) })),
+    })),
+  };
+}
+async function saveBundle() {
+  if (isSaving) return;
+  const box = el("bundle_modal_error"); box.style.display = "none"; isSaving = true; el("bundle_modal_save").disabled = true;
+  try {
+    const payload = bundlePayload();
+    const url = editingBundleKey ? `/admin/catalog/service-package-bundles/${encodeURIComponent(editingBundleKey)}` : "/admin/catalog/service-package-bundles";
+    const saved = await apiFetch(url, { method: editingBundleKey ? "PATCH" : "POST", body: JSON.stringify(payload) });
+    const files = Array.from(el("bm_images")?.files || []);
+    for (const file of files) {
+      const formData = new FormData(); formData.append("image", file);
+      await apiFetch(`/admin/catalog/items/${saved.item_id}/images`, { method: "POST", body: formData });
+    }
+    el("bundle_modal_backdrop").classList.add("hidden"); await Promise.all([loadServicePackages(), loadCatalogItems()]);
+    showToast("บันทึก Store service package แล้ว สามารถจัดการรูปภาพจากการ์ดสินค้าแม่ได้", "success");
+  } catch (error) { box.textContent = error?.message || "ข้อมูลรูปแบบบริการหรือระดับราคาไม่ถูกต้อง"; box.style.display = "block"; }
+  finally { isSaving = false; el("bundle_modal_save").disabled = false; }
 }
 
 function ensurePackageModal() {
@@ -1199,7 +1481,7 @@ function updatePackageTierDraft(event) {
 function openPackageModal(packageKey = null) {
   ensurePackageModal();
   editingPackageKey = packageKey;
-  const item = packageKey ? servicePackages.find((p) => p.package_key === packageKey) : null;
+  const item = packageKey ? standaloneServicePackages.find((p) => p.package_key === packageKey) : null;
   el("package_modal_title").textContent = item ? `แก้ไข ${item.display_name}` : "สร้างโปรโมชั่นแพ็กเกจใหม่";
   el("pm_key_field").classList.toggle("hidden", !item);
   el("pm_package_key").value = item?.package_key || "";
@@ -1244,22 +1526,41 @@ async function saveServicePackage() {
 
 function renderServicePackages() {
   const box = el("package_catalog_list");
-  box.innerHTML = servicePackages.length ? servicePackages.map((item) => `<div class="asc-item-card">
-    <div class="asc-item-main"><div class="asc-item-title">${escapeHtml(item.display_name)} <span class="asc-badge asc-package-badge">แพ็กเกจบริการ</span></div>
-      <div class="asc-item-meta">${escapeHtml(item.service_name)} · ${packageJobTypeLabel(item.job_type)} · ${packageAcTypeLabel(item.ac_type)}</div>
-      <div class="asc-item-meta">${item.tiers.length} ระดับ · ${item.service_unit_duration_minutes} นาที/ครั้งบริการ</div>
-      <div class="asc-badges"><span class="asc-badge asc-lifecycle-${escapeHtml(item.lifecycle_status)}">${packageLifecycleLabel(item.lifecycle_status)}</span></div></div>
-    <div class="asc-item-actions"><button class="secondary btn-small" data-edit-package="${escapeHtml(item.package_key)}" type="button">แก้ไข</button></div></div>`).join("") : `<div class="asc-empty">ยังไม่มีโปรโมชั่นแพ็กเกจบริการ</div>`;
+  const bundleCards = servicePackages.map((item) => `<div class="asc-item-card">
+    <div class="asc-item-main"><div class="asc-item-title">${escapeHtml(item.item_name)} <span class="asc-badge asc-package-badge">Store service package</span></div>
+      <div class="asc-item-meta">${item.variants.length} BTU variants · ${item.variants.reduce((sum, variant) => sum + variant.tiers.length, 0)} tiers</div>
+      <div class="asc-item-meta">รหัสสินค้าแม่: ${escapeHtml(item.service_bundle_key)}</div>
+      <div class="asc-badges"><span class="asc-badge">${item.is_active ? "เปิดใช้งาน" : "แบบร่าง"}</span><span class="asc-badge">${item.is_customer_visible ? "แสดงใน Store" : "ซ่อน"}</span></div></div>
+    <div class="asc-item-actions"><button class="secondary btn-small" data-edit-bundle="${escapeHtml(item.service_bundle_key)}" type="button">แก้ไข</button></div></div>`).join("");
+  const standaloneCards = standaloneServicePackages.map((item) => `<div class="asc-item-card">
+    <div class="asc-item-main"><div class="asc-item-title">${escapeHtml(item.display_name)} <span class="asc-badge asc-package-badge">Legacy standalone package</span></div>
+      <div class="asc-item-meta">${item.tiers.length} tiers · รหัสแพ็กเกจ: ${escapeHtml(item.package_key)}</div>
+      <div class="asc-badges"><span class="asc-badge">${packageLifecycleLabel(item.lifecycle_status)}</span><span class="asc-badge">${item.is_active ? "เปิดใช้งาน" : "ปิดใช้งาน"}</span><span class="asc-badge">${item.is_customer_visible ? "แสดงต่อลูกค้า" : "ซ่อนจากลูกค้า"}</span></div></div>
+    <div class="asc-item-actions"><button class="secondary btn-small" data-edit-package="${escapeHtml(item.package_key)}" type="button">แก้ไข</button></div></div>`).join("");
+  box.innerHTML = bundleCards + standaloneCards || `<div class="asc-empty">ยังไม่มี Store service package</div>`;
 }
 
 async function loadServicePackages() {
   const box = el("package_catalog_list"); box.innerHTML = `<div class="asc-loading">กำลังโหลดโปรโมชั่น...</div>`;
-  try { const items = await apiFetch("/admin/service-packages/catalog"); servicePackages = Array.isArray(items) ? items : []; renderServicePackages(); }
+  try {
+    const [bundleResult, standaloneResult] = await Promise.all([
+      apiFetch("/admin/catalog/service-package-bundles"),
+      apiFetch("/admin/service-packages/catalog"),
+    ]);
+    servicePackages = Array.isArray(bundleResult?.bundles) ? bundleResult.bundles : [];
+    standaloneServicePackages = Array.isArray(standaloneResult) ? standaloneResult : [];
+    renderServicePackages();
+  }
   catch (_error) { box.innerHTML = `<div class="asc-error">ไม่สามารถโหลดโปรโมชั่นแพ็กเกจได้ โปรดลองอีกครั้ง</div>`; }
 }
 
 function bindServicePackageActions() {
-  el("package_catalog_list").addEventListener("click", (event) => { const button = event.target.closest("[data-edit-package]"); if (button) openPackageModal(button.dataset.editPackage); });
+  el("package_catalog_list").addEventListener("click", (event) => {
+    const bundleButton = event.target.closest("[data-edit-bundle]");
+    if (bundleButton) return openBundleModal(bundleButton.dataset.editBundle);
+    const packageButton = event.target.closest("[data-edit-package]");
+    if (packageButton) openPackageModal(packageButton.dataset.editPackage);
+  });
 }
 
 /* ---------- Review moderation ---------- */

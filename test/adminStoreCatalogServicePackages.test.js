@@ -13,7 +13,7 @@ test("new flow offers immutable ordinary or Service Package type while ordinary 
   assert.match(js, /รายการบริการปกติ/);
   assert.match(js, /โปรโมชั่นแพ็กเกจ/);
   assert.match(js, /new_ordinary_item[\s\S]*openCatalogModalForNew/);
-  assert.match(js, /new_package_item[\s\S]*openPackageModal/);
+  assert.match(js, /new_package_item[\s\S]*openBundleModal/);
   assert.match(js, /savedItem = await apiFetch\("\/admin\/catalog\/items", \{ method: "POST", body: JSON\.stringify\(payload\) \}\)/);
 });
 
@@ -36,18 +36,27 @@ test("package tier editor is repeatable, supports inactive tiers and preserves f
 
 test("same Admin page renders full package history lifecycle statuses and uses cache-busted assets", () => {
   assert.match(html, /id="package_catalog_list"/);
+  assert.match(js, /\/admin\/service-packages\/catalog/);
+  assert.match(js, /standaloneServicePackages/);
+  assert.match(js, /data-edit-package/);
+  assert.match(js, /Legacy standalone package/);
   for (const status of ["แบบร่าง", "ปิดใช้งาน", "ซ่อนจากลูกค้า", "ยังไม่ถึงวันขาย", "กำลังเปิดขาย", "ปิดการขายแล้ว", "หมดเขตใช้สิทธิ์"]) assert.match(js, new RegExp(status));
   for (const statusKey of ["draft", "disabled", "hidden", "upcoming", "on-sale", "sale-ended", "redeem-ended"]) assert.match(js, new RegExp(`(?:^|[" ])${statusKey}(?:[":]|$)`));
-  assert.match(html, /admin-store-catalog\.js\?v=20260808_service_packages_th_v1/);
-  assert.match(html, /admin-store-catalog\.css\?v=20260808_service_packages_responsive_v2/);
+  assert.match(html, /admin-store-catalog\.js\?v=20260809_issue267_merchandising_v4/);
+  assert.match(html, /admin-store-catalog\.css\?v=20260809_issue267_merchandising_v3/);
 });
 
-test("package controls keep server enum values while showing Thai labels", () => {
-  for (const pair of [["wash", "ล้าง"], ["repair", "ซ่อม"], ["install", "ติดตั้ง"], ["wall", "ติดผนัง"], ["cassette", "สี่ทิศทาง"], ["floor", "ตั้งพื้น/แขวน"], ["ceiling", "ฝังในฝ้า"], ["normal", "ล้างธรรมดา"], ["premium", "ล้างพรีเมียม"], ["coil", "ล้างคอยล์"], ["overhaul", "ตัดล้าง"]]) {
-    assert.match(js, new RegExp(`value="${pair[0]}"[^>]*>${pair[1]}`));
-  }
-  const payload = js.match(/function packagePayload\(\)[\s\S]*?\r?\n}\r?\n/)[0];
-  for (const field of ["job_type", "ac_type", "wash_variant", "tier_key"]) assert.match(payload, new RegExp(field));
-  assert.match(js, /packageJobTypeLabel\(item\.job_type\)/);
-  assert.match(js, /packageAcTypeLabel\(item\.ac_type\)/);
+test("bundle builder uses canonical taxonomy and preserves stable keys without product-specific JSON defaults", () => {
+  const save = js.match(/async function saveBundle\(\)[\s\S]*?\r?\n}\r?\n/)[0];
+  assert.match(save, /service-package-bundles/);
+  assert.match(js, /service-package-bundles\/taxonomy/);
+  assert.match(js, /data-bundle-action="variant-(?:up|down|archive)"/);
+  assert.match(js, /data-bundle-action="tier-(?:add|up|down|archive)"/);
+  assert.match(js, /variant\.package_key/);
+  assert.match(js, /tier\.tier_key/);
+  for (const field of ["job_type", "ac_type", "wash_variant", "tier_key", "fixed_total_price"]) assert.match(js, new RegExp(field));
+  const fresh = js.match(/function newBundleVariant\(\)[\s\S]*?\r?\n}/)[0];
+  assert.doesNotMatch(fresh, /wall|premium|12000|18000|699|service_quantity:\s*1/);
+  assert.doesNotMatch(js, /id="bm_variants"/);
+  assert.match(js, /loadCatalogItems\(\)/);
 });

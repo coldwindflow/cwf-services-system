@@ -296,9 +296,12 @@
 <!-- MULTI-SERVICE (หลายรายการในใบงานเดียว) -->
 <div id="service_package_box" class="card card-lite" style="margin-top:12px">
   <b>Service Package (optional)</b>
-  <div class="muted2 mini">Package totals, quantity, duration, and service rules come from the server. Packages cannot be mixed with ordinary lines, extras, overrides, or promotions.</div>
+  <div class="muted2 mini">Choose a Store package parent for mixed BTU/arbitrary quantities, or a legacy standalone package. Totals and rules come from the server.</div>
+  <div style="margin-top:10px"><label>Ordinary Store service (optional)</label><select id="store_bookable_item_id"><option value="">Use manual service fields</option></select></div>
+  <div style="margin-top:10px"><label>Store service-package item</label><select id="store_service_bundle_key"><option value="">No Store package</option></select></div>
+  <div id="store_service_bundle_groups" style="display:none;margin-top:10px"></div>
   <div class="grid2" style="margin-top:10px">
-    <div><label>Package</label><select id="service_package_key"><option value="">No package</option></select></div>
+    <div><label>Legacy standalone package</label><select id="service_package_key"><option value="">No legacy package</option></select></div>
     <div><label>Tier</label><select id="service_package_tier_key" disabled><option value="">Select tier</option></select></div>
   </div>
   <div id="service_package_btu_wrap" style="display:none;margin-top:10px">
@@ -605,7 +608,7 @@
   </div>
 
   <script src="admin-v2-common.js?v=20260428_allpages_ui1"></script>
-  <script src="admin-add-v2.js?v=20260807_admin_service_packages_v1"></script>
+  <script src="admin-add-v2.js?v=20260809_issue267_catalog_flow_v9"></script>
   <script src="admin-add-ai-intake-prefill.js?v=line-ai-prefill-real-v8"></script>
 </body>
 </html>
