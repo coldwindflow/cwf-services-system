@@ -12,6 +12,8 @@ let TECHS = [];
 let CURRENT = null;
 let CURRENT_SLOTS = [];
 let ROW_MAP = new Map();
+let SERVICE_EDITOR = null;
+let SERVICE_EDITOR_ACTIVE = false;
 const REVIEW_POLL_MS = 12000;
 const REVIEW_WAITING_STATUS = "\u0e23\u0e2d\u0e0a\u0e48\u0e32\u0e07\u0e22\u0e37\u0e19\u0e22\u0e31\u0e19";
 const REVIEW_STATUS_LABELS = {
@@ -126,6 +128,28 @@ function applyReadOnlyMode(readOnly){
   document.querySelectorAll(".team-chip-add,.team-action,.team-x,#slotBox button").forEach((el) => {
     el.disabled = !!readOnly;
   });
+  if (SERVICE_EDITOR && SERVICE_EDITOR_ACTIVE) SERVICE_EDITOR.setReadOnly(!!readOnly);
+}
+
+function getServiceEditor(){
+  if (SERVICE_EDITOR) return SERVICE_EDITOR;
+  if (!window.CWFAdminReviewServiceEditor) throw new Error("โหลดตัวแก้รายละเอียดบริการไม่สำเร็จ");
+  SERVICE_EDITOR = window.CWFAdminReviewServiceEditor.create({
+    container: $("mServiceItems"),
+    summary: $("mServiceSummary"),
+    addButton: $("btnAddService"),
+  });
+  return SERVICE_EDITOR;
+}
+
+function showStructuredServiceEditor(show){
+  SERVICE_EDITOR_ACTIVE = !!show;
+  const card = $("mServiceEditorCard");
+  const legacy = $("mLegacyJobTypeRow");
+  const pricingCard = $("mPricingCard");
+  if (card) card.style.display = show ? "block" : "none";
+  if (legacy) legacy.style.display = show ? "none" : "grid";
+  if (pricingCard) pricingCard.style.display = show ? "none" : "block";
 }
 
 function updateTitleBadge(count){
@@ -706,6 +730,7 @@ function setModal(show){
 function closeModal(){
   setModal(false);
   applyReadOnlyMode(false);
+  showStructuredServiceEditor(false);
   CURRENT = null;
   CURRENT_SLOTS = [];
   $("slotBox").style.display = "none";
@@ -725,10 +750,14 @@ async function openJob(jobId){
     // shows the REAL stored location instead of re-deriving coordinates from the
     // address text. Fail-open to the queue row if the detail call fails.
     let full = row;
+    let detailPayload = null;
     let detailLoadFailed = false;
     try {
       const detail = await apiFetch(`/admin/job_v2/${encodeURIComponent(row.job_id)}`);
-      if (detail && detail.job) full = Object.assign({}, row, detail.job);
+      if (detail && detail.job) {
+        detailPayload = detail;
+        full = Object.assign({}, row, detail.job);
+      }
       else detailLoadFailed = true;
     } catch (e) { detailLoadFailed = true; /* fail-open to the queue row */ }
 
@@ -736,6 +765,7 @@ async function openJob(jobId){
       job_id: full.job_id,
       booking_code: full.booking_code,
       booking_mode: String(full.booking_mode||"scheduled").toLowerCase(),
+      job_source: String(full.job_source||row.job_source||""),
       job_status: full.job_status,
       job_type: full.job_type,
       duration_min: Number(full.duration_min||0) || 60,
@@ -814,6 +844,12 @@ async function openJob(jobId){
 
     $("mNote").value = text(CURRENT.customer_note||"");
 
+    if (CURRENT.job_source === "customer") {
+      await loadStructuredServices(detailPayload?.items || []);
+    } else {
+      showStructuredServiceEditor(false);
+    }
+
     // Draft reservations must keep the reserved technician visible/preselected.
     const draftType = technicianTypeForUsername(CURRENT.technician_username);
     $("mTechType").value = draftType || ((CURRENT.booking_mode === "urgent") ? "partner" : "company");
@@ -849,9 +885,59 @@ async function loadPricing(){
   }
 }
 
+async function loadStructuredServices(fallbackItems = []){
+  if (!CURRENT || CURRENT.job_source !== "customer") {
+    showStructuredServiceEditor(false);
+    return false;
+  }
+  try {
+    const data = await apiFetch(`/admin/customer-bookings/${CURRENT.job_id}/services`);
+    getServiceEditor().setData(data);
+    showStructuredServiceEditor(true);
+    if (data?.job) {
+      CURRENT.duration_min = Number(data.job.duration_min || CURRENT.duration_min || 60);
+      CURRENT.job_type = data.job.job_type || CURRENT.job_type;
+      $("mJobType").value = text(CURRENT.job_type||"");
+    }
+    return true;
+  } catch (error) {
+    console.error("load structured services", error, fallbackItems);
+    showStructuredServiceEditor(false);
+    showToast("โหลดรายการบริการแบบแก้ไขไม่สำเร็จ จึงแสดงช่องประเภทงานเดิม", "error");
+    return false;
+  }
+}
+
+async function saveStructuredServices(){
+  if (!CURRENT || !SERVICE_EDITOR_ACTIVE || !SERVICE_EDITOR || !SERVICE_EDITOR.isDirty()) return true;
+  const items = SERVICE_EDITOR.items();
+  if (!items.length) {
+    showToast("ต้องมีรายการบริการอย่างน้อย 1 รายการ", "error");
+    return false;
+  }
+  try {
+    const data = await apiFetch(`/admin/customer-bookings/${CURRENT.job_id}/services`, {
+      method: "PUT",
+      body: JSON.stringify({ revision: SERVICE_EDITOR.revision(), items }),
+    });
+    SERVICE_EDITOR.setData(data);
+    CURRENT.duration_min = Number(data?.job?.duration_min || CURRENT.duration_min || 60);
+    CURRENT.job_type = data?.job?.job_type || CURRENT.job_type;
+    $("mJobType").value = text(CURRENT.job_type||"");
+    if (data?.pricing) {
+      $("mPricing").textContent = `ยอดรวม: ${Number(data.pricing.total||0).toLocaleString("th-TH")} บาท • ส่วนลด: ${Number(data.pricing.discount||0).toLocaleString("th-TH")} บาท`;
+    }
+    return true;
+  } catch (error) {
+    showToast(error.message || "บันทึกรายละเอียดบริการไม่สำเร็จ", "error");
+    return false;
+  }
+}
+
 async function saveJob(){
   if (!CURRENT) return;
   if (blockReadOnlyMutation()) return;
+  if (!(await saveStructuredServices())) return false;
   const latNow = $("mLat").value.trim();
   const lngNow = $("mLng").value.trim();
   const mapsNow = $("mMaps").value.trim();
@@ -886,8 +972,10 @@ async function saveJob(){
     const mapsNote = resp && resp.maps_action === "cleared" ? " • ล้างลิงก์แผนที่เดิม (สถานที่เปลี่ยน)" : "";
     showToast("บันทึกใบงานแล้ว" + gpsNote + mapsNote, "success");
     await loadQueue();
+    return true;
   }catch(e){
     showToast(e.message||"บันทึกไม่สำเร็จ","error");
+    return false;
   }
 }
 
@@ -963,7 +1051,7 @@ async function dispatchJob(){
   const team_members = getSelectedTeam();
 
   // save appointment edits first
-  await saveJob();
+  if (!(await saveJob())) return;
 
   const mode = ($("mDispatchMode").value || "forced").trim();
 
@@ -1012,7 +1100,7 @@ async function rebroadcastOffer(){
   if (blockReadOnlyMutation()) return;
   if (!confirm("ยืนยันยิงข้อเสนอใหม่ให้ช่างที่เปิดรับงาน ว่างจริง และอยู่ในพื้นที่นี้?")) return;
   try{
-    await saveJob();
+    if (!(await saveJob())) return;
     const tech_type = "all";
     const out = await apiFetch(`/jobs/${CURRENT.job_id}/rebroadcast_offer_v2`, { method:"POST", body: JSON.stringify({ tech_type }) });
     showToast(out.message || `ส่งข้อเสนอใหม่แล้ว ${Number(out.offers_count||0)} คน`, "success");
