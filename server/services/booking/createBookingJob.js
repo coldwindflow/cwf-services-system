@@ -2078,9 +2078,10 @@ function createBookingJobService(dependencies = {}) {
       const appliedDiscount = exactMoney(Math.min(Number(base_total || 0), Number(promoPick?.discount || 0)).toFixed(2));
 
       // ✅ dispatch_mode:
-      // - scheduled (ลูกค้าจองปกติ) => normal (ให้เข้าแอดมิน/คิวตามปกติ)
+      // - scheduled => forced (Production constraint permits offer|forced;
+      //   approval also finalizes scheduled reservations as forced)
       // - urgent (ยิงงานด่วน)      => offer  (ไป flow offer)
-      const dispatchMode = (bm === 'urgent') ? 'offer' : 'normal';
+      const dispatchMode = (bm === 'urgent') ? 'offer' : 'forced';
 
       packageMutationStage = "job_schema_check";
       const catalogLinkReady = await isJobsCatalogLinkSchemaReady();
