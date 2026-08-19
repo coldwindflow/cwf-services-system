@@ -8,6 +8,10 @@ function registerBookingApprovalRoutes(app, options = {}) {
   }
   app.post("/admin/customer-bookings/:job_id/approve", requireAdminSession, service.approve);
   app.post("/admin/customer-bookings/:job_id/reject", requireAdminSession, service.reject);
+  if (typeof service.getServices === "function" && typeof service.updateServices === "function") {
+    app.get("/admin/customer-bookings/:job_id/services", requireAdminSession, service.getServices);
+    app.put("/admin/customer-bookings/:job_id/services", requireAdminSession, service.updateServices);
+  }
 }
 
 module.exports = { registerBookingApprovalRoutes };
