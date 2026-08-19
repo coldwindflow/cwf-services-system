@@ -7,7 +7,8 @@ const {
   normalizeWashVariantLabel,
   normalizeWashKey,
 } = require("../../normalizers");
-const { parseCanonicalServiceItem } = require("./bookingJobUnits");
+const { ensureBookingJobUnits, parseCanonicalServiceItem } = require("./bookingJobUnits");
+const jobTiming = require("../jobTiming");
 
 const ALLOWED_JOB_TYPES = new Set(["ล้าง", "ซ่อม", "ติดตั้ง"]);
 const ALLOWED_AC_TYPES = new Set(["ผนัง", "สี่ทิศทาง", "แขวน", "เปลือยใต้ฝ้า"]);
@@ -168,11 +169,29 @@ function responseItem(row) {
 function createAdminPendingServiceEditor(dependencies = {}) {
   const {
     pool,
-    syncJobUnitsFromJobItems,
-    ensureBookingJobUnits,
-    jobTiming,
     logJobUpdate,
   } = dependencies;
+  const ensureCanonicalBookingJobUnits = dependencies.ensureBookingJobUnits || ensureBookingJobUnits;
+  const timingEngine = dependencies.jobTiming || jobTiming;
+
+  async function syncCanonicalJobUnits(client, jobId) {
+    const expected = await client.query(
+      `SELECT COALESCE(SUM(FLOOR(qty)),0)::int AS count
+         FROM public.job_items
+        WHERE job_id=$1 AND qty > 0`,
+      [jobId]
+    );
+    const expectedCount = Math.max(0, Number(expected.rows?.[0]?.count || 0));
+    await client.query(
+      `UPDATE public.job_units
+          SET status='cancelled', updated_at=NOW()
+        WHERE job_id=$1
+          AND unit_no > $2
+          AND LOWER(COALESCE(NULLIF(status,''),'pending')) NOT IN ('cancelled','removed','deleted','void','inactive')`,
+      [jobId, expectedCount]
+    );
+    await ensureCanonicalBookingJobUnits(jobId, client);
+  }
 
   async function loadJob(client, jobId, forUpdate = false) {
     const result = await client.query(
@@ -331,7 +350,7 @@ function createAdminPendingServiceEditor(dependencies = {}) {
         }
       }
 
-      const duration = Number(jobTiming.computeServiceDurationMinMulti({ services }, { source: "admin_pending_service_editor", conservative: true }) || 0);
+      const duration = Number(timingEngine.computeServiceDurationMinMulti({ services }, { source: "admin_pending_service_editor", conservative: true }) || 0);
       const jobTypes = [...new Set(services.map((service) => service.job_type))];
       const jobType = jobTypes.join(" + ");
       const pricing = await pricingSummary(client, jobId);
@@ -342,8 +361,7 @@ function createAdminPendingServiceEditor(dependencies = {}) {
         [jobId, jobType, duration > 0 ? duration : Number(job.duration_min || 60), pricing.total]
       );
 
-      await syncJobUnitsFromJobItems(jobId, client);
-      await ensureBookingJobUnits(jobId, client);
+      await syncCanonicalJobUnits(client, jobId);
 
       if (typeof logJobUpdate === "function") {
         await logJobUpdate(jobId, {

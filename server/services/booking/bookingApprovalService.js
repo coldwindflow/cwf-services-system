@@ -2,6 +2,7 @@
 
 const { JOB_STATUS, ASSIGNMENT_STATUS, OFFER_STATUS } = require("./bookingStatuses");
 const { loadCanonicalServiceCriteria } = require("./bookingJobUnits");
+const { createAdminPendingServiceEditor } = require("./adminPendingServiceEditor");
 
 function createBookingApprovalService(dependencies = {}) {
   const {
@@ -15,6 +16,7 @@ function createBookingApprovalService(dependencies = {}) {
     checkTechCollision,
     logJobUpdate,
   } = dependencies;
+  const pendingServiceEditor = createAdminPendingServiceEditor({ pool, logJobUpdate });
 
   function httpError(status, code) {
     const error = new Error(code);
@@ -269,7 +271,12 @@ function createBookingApprovalService(dependencies = {}) {
     }
   }
 
-  return { approve, reject };
+  return {
+    approve,
+    reject,
+    getServices: pendingServiceEditor.get,
+    updateServices: pendingServiceEditor.update,
+  };
 }
 
 module.exports = { createBookingApprovalService };

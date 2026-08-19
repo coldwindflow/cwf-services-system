@@ -9,7 +9,7 @@ const {
   canonicalItemName,
   revisionForRows,
 } = require("../server/services/booking/adminPendingServiceEditor");
-const { registerPendingBookingServiceEditorRoutes } = require("../server/routes/admin/pendingBookingServiceEditor");
+const { registerBookingApprovalRoutes } = require("../server/routes/admin/bookingApprovals");
 const { parseCanonicalServiceItem } = require("../server/services/booking/bookingJobUnits");
 const ui = require("../admin-review-service-editor");
 
@@ -67,15 +67,18 @@ test("editor summary reacts immediately to quantity and price", () => {
 test("service editor routes are protected by the existing admin session middleware", () => {
   const registrations = [];
   const app = {
+    post(route, ...handlers) { registrations.push({ method: "POST", route, handlers }); },
     get(route, ...handlers) { registrations.push({ method: "GET", route, handlers }); },
     put(route, ...handlers) { registrations.push({ method: "PUT", route, handlers }); },
   };
   const requireAdminSession = function requireAdminSession() {};
-  registerPendingBookingServiceEditorRoutes(app, {
-    service: { get() {}, update() {} },
+  registerBookingApprovalRoutes(app, {
+    service: { approve() {}, reject() {}, getServices() {}, updateServices() {} },
     requireAdminSession,
   });
   assert.deepEqual(registrations.map((row) => [row.method, row.route]), [
+    ["POST", "/admin/customer-bookings/:job_id/approve"],
+    ["POST", "/admin/customer-bookings/:job_id/reject"],
     ["GET", "/admin/customer-bookings/:job_id/services"],
     ["PUT", "/admin/customer-bookings/:job_id/services"],
   ]);
@@ -131,16 +134,16 @@ test("updating a package service row keeps package identity and snapshot in plac
         job.job_price = params[3];
         return { rows: [] };
       }
+      if (/SUM\(FLOOR\(qty\)\)/.test(text)) return { rows: [{ count: item.qty }] };
+      if (/UPDATE public\.job_units/.test(text)) return { rows: [] };
       throw new Error(`Unexpected SQL: ${text}`);
     },
     release() {},
   };
-  let synced = 0;
   let ensured = 0;
   let audited = 0;
   const service = createAdminPendingServiceEditor({
     pool: { async connect() { return client; } },
-    syncJobUnitsFromJobItems: async () => { synced += 1; },
     ensureBookingJobUnits: async () => { ensured += 1; },
     jobTiming: { computeServiceDurationMinMulti: () => 130 },
     logJobUpdate: async () => { audited += 1; },
@@ -170,7 +173,6 @@ test("updating a package service row keeps package identity and snapshot in plac
   assert.equal(item.service_package_id, 7);
   assert.deepEqual(item.service_package_snapshot, packageSnapshot);
   assert.equal(job.duration_min, 130);
-  assert.equal(synced, 1);
   assert.equal(ensured, 1);
   assert.equal(audited, 1);
   assert.equal(queries.some((sql) => /DELETE FROM public\.job_items/.test(sql)), false);
