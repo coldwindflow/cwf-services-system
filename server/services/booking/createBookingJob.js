@@ -62,13 +62,13 @@ function createBookingJobService(dependencies = {}) {
   } = dependencies;
 
   const ENABLE_SERVICE_ZONE_FILTER = Boolean(dependencies.isServiceZoneFilterEnabled());
-  const ENABLE_CUSTOMER_SCHEDULED_BOOKING = Boolean(dependencies.isCustomerScheduledBookingEnabled());
   const CWF_LINE_CONTACT_URL = dependencies.lineContactUrl;
   const TRAVEL_BUFFER_MIN = dependencies.travelBufferMin;
   const getInvalidJobSiteCoordinatesMessage = dependencies.getInvalidJobSiteCoordinatesMessage;
   const _refreshTechnicianIncomePreviewForJob = dependencies.refreshTechnicianIncomePreviewForJob;
   const _notifyUrgentOffer = dependencies.notifyUrgentOffer;
   const _notifyDirectJobAssigned = dependencies.notifyDirectJobAssigned;
+  const resolveCustomerScheduledCapability = dependencies.resolveCustomerScheduledCapability;
   const resolveCustomerUrgentCapability = dependencies.resolveCustomerUrgentCapability;
   const urgentDispatchService = dependencies.urgentDispatchService;
   const logJobUpdate = dependencies.logJobUpdate;
@@ -1444,6 +1444,9 @@ function createBookingJobService(dependencies = {}) {
         return res.status(400).json({ error: "PACKAGE_URGENT_UNSUPPORTED", code: "PACKAGE_URGENT_UNSUPPORTED" });
       }
     } catch (_) {}
+    const scheduledCapability = canonicalBookingMode === "scheduled"
+      ? await resolveCustomerScheduledCapability()
+      : null;
     const urgentCapability = canonicalBookingMode === "urgent"
       ? await resolveCustomerUrgentCapability()
       : null;
@@ -1454,7 +1457,7 @@ function createBookingJobService(dependencies = {}) {
         line_url: CWF_LINE_CONTACT_URL,
       });
     }
-    if (canonicalBookingMode === "scheduled" && !ENABLE_CUSTOMER_SCHEDULED_BOOKING) {
+    if (canonicalBookingMode === "scheduled" && scheduledCapability?.enabled !== true) {
       return res.status(503).json({
         error: "ระบบจองคิวออนไลน์ปิดให้บริการชั่วคราว กรุณาติดต่อแอดมินทาง LINE",
         code: "SCHEDULED_BOOKING_DISABLED",

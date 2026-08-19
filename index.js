@@ -50,6 +50,7 @@ const customerAvailability = require("./server/services/public/customerAvailabil
 const { registerPublicCustomerAvailabilityRoutes } = require("./server/routes/public/customerAvailability");
 const { registerAdminAvailabilityRoutes } = require("./server/routes/admin/adminAvailability");
 const { createBookingJobService } = require("./server/services/booking/createBookingJob");
+const scheduledCapability = require("./server/services/booking/scheduledCapability");
 const { createCustomerCatalogQuoteService } = require("./server/services/booking/customerCatalogQuote");
 const { calcBookingPricing } = require("./server/services/booking/exactPricing");
 const { pendingCustomerScheduledReservationSql } = require("./server/services/booking/bookingStatuses");
@@ -143,13 +144,9 @@ const FLAG_SHOW_TECH_PHONE_ON_TRACKING = envBool("SHOW_TECH_PHONE_ON_TRACKING", 
 const ENABLE_AVAILABILITY_V2 = envBool("ENABLE_AVAILABILITY_V2", true);
 // ✅ Safe toggle: urgent offer flow (public booking + offers)
 const ENABLE_URGENT_FLOW = envBool("ENABLE_URGENT_FLOW", true);
-// 🔒 Customer App booking kill switches — FAIL CLOSED by design: customer
-// self-booking stays OFF until the operator explicitly enables each lane in
-// the environment. When off, /public/book answers 503 with a machine-readable
-// code + LINE contact URL so the app can hand the customer to a human without
-// ever creating a job (no job = no duplicate risk). Admin booking flows are
-// NOT affected by these flags.
-const ENABLE_CUSTOMER_SCHEDULED_BOOKING = envBool("ENABLE_CUSTOMER_SCHEDULED_BOOKING", false);
+// Customer scheduled booking is controlled by the published Admin runtime
+// switch (page_availability.scheduled). It is read for every request, needs no
+// ENV or restart, and fails closed if the published configuration is unavailable.
 const ENABLE_CUSTOMER_URGENT_BOOKING = envBool("ENABLE_CUSTOMER_URGENT_BOOKING", false);
 const CWF_LINE_CONTACT_URL = String(process.env.CWF_LINE_CONTACT_URL || "https://lin.ee/fG1Oq7y").trim();
 // Rate limits for the public tracking lookups (per client IP, per minute).
@@ -14123,10 +14120,10 @@ const bookingJobService = createBookingJobService({
   createServicePackageResolver: (db) => createServicePackageResolver({ db }),
   availabilityEngine: customerAvailability,
   urgentDispatchService,
+  resolveCustomerScheduledCapability: () => scheduledCapability.resolveScheduledCapability(pool),
   resolveCustomerUrgentCapability: () => urgentCapability.resolveUrgentCapability(pool),
   logJobUpdate,
   isServiceZoneFilterEnabled: () => ENABLE_SERVICE_ZONE_FILTER,
-  isCustomerScheduledBookingEnabled: () => ENABLE_CUSTOMER_SCHEDULED_BOOKING,
   lineContactUrl: CWF_LINE_CONTACT_URL,
   travelBufferMin: TRAVEL_BUFFER_MIN,
   getInvalidJobSiteCoordinatesMessage: () => INVALID_JOB_SITE_COORDINATES_MSG,
