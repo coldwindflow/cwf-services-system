@@ -33,7 +33,7 @@ test("Admin HTTP idempotent replay returns the persisted two-decimal total as au
     pool: { async query() { return { rows: [{ job_id: 41, booking_code: "CWFTEST41", booking_mode: "scheduled",
       dispatch_mode: "normal", duration_min: 180, job_price: "1399.50", admin_request_fingerprint: fingerprint }] }; } },
     isServiceZoneFilterEnabled: () => false,
-    isCustomerScheduledBookingEnabled: () => true,
+    resolveCustomerScheduledCapability: async () => ({ enabled: true, degraded: false }),
     normalizeAppointmentDatetime: (value) => value,
   });
   const response = { statusCode: 200, status(code) { this.statusCode = code; return this; }, json(value) { this.body = value; return value; } };

@@ -64,7 +64,7 @@ test("closed authoritative urgent switch rejects before database mutation and ig
     pool: { async connect() { connects += 1; throw new Error("must not connect"); } },
     urgentPublicAdapter,
     isServiceZoneFilterEnabled: () => false,
-    isCustomerScheduledBookingEnabled: () => true,
+    resolveCustomerScheduledCapability: async () => ({ enabled: true, degraded: false }),
     resolveCustomerUrgentCapability: async () => ({ enabled }),
   });
   const invoke = async (body) => {
@@ -92,7 +92,7 @@ test("public urgent preflight serializes only safe dispatch fields and never can
     urgentPublicAdapter,
     resolveCustomerUrgentCapability: async () => ({ enabled: true }),
     isServiceZoneFilterEnabled: () => true,
-    isCustomerScheduledBookingEnabled: () => true,
+    resolveCustomerScheduledCapability: async () => ({ enabled: true, degraded: false }),
     computeDurationMinMulti: () => 60,
     effectiveBlockMin: (duration) => Number(duration) + 30,
     detectServiceZoneFromText: async () => ({
