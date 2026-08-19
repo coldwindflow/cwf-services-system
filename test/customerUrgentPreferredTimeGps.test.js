@@ -357,7 +357,7 @@ function backendValidationService() {
     },
     urgentPublicAdapter,
     isServiceZoneFilterEnabled: () => false,
-    isCustomerScheduledBookingEnabled: () => true,
+    resolveCustomerScheduledCapability: async () => ({ enabled: true, degraded: false }),
     resolveCustomerUrgentCapability: async () => ({ enabled: true, degraded: false }),
   });
   return { service, touched: () => databaseTouched };

@@ -36,7 +36,7 @@ function bookingService(overrides = {}) {
   return createBookingJobService({
     pool: { async connect() { return emptyClient; } },
     isServiceZoneFilterEnabled: () => false,
-    isCustomerScheduledBookingEnabled: () => true,
+    resolveCustomerScheduledCapability: async () => ({ enabled: true, degraded: false }),
     genToken: () => "test-booking-token",
     createServicePackageResolver: () => ({
       async resolveSelection() {
