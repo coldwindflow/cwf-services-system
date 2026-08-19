@@ -2334,11 +2334,19 @@ function createBookingJobService(dependencies = {}) {
       if (hasPackageRequest) {
         const knownPackageCode = String(e?.code || "").startsWith("PACKAGE_") ? e.code : "PACKAGE_BOOKING_FAILED";
         const statusCode = Number(e?.statusCode || e?.status || 500);
+        const diagnosticDbCode = /^[0-9A-Z]{5}$/.test(String(e?.code || "")) ? String(e.code) : null;
+        const diagnosticConstraint = /^[A-Za-z0-9_]{1,128}$/.test(String(e?.constraint || "")) ? String(e.constraint) : null;
+        const diagnosticColumn = /^[A-Za-z0-9_]{1,128}$/.test(String(e?.column || "")) ? String(e.column) : null;
         console.error("[public_book] package mutation failed", { stage: packageMutationStage, error: e });
         return res.status(statusCode >= 400 && statusCode < 600 ? statusCode : 500).json({
           error: knownPackageCode,
           code: knownPackageCode,
-          ...(knownPackageCode === "PACKAGE_BOOKING_FAILED" ? { diagnostic_stage: packageMutationStage } : {}),
+          ...(knownPackageCode === "PACKAGE_BOOKING_FAILED" ? {
+            diagnostic_stage: packageMutationStage,
+            ...(diagnosticDbCode ? { diagnostic_db_code: diagnosticDbCode } : {}),
+            ...(diagnosticConstraint ? { diagnostic_constraint: diagnosticConstraint } : {}),
+            ...(diagnosticColumn ? { diagnostic_column: diagnosticColumn } : {}),
+          } : {}),
         });
       }
       const statusCode = Number(e?.statusCode || e?.status || 500);
