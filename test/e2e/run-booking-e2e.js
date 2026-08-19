@@ -204,7 +204,6 @@ function bootApp(port, extraEnv = {}) {
       // PostgreSQL cluster, which intentionally has TLS disabled.
       NODE_OPTIONS: `--require=${path.join(__dirname, "local-postgres-preload.js")}`,
       CWF_E2E_NOW_BANGKOK: "2026-07-28T07:30:00+07:00",
-      ENABLE_CUSTOMER_SCHEDULED_BOOKING: "true",
       // Customer urgent must ignore this legacy ENV and use the persisted CMS switch.
       ENABLE_CUSTOMER_URGENT_BOOKING: "false",
       ...extraEnv,
@@ -400,7 +399,8 @@ async function apiBook(base, payload) {
   return { status: res.status, body };
 }
 
-async function publishUrgentSwitch(base, adminSession, enabled) {
+async function publishBookingSwitch(base, adminSession, lane, enabled) {
+  assert(["scheduled", "urgent"].includes(lane), `unsupported booking lane: ${lane}`);
   const headers = {
     "content-type": "application/json",
     cookie: `cwf_session=${adminSession}`,
@@ -412,7 +412,7 @@ async function publishUrgentSwitch(base, adminSession, enabled) {
   const config = JSON.parse(JSON.stringify(current.draft_config));
   config.page_availability = {
     ...(config.page_availability || {}),
-    urgent: enabled === true,
+    [lane]: enabled === true,
   };
   const saved = await fetch(`${base}/admin/homepage-cms/draft`, {
     method: "PUT",
@@ -428,9 +428,12 @@ async function publishUrgentSwitch(base, adminSession, enabled) {
   });
   const publishedBody = await published.json();
   assert(published.status === 200 && publishedBody?.ok === true, `admin CMS publish failed: ${published.status}`);
-  assert(publishedBody.published_config?.page_availability?.urgent === (enabled === true),
-    "admin CMS publish did not persist the requested urgent switch");
+  assert(publishedBody.published_config?.page_availability?.[lane] === (enabled === true),
+    `admin CMS publish did not persist the requested ${lane} switch`);
 }
+
+const publishUrgentSwitch = (base, adminSession, enabled) => publishBookingSwitch(base, adminSession, "urgent", enabled);
+const publishScheduledSwitch = (base, adminSession, enabled) => publishBookingSwitch(base, adminSession, "scheduled", enabled);
 
 function scheduledPayload(ymd, start, overrides = {}) {
   return {
@@ -458,10 +461,10 @@ async function main() {
   pool = new Pool({ ...PG, database: DB_NAME, max: 5 });
   await assertCoreSchema();
 
-  log("booting app A (booking enabled) + app B (booking disabled)...");
+  log("booting app A + app B (booking lanes controlled by persisted CMS)...");
   bootApp(PORT_A, {});
   if (process.env.E2E_API_ONLY !== "1") {
-    bootApp(PORT_B, { ENABLE_CUSTOMER_SCHEDULED_BOOKING: "false", ENABLE_CUSTOMER_URGENT_BOOKING: "false" });
+    bootApp(PORT_B, { ENABLE_CUSTOMER_URGENT_BOOKING: "false" });
   }
   await waitForReady(BASE_A);
   if (process.env.E2E_API_ONLY !== "1") await waitForReady(BASE_B);
@@ -509,6 +512,7 @@ async function main() {
     return token;
   }
   const adminSession = await seedAdminSession();
+  await publishScheduledSwitch(BASE_A, adminSession, true);
   if (process.env.E2E_API_ONLY !== "1") {
     await publishUrgentSwitch(BASE_A, adminSession, true);
   }
@@ -1559,6 +1563,7 @@ async function main() {
     // Urgent is controlled solely by the persisted CMS switch. Both test
     // servers share that row, so an ENV-disabled server is not an urgent-off
     // fixture. Exercise the real authenticated publish path instead.
+    await publishScheduledSwitch(BASE_A, adminSession, false);
     await publishUrgentSwitch(BASE_A, adminSession, false);
     const before = await jobCountWhere("TRUE");
     const forgedApps = ["admin_console", "internal", "", "customer_app_v2", "cwf_admin"];
@@ -1590,6 +1595,7 @@ async function main() {
       `unknown booking_mode must 400 on the open instance too, got ${bogusOpen.status}`);
     const after = await jobCountWhere("TRUE");
     assert(after === before, `bypass probes leaked ${after - before} job(s)`);
+    await publishScheduledSwitch(BASE_A, adminSession, true);
     await publishUrgentSwitch(BASE_A, adminSession, true);
   });
 

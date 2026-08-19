@@ -483,7 +483,7 @@ function makeDependencies(overrides = {}) {
     resolveCustomerUrgentCapability: async () => ({ enabled: true, degraded: false }),
     logJobUpdate: async () => {},
     isServiceZoneFilterEnabled: () => false,
-    isCustomerScheduledBookingEnabled: () => true,
+    resolveCustomerScheduledCapability: async () => ({ enabled: true, degraded: false }),
     lineContactUrl: "https://lin.ee/test",
     travelBufferMin: 30,
     getInvalidJobSiteCoordinatesMessage: () => "พิกัดหน้างานไม่ถูกต้อง",
