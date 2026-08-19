@@ -133,17 +133,32 @@
 
   function renderBundleConfigurator(item) {
     if (!isServicePackageBundle(item)) return "";
-    return `<section class="store-bundle-config" data-store-bundle-config><h3>เลือก BTU และจำนวนเครื่อง</h3><p class="muted">รวมแอร์หลายขนาดในงานเดียวได้ และเลือกมากกว่า 4 เครื่องได้</p>${item.service_package_variants.map((variant) => {
+    return `<section class="store-bundle-config" data-store-bundle-config><p class="muted">รวมแอร์หลายขนาดในงานเดียวได้ และเลือกมากกว่า 4 เครื่องได้</p>${item.service_package_variants.map((variant, index) => {
       const options = bundleBtuOptions(variant);
-      return `<div class="store-bundle-row" data-bundle-package="${root.utils.escapeHtml(variant.package_key)}"><div><strong>${root.utils.escapeHtml(variant.package_name)}</strong>${variant.description ? `<small>${root.utils.escapeHtml(variant.description)}</small>` : ""}</div><label>BTU<select class="select" data-bundle-btu>${options.map((option) => `<option value="${option.btu}">${root.utils.escapeHtml(option.label || `${option.btu} BTU`)}</option>`).join("")}</select></label><label>จำนวน<input class="input" data-bundle-quantity type="number" min="0" step="1" inputmode="numeric" value="0" aria-label="จำนวนเครื่องสำหรับ ${root.utils.escapeHtml(variant.package_name)}"></label></div>`;
-    }).join("")}<div class="store-bundle-live-total" data-bundle-total>เลือกอย่างน้อย 1 เครื่อง</div><div class="inline-error" data-bundle-error aria-live="polite"></div></section>`;
+      const quantityId = `bundle-quantity-${index}`;
+      const errorId = `bundle-quantity-error-${index}`;
+      return `<div class="store-bundle-row" data-bundle-package="${root.utils.escapeHtml(variant.package_key)}"><div class="store-bundle-package"><strong>${root.utils.escapeHtml(variant.package_name)}</strong>${variant.description ? `<small>${root.utils.escapeHtml(variant.description)}</small>` : ""}</div><label class="store-bundle-btu">BTU<select class="select" data-bundle-btu>${options.map((option) => `<option value="${option.btu}">${root.utils.escapeHtml(option.label || `${option.btu} BTU`)}</option>`).join("")}</select></label><div class="store-bundle-quantity"><span>จำนวน</span><div class="store-bundle-stepper" role="group" aria-label="จำนวนเครื่องสำหรับ ${root.utils.escapeHtml(variant.package_name)}"><button class="qty-btn" type="button" data-bundle-dec aria-label="ลดจำนวน ${root.utils.escapeHtml(variant.package_name)}" aria-controls="${quantityId}">−</button><input class="input" id="${quantityId}" data-bundle-quantity type="number" min="0" max="99" step="1" inputmode="numeric" value="0" aria-describedby="${errorId}" aria-label="จำนวนเครื่องสำหรับ ${root.utils.escapeHtml(variant.package_name)}"><button class="qty-btn" type="button" data-bundle-inc aria-label="เพิ่มจำนวน ${root.utils.escapeHtml(variant.package_name)}" aria-controls="${quantityId}">+</button></div><small class="store-bundle-row-error" id="${errorId}" data-bundle-row-error aria-live="polite"></small></div></div>`;
+    }).join("")}<div class="store-bundle-live-summary" data-bundle-summary aria-live="polite"><div><span>จำนวนเครื่อง</span><strong data-bundle-count>0 เครื่อง</strong></div><div><span>ราคาที่ระบบยืนยัน</span><strong data-bundle-price>—</strong></div><div data-bundle-duration-row hidden><span>ระยะเวลาโดยประมาณ</span><strong data-bundle-duration></strong></div><p data-bundle-quote-status>เลือกอย่างน้อย 1 เครื่องเพื่อดูราคา</p></div><div class="inline-error store-bundle-error" data-bundle-error aria-live="polite"></div></section>`;
+  }
+
+  function parseBundleQuantity(value) {
+    const text = String(value == null ? "" : value).trim();
+    if (!/^\d+$/.test(text)) throw new Error("กรอกจำนวนเป็นเลขจำนวนเต็ม 0 ถึง 99");
+    const quantity = Number(text);
+    if (!Number.isSafeInteger(quantity) || quantity < 0 || quantity > 99) throw new Error("จำนวนเครื่องต้องอยู่ระหว่าง 0 ถึง 99");
+    return quantity;
+  }
+
+  function clampBundleQuantity(value, change) {
+    const parsed = Number(value);
+    const current = Number.isSafeInteger(parsed) ? parsed : 0;
+    return Math.min(99, Math.max(0, current + change));
   }
 
   function collectBundleDraft(container, item) {
     const groups = [];
     container.querySelectorAll("[data-bundle-package]").forEach((row) => {
-      const quantity = Number(row.querySelector("[data-bundle-quantity]")?.value || 0);
-      if (!Number.isSafeInteger(quantity) || quantity < 0 || quantity > 99) throw new Error("จำนวนเครื่องต้องเป็นจำนวนเต็มระหว่าง 0 ถึง 99");
+      const quantity = parseBundleQuantity(row.querySelector("[data-bundle-quantity]")?.value);
       if (!quantity) return;
       const packageKey = row.getAttribute("data-bundle-package");
       const variant = item.service_package_variants.find((entry) => entry.package_key === packageKey);
@@ -157,34 +172,176 @@
   }
 
   let bundleQuoteRequestId = 0;
-  async function beginBundleBooking(container, item, scope = "scheduled") {
-    const errorBox = container.querySelector("[data-bundle-error]");
-    const requestId = ++bundleQuoteRequestId;
-    try {
-      const result = collectBundleDraft(container, item);
-      if (errorBox) errorBox.textContent = "กำลังตรวจสอบราคาและสิทธิ์จากระบบ...";
-      const quote = await root.api.quoteCatalogBooking({
-        catalog_item_id: Number(item.item_id), service_package_groups: result.groups, booking_mode: scope,
-      });
-      if (requestId !== bundleQuoteRequestId || String(root.state.storeDetail?.data?.item_id) !== String(item.item_id)) return;
-      const preview = { package_name: item.item_name, groups: quote.groups, components: quote.components,
-        fixed_total_price: quote.fixed_total_price, duration_min: quote.duration_minutes,
-        redeem_until: item.service_package_redeem_until, payload: { services: quote.services }, server_verified: true };
-      const common = { catalog_item_id: Number(item.item_id), service_package_key: "", service_package_tier_key: "", service_package_btu: "",
-        service_package_groups: result.groups, service_package_bundle_preview: preview,
-        services: quote.services, selectedSlot: null };
-      root.state.updateDraft(scope, scope === "urgent" ? { ...common, urgent_request_key: "" } : { ...common, scheduled_request_key: "" });
-      if (scope === "scheduled") {
-        root.state.setScheduledPreview("package", { status: "success", data: preview, error: "", verified: true });
-        root.state.setScheduledPreview("pricing", { status: "idle", data: null, error: "" });
-      }
-      if (errorBox) errorBox.textContent = "";
-      root.utils.routeTo(scope);
-    } catch (error) {
-      if (requestId !== bundleQuoteRequestId) return;
-      if (scope === "scheduled") root.state.setScheduledPreview("package", { status: "error", data: null, error: "ไม่สามารถยืนยันแพ็กเกจได้ กรุณาลองใหม่", verified: false });
-      if (errorBox) errorBox.textContent = "ไม่สามารถยืนยันราคาและสิทธิ์ได้ กรุณาลองใหม่";
+  let activeBundleSheetCleanup = null;
+
+  function bundleSelectionSignature(groups) {
+    return JSON.stringify(groups.map((group) => ({ package_key: group.package_key, btu: group.btu, quantity: group.quantity })));
+  }
+
+  function continueBundleBooking(item, result, quote, scope = "scheduled") {
+    const preview = { package_name: item.item_name, groups: quote.groups, components: quote.components,
+      fixed_total_price: quote.fixed_total_price, duration_min: quote.duration_minutes,
+      redeem_until: item.service_package_redeem_until, payload: { services: quote.services }, server_verified: true };
+    const common = { catalog_item_id: Number(item.item_id), service_package_key: "", service_package_tier_key: "", service_package_btu: "",
+      service_package_groups: result.groups, service_package_bundle_preview: preview,
+      services: quote.services, selectedSlot: null };
+    root.state.updateDraft(scope, scope === "urgent" ? { ...common, urgent_request_key: "" } : { ...common, scheduled_request_key: "" });
+    if (scope === "scheduled") {
+      root.state.setScheduledPreview("package", { status: "success", data: preview, error: "", verified: true });
+      root.state.setScheduledPreview("pricing", { status: "idle", data: null, error: "" });
     }
+    root.utils.routeTo(scope);
+  }
+
+  function bundleSheetHtml(item, scope) {
+    const titleId = `bundle-sheet-title-${scope}`;
+    return `
+      <div class="contact-sheet-backdrop" data-bundle-close></div>
+      <section class="contact-sheet store-bundle-sheet" role="dialog" aria-modal="true" aria-labelledby="${titleId}">
+        <button class="contact-sheet-close" type="button" data-bundle-close aria-label="ปิด">×</button>
+        <span class="section-kicker">${scope === "urgent" ? "จองแพ็กเกจด่วน" : "จองแพ็กเกจ"}</span>
+        <h2 id="${titleId}">${root.utils.escapeHtml(item.item_name || "แพ็กเกจบริการ")}</h2>
+        ${renderBundleConfigurator(item)}
+        <button class="primary-btn store-bundle-confirm" type="button" data-bundle-confirm disabled>${scope === "urgent" ? "ดำเนินการจองด่วน" : "ยืนยันและเลือกวันเวลา"}</button>
+      </section>
+    `;
+  }
+
+  function clearBundleSheet() {
+    if (activeBundleSheetCleanup) activeBundleSheetCleanup({ restoreFocus: false });
+  }
+
+  function openBundleConfigurator(container, item, scope = "scheduled", trigger = null) {
+    clearBundleSheet();
+    let mount = container.querySelector("[data-contact-sheet-mount]");
+    if (!mount) { mount = document.createElement("div"); mount.setAttribute("data-contact-sheet-mount", ""); container.appendChild(mount); }
+    mount.innerHTML = bundleSheetHtml(item, scope);
+    document.body.classList.add("has-contact-sheet");
+    const sheet = mount.querySelector(".store-bundle-sheet");
+    const confirm = mount.querySelector("[data-bundle-confirm]");
+    const count = mount.querySelector("[data-bundle-count]");
+    const price = mount.querySelector("[data-bundle-price]");
+    const duration = mount.querySelector("[data-bundle-duration]");
+    const durationRow = mount.querySelector("[data-bundle-duration-row]");
+    const status = mount.querySelector("[data-bundle-quote-status]");
+    const errorBox = mount.querySelector("[data-bundle-error]");
+    let quoteTimer = null;
+    let verifiedQuote = null;
+    let verifiedSignature = "";
+    let closed = false;
+
+    const setSummary = (machineCount, state, quote = null) => {
+      if (count) count.textContent = `${machineCount} เครื่อง`;
+      if (price) price.textContent = state === "loading" ? "กำลังตรวจสอบ..." : (quote ? root.utils.formatBaht(quote.fixed_total_price) : "—");
+      const minutes = Number(quote?.duration_minutes);
+      if (durationRow) durationRow.hidden = !(Number.isFinite(minutes) && minutes > 0);
+      if (duration) duration.textContent = Number.isFinite(minutes) && minutes > 0 ? `${minutes} นาที` : "";
+      if (status) status.textContent = state === "loading" ? "กำลังขอราคาล่าสุดจากระบบ..."
+        : state === "success" ? "ราคานี้ยืนยันจากระบบแล้ว"
+          : state === "error" ? "ขอราคาไม่สำเร็จ กรุณาลองแก้จำนวนหรือ BTU อีกครั้ง"
+            : "เลือกอย่างน้อย 1 เครื่องเพื่อดูราคา";
+    };
+
+    const setQuantityErrors = () => {
+      let firstError = "";
+      mount.querySelectorAll("[data-bundle-package]").forEach((row) => {
+        const input = row.querySelector("[data-bundle-quantity]");
+        const error = row.querySelector("[data-bundle-row-error]");
+        let message = "";
+        try { parseBundleQuantity(input?.value); } catch (cause) { message = cause.message; }
+        if (input) input.setAttribute("aria-invalid", message ? "true" : "false");
+        if (error) error.textContent = message;
+        if (!firstError && message) firstError = message;
+      });
+      return firstError;
+    };
+
+    const refreshQuote = () => {
+      if (quoteTimer) { clearTimeout(quoteTimer); quoteTimer = null; }
+      ++bundleQuoteRequestId;
+      verifiedQuote = null;
+      verifiedSignature = "";
+      if (confirm) confirm.disabled = true;
+      if (errorBox) errorBox.textContent = "";
+      const rowError = setQuantityErrors();
+      const machineCount = Array.from(mount.querySelectorAll("[data-bundle-quantity]")).reduce((sum, input) => {
+        try { return sum + parseBundleQuantity(input.value); } catch (_error) { return sum; }
+      }, 0);
+      let result;
+      try {
+        if (rowError) throw new Error(rowError);
+        result = collectBundleDraft(mount, item);
+      } catch (cause) {
+        if (errorBox) errorBox.textContent = cause.message;
+        setSummary(machineCount, "empty");
+        return;
+      }
+      const signature = bundleSelectionSignature(result.groups);
+      const requestId = bundleQuoteRequestId;
+      setSummary(machineCount, "loading");
+      quoteTimer = setTimeout(async () => {
+        quoteTimer = null;
+        try {
+          const quote = await root.api.quoteCatalogBooking({
+            catalog_item_id: Number(item.item_id), service_package_groups: result.groups, booking_mode: scope,
+          });
+          if (closed || requestId !== bundleQuoteRequestId || String(root.state.storeDetail?.data?.item_id) !== String(item.item_id)) return;
+          if (!quote || !Number.isFinite(Number(quote.fixed_total_price))) throw new Error("INVALID_BUNDLE_QUOTE");
+          verifiedQuote = quote;
+          verifiedSignature = signature;
+          setSummary(machineCount, "success", quote);
+          if (confirm) confirm.disabled = false;
+        } catch (_error) {
+          if (closed || requestId !== bundleQuoteRequestId) return;
+          setSummary(machineCount, "error");
+          if (errorBox) errorBox.textContent = "ไม่สามารถยืนยันราคาและสิทธิ์ได้ กรุณาลองใหม่";
+          if (confirm) confirm.disabled = true;
+        }
+      }, 300);
+    };
+
+    const close = ({ restoreFocus = true } = {}) => {
+      if (closed) return;
+      closed = true;
+      ++bundleQuoteRequestId;
+      if (quoteTimer) clearTimeout(quoteTimer);
+      document.removeEventListener("keydown", onKeydown);
+      mount.innerHTML = "";
+      document.body.classList.remove("has-contact-sheet");
+      if (activeBundleSheetCleanup === close) activeBundleSheetCleanup = null;
+      if (restoreFocus) trigger?.focus?.({ preventScroll: true });
+    };
+    const onKeydown = (event) => {
+      if (event.key === "Escape") close();
+    };
+    activeBundleSheetCleanup = close;
+    document.addEventListener("keydown", onKeydown);
+    mount.querySelectorAll("[data-bundle-close]").forEach((button) => button.addEventListener("click", () => close(), { once: true }));
+    mount.querySelectorAll("[data-bundle-quantity]").forEach((input) => input.addEventListener("input", refreshQuote));
+    mount.querySelectorAll("[data-bundle-btu]").forEach((select) => select.addEventListener("change", refreshQuote));
+    mount.querySelectorAll("[data-bundle-dec], [data-bundle-inc]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const row = button.closest("[data-bundle-package]");
+        const input = row?.querySelector("[data-bundle-quantity]");
+        if (!input) return;
+        input.value = String(clampBundleQuantity(input.value, button.hasAttribute("data-bundle-inc") ? 1 : -1));
+        refreshQuote();
+      });
+    });
+    confirm?.addEventListener("click", () => {
+      if (confirm.disabled || !verifiedQuote) return;
+      try {
+        const result = collectBundleDraft(mount, item);
+        if (bundleSelectionSignature(result.groups) !== verifiedSignature) { refreshQuote(); return; }
+        confirm.disabled = true;
+        close({ restoreFocus: false });
+        continueBundleBooking(item, result, verifiedQuote, scope);
+      } catch (cause) {
+        if (errorBox) errorBox.textContent = cause.message;
+        refreshQuote();
+      }
+    });
+    requestAnimationFrame(() => sheet?.querySelector(".contact-sheet-close")?.focus());
   }
 
   async function beginOrdinaryBooking(container, item, scope, source) {
@@ -1722,7 +1879,6 @@
       ${renderPromoInfo(item)}
       ${renderVariantSelector(item, siblings)}
       ${item.short_description ? `<div class="store-detail-section store-detail-summary"><p>${root.utils.escapeHtml(item.short_description)}</p></div>` : ""}
-      ${renderBundleConfigurator(item)}
       <div class="store-detail-inline-cta">${ctaButton}</div>
       <div class="store-detail-accordion-group">
         ${renderAccordionSection("จุดเด่นของบริการ", highlights.length ? `
@@ -1806,7 +1962,7 @@
       bookButton.addEventListener("click", async () => {
         const item = root.state.storeDetail?.data;
         if (!item) return;
-        if (isServicePackageBundle(item)) { beginBundleBooking(container, item); return; }
+        if (isServicePackageBundle(item)) { openBundleConfigurator(container, item, "scheduled", bookButton); return; }
         if (!root.services.catalogItemToCommerceDraft(item)) {
           trackItemEvent("cwf_store_contact_admin", item, { source: "store_detail" });
           root.ui.openContactSheet(container, { title: item?.item_name || "รายการนี้" });
@@ -1815,26 +1971,12 @@
         await beginOrdinaryBooking(container, item, "scheduled", "store_detail");
       });
     });
-    container.querySelectorAll("[data-bundle-quantity], [data-bundle-btu]").forEach((control) => {
-      control.addEventListener("change", () => {
-        const item = root.state.storeDetail?.data;
-        const total = container.querySelector("[data-bundle-total]");
-        const error = container.querySelector("[data-bundle-error]");
-        if (error) error.textContent = "";
-        try {
-          const result = collectBundleDraft(container, item);
-          if (total) total.textContent = `รวม ${result.groups.reduce((sum, group) => sum + group.quantity, 0)} เครื่อง · ระบบจะยืนยันราคาเมื่อกดจอง`;
-        } catch (cause) {
-          if (total) total.textContent = cause.message;
-        }
-      });
-    });
     container.querySelectorAll("[data-store-detail-urgent]").forEach((bookButton) => {
       bookButton.addEventListener("click", async () => {
         if (bookButton.disabled) return;
         const item = root.state.storeDetail?.data;
         if (!item || !allowsUrgentBooking(item)) return;
-        if (isServicePackageBundle(item)) { beginBundleBooking(container, item, "urgent"); return; }
+        if (isServicePackageBundle(item)) { openBundleConfigurator(container, item, "urgent", bookButton); return; }
         await beginOrdinaryBooking(container, item, "urgent", "store_detail");
       });
     });
@@ -2360,10 +2502,12 @@
   store.render.onLeave = () => {
     clearCardAutoplay();
     clearCampaignCountdowns();
+    clearBundleSheet();
   };
   store.renderDetail.onLeave = () => {
     clearDetailAutoplay();
     clearCampaignCountdowns();
+    clearBundleSheet();
   };
 
   // Shared presentation renderer/lifecycle for both Store and the existing
@@ -2378,7 +2522,8 @@
   };
 
   store._test = { loadDetail, loadReviewsList, loadEligibility, detailItemId, renderDetailBody, renderReviewsSectionBody,
-    composeBundleTiers, renderBundleConfigurator, collectBundleDraft, beginOrdinaryBooking,
+    composeBundleTiers, renderBundleConfigurator, parseBundleQuantity, clampBundleQuantity, collectBundleDraft,
+    bundleSelectionSignature, beginOrdinaryBooking,
     bindCampaignCountdowns, clearCampaignCountdowns };
 
   root.store = store;

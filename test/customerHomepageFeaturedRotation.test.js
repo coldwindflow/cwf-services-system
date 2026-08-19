@@ -418,6 +418,6 @@ test("compact CSS and cache build remain consistent with six-card rotation", () 
   assert.match(css, /\.homepage-featured-page\s*\{[^}]*grid-area:\s*1\s*\/\s*1/s);
   assert.match(css, /transition:\s*opacity 350ms/);
   assert.match(css, /prefers-reduced-motion:\s*reduce/);
-  const build = "20260809_issue267_catalog_flow_v9";
+  const build = "20260819_issue282_bundle_sheet_v1";
   for (const source of [html, sw, boot, manifest]) assert.match(source, new RegExp(build));
 });

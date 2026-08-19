@@ -1,6 +1,6 @@
 "use strict";
 
-const BUILD_ID = "20260809_issue267_catalog_flow_v9";
+const BUILD_ID = "20260819_issue282_bundle_sheet_v1";
 const CACHE_NAME = `cwf-customer-app-v2-${BUILD_ID}`;
 const APP_SHELL = [
   `./index.html?v=${BUILD_ID}`,
