@@ -694,6 +694,7 @@ dbTest("real PostgreSQL: public scheduled success preserves response, status, it
     "travel_buffer_min", "applied_promo", "base_total", "base_total_exact", "net_total", "booking_ticket",
   ]);
   assert.equal(result.body.booking_mode, "scheduled");
+  assert.equal(result.body.dispatch_mode, "forced");
   assert.equal(result.body.base_total, 600);
   assert.equal(Object.hasOwn(result.body, "technician_username"), false);
   assert.equal(Object.hasOwn(result.body, "technician"), false);
@@ -701,6 +702,7 @@ dbTest("real PostgreSQL: public scheduled success preserves response, status, it
   const job = (await pool.query(`SELECT * FROM public.jobs`)).rows[0];
   const items = (await pool.query(`SELECT item_name, qty::int, line_total::int FROM public.job_items ORDER BY item_name`)).rows;
   assert.equal(job.job_status, JOB_STATUS.CUSTOMER_SCHEDULED_REVIEW);
+  assert.equal(job.dispatch_mode, "forced");
   assert.equal(job.technician_username, "tech-a");
   assert.equal(Number(job.job_price), 600);
   assert.deepEqual(items, [{ item_name: "ล้างแอร์ผนัง • ล้างธรรมดา • 12000 BTU • 1 เครื่อง", qty: 1, line_total: 600 }]);

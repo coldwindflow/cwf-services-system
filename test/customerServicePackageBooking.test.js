@@ -375,6 +375,13 @@ test("booking mutation keeps package linkage, snapshot, price, promotion bypass,
   assert.match(source, /packageBooking \? packageBooking\.items[\s\S]*?catalogBooking \? \[buildCatalogBookingItem\(catalogBooking\)\]/);
 });
 
+test("public scheduled reservation uses the Production-accepted forced dispatch mode", () => {
+  const source = fs.readFileSync(path.join(__dirname, "../server/services/booking/createBookingJob.js"), "utf8");
+  const handler = source.slice(source.indexOf("async function handlePublicBook"));
+  assert.match(handler, /const dispatchMode = \(bm === 'urgent'\) \? 'offer' : 'forced';/);
+  assert.doesNotMatch(handler, /const dispatchMode = \(bm === 'urgent'\) \? 'offer' : 'normal';/);
+});
+
 test("package replay ordering uses persisted history before current resolution and locked revalidation", () => {
   const source = fs.readFileSync(path.join(__dirname, "../server/services/booking/createBookingJob.js"), "utf8");
   const handler = source.indexOf("async function handlePublicBook");
