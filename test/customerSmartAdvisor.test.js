@@ -1174,7 +1174,7 @@ test("Home places built-in advisor after Quick Actions and before Featured Servi
 });
 
 test("advisor module is loaded before ui.js and precached under the shared build id", () => {
-  const build = "20260809_issue267_catalog_flow_v9";
+  const build = "20260819_issue282_bundle_sheet_v1";
   assert.ok(INDEX_SOURCE.indexOf(`modules/advisor.js?v=${build}`) < INDEX_SOURCE.indexOf(`modules/ui.js?v=${build}`));
   assert.match(SW_SOURCE, new RegExp(`BUILD_ID = "${build}"`));
   assert.match(SW_SOURCE, /modules\/advisor\.js\?v=\$\{BUILD_ID\}/);
