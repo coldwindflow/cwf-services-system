@@ -1881,11 +1881,14 @@ function createBookingJobService(dependencies = {}) {
     }
 
     const client = await pool.connect();
+    let packageMutationStage = "begin";
     try {
       await client.query("BEGIN");
 
       if (bookingRequestKey && deterministicToken) {
+        packageMutationStage = "idempotency_lock";
         await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [bookingRequestKey]);
+        packageMutationStage = "idempotency_lookup";
         const existing = await client.query(
           `SELECT job_id, booking_code, booking_token, booking_mode, dispatch_mode,
                   duration_min, job_price, catalog_item_id, appointment_datetime, customer_phone, customer_name,
@@ -1962,6 +1965,7 @@ function createBookingJobService(dependencies = {}) {
       // Only a genuinely new mutation depends on current package state. The
       // advisory-lock replay above must win if another request just committed.
       if (packageBooking) {
+        packageMutationStage = "package_revalidation";
         const revalidatedPackageBooking = await resolvePackageBooking({
           body: packageRequestBody,
           bookingMode: bm,
@@ -1987,6 +1991,7 @@ function createBookingJobService(dependencies = {}) {
 
       let draftReservationTech = null;
       if (bm === "scheduled") {
+        packageMutationStage = "technician_reservation";
         const startIso = normalizeAppointmentDatetime(appointment_datetime);
         draftReservationTech = await customerAvailability.reservePublicCustomerTechnician(
           publicCustomerAvailabilityDeps(client),
@@ -2077,6 +2082,7 @@ function createBookingJobService(dependencies = {}) {
       // - urgent (ยิงงานด่วน)      => offer  (ไป flow offer)
       const dispatchMode = (bm === 'urgent') ? 'offer' : 'normal';
 
+      packageMutationStage = "job_schema_check";
       const catalogLinkReady = await isJobsCatalogLinkSchemaReady();
       const jobInsertColumns = [
         "customer_name", "customer_phone", "job_type", "appointment_datetime", "job_price",
@@ -2116,6 +2122,7 @@ function createBookingJobService(dependencies = {}) {
         jobInsertValuesSql.push(`$${jobInsertParams.length - 1}`, `$${jobInsertParams.length}`);
       }
 
+      packageMutationStage = "job_insert";
       const r = await client.query(
         `
         INSERT INTO public.jobs
@@ -2143,8 +2150,10 @@ function createBookingJobService(dependencies = {}) {
 
       const job_id = r.rows[0].job_id;
       // ✅ booking_code (สุ่ม ไม่เรียง)
+      packageMutationStage = "booking_code";
       const booking_code = await generateUniqueBookingCode(client);
 
+      packageMutationStage = "booking_code_update";
       await client.query(`UPDATE public.jobs SET booking_code=$1 WHERE job_id=$2`, [booking_code, job_id]);
 
       // CREATE_URGENT_OFFERS_V2
@@ -2205,6 +2214,7 @@ function createBookingJobService(dependencies = {}) {
 
       // 3) บันทึกรายการ (ถ้ามี)
       for (const it of computedItems) {
+        packageMutationStage = "job_item_insert";
         const itemParams = [
           job_id,
           it.item_id || null,
@@ -2236,7 +2246,9 @@ function createBookingJobService(dependencies = {}) {
         );
       }
 
+      packageMutationStage = "job_units";
       await ensureCanonicalBookingJobUnits(job_id, client);
+      packageMutationStage = "job_evidence_update";
       await client.query(`UPDATE public.jobs SET per_unit_evidence_enabled=TRUE WHERE job_id=$1`, [job_id]);
 
       if (bm === "urgent" && typeof logJobUpdate === "function") {
@@ -2250,6 +2262,7 @@ function createBookingJobService(dependencies = {}) {
           payload: { dispatch_mode: "offer" },
         }, client);
       }
+      packageMutationStage = "commit";
       await client.query("COMMIT");
 
       if (bm === "urgent" && urgentPushTargets.length && typeof _notifyUrgentOffer === "function") {
@@ -2321,10 +2334,11 @@ function createBookingJobService(dependencies = {}) {
       if (hasPackageRequest) {
         const knownPackageCode = String(e?.code || "").startsWith("PACKAGE_") ? e.code : "PACKAGE_BOOKING_FAILED";
         const statusCode = Number(e?.statusCode || e?.status || 500);
-        console.error(e);
+        console.error("[public_book] package mutation failed", { stage: packageMutationStage, error: e });
         return res.status(statusCode >= 400 && statusCode < 600 ? statusCode : 500).json({
           error: knownPackageCode,
           code: knownPackageCode,
+          ...(knownPackageCode === "PACKAGE_BOOKING_FAILED" ? { diagnostic_stage: packageMutationStage } : {}),
         });
       }
       const statusCode = Number(e?.statusCode || e?.status || 500);
