@@ -1,5 +1,11 @@
 "use strict";
 
+const {
+  normalizeServiceType,
+  normalizeAcType,
+  normalizeWashVariantLabel,
+} = require("../../normalizers");
+
 class CompositePackageError extends Error {
   constructor(code, statusCode = 409) {
     super(code);
@@ -132,7 +138,21 @@ function buildComponentSnapshot({ bundle, variant, tier, btu, appointmentDatetim
 }
 
 function serviceName(variant, btu, quantity) {
-  return `${variant.display_name} • ${btu} BTU • ${quantity} เครื่อง`;
+  const jobType = normalizeServiceType(variant.job_type);
+  const acType = normalizeAcType(variant.ac_type);
+  const parts = [];
+  if (jobType === "ล้าง") {
+    parts.push(`ล้างแอร์${acType}`.trim());
+    if (acType === "ผนัง") parts.push(normalizeWashVariantLabel(variant.wash_variant));
+  } else if (jobType === "ซ่อม") {
+    parts.push(`ซ่อมแอร์${acType}`.trim());
+  } else if (jobType === "ติดตั้ง") {
+    parts.push(`ติดตั้งแอร์${acType}`.trim());
+  } else {
+    parts.push(jobType);
+  }
+  parts.push(`${btu} BTU`, `${quantity} เครื่อง`);
+  return parts.filter(Boolean).join(" • ");
 }
 
 async function resolveCompositeBooking({ body, bookingMode, appointmentDatetime, repository, db, identity = "customer", now = () => new Date() }) {

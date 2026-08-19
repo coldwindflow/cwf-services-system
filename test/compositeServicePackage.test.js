@@ -6,6 +6,7 @@ const {
   composeTiers, parseMoney, formatMoney, normalizeGroups, resolveCompositeBooking,
 } = require("../server/services/packages/compositeServicePackage");
 const { compositeBookingFromSnapshots } = require("../server/services/booking/servicePackageBooking");
+const { parseCanonicalServiceItem } = require("../server/services/booking/bookingJobUnits");
 
 function tiers(prices) {
   return Object.entries(prices).map(([quantity, price], index) => ({
@@ -84,6 +85,14 @@ test("mixed BTU groups resolve under one parent with component snapshots", async
   assert.equal(result.items[0].snapshot.schema_version, 2);
   assert.equal(result.items[0].snapshot.catalog_item.key, "premium-day");
   assert.equal(result.items[1].snapshot.taxonomy.selected_btu, 18000);
+  assert.deepEqual(parseCanonicalServiceItem(result.items[0]), {
+    job_type: "ล้าง", ac_type: "ผนัง", wash_variant: "ล้างพรีเมียม",
+    repair_variant: "", btu: 12000, machine_count: 2,
+  });
+  assert.deepEqual(parseCanonicalServiceItem(result.items[1]), {
+    job_type: "ล้าง", ac_type: "ผนัง", wash_variant: "ล้างพรีเมียม",
+    repair_variant: "", btu: 18000, machine_count: 2,
+  });
 });
 
 test("BTU gap is rejected by variant constraints", async () => {
