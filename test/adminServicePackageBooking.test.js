@@ -65,7 +65,8 @@ test("Admin package UI sends stable keys and canonical availability inputs witho
   assert.match(js, /payload\.service_package_key/);
   assert.match(js, /delete payload\.services/);
   assert.match(js, /payload\.promotion_id = null/);
-  assert.match(js, /Selected date is after the package redemption deadline/);
+  // Issue 307: the Admin Add Job UI is Thai-only; the guard itself is unchanged.
+  assert.match(js, /วันที่เลือกเลยกำหนดใช้สิทธิ์ของแพ็กเกจแล้ว/);
 });
 
 test("Admin package tier changes invalidate stale preview authority until the matching preview succeeds", () => {
