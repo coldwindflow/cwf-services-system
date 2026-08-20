@@ -19,6 +19,30 @@ class CompositePackageError extends Error {
 // This check must run before allocating the dynamic-programming table.
 const MAX_COMPOSITE_PACKAGE_QUANTITY = 99;
 
+// A Store parent may require a minimum total quantity per booking. "Minimum 1"
+// is meaningless (every booking already needs a positive quantity), so a
+// configured minimum starts at 2 and shares the public maximum.
+const MIN_COMPOSITE_PACKAGE_MINIMUM = 2;
+
+// Authoritative read of the parent's configured minimum. The value comes only
+// from the Store parent row loaded by the resolver: a client-sent minimum is
+// never consulted, and anything malformed is treated as "no minimum" rather
+// than as a number that could accidentally relax a real restriction.
+function bundleMinimumTotalQuantity(bundle) {
+  const raw = bundle == null ? null : bundle.service_package_minimum_total_quantity;
+  if (raw == null || raw === "") return null;
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value)) return null;
+  if (value < MIN_COMPOSITE_PACKAGE_MINIMUM || value > MAX_COMPOSITE_PACKAGE_QUANTITY) return null;
+  return value;
+}
+
+// Parent-level total: every selected BTU/package group under the same Store
+// parent counts toward one minimum. Never call this per group.
+function totalGroupQuantity(groups) {
+  return (Array.isArray(groups) ? groups : []).reduce((sum, group) => sum + Number(group?.quantity || 0), 0);
+}
+
 function fail(code, statusCode) { throw new CompositePackageError(code, statusCode); }
 
 function parseMoney(value) {
@@ -113,6 +137,9 @@ function inWindow(value, start, end) {
 function buildComponentSnapshot({ bundle, variant, tier, btu, appointmentDatetime }) {
   return {
     schema_version: 2,
+    // Additive since Issue 310. Older snapshots simply lack the key and stay
+    // valid; readers must treat a missing value as "no minimum was configured".
+    minimum_total_quantity: bundleMinimumTotalQuantity(bundle),
     catalog_item: { id: String(bundle.item_id), key: bundle.service_bundle_key, name: bundle.item_name },
     package: { id: String(variant.service_package_id), key: variant.package_key, name: variant.display_name },
     tier: { id: String(tier.service_package_tier_id), key: tier.tier_key, name: tier.display_name },
@@ -175,6 +202,16 @@ async function resolveCompositeBooking({ body, bookingMode, appointmentDatetime,
   if (bookingMode === "urgent" && bundle.booking_flow_policy !== "scheduled_and_urgent") fail("PACKAGE_FLOW_NOT_ALLOWED", 409);
   if (!inWindow(appointmentDatetime, null, bundle.service_package_redeem_until)) fail("PACKAGE_REDEEM_WINDOW_EXCEEDED");
 
+  // Parent-level minimum total quantity (Issue 310). Runs on the shared
+  // resolution path, so customer scheduled/urgent, Admin booking-on-behalf and
+  // any stale or direct client all hit the same authoritative rule before a
+  // single booking mutation happens. Tier pricing/composition is untouched: a
+  // mixed 1+1 selection passes this check and is still priced per group.
+  const minimumTotalQuantity = bundleMinimumTotalQuantity(bundle);
+  if (minimumTotalQuantity != null && totalGroupQuantity(groups) < minimumTotalQuantity) {
+    fail("SERVICE_PACKAGE_MINIMUM_QUANTITY_NOT_MET", 400);
+  }
+
   let total = 0n;
   let durationMin = 0;
   let machineCount = 0;
@@ -207,6 +244,9 @@ async function resolveCompositeBooking({ body, bookingMode, appointmentDatetime,
   return {
     bundleId: String(bundle.item_id), bundleKey: bundle.service_bundle_key,
     fixedTotal: formatMoney(total), durationMin, items,
+    // Authoritative value the booking was accepted under, so quotes and
+    // Admin/customer summaries never have to guess it from a client field.
+    minimumTotalQuantity,
     payload: {
       job_type: first.job_type, ac_type: first.ac_type, btu: groups[0].btu, machine_count: machineCount,
       wash_variant: first.wash_variant || "", repair_variant: "", admin_override_duration_min: 0,
@@ -219,4 +259,5 @@ async function resolveCompositeBooking({ body, bookingMode, appointmentDatetime,
 module.exports = {
   CompositePackageError, parseMoney, formatMoney, allocateUnitMoney, composeTiers, normalizeGroups,
   buildComponentSnapshot, resolveCompositeBooking, MAX_COMPOSITE_PACKAGE_QUANTITY,
+  MIN_COMPOSITE_PACKAGE_MINIMUM, bundleMinimumTotalQuantity, totalGroupQuantity,
 };

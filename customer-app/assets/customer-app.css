@@ -7346,6 +7346,8 @@ body.has-advisor-sheet { overflow: hidden; }
 .store-bundle-sheet > h2 { padding-right: 42px; overflow-wrap: anywhere; }
 .store-bundle-config { display: grid; gap: 12px; min-width: 0; margin: 0; }
 .store-bundle-config > .muted { margin: 0; font-size: 13px; }
+.store-bundle-minimum { display: grid; gap: 2px; margin: 0; padding: 10px 12px; border-radius: 12px; background: var(--bg-2); color: var(--ink); font-size: 13px; font-weight: 700; line-height: 1.45; }
+.store-bundle-minimum small { color: var(--muted); font-weight: 500; }
 .store-bundle-row { display: grid; grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr); gap: 10px 12px; min-width: 0; padding: 13px 0; border-bottom: 1px solid var(--line, #e5e7eb); }
 .store-bundle-package { display: grid; grid-column: 1 / -1; gap: 3px; min-width: 0; }
 .store-bundle-package strong,
