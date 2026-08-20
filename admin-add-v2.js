@@ -210,8 +210,8 @@ async function loadServiceZones(){
     const sel = el('service_zone_code');
     if(sel){
       const cur = sel.value || '';
-      sel.innerHTML = `<option value="">Auto / ระบบเลือกจากที่อยู่</option>` + state.service_zones.map(z => (
-        `<option value="${z.zone_code}">Zone ${z.zone_code} - ${z.zone_label}</option>`
+      sel.innerHTML = `<option value="">อัตโนมัติ / ระบบเลือกจากที่อยู่</option>` + state.service_zones.map(z => (
+        `<option value="${z.zone_code}">โซน ${z.zone_code} - ${z.zone_label}</option>`
       )).join('');
       sel.value = cur;
     }
@@ -239,7 +239,7 @@ async function detectAdminServiceZone(){
         const z = state.detected_service_zone;
         const matched = [z.matched_area, z.matched_district].filter(Boolean).join(' / ');
         const sourceLabel = z.service_zone_source === 'maps_coordinate' ? 'จาก GPS/แผนที่' : (z.service_zone_source === 'area_alias_detect' ? 'จากย่าน/ตำบล' : (override ? 'เลือกเอง' : 'จากที่อยู่'));
-        hint.textContent = `${override ? 'เลือกเอง' : 'ระบบเลือกให้'}: Zone ${z.service_zone_code} - ${z.service_zone_label}${matched ? ` • ${matched}` : ''} (${sourceLabel})`;
+        hint.textContent = `${override ? 'เลือกเอง' : 'ระบบเลือกให้'}: โซน ${z.service_zone_code} - ${z.service_zone_label}${matched ? ` • ${matched}` : ''} (${sourceLabel})`;
         hint.style.color = '#0b4bb3';
       }else{
         hint.textContent = 'ระบบยังหาโซนไม่ได้ กรุณาเลือกโซนเอง หรือใส่เขต/อำเภอเพิ่ม';
@@ -313,10 +313,10 @@ function renderCustomerLookupUI(result){
     `;
   }
   if (result.source === "customer_profiles") {
-    hint.textContent = 'พบข้อมูลจาก customer_profiles • กด "Use latest customer data" เพื่อเติมชื่อ/เบอร์/ที่อยู่/แผนที่ล่าสุด';
+    hint.textContent = 'พบข้อมูลจากโปรไฟล์ลูกค้า • กด "ใช้ข้อมูลลูกค้าล่าสุด" เพื่อเติมชื่อ/เบอร์/ที่อยู่/แผนที่ล่าสุด';
     return;
   }
-  hint.textContent = 'ไม่พบใน customer_profiles • พบข้อมูล fallback จาก latest job แทน กด "Use latest customer data" เพื่อใช้ข้อมูลล่าสุดจากใบงานเก่า';
+  hint.textContent = 'ไม่พบในโปรไฟล์ลูกค้า • ใช้ข้อมูลสำรองจากใบงานล่าสุดแทน กด "ใช้ข้อมูลลูกค้าล่าสุด" เพื่อใช้ข้อมูลล่าสุดจากใบงานเก่า';
 }
 
 async function lookupLatestCustomerDataByPhone(){
@@ -359,7 +359,7 @@ function applyLatestCustomerData(){
   try { el("maps_url").dispatchEvent(new Event("input", { bubbles: true })); } catch(e){}
   try { el("job_zone").dispatchEvent(new Event("input", { bubbles: true })); } catch(e){}
   try { detectAdminServiceZone(); } catch(e){}
-  showToast(data.source === "customer_profiles" ? "เติมข้อมูลจาก customer_profiles แล้ว" : "เติมข้อมูลจาก latest job แล้ว", "success");
+  showToast(data.source === "customer_profiles" ? "เติมข้อมูลจากโปรไฟล์ลูกค้าแล้ว" : "เติมข้อมูลจากใบงานล่าสุดแล้ว", "success");
 }
 
 function applyCustomerLocationCandidate(index){
@@ -409,7 +409,7 @@ function dbgRender(){
 
   // Hint
   const hint = el('debug_panel_hint');
-  if (hint) hint.textContent = 'on';
+  if (hint) hint.textContent = 'เปิด';
 
   // Content
   const setPre = (id, obj) => {
@@ -473,31 +473,31 @@ function dbgBind(){
       const enabled = !!ev.target.checked;
       const r = await apiFetch('/admin/debug_toggle_backend', { method:'POST', body: JSON.stringify({ enable: enabled ? '1':'0' }) });
       const st = el('dbg_backend_status');
-      if(st) st.textContent = (r && r.enabled) ? 'ON' : 'OFF';
-      showToast('ตั้งค่า Logging แล้ว', 'success');
+      if(st) st.textContent = (r && r.enabled) ? 'เปิด' : 'ปิด';
+      showToast('ตั้งค่าการเก็บบันทึกระบบแล้ว', 'success');
     } catch(e){
-      showToast('ตั้งค่า Logging ไม่สำเร็จ', 'error');
+      showToast('ตั้งค่าการเก็บบันทึกระบบไม่สำเร็จ', 'error');
     }
   });
 
   // Init status label (best-effort)
   try {
     const st = el('dbg_backend_status');
-    if (st) st.textContent = 'OFF';
+    if (st) st.textContent = 'ปิด';
   } catch(e) {}
 }
 function bindDebugToggle(){
   const btn = el('btnBug');
   if(!btn) return;
   // keep icon stable, show state via tooltip
-  try{ btn.title = DEBUG_ENABLED ? 'Debug: On' : 'Debug: Off'; }catch(e){}
+  try{ btn.title = DEBUG_ENABLED ? 'โหมดตรวจสอบระบบ: เปิด' : 'โหมดตรวจสอบระบบ: ปิด'; }catch(e){}
   btn.addEventListener('click', () => {
     try {
       // Require PIN 1549 whenever opening the panel (prevents accidental tap)
       const panel = el('debugFloat');
       const isOpen = !!(panel && panel.style.display !== 'none' && panel.style.display !== '');
       if (!DEBUG_ENABLED || !isOpen) {
-        const pin = (prompt('ใส่รหัสเพื่อเปิด Debug Panel') || '').trim();
+        const pin = (prompt('ใส่รหัสเพื่อเปิดแผงตรวจสอบระบบ') || '').trim();
         if (pin !== '1549') { showToast('รหัสไม่ถูกต้อง', 'error'); return; }
         try { localStorage.setItem('cwf_debug_unlocked', '1'); } catch(e) {}
         try { localStorage.setItem('cwf_debug', '1'); } catch(e) {}
@@ -507,7 +507,7 @@ function bindDebugToggle(){
         DEBUG_ENABLED = false;
         try { localStorage.removeItem('cwf_debug'); } catch(e) {}
       }
-      try{ btn.title = DEBUG_ENABLED ? 'Debug: On' : 'Debug: Off'; }catch(e){}
+      try{ btn.title = DEBUG_ENABLED ? 'โหมดตรวจสอบระบบ: เปิด' : 'โหมดตรวจสอบระบบ: ปิด'; }catch(e){}
       // Ensure floating panel becomes visible immediately
       if (panel) panel.style.display = DEBUG_ENABLED ? 'block' : 'none';
       if (DEBUG_ENABLED) {
@@ -517,7 +517,7 @@ function bindDebugToggle(){
         dbgRender();
       }
     } catch(e){
-      showToast('สลับ Debug ไม่สำเร็จ', 'error');
+      showToast('สลับโหมดตรวจสอบระบบไม่สำเร็จ', 'error');
     }
   });
 }
@@ -635,6 +635,30 @@ function techDisplay(username){
   if(!u) return "";
   const t = (state.techMap && state.techMap[u]) || (state.techs||[]).find(x=>x.username===u);
   return (t && t.display_name) ? t.display_name : u;
+}
+
+// Pure helper for the in-slot technician picker.
+// Contract (Issue 307): the list must contain EVERY technician the availability API
+// reported as free for the selected slot, each exactly once, in API order.
+// Filtering is only ever done by an explicit admin search query - there is no
+// hidden cap, no .slice() truncation and no re-ordering that could hide someone.
+// `total` always reports the full available count so the UI can say so out loud.
+function buildSlotTechnicianList(ids, query, displayFn){
+  const seen = new Set();
+  const all = [];
+  for (const raw of (Array.isArray(ids) ? ids : [])) {
+    const username = String(raw == null ? '' : raw).trim();
+    if (!username || seen.has(username)) continue;
+    seen.add(username);
+    let label = username;
+    try { label = String((typeof displayFn === 'function' ? displayFn(username) : username) || username); } catch(e) { label = username; }
+    all.push({ username, label });
+  }
+  const q = String(query == null ? '' : query).trim().toLowerCase();
+  const items = q
+    ? all.filter(t => t.username.toLowerCase().includes(q) || t.label.toLowerCase().includes(q))
+    : all;
+  return { total: all.length, items };
 }
 
 function renderTechSelect(allowedIds=null){
@@ -865,17 +889,28 @@ function renderTeamPicker(allowedIds=null){
   const q = (searchEl.value||"").trim().toLowerCase();
   state.teamPicker.primary = '';
 
-  // Suggestions: top 30 matches that are not selected
-  const suggestions = techList
-    .filter(t=>{
-      const key = (t.username||"").toLowerCase();
-      return (!q || key.includes(q)) && !state.teamPicker.selected.has(t.username);
-    })
-    .slice(0, 30);
+  // Suggestions: EVERY not-yet-selected technician that matches the search box.
+  // Issue 307: no fixed cap here - a hidden 30-entry cap used to drop valid
+  // technicians silently. Search (username or display name) is the only filter,
+  // and the count line below states how many are hidden by that search.
+  const selectable = techList.filter(t=>!state.teamPicker.selected.has(t.username));
+  const suggestions = selectable.filter(t=>{
+    if(!q) return true;
+    const key = (t.username||"").toLowerCase();
+    const name = String(t.display_name || t.full_name || t.username || "").toLowerCase();
+    return key.includes(q) || name.includes(q);
+  });
 
   suggestBox.innerHTML = suggestions.map(t=>{
     return `<button type="button" class="team-chip team-chip-add" data-u="${t.username}">+ ${escapeHtml(t.display_name || t.full_name || t.username)}</button>`;
-  }).join("") || `<div class="team-empty">ไม่พบช่าง</div>`;
+  }).join("") || `<div class="team-empty">ไม่พบช่างที่ตรงกับคำค้นหา</div>`;
+
+  const countBox = document.getElementById("team_suggest_count");
+  if(countBox){
+    countBox.textContent = (suggestions.length === selectable.length)
+      ? `เลือกเพิ่มได้ทั้งหมด ${selectable.length} คน (แสดงครบทุกคน)`
+      : `แสดง ${suggestions.length} จาก ${selectable.length} คน • ล้างช่องค้นหาเพื่อดูครบทุกคน`;
+  }
 
   // Selected chips: all selected technicians are team members (no Primary UI).
   const selected = Array.from(state.teamPicker.selected).filter(Boolean);
@@ -1415,6 +1450,37 @@ function selectedBundleGroups() {
   try { return JSON.parse(bundleFingerprint()).groups; } catch (_) { return []; }
 }
 
+// Optional parent-level minimum total quantity for the selected Store bundle
+// (Issue 310). Anything that is not a usable 2-99 integer means "no minimum",
+// so the Admin UI never invents a restriction the server would not enforce.
+function selectedBundleMinimumTotalQuantity() {
+  const bundle = state.service_bundles.find((item) => item.service_bundle_key === String(el("store_service_bundle_key")?.value || ""));
+  const raw = bundle == null ? null : bundle.minimum_total_quantity;
+  if (raw == null || raw === "") return null;
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value) || value < 2 || value > 99) return null;
+  return value;
+}
+
+// Parent-level total across every BTU/package group of the selected bundle.
+function selectedBundleTotalQuantity() {
+  return selectedBundleGroups().reduce((sum, group) => sum + Number(group?.quantity || 0), 0);
+}
+
+// Live Thai progress line under the bundle groups. Renders nothing when the
+// promotion has no configured minimum.
+function renderServiceBundleMinimum() {
+  const box = el("store_service_bundle_minimum");
+  if (!box) return;
+  const minimum = selectedBundleMinimumTotalQuantity();
+  if (!minimum) { box.style.display = "none"; box.textContent = ""; return; }
+  const total = selectedBundleTotalQuantity();
+  box.style.display = "";
+  box.textContent = total >= minimum
+    ? `โปรนี้จองขั้นต่ำ ${minimum} เครื่อง • เลือกแล้ว ${total} เครื่อง ครบขั้นต่ำแล้ว`
+    : `โปรนี้จองขั้นต่ำ ${minimum} เครื่อง • เลือกแล้ว ${total} จากขั้นต่ำ ${minimum} เครื่อง (นับรวมทุกขนาด BTU ในการจองเดียวกัน)`;
+}
+
 function renderServiceBundleGroups() {
   const wrap = el("store_service_bundle_groups");
   const bundle = state.service_bundles.find((item) => item.service_bundle_key === String(el("store_service_bundle_key")?.value || ""));
@@ -1423,11 +1489,15 @@ function renderServiceBundleGroups() {
   wrap.style.display = "";
   wrap.innerHTML = (bundle.variants || []).filter((variant) => variant.is_active !== false).map((variant) => `
     <div class="grid3" data-admin-bundle-group="${escapeHtml(variant.package_key)}" style="margin-top:8px">
-      <div><label>${escapeHtml(variant.display_name)}</label><div class="muted2 mini">BTU ${variant.btu_min ?? "any"}-${variant.btu_max ?? "any"}</div></div>
-      <div><label>Actual BTU</label><input type="number" min="1" step="1" data-admin-bundle-btu value="${escapeHtml(variant.btu_min || variant.btu_max || "")}"></div>
-      <div><label>Quantity</label><input type="number" min="0" step="1" value="0" data-admin-bundle-quantity></div>
-    </div>`).join("") + '<div id="store_service_bundle_quote" class="muted2" style="margin-top:8px"></div>';
+      <div><label>${escapeHtml(variant.display_name)}</label><div class="muted2 mini">BTU ${variant.btu_min ?? "ไม่จำกัด"}-${variant.btu_max ?? "ไม่จำกัด"}</div></div>
+      <div><label>BTU จริง</label><input type="number" min="1" step="1" data-admin-bundle-btu value="${escapeHtml(variant.btu_min || variant.btu_max || "")}"></div>
+      <div><label>จำนวนเครื่อง</label><input type="number" min="0" step="1" value="0" data-admin-bundle-quantity></div>
+    </div>`).join("")
+    + '<div id="store_service_bundle_minimum" class="muted2 mini" style="display:none;margin-top:8px;padding:8px 10px;border-radius:12px;background:#fffbeb;border:1px solid rgba(245,158,11,0.26);color:#92400e;font-weight:800"></div>'
+    + '<div id="store_service_bundle_quote" class="muted2" style="margin-top:8px"></div>';
+  wrap.querySelectorAll("input").forEach((input) => input.addEventListener("input", renderServiceBundleMinimum));
   wrap.querySelectorAll("input").forEach((input) => input.addEventListener("change", () => previewServiceBundle().catch((e) => showToast(e.message, "error"))));
+  renderServiceBundleMinimum();
 }
 
 async function previewServiceBundle() {
@@ -1441,9 +1511,19 @@ async function previewServiceBundle() {
   state.effective_block_min = 0;
   const groups = selectedBundleGroups();
   const panel = el("store_service_bundle_quote");
-  if (!bundleSelected() || !groups.length) { if (panel) panel.textContent = "Select at least one quantity"; return; }
+  renderServiceBundleMinimum();
+  if (!bundleSelected() || !groups.length) { if (panel) panel.textContent = "กรุณาระบุจำนวนเครื่องอย่างน้อย 1 รายการ"; return; }
+  // Issue 310: below the promotion's minimum there is nothing to quote. The
+  // server enforces the same rule, so this only saves a failed round trip and
+  // keeps the save button locked until the Admin reaches the minimum.
+  const minimumTotalQuantity = selectedBundleMinimumTotalQuantity();
+  if (minimumTotalQuantity && selectedBundleTotalQuantity() < minimumTotalQuantity) {
+    if (panel) panel.textContent = `ยังจองไม่ได้ • โปรนี้จองขั้นต่ำ ${minimumTotalQuantity} เครื่อง (นับรวมทุกขนาด BTU ในการจองเดียวกัน)`;
+    const blocked = el("btnSubmit"); if (blocked) blocked.disabled = true;
+    return;
+  }
   const fingerprint = bundleFingerprint();
-  if (panel) panel.textContent = "Loading package price and duration...";
+  if (panel) panel.textContent = "กำลังโหลดราคาและเวลาของแพ็กเกจ...";
   const submit = el("btnSubmit"); if (submit) submit.disabled = true;
   const appointment = localDatetimeToBangkokISO(String(el("appointment_datetime")?.value || "").trim()) || new Date(Date.now() + 86400000).toISOString();
   const quote = await apiFetch("/admin/catalog/service-package-bundles/quote", { method: "POST", body: JSON.stringify({
@@ -1456,7 +1536,7 @@ async function previewServiceBundle() {
   state.exact_total = String(quote.fixed_total_price || "");
   state.standard_price = Number(state.exact_total); state.normal_price = state.standard_price;
   state.duration_min = Number(quote.duration_minutes); state.effective_block_min = state.duration_min + Number(state.travel_buffer_min || 30);
-  if (panel) panel.textContent = `${quote.machine_count} units | ${quote.fixed_total_price} | ${quote.duration_minutes} min | ${(quote.components || []).map((x) => `${x.tier_name} x ${x.quantity}`).join(", ")}`;
+  if (panel) panel.textContent = `จำนวน ${quote.machine_count} เครื่อง | ราคารวม ${quote.fixed_total_price} บาท | ใช้เวลา ${quote.duration_minutes} นาที | ${(quote.components || []).map((x) => `${x.tier_name} x ${x.quantity}`).join(", ")}`;
   if (submit) submit.disabled = false;
   await refreshPreview();
 }
@@ -1484,7 +1564,7 @@ function invalidateServicePackagePreview({ loading = false } = {}) {
     const legacySelected = !!String(el("service_package_key")?.value || "").trim();
     panel.style.display = legacySelected ? "" : "none";
     panel.textContent = legacySelected
-      ? (loading ? "Loading package price and duration..." : "Package price and duration unavailable")
+      ? (loading ? "กำลังโหลดราคาและเวลาของแพ็กเกจ..." : "ยังไม่มีราคาและเวลาของแพ็กเกจนี้")
       : "";
   }
   ["pv_duration", "pv_block", "pv_price", "pv_normal_price", "pv_line_total"].forEach((id) => {
@@ -1507,7 +1587,7 @@ function setPackageControlsLocked(locked, { allowQuantity = false } = {}) {
 
 function renderPackageBtuOptions(constraints = {}) {
   const select = el("service_package_btu");
-  select.innerHTML = '<option value="">Select actual BTU</option>';
+  select.innerHTML = '<option value="">เลือก BTU จริง</option>';
   BTU_OPTIONS.filter((value) => (constraints.btu_min == null || value >= constraints.btu_min)
     && (constraints.btu_max == null || value <= constraints.btu_max)).forEach((value) => {
     const option = document.createElement("option"); option.value = String(value); option.textContent = `${value.toLocaleString()} BTU`; select.appendChild(option);
@@ -1537,7 +1617,7 @@ async function previewServicePackage() {
   renderPackageBtuOptions(c);
   el("service_package_btu_wrap").style.display = "";
   const panel = el("service_package_preview"); panel.style.display = "";
-  panel.textContent = `${preview.package_name} / ${preview.tier_name} | ${preview.service.service_name} | quantity ${preview.quantity} | duration ${preview.duration_minutes} min | fixed total ${preview.fixed_total_price} | BTU ${c.btu_min || "any"}-${c.btu_max || "any"} | redeem by ${preview.redeem_until || "no limit"}`;
+  panel.textContent = `${preview.package_name} / ${preview.tier_name} | ${preview.service.service_name} | จำนวน ${preview.quantity} เครื่อง | ใช้เวลา ${preview.duration_minutes} นาที | ราคาเหมารวม ${preview.fixed_total_price} บาท | BTU ${c.btu_min || "ไม่จำกัด"}-${c.btu_max || "ไม่จำกัด"} | ใช้สิทธิ์ได้ถึง ${preview.redeem_until || "ไม่มีกำหนด"}`;
   state.exact_total = String(preview.fixed_total_price || "");
   state.standard_price = Number(state.exact_total); state.normal_price = state.standard_price;
   state.duration_min = Number(preview.duration_minutes); state.effective_block_min = state.duration_min + Number(state.travel_buffer_min || 30);
@@ -1619,7 +1699,7 @@ async function refreshPreview() {
       if (el("pv_normal_price")) el("pv_normal_price").textContent = fmtMoney(state.normal_price);
       if (el("pv_price_source")) {
         const campaign = state.campaign_name || state.customer_price_label || "-";
-        el("pv_price_source").textContent = `แคมเปญที่ใช้: ${campaign} • แหล่งราคา: Store catalog`;
+        el("pv_price_source").textContent = `แคมเปญที่ใช้: ${campaign} • แหล่งราคา: แคตตาล็อกร้านค้า`;
       }
       if (el("pv_line_total")) el("pv_line_total").textContent = state.exact_total || fmtMoney(state.standard_price);
       updateTotalPreview();
@@ -1669,8 +1749,8 @@ async function refreshPreview() {
     if (el("pv_price_source")) {
       const overridePrice = Math.max(0, Number(el("override_price")?.value || 0));
       const src = overridePrice > 0
-        ? "Override"
-        : (state.customer_price_source === "customer_service_price_rules" ? "Service Price Book" : "Fallback");
+        ? "ราคาพิเศษที่แอดมินกรอกเอง"
+        : (state.customer_price_source === "customer_service_price_rules" ? "สมุดราคาบริการ" : "ราคาสำรองของระบบ");
       const campaign = state.campaign_name || state.customer_price_label || "-";
       el("pv_price_source").textContent = `แคมเปญที่ใช้: ${campaign} • แหล่งราคา: ${src}`;
     }
@@ -1724,8 +1804,8 @@ function updateTotalPreview() {
   const srcBox = el("pv_price_source");
   if (srcBox && state.duration_min > 0) {
     const src = overridePrice > 0
-      ? "Override"
-      : (state.customer_price_source === "customer_service_price_rules" ? "Service Price Book" : "Fallback");
+      ? "ราคาพิเศษที่แอดมินกรอกเอง"
+      : (state.customer_price_source === "customer_service_price_rules" ? "สมุดราคาบริการ" : "ราคาสำรองของระบบ");
     const campaign = state.campaign_name || state.customer_price_label || "-";
     srcBox.textContent = `แคมเปญที่ใช้: ${campaign} • แหล่งราคา: ${src}`;
   }
@@ -1887,7 +1967,7 @@ async function loadAvailability() {
     const redeemDate = String(state.service_package_preview.redeem_until).slice(0, 10);
     if (selectedDate && selectedDate > redeemDate) {
       state.available_slots = []; state.slots_loaded = false; renderSlots();
-      showToast("Selected date is after the package redemption deadline", "error"); return;
+      showToast("วันที่เลือกเลยกำหนดใช้สิทธิ์ของแพ็กเกจแล้ว", "error"); return;
     }
   }
   if (!canLoadAvailability()) {
@@ -2413,7 +2493,7 @@ function renderSlots() {
       <div class="muted2 mini" style="margin-top:8px">* ระบบจะเพิ่มสลอตให้ช่าง 1 คนก่อน (เลือกช่างได้) แล้วค่อยโหลดคิวใหม่</div>
     
       ${DEBUG_ENABLED && DBG.intervals && Array.isArray(DBG.intervals.reasons) && DBG.intervals.reasons.length ? `
-      <div class="muted2 mini" style="margin-top:10px">เหตุผล (debug):</div>
+      <div class="muted2 mini" style="margin-top:10px">เหตุผล (โหมดตรวจสอบระบบ):</div>
       <ul class="muted2 mini" style="margin-top:6px;padding-left:18px">
         ${DBG.intervals.reasons.map(r=>`<li><b>${String(r.code||'')}</b>: ${String(r.message||'')}</li>`).join('')}
       </ul>
@@ -2610,7 +2690,7 @@ function updateAssignSummary(){
   }
   if(mode === 'single'){
     const u = (state.confirmed_tech_username || (el('technician_username_select')?.value || el('technician_username')?.value || '')).trim();
-    t.textContent = u ? `เลือกเดี่ยว • ${techDisplay(u)} • username: ${u}` : 'เลือกเดี่ยว • กรุณาเลือกช่างก่อนบันทึก';
+    t.textContent = u ? `เลือกเดี่ยว • ${techDisplay(u)} • ชื่อผู้ใช้: ${u}` : 'เลือกเดี่ยว • กรุณาเลือกช่างก่อนบันทึก';
     return;
   }
   t.textContent = 'ยังไม่ได้เลือกช่าง • ระบบจะเลือกช่างว่างให้';
@@ -2657,11 +2737,17 @@ function openSlotModal(slot){
 
   const date = el('appt_date')?.value || '';
   const ids = Array.isArray(slot?.available_tech_ids) ? slot.available_tech_ids : [];
+  // Full, de-duplicated count of technicians the API reported as free for this slot.
+  // Every one of them must stay reachable in the picker below.
+  const availableTechTotal = buildSlotTechnicianList(ids, '', techDisplay).total;
+  // Search box state lives here so re-rendering the list (on pick/toggle) never
+  // wipes what the admin typed and never steals focus from the mobile keyboard.
+  let techQuery = '';
   syncModesFromUI();
     const dispatchMode = (el('dispatch_mode')?.value || 'normal').toString();
 
   if(title) title.textContent = 'เลือกช่างในสล็อตนี้';
-  sub.textContent = `${date} • เริ่ม ${picked} (ช่วง ${slotStart} - ${slotEnd}) • ว่าง ${ids.length} ช่าง`;
+  sub.textContent = `${date} • เริ่ม ${picked} (ช่วง ${slotStart} - ${slotEnd}) • ช่างที่ว่างในสล็อตนี้ ${availableTechTotal} คน`;
 
   // Offer mode: choose time only (no manual technician picking)
   if(dispatchMode === 'offer'){
@@ -2693,7 +2779,7 @@ function openSlotModal(slot){
         const reasonDiv = document.createElement('div');
         reasonDiv.className = 'muted2 mini';
         reasonDiv.style.marginTop = '10px';
-        reasonDiv.innerHTML = '<b>เหตุผล (Debug)</b>:<br>' + reasons.map(r=>`• ${String(r.code||'')}: ${String(r.message||'')}`).join('<br>');
+        reasonDiv.innerHTML = '<b>เหตุผล (โหมดตรวจสอบระบบ)</b>:<br>' + reasons.map(r=>`• ${String(r.code||'')}: ${String(r.message||'')}`).join('<br>');
         wrap.appendChild(reasonDiv);
       }
     }catch(e){}
@@ -2704,7 +2790,7 @@ function openSlotModal(slot){
           const v = clampHHMM(t.value, slotStart, slotEnd);
           t.value = v;
           try{ selectSlot(v, slot); }catch(e){}
-          sub.textContent = `${date} • เริ่ม ${v} (ช่วง ${slotStart} - ${slotEnd}) • ว่าง ${ids.length} ช่าง`;
+          sub.textContent = `${date} • เริ่ม ${v} (ช่วง ${slotStart} - ${slotEnd}) • ช่างที่ว่างในสล็อตนี้ ${availableTechTotal} คน`;
         });
       }
       const btn = body.querySelector('#slotm_confirm_offer');
@@ -2751,59 +2837,118 @@ function openSlotModal(slot){
       return;
     }
 
-    if(mode === 'team'){
-      const selected = new Set(Array.from(state.teamPicker.selected || []));
-      state.teamPicker.primary = '';
-      body.innerHTML = timeSeg + modeInfo + `
-        <div>
-          <label>ทีมช่าง</label>
-          <div id="slotm_team" style="display:flex;flex-wrap:wrap;gap:8px"></div>
-          <div class="muted2 mini" style="margin-top:6px">แตะเพื่อเลือก/ยกเลิกช่างในทีม • ไม่ต้องเลือกช่างหลัก</div>
+    // Shared, scrollable, searchable technician picker (single / auto / team).
+    // The hidden <select id="slotm_single"> stays the authoritative value holder for
+    // auto/single so the existing change-handler and confirm contract are unchanged.
+    const pickerShell = (pickMode)=>`
+      <div class="card-lite" style="padding:12px;border-radius:16px">
+        <b style="color:#0b1b3a">ช่างที่ว่างในสล็อตนี้</b>
+        <div class="muted2 mini" style="margin-top:4px">
+          ${pickMode === 'team'
+            ? 'แตะเพื่อเลือก/ยกเลิกช่างในทีม • ไม่ต้องเลือกช่างหลัก'
+            : (pickMode === 'single'
+              ? 'โหมดเดี่ยว: แตะเลือกช่าง 1 คน แล้วกด “ยืนยัน”'
+              : 'แตะเลือกช่าง 1 คน หรือไม่เลือกเพื่อให้ระบบเลือกช่างว่างให้')}
         </div>
-      `;
+        <div class="muted2 mini" style="margin-top:4px">รายชื่อนี้คือช่างที่ว่างจริงในสล็อตนี้เท่านั้น • ช่างที่ติดคิว วันหยุด หรือประเภทการจ้างไม่ตรง จะไม่ถูกแสดงว่าว่าง</div>
+        <input type="search" id="slotm_tech_search" class="slot-tech-search" style="margin-top:10px"
+          placeholder="ค้นหาช่าง (ชื่อ หรือ ชื่อผู้ใช้)" autocomplete="off" value="${escapeHtml(techQuery)}">
+        <div class="muted2 mini slot-tech-count" id="slotm_tech_count"></div>
+        <div class="slot-tech-list" id="slotm_tech_list"></div>
+        ${pickMode === 'team' ? '' : '<select id="slotm_single" style="display:none"></select>'}
+      </div>
+    `;
 
-      const wrap = body.querySelector('#slotm_team');
-      for(const u of ids){
-        const b = document.createElement('button');
-        b.type = 'button';
-        const active = selected.has(u);
-        b.className = `chip ${active ? 'active' : ''}`;
-        b.textContent = techDisplay(u);
-        b.addEventListener('click', ()=>{
-          if(selected.has(u)) selected.delete(u); else selected.add(u);
-          state.teamPicker.selected = new Set(Array.from(selected));
-          state.teamPicker.primary = '';
-          const leg = el('technician_username_select');
-          if(leg) leg.value = '';
-          const hid = el('technician_username');
-          if(hid) hid.value = '';
-          getTeamMembersForPayload();
-          renderTeamPicker(ids);
-          renderSlots();
-          try { renderWashAssign(); } catch(e){}
-          updateAssignSummary();
-          renderBody();
-        });
-        wrap.appendChild(b);
+    // Repaints ONLY the list, so the search box keeps its value, focus and caret.
+    const renderTechList = ()=>{
+      const listBox = body.querySelector('#slotm_tech_list');
+      const countBox = body.querySelector('#slotm_tech_count');
+      if(!listBox) return;
+      const listMode = (el('assign_mode')?.value || 'auto').toString();
+      const result = buildSlotTechnicianList(ids, techQuery, techDisplay);
+      const teamSelected = (listMode === 'team') ? new Set(getTeamListForAssign()) : null;
+      const currentSingle = (body.querySelector('#slotm_single')?.value || '').trim();
+
+      listBox.innerHTML = '';
+      if(!result.items.length){
+        const empty = document.createElement('div');
+        empty.className = 'slot-tech-empty';
+        empty.textContent = 'ไม่พบช่างที่ตรงกับคำค้นหา • ลองพิมพ์ชื่อหรือชื่อผู้ใช้บางส่วน';
+        listBox.appendChild(empty);
+      }else{
+        for(const t of result.items){
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.setAttribute('data-slot-tech', t.username);
+          const active = teamSelected ? teamSelected.has(t.username) : (currentSingle === t.username);
+          b.className = `chip slot-tech-row ${active ? 'active' : ''}`;
+          b.setAttribute('aria-pressed', active ? 'true' : 'false');
+          b.textContent = (t.label === t.username) ? t.username : `${t.label} (${t.username})`;
+          b.addEventListener('click', ()=>{ pickTech(t.username); });
+          listBox.appendChild(b);
+        }
       }
+      if(countBox){
+        countBox.textContent = (result.items.length === result.total)
+          ? `ช่างที่ว่างในสล็อตนี้ทั้งหมด ${result.total} คน (แสดงครบทุกคน)`
+          : `แสดง ${result.items.length} จากช่างที่ว่างในสล็อตนี้ ${result.total} คน • ล้างช่องค้นหาเพื่อดูครบทุกคน`;
+      }
+    };
 
+    const pickTech = (username)=>{
+      const pickMode = (el('assign_mode')?.value || 'auto').toString();
+      if(pickMode === 'team'){
+        const selected = new Set(getTeamListForAssign());
+        if(selected.has(username)) selected.delete(username); else selected.add(username);
+        state.teamPicker.selected = new Set(Array.from(selected));
+        state.teamPicker.primary = '';
+        const leg = el('technician_username_select');
+        if(leg) leg.value = '';
+        const hid = el('technician_username');
+        if(hid) hid.value = '';
+        getTeamMembersForPayload();
+        renderTeamPicker(ids);
+        renderSlots();
+        try { renderWashAssign(); } catch(e){}
+        updateAssignSummary();
+        renderTechList();
+        return;
+      }
+      const selEl = body.querySelector('#slotm_single');
+      if(!selEl) return;
+      // Tapping the already-selected technician clears the choice.
+      selEl.value = (selEl.value === username) ? '' : username;
+      try { selEl.dispatchEvent(new Event('change')); } catch(e) {}
+      renderTechList();
+    };
+
+    const bindTechSearch = ()=>{
+      const searchEl = body.querySelector('#slotm_tech_search');
+      if(!searchEl) return;
+      searchEl.addEventListener('input', ()=>{
+        techQuery = searchEl.value || '';
+        renderTechList();
+      });
+    };
+
+    if(mode === 'team'){
+      state.teamPicker.primary = '';
+      body.innerHTML = timeSeg + modeInfo + pickerShell('team');
+      bindTechSearch();
+      renderTechList();
       bindTimePicker();
       return;
     }
 
     const cur = (el('technician_username_select')?.value || '').trim();
-    // In real production use, the admin chooses assignment mode/technician in the main form.
-    // The slot modal should only be for picking the start time (and showing who is free),
-    // not forcing a second technician selection step.
+    // Options mirror the visible list one-for-one (every available id, exactly once),
+    // so the submitted payload can only ever be a technician the admin actually saw.
+    const optionsHtml = buildSlotTechnicianList(ids, '', techDisplay).items
+      .map(t=>`<option value="${escapeHtml(t.username)}">${escapeHtml(t.label)} (${escapeHtml(t.username)})</option>`).join('');
     if(mode === 'auto'){
-      body.innerHTML = timeSeg + modeInfo + `
-        <label>ช่าง (ว่างในสล็อตนี้)</label>
-        <select id="slotm_single" class="grow"></select>
-        <div class="muted2 mini" style="margin-top:6px">ไม่เลือก = ระบบเลือกช่างว่าง</div>
-      `;
+      body.innerHTML = timeSeg + modeInfo + pickerShell('auto');
       const selEl = body.querySelector('#slotm_single');
-      selEl.innerHTML = `<option value="">-- ไม่เลือก (ระบบเลือกช่างว่าง) --</option>`
-        + ids.map(u=>`<option value="${escapeHtml(u)}">${escapeHtml(techDisplay(u))} (${escapeHtml(u)})</option>`).join('');
+      selEl.innerHTML = `<option value="">-- ไม่เลือก (ระบบเลือกช่างว่าง) --</option>` + optionsHtml;
       if(cur && ids.includes(cur)) selEl.value = cur;
       selEl.addEventListener('change', ()=>{
         const v = (selEl.value||'').trim();
@@ -2824,21 +2969,17 @@ function openSlotModal(slot){
         try { renderWashAssign(); } catch(e){}
         updateAssignSummary();
       });
-    } else if(mode === 'single'){
+    } else {
       // Production UX: allow selecting the technician right inside the slot modal.
       // This avoids relying on a hidden/empty main dropdown and prevents "เลือกช่าง A แต่ไปลง B".
       const ok = !!cur && ids.includes(cur);
-      body.innerHTML = timeSeg + modeInfo + `
-        <label>ช่าง (ว่างในสล็อตนี้)</label>
-        <select id="slotm_single" class="grow"></select>
-        <div id="slotm_single_hint" class="muted2 mini" style="margin-top:6px">โหมดเดี่ยว: ต้องเลือกช่าง 1 คน แล้วกด “ยืนยัน”</div>
+      body.innerHTML = timeSeg + modeInfo + pickerShell('single') + `
         <div id="slotm_single_warn" style="display:none;margin-top:10px;padding:10px 12px;border-radius:14px;background:#fee2e2;color:#7f1d1d;font-weight:700">
           โหมดเดี่ยว: กรุณาเลือกช่าง แล้วกด “ยืนยัน”
         </div>
       `;
       const selEl = body.querySelector('#slotm_single');
-      selEl.innerHTML = `<option value="">-- เลือกช่าง --</option>`
-        + ids.map(u=>`<option value="${escapeHtml(u)}">${escapeHtml(techDisplay(u))} (${escapeHtml(u)})</option>`).join('');
+      selEl.innerHTML = `<option value="">-- เลือกช่าง --</option>` + optionsHtml;
       if(ok) selEl.value = cur;
       // keep main fields in sync for payload
       selEl.addEventListener('change', ()=>{
@@ -2847,15 +2988,13 @@ function openSlotModal(slot){
         if(el('technician_username')) el('technician_username').value = v;
         state.confirmed_tech_username = '';
         state.confirmed_tech_label = '';
-        body.querySelector('#slotm_single_warn').style.display = v ? 'none' : 'block';
+        const warn = body.querySelector('#slotm_single_warn');
+        if(warn) warn.style.display = v ? 'none' : 'block';
       });
-    } else {
-      // team: the team selection happens in the main form; modal is only for time picking.
-      body.innerHTML = timeSeg + modeInfo + `
-        <div class="muted2 mini" style="margin-top:2px">โหมดทีม: เลือกทีมได้ที่หน้าหลัก (ไม่ต้องเลือกซ้ำในสล็อต)</div>
-      `;
     }
 
+    bindTechSearch();
+    renderTechList();
     bindModeButtons();
     bindTimePicker();
   };
@@ -2868,7 +3007,7 @@ function openSlotModal(slot){
       const v = clampHHMM(t.value, slotStart, slotEnd);
       t.value = v;
       try{ selectSlot(v, slot); }catch(e){}
-      sub.textContent = `${date} • เริ่ม ${v} (ช่วง ${slotStart} - ${slotEnd}) • ว่าง ${ids.length} ช่าง`;
+      sub.textContent = `${date} • เริ่ม ${v} (ช่วง ${slotStart} - ${slotEnd}) • ช่างที่ว่างในสล็อตนี้ ${availableTechTotal} คน`;
       try { renderWashAssign(); } catch(e){}
       try { updateAssignSummary(); } catch(e){}
     });
@@ -3043,7 +3182,7 @@ async function submitBooking() {
     return;
   }
   if (packageSelected() && !packagePreviewIsFresh()) {
-    showToast("Wait for the selected package tier price and duration before booking", "error");
+    showToast("กรุณารอราคาและเวลาของตัวเลือกแพ็กเกจที่เลือกก่อนบันทึกงาน", "error");
     el("btnSubmit").disabled = true;
     return;
   }
@@ -3143,8 +3282,15 @@ async function submitBooking() {
   if(services) payload.services = services;
   if (packageSelected()) {
     if (bundleSelected()) {
+      // Issue 310: last client-side gate before the payload is built. The
+      // authoritative check still runs on the server for stale/direct clients.
+      const minimumTotalQuantity = selectedBundleMinimumTotalQuantity();
+      if (minimumTotalQuantity && selectedBundleTotalQuantity() < minimumTotalQuantity) {
+        showToast(`โปรนี้จองขั้นต่ำ ${minimumTotalQuantity} เครื่อง กรุณาเพิ่มจำนวนเครื่องรวมทุกขนาด BTU ให้ครบก่อนบันทึกงาน`, "error");
+        el("btnSubmit").disabled = false; return;
+      }
       if (!packagePreviewIsFresh()) {
-        showToast("Select Store package quantities and wait for the server quote", "error");
+        showToast("กรุณาระบุจำนวนเครื่องของแพ็กเกจร้านค้า แล้วรอให้เซิร์ฟเวอร์คำนวณราคาก่อน", "error");
         el("btnSubmit").disabled = false; return;
       }
       payload.service_package_groups = selectedBundleGroups();
@@ -3159,11 +3305,11 @@ async function submitBooking() {
     const preview = state.service_package_preview;
     const actualBtu = Number(el("service_package_btu")?.value || 0);
     if (!packagePreviewIsFresh() || !actualBtu) {
-      showToast("Select a package tier and actual BTU before booking", "error");
+      showToast("กรุณาเลือกตัวเลือกราคา/จำนวนเครื่อง และ BTU จริง ก่อนบันทึกงาน", "error");
       el("btnSubmit").disabled = false; return;
     }
     if (preview.redeem_until && new Date(payload.appointment_datetime) > new Date(preview.redeem_until)) {
-      showToast("The appointment is after this package redemption deadline", "error");
+      showToast("วันเวลานัดหมายเลยกำหนดใช้สิทธิ์ของแพ็กเกจนี้แล้ว", "error");
       el("btnSubmit").disabled = false; return;
     }
     payload.service_package_key = el("service_package_key").value;
@@ -3226,7 +3372,7 @@ async function submitBooking() {
       const validPair = latRaw && lngRaw && Number.isFinite(la) && Number.isFinite(ln)
         && Math.abs(la) <= 90 && Math.abs(ln) <= 180 && !(la === 0 && ln === 0);
       if (!validPair) {
-        showToast('พิกัดหน้างานไม่ถูกต้อง กรุณากรอก Lat และ Lng ให้ครบทั้งคู่และถูกต้อง (ไม่ใช่ 0,0) หรือเว้นว่างทั้งคู่', 'error');
+        showToast('พิกัดหน้างานไม่ถูกต้อง กรุณากรอกละติจูดและลองจิจูดให้ครบทั้งคู่และถูกต้อง (ไม่ใช่ 0,0) หรือเว้นว่างทั้งคู่', 'error');
         el("btnSubmit").disabled = false;
         return;
       }
@@ -3335,7 +3481,7 @@ function wireEvents() {
     }
     el("store_service_bundle_key").value = "";
     el("service_package_key").value = "";
-    el("service_package_tier_key").innerHTML = '<option value="">Select tier</option>';
+    el("service_package_tier_key").innerHTML = '<option value="">เลือกตัวเลือกราคา/จำนวนเครื่อง</option>';
     el("service_package_tier_key").disabled = true;
     renderServiceBundleGroups();
     invalidateServicePackagePreview();
@@ -3362,7 +3508,7 @@ function wireEvents() {
       state.selected_store_catalog_item_id = bundle ? Number(bundle.item_id) : null;
       if (el("store_bookable_item_id")) el("store_bookable_item_id").value = "";
       el("service_package_key").value = "";
-      el("service_package_tier_key").innerHTML = '<option value="">Select tier</option>';
+      el("service_package_tier_key").innerHTML = '<option value="">เลือกตัวเลือกราคา/จำนวนเครื่อง</option>';
       el("service_package_tier_key").disabled = true;
     }
     state.admin_request_key = "";
@@ -3375,7 +3521,7 @@ function wireEvents() {
   el("service_package_key")?.addEventListener("change", async () => {
     const key = String(el("service_package_key").value || "");
     const tier = el("service_package_tier_key");
-    tier.innerHTML = '<option value="">Select tier</option>';
+    tier.innerHTML = '<option value="">เลือกตัวเลือกราคา/จำนวนเครื่อง</option>';
     const pkg = state.service_packages.find((item) => item.package_key === key);
     if (pkg) {
       state.selected_store_catalog_item_id = null;
@@ -3414,7 +3560,7 @@ function wireEvents() {
       else lab.textContent = 'เวลารายการนี้ (นาที) (ไม่ใส่ = 60 นาทีโดยประมาณ)';
       return;
     }
-    lab.textContent = 'Override เวลา (นาที)';
+    lab.textContent = 'เวลาพิเศษแทนเวลาระบบ (นาที)';
   };
 
   // build variant when job type changes
@@ -3483,12 +3629,12 @@ function wireEvents() {
   try {
     el('btnLangTH')?.addEventListener('click', ()=> setSummaryLang('th','card'));
     el('btnLangEN')?.addEventListener('click', ()=>{
-      if(!state.summary_texts.en){ showToast('English version not available', 'error'); return; }
+      if(!state.summary_texts.en){ showToast('ยังไม่มีข้อความฉบับภาษาอังกฤษ', 'error'); return; }
       setSummaryLang('en','card');
     });
     el('btnLangTHModal')?.addEventListener('click', ()=> setSummaryLang('th','modal'));
     el('btnLangENModal')?.addEventListener('click', ()=>{
-      if(!state.summary_texts.en){ showToast('English version not available', 'error'); return; }
+      if(!state.summary_texts.en){ showToast('ยังไม่มีข้อความฉบับภาษาอังกฤษ', 'error'); return; }
       setSummaryLang('en','modal');
     });
   } catch(e){}
@@ -3647,7 +3793,7 @@ function _pickUsernameForSpecialSlot(){
 
   const top = techs.slice(0, 12);
   const lines = top.map((t,i)=>`${i+1}) ${t.display_name || t.full_name || t.username} (${t.username})`).join("\n");
-  const pick = prompt(`เลือกช่างสำหรับสลอตพิเศษ (พิมพ์เลข)\n\n${lines}\n\nหรือพิมพ์ username ตรงๆ`, "1");
+  const pick = prompt(`เลือกช่างสำหรับสลอตพิเศษ (พิมพ์เลข)\n\n${lines}\n\nหรือพิมพ์ชื่อผู้ใช้ของช่างตรง ๆ`, "1");
   if(!pick) return null;
   const n = Number(pick);
   if(Number.isFinite(n) && n >= 1 && n <= top.length) return String(top[n-1].username).trim();

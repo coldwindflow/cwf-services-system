@@ -62,15 +62,47 @@ async function listCustomerVisiblePackages(db, { at = new Date() } = {}) {
   return result.rows;
 }
 
+// Issue 310: this read is authoritative for the booking minimum, so it must NOT
+// degrade to "no minimum" when the column is missing - that would silently admit
+// under-quantity bookings. Instead it fails closed with a code an operator can
+// act on (apply the 20260820 migration) rather than a raw 42703 in the logs.
+// The public storefront read path is separately guarded and degrades safely.
+const MINIMUM_COLUMN = "service_package_minimum_total_quantity";
+
+function schemaNotReadyError(cause) {
+  const error = new Error("SERVICE_PACKAGE_SCHEMA_NOT_READY");
+  error.code = "SERVICE_PACKAGE_SCHEMA_NOT_READY";
+  error.statusCode = 503;
+  error.detail = `public.catalog_items.${MINIMUM_COLUMN} is missing; apply migrations/20260820_service_package_minimum_total_quantity.sql before this release`;
+  error.cause = cause;
+  return error;
+}
+
 async function findLinkedPackagesByKeys(db, packageKeys) {
   if (!Array.isArray(packageKeys) || !packageKeys.length) return [];
-  const result = await requireDb(db).query(
+  const result = await runLinkedPackagesQuery(requireDb(db), packageKeys);
+  return result.rows;
+}
+
+async function runLinkedPackagesQuery(db, packageKeys) {
+  try { return await queryLinkedPackages(db, packageKeys); }
+  catch (error) {
+    if (error?.code === "42703" && String(error?.message || "").includes(MINIMUM_COLUMN)) {
+      throw schemaNotReadyError(error);
+    }
+    throw error;
+  }
+}
+
+async function queryLinkedPackages(db, packageKeys) {
+  return db.query(
     `SELECT p.*, ci.item_id, ci.item_name, ci.service_bundle_key,
             CASE WHEN ci.service_bundle_key IS NOT NULL THEN 'service_package' ELSE ci.booking_mode END AS booking_mode,
             ci.is_active AS catalog_is_active,
             ci.is_customer_visible AS catalog_is_customer_visible,
             ci.service_package_sell_start_at, ci.service_package_sell_end_at,
             ci.service_package_redeem_until, ci.booking_flow_policy,
+            ci.service_package_minimum_total_quantity,
             COALESCE(jsonb_agg(
               to_jsonb(t) || jsonb_build_object('fixed_total_price', t.fixed_total_price::text)
               ORDER BY t.sort_order, t.service_package_tier_id
@@ -82,7 +114,6 @@ async function findLinkedPackagesByKeys(db, packageKeys) {
       GROUP BY p.service_package_id, ci.item_id`,
     [packageKeys]
   );
-  return result.rows;
 }
 
 async function listLinkedPackagesForCatalogItems(db, itemIds, { customer = false, at = new Date() } = {}) {

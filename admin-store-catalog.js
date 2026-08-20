@@ -1242,6 +1242,7 @@ function ensureBundleModal() {
       <div class="asc-grid2"><div class="asc-field"><label>สถานะ</label><select id="bm_active"><option value="0">แบบร่าง</option><option value="1">เปิดใช้งาน</option></select></div><div class="asc-field"><label>Store</label><select id="bm_visible"><option value="0">ซ่อน</option><option value="1">แสดง</option></select></div></div>
       <div class="asc-grid2"><div class="asc-field"><label>แสดงใน Featured Services</label><select id="bm_featured"><option value="0">ไม่แสดง</option><option value="1">แสดง</option></select></div><div class="asc-field"><label>อนุญาตการหมุนภาพเดิม</label><select id="bm_autoplay"><option value="1">อนุญาต</option><option value="0">ปิด</option></select></div></div>
       <div class="asc-field"><label>ช่องทางการจองบริการ *</label><select id="bm_booking_flow_policy"><option value="scheduled_only">จองล่วงหน้าเท่านั้น</option><option value="scheduled_and_urgent">จองล่วงหน้า + จองด่วน</option></select></div>
+      <div class="asc-field"><label>จำนวนเครื่องขั้นต่ำต่อการจอง</label><input id="bm_minimum_total_quantity" type="number" min="2" max="99" step="1" inputmode="numeric" placeholder="ไม่กำหนดขั้นต่ำ"><p class="muted2 mini">เว้นว่าง = ไม่กำหนดขั้นต่ำ • กำหนดได้ 2–99 เครื่อง • ระบบนับจำนวนเครื่อง <b>รวมทุกขนาด BTU ในการจองเดียวกัน</b> ของโปรนี้</p></div>
       <div class="asc-grid2"><div class="asc-field"><label>ข้อความป้ายโปรโมชั่น</label><input id="bm_promotion_badge_text" maxlength="80"></div><div class="asc-field"><label>ข้อความสนับสนุนโปรโมชั่น</label><input id="bm_promotion_supporting_text" maxlength="200"></div></div>
       <div class="asc-grid2"><div class="asc-field"><label>ธีม</label><select id="bm_promotion_theme_preset"><option value="default">ปกติ</option><option value="premium">พรีเมียม</option><option value="limited_time">เวลาจำกัด</option><option value="new">ใหม่</option></select></div><div class="asc-field"><label>เอฟเฟกต์</label><select id="bm_promotion_effect_preset"><option value="none">ไม่มี</option><option value="soft_glow">แสงนุ่ม</option><option value="shimmer_border">ขอบประกาย</option><option value="badge_pulse">ป้ายเต้นเบา</option></select></div></div>
       <div class="asc-field"><label>นับถอยหลังถึงเวลาปิดขาย</label><select id="bm_show_sale_countdown"><option value="0">ไม่แสดง</option><option value="1">แสดงจากเวลาปิดขายจริง</option></select></div>
@@ -1364,6 +1365,9 @@ async function openBundleModal(bundleKey = null) {
   el("bm_featured").value = bundle?.is_featured ? "1" : "0";
   el("bm_autoplay").value = bundle?.is_autoplay_enabled === false ? "0" : "1";
   el("bm_booking_flow_policy").value = bundle?.booking_flow_policy === "scheduled_and_urgent" ? "scheduled_and_urgent" : "scheduled_only";
+  // A stored NULL must load as blank, never as 2, or editing an unrelated field
+  // would silently give an existing promotion a minimum it never had.
+  el("bm_minimum_total_quantity").value = bundle?.minimum_total_quantity == null ? "" : String(bundle.minimum_total_quantity);
   el("bm_promotion_badge_text").value = bundle?.promotion_badge_text || "";
   el("bm_promotion_supporting_text").value = bundle?.promotion_supporting_text || "";
   el("bm_promotion_theme_preset").value = bundle?.promotion_theme_preset || "default";
@@ -1376,6 +1380,26 @@ async function openBundleModal(bundleKey = null) {
   el("bundle_modal_backdrop").classList.remove("hidden");
 }
 function bundleDateValue(id) { const value = el(id).value; return value ? new Date(value).toISOString() : null; }
+// Blank stays blank (no minimum). Anything else must be a whole 2–99 so the
+// admin gets a clear Thai error here instead of a server rejection; the same
+// rule is re-checked server-side and by a database CHECK constraint.
+function bundleMinimumTotalQuantityValue() {
+  const field = el("bm_minimum_total_quantity");
+  // A <input type="number"> reports non-numeric text as an empty value, which
+  // would otherwise be indistinguishable from "cleared on purpose" and silently
+  // drop the restriction. validity.badInput is the only way to tell them apart.
+  if (field.validity && field.validity.badInput) {
+    throw new Error("จำนวนเครื่องขั้นต่ำต้องเป็นตัวเลขเท่านั้น กรอก 2 ถึง 99 หรือเว้นว่างเพื่อไม่กำหนดขั้นต่ำ");
+  }
+  const raw = String(field.value || "").trim();
+  if (!raw) return null;
+  if (!/^\d+$/.test(raw)) throw new Error("จำนวนเครื่องขั้นต่ำต้องเป็นเลขจำนวนเต็ม 2 ถึง 99 หรือเว้นว่างเพื่อไม่กำหนดขั้นต่ำ");
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value) || value < 2 || value > 99) {
+    throw new Error("จำนวนเครื่องขั้นต่ำต้องอยู่ระหว่าง 2 ถึง 99 หรือเว้นว่างเพื่อไม่กำหนดขั้นต่ำ");
+  }
+  return value;
+}
 function bundlePayload() {
   const optionalInteger = (value) => value == null || value === "" ? null : Number(value);
   return {
@@ -1387,6 +1411,7 @@ function bundlePayload() {
     is_active: el("bm_active").value === "1", is_customer_visible: el("bm_visible").value === "1",
     is_featured: el("bm_featured").value === "1", is_autoplay_enabled: el("bm_autoplay").value === "1",
     booking_flow_policy: el("bm_booking_flow_policy").value,
+    minimum_total_quantity: bundleMinimumTotalQuantityValue(),
     promotion_badge_text: el("bm_promotion_badge_text").value.trim() || null,
     promotion_supporting_text: el("bm_promotion_supporting_text").value.trim() || null,
     promotion_theme_preset: el("bm_promotion_theme_preset").value,

@@ -187,6 +187,91 @@
     #btnSubmit{background:#0b4bb3 !important;color:#ffffff !important;border:1px solid rgba(255,204,0,0.55) !important;font-weight:900 !important}
     #btnSubmit:active{background:#0b1b3a !important}
 
+    /* ===============================
+       Slot technician picker (mobile-safe bottom sheet)
+       Scope: หน้าเพิ่มงาน Admin เท่านั้น (#slot_modal_overlay)
+       - ความสูงถูกจำกัดตาม viewport จริงบนมือถือ (dvh + vh fallback)
+       - หัวข้อ/ปุ่มยืนยันอยู่กับที่ • รายชื่อช่างเลื่อนได้ในกล่องของตัวเอง
+       =============================== */
+    #slot_modal_overlay{align-items:flex-end}
+    #slot_modal_overlay .team-sheet.slot-sheet{
+      display:flex;
+      flex-direction:column;
+      max-height:88vh;            /* fallback สำหรับเบราว์เซอร์เก่า */
+      max-height:88dvh;           /* Android/iOS: กันแถบที่อยู่บังท้ายชีต */
+      overflow:hidden;
+      padding-bottom:calc(16px + env(safe-area-inset-bottom));
+    }
+    #slot_modal_overlay .slot-sheet-head{flex:0 0 auto}
+    #slot_modal_overlay .slot-sheet-head h3{margin:0}
+    #slot_modal_overlay .slot-sheet-head p{margin:6px 0 0}
+    #slot_modal_overlay #slot_modal_body{
+      flex:1 1 auto;
+      min-height:0;               /* จำเป็นสำหรับ flex child ที่ต้องเลื่อน */
+      overflow-y:auto;
+      overflow-x:hidden;
+      -webkit-overflow-scrolling:touch;
+      overscroll-behavior:contain;
+      margin-top:12px;
+      padding-right:2px;
+    }
+    #slot_modal_overlay .slot-sheet .sheet-actions{
+      flex:0 0 auto;
+      margin-top:12px;
+      padding-top:10px;
+      border-top:1px solid rgba(15,23,42,0.08);
+      background:#fff;
+    }
+    /* ค้นหาช่างในสล็อต */
+    #slot_modal_overlay .slot-tech-search{
+      width:100%;
+      padding:10px 12px;
+      border-radius:14px;
+      border:1px solid rgba(11,75,179,0.22);
+      background:#fff;
+      font-size:16px;             /* กัน iOS zoom ตอนโฟกัส */
+      font-weight:700;
+      color:#0b1b3a;
+    }
+    #slot_modal_overlay .slot-tech-count{margin-top:8px}
+    #slot_modal_overlay .slot-tech-list{
+      display:flex;
+      flex-wrap:wrap;
+      gap:8px;
+      margin-top:10px;
+    }
+    /* กันกฎรวม `.team-sheet button{width:100%}` ไม่ให้ยืดชิปช่างเต็มบรรทัด */
+    #slot_modal_overlay .slot-sheet .slot-tech-list button{
+      width:auto;
+      max-width:100%;
+      min-height:40px;
+      padding:8px 12px;
+      border-radius:999px;
+      font-size:13px;
+      font-weight:900;
+      text-align:left;
+      overflow-wrap:anywhere;
+    }
+    #slot_modal_overlay .slot-tech-row{
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+      border:1px solid rgba(11,75,179,0.22);
+      background:#ffffff;
+      color:#0b1b3a;
+      box-shadow:0 6px 14px rgba(2,6,23,0.06);
+    }
+    #slot_modal_overlay .slot-tech-row.active{
+      background:#0b4bb3;
+      color:#ffffff;
+      border-color:rgba(255,204,0,0.75);
+    }
+    #slot_modal_overlay .slot-tech-empty{
+      padding:10px 2px;
+      color:rgba(15,23,42,0.72);
+      font-size:13px;
+    }
+
     /* เมนู/ออกจากระบบ/Debug ใช้จาก admin-v2-common.js (เมนูบาร์ด้านบนแบบเดียวกันทุกหน้า) */
   </style>
 </head>
@@ -208,7 +293,7 @@
           <input id="customer_phone" placeholder="0xx-xxx-xxxx">
           <input id="customer_id" type="hidden">
           <div class="line" style="margin-top:8px;flex-wrap:wrap;align-items:center;">
-            <button id="btnUseLatestCustomerData" class="secondary" type="button" style="display:none;width:auto;">Use latest customer data</button>
+            <button id="btnUseLatestCustomerData" class="secondary" type="button" style="display:none;width:auto;">ใช้ข้อมูลลูกค้าล่าสุด</button>
             <div id="customer_lookup_hint" class="muted2 grow">กรอกเบอร์ลูกค้าเก่าแล้วออกจากช่องนี้ ระบบจะค้นหาข้อมูลล่าสุดให้ก่อน โดยยังไม่เติมค่าให้อัตโนมัติ</div>
           </div>
           <div id="customer_location_candidates" class="customer-location-candidates"></div>
@@ -229,7 +314,7 @@
       <div style="margin-top:10px;border:1px solid rgba(11,75,179,.16);background:#f8fbff;border-radius:16px;padding:10px">
         <label>โซนงาน</label>
         <select id="service_zone_code" style="width:100%;margin-top:6px">
-          <option value="">Auto / ระบบเลือกจากที่อยู่</option>
+          <option value="">อัตโนมัติ / ระบบเลือกจากที่อยู่</option>
         </select>
         <input id="service_zone_source" type="hidden" value="">
         <div id="service_zone_hint" class="muted2" style="margin-top:7px">ระบบจะเลือกโซนจากเขต/อำเภอในที่อยู่</div>
@@ -237,11 +322,11 @@
       <label style="margin-top:10px">หมายเหตุ</label>
       <div class="grid2" style="margin-top:10px">
         <div>
-          <label>Latitude</label>
+          <label>ละติจูด</label>
           <input id="gps_latitude" placeholder="เช่น 13.7" />
         </div>
         <div>
-          <label>Longitude</label>
+          <label>ลองจิจูด</label>
           <input id="gps_longitude" placeholder="เช่น 100.5" />
         </div>
       </div>
@@ -250,7 +335,7 @@
     </div>
 
     <div class="card section-card">
-      <b>2) รายละเอียดบริการ (Flow เหมือนลูกค้า)</b>
+      <b>2) รายละเอียดบริการ (ขั้นตอนเดียวกับฝั่งลูกค้า)</b>
       <label style="margin-top:10px">ประเภทงาน *</label>
       <select id="job_type">
         <option value="">-- เลือก --</option>
@@ -282,7 +367,7 @@
         <div>
           <label>จำนวนเครื่อง</label>
           <div class="mc-row">
-            <div class="stepper" aria-label="machine count">
+            <div class="stepper" aria-label="จำนวนเครื่อง">
               <button id="mc_minus" class="btn-round" type="button" title="ลด">−</button>
               <input id="machine_count" class="stepper-input" type="number" min="1" max="20" step="1" value="1" inputmode="numeric">
               <button id="mc_plus" class="btn-round" type="button" title="เพิ่ม">+</button>
@@ -295,17 +380,17 @@
       </div>
 <!-- MULTI-SERVICE (หลายรายการในใบงานเดียว) -->
 <div id="service_package_box" class="card card-lite" style="margin-top:12px">
-  <b>Service Package (optional)</b>
-  <div class="muted2 mini">Choose a Store package parent for mixed BTU/arbitrary quantities, or a legacy standalone package. Totals and rules come from the server.</div>
-  <div style="margin-top:10px"><label>Ordinary Store service (optional)</label><select id="store_bookable_item_id"><option value="">Use manual service fields</option></select></div>
-  <div style="margin-top:10px"><label>Store service-package item</label><select id="store_service_bundle_key"><option value="">No Store package</option></select></div>
+  <b>แพ็กเกจบริการ (ถ้ามี)</b>
+  <div class="muted2 mini">เลือกแพ็กเกจหลักจากร้านค้าเมื่อต้องผสม BTU หรือกำหนดจำนวนเครื่องเอง หรือเลือกแพ็กเกจเดี่ยวของระบบเดิม • ยอดรวมและเงื่อนไขทั้งหมดคำนวณจากเซิร์ฟเวอร์</div>
+  <div style="margin-top:10px"><label>บริการร้านค้าแบบปกติ (ถ้ามี)</label><select id="store_bookable_item_id"><option value="">กรอกรายละเอียดบริการเอง</option></select></div>
+  <div style="margin-top:10px"><label>รายการแพ็กเกจบริการของร้านค้า</label><select id="store_service_bundle_key"><option value="">ไม่ใช้แพ็กเกจร้านค้า</option></select></div>
   <div id="store_service_bundle_groups" style="display:none;margin-top:10px"></div>
   <div class="grid2" style="margin-top:10px">
-    <div><label>Legacy standalone package</label><select id="service_package_key"><option value="">No legacy package</option></select></div>
-    <div><label>Tier</label><select id="service_package_tier_key" disabled><option value="">Select tier</option></select></div>
+    <div><label>แพ็กเกจเดี่ยว (ระบบเดิม)</label><select id="service_package_key"><option value="">ไม่ใช้แพ็กเกจระบบเดิม</option></select></div>
+    <div><label>ตัวเลือกราคา/จำนวนเครื่อง</label><select id="service_package_tier_key" disabled><option value="">เลือกตัวเลือกราคา/จำนวนเครื่อง</option></select></div>
   </div>
   <div id="service_package_btu_wrap" style="display:none;margin-top:10px">
-    <label>Actual BTU *</label><select id="service_package_btu"><option value="">Select actual BTU</option></select>
+    <label>BTU จริง *</label><select id="service_package_btu"><option value="">เลือก BTU จริง</option></select>
   </div>
   <div id="service_package_preview" class="muted2" style="display:none;margin-top:10px"></div>
 </div>
@@ -343,12 +428,12 @@
         </div>
         <div class="grid2" style="margin-top:10px">
           <div>
-            <label>Override ราคา (กรณีพิเศษเท่านั้น)</label>
+            <label>ราคาพิเศษแทนราคาระบบ (กรณีพิเศษเท่านั้น)</label>
             <input id="override_price" type="number" min="0" step="1" placeholder="0 = ใช้ราคาจากสมุดราคา">
-            <div class="muted2 mini">ราคา Override ใช้เฉพาะกรณีพิเศษของงานนั้น ๆ ไม่ใช่ราคาหลักของระบบ</div>
+            <div class="muted2 mini">ราคาพิเศษใช้เฉพาะกรณีพิเศษของงานนั้น ๆ ไม่ใช่ราคาหลักของระบบ</div>
           </div>
           <div>
-            <label id="override_duration_label">Override เวลา (นาที)</label>
+            <label id="override_duration_label">เวลาพิเศษแทนเวลาระบบ (นาที)</label>
             <input id="override_duration_min" type="number" min="0" step="1" placeholder="0 = คิดตามกติกา">
           </div>
         </div>
@@ -427,7 +512,7 @@
               <option value="single">เลือกช่างคนเดียว</option>
               <option value="team">เลือกทีมช่าง</option>
             </select>
-            <div id="assign_mode_ui_help" class="muted2 mini" style="margin-top:6px">ทีม = เลือกช่างร่วมหลายคน (validation ยังห้ามชนคิวเหมือนเดิม)</div>
+            <div id="assign_mode_ui_help" class="muted2 mini" style="margin-top:6px">ทีม = เลือกช่างร่วมหลายคน (ระบบยังตรวจสอบไม่ให้ชนคิวเหมือนเดิม)</div>
           </div>
 
           <div id="appt_date_wrap">
@@ -435,7 +520,7 @@
             <input id="appt_date" type="date">
           </div>
           <button class="secondary" type="button" id="btnLoadSlots" style="margin-top:8px;width:100%">โหลดคิวว่าง</button>
-          <div id="debug_hint" class="muted2 mini" style="margin-top:8px">🐞 Debug = มุมขวาบน (ใส่รหัสก่อนเปิด) • ไม่แสดงในหน้าเพื่อไม่รก</div>
+          <div id="debug_hint" class="muted2 mini" style="margin-top:8px">🐞 โหมดตรวจสอบระบบ = ปุ่มมุมขวาบน (ใส่รหัสก่อนเปิด) • ไม่แสดงในหน้าเพื่อไม่ให้รก</div>
 
           <!-- Slots appear directly under the load button (no scrolling confusion) -->
           <div id="slots_wrap" style="margin-top:10px">
@@ -456,17 +541,17 @@
           <!-- dispatch_mode kept hidden for backward compatibility; derived from booking_mode_ui -->
           <!-- booking_mode (scheduled/urgent) kept hidden for backward compatibility; derived from booking_mode_ui -->
           <select id="booking_mode" style="display:none">
-            <option value="scheduled">scheduled</option>
-            <option value="urgent">urgent</option>
+            <option value="scheduled">จองล่วงหน้า</option>
+            <option value="urgent">งานด่วน</option>
           </select>
           <select id="dispatch_mode" style="display:none">
-            <option value="forced">forced (ล็อคช่าง)</option>
-            <option value="offer">offer (ยิงข้อเสนอ)</option>
+            <option value="forced">ล็อกช่าง</option>
+            <option value="offer">ส่งข้อเสนอให้ช่าง</option>
           </select>
           <!-- Reduced clutter (kept elements for backward compatibility with JS) -->
           <div class="pill" style="margin-top:10px; display:none">
             <b style="color:#0b1b3a">หมายเหตุ:</b>
-            <span class="muted2 mini">โหมดจองกำหนดการส่งงานอัตโนมัติ • ไม่ต้องเลือก dispatch ซ้ำ</span>
+            <span class="muted2 mini">โหมดจองกำหนดการส่งงานอัตโนมัติ • ไม่ต้องเลือกโหมดส่งงานซ้ำ</span>
           </div>
 
           <div id="assign_summary" class="pill" style="margin-top:12px;display:none;justify-content:space-between;gap:10px">
@@ -498,7 +583,8 @@
               <label>ทีมช่าง • เลือกหลายคน</label>
               <div class="team-help">พิมพ์ค้นหา แล้วแตะเพื่อเพิ่มเป็นทีม • ไม่ต้องเลือกช่างหลัก</div>
               <div class="team-picker">
-                <input id="team_search" class="team-search" placeholder="ค้นหาช่างร่วม..." autocomplete="off">
+                <input id="team_search" class="team-search" placeholder="ค้นหาช่างร่วม (ชื่อ หรือ ชื่อผู้ใช้)..." autocomplete="off">
+                <div class="muted2 mini" id="team_suggest_count" style="margin-top:8px"></div>
                 <div class="team-suggest" id="team_suggest"></div>
                 <div class="team-divider"></div>
                 <div class="team-selected-title">เลือกแล้ว</div>
@@ -525,11 +611,13 @@
 
       <!-- Slot Quick Pick Modal (แตะสล็อตแล้วเลือกช่าง/เดี่ยว/ทีมได้ทันที) -->
       <div id="slot_modal_overlay" class="team-sheet-overlay">
-        <div class="team-sheet" role="dialog" aria-modal="true" style="max-width:560px">
-          <h3 id="slot_modal_title">เลือกช่างในสล็อต</h3>
-          <p id="slot_modal_sub" class="muted2" style="margin-top:6px">-</p>
-          <div id="slot_modal_body" style="margin-top:12px"></div>
-          <div class="sheet-actions" style="margin-top:14px">
+        <div class="team-sheet slot-sheet" role="dialog" aria-modal="true" aria-labelledby="slot_modal_title" style="max-width:560px">
+          <div class="slot-sheet-head">
+            <h3 id="slot_modal_title">เลือกช่างในสล็อต</h3>
+            <p id="slot_modal_sub" class="muted2">-</p>
+          </div>
+          <div id="slot_modal_body"></div>
+          <div class="sheet-actions">
             <button id="slot_modal_confirm" class="btn-primary" type="button">ยืนยัน</button>
             <button id="slot_modal_close" class="btn-close" type="button">ปิด</button>
           </div>
@@ -568,7 +656,7 @@
         <b>✅ ข้อความยืนยันนัด (คัดลอกส่งลูกค้า)</b>
         <div class="lang-toggle" role="tablist" aria-label="ภาษา">
           <button type="button" class="lang-btn active" id="btnLangTH" aria-selected="true">ไทย</button>
-          <button type="button" class="lang-btn" id="btnLangEN" aria-selected="false">English</button>
+          <button type="button" class="lang-btn" id="btnLangEN" aria-selected="false">ภาษาอังกฤษ</button>
         </div>
       </div>
       <div class="muted2 mini" style="margin-top:6px">เลือกภาษา แล้วกดคัดลอกส่งใน LINE/WhatsApp ได้ทันที</div>
@@ -589,7 +677,7 @@
           <div></div>
           <div class="lang-toggle" role="tablist" aria-label="ภาษา">
             <button type="button" class="lang-btn active" id="btnLangTHModal" aria-selected="true">ไทย</button>
-            <button type="button" class="lang-btn" id="btnLangENModal" aria-selected="false">English</button>
+            <button type="button" class="lang-btn" id="btnLangENModal" aria-selected="false">ภาษาอังกฤษ</button>
           </div>
         </div>
         <textarea id="summary_modal_text" rows="10" style="margin-top:12px; width:100%; min-height:220px; max-height:52vh; resize:vertical;" readonly></textarea>
@@ -608,7 +696,7 @@
   </div>
 
   <script src="admin-v2-common.js?v=20260428_allpages_ui1"></script>
-  <script src="admin-add-v2.js?v=20260809_issue267_catalog_flow_v9"></script>
+  <script src="admin-add-v2.js?v=20260820_issue310_package_minimum_quantity_v1"></script>
   <script src="admin-add-ai-intake-prefill.js?v=line-ai-prefill-real-v8"></script>
 </body>
 </html>
