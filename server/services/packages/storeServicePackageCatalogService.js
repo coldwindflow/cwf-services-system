@@ -5,7 +5,11 @@ const repository = require("./servicePackageRepository");
 const { validate: validatePackage } = require("./servicePackageCatalogService");
 const { publicTaxonomy, canonicalServiceIdentity } = require("./servicePackageTaxonomy");
 const { validateCatalogCampaignPolicy } = require("../catalogCampaignPolicy");
-const { resolveCompositeBooking } = require("./compositeServicePackage");
+const {
+  resolveCompositeBooking,
+  MAX_COMPOSITE_PACKAGE_QUANTITY,
+  MIN_COMPOSITE_PACKAGE_MINIMUM,
+} = require("./compositeServicePackage");
 
 class StoreServicePackageCatalogError extends Error {
   constructor(code, message, status = 400) {
@@ -38,6 +42,25 @@ function instant(value, field) {
   return new Date(value).toISOString();
 }
 function generatedKey(prefix) { return `${prefix}-${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`; }
+
+// Optional parent-level minimum total quantity (Issue 310).
+// null/undefined/"" all mean "no additional minimum" and must round-trip as NULL
+// so an existing promotion is never silently given a restriction. A configured
+// value must be a whole number from 2 to the public maximum: 1 is rejected
+// because it is indistinguishable from no minimum, and decimals/text/out-of-range
+// values are rejected outright rather than coerced.
+function minimumTotalQuantity(value, field = "minimum_total_quantity") {
+  if (value == null || (typeof value === "string" && value.trim() === "")) return null;
+  const text = typeof value === "number" ? String(value) : String(value).trim();
+  if (!/^\d+$/.test(text)) {
+    fail("INVALID_MINIMUM_TOTAL_QUANTITY", `${field} must be a whole number between ${MIN_COMPOSITE_PACKAGE_MINIMUM} and ${MAX_COMPOSITE_PACKAGE_QUANTITY}, or blank`);
+  }
+  const parsed = Number(text);
+  if (!Number.isSafeInteger(parsed) || parsed < MIN_COMPOSITE_PACKAGE_MINIMUM || parsed > MAX_COMPOSITE_PACKAGE_QUANTITY) {
+    fail("INVALID_MINIMUM_TOTAL_QUANTITY", `${field} must be a whole number between ${MIN_COMPOSITE_PACKAGE_MINIMUM} and ${MAX_COMPOSITE_PACKAGE_QUANTITY}, or blank`);
+  }
+  return parsed;
+}
 
 function validate(input) {
   if (!input || typeof input !== "object" || Array.isArray(input)) fail("INVALID_BUNDLE", "Bundle payload is required");
@@ -88,7 +111,9 @@ function validate(input) {
     is_customer_visible: boolean(input.is_customer_visible, "is_customer_visible"),
     is_featured: input.is_featured == null ? false : boolean(input.is_featured, "is_featured"),
     is_autoplay_enabled: input.is_autoplay_enabled == null ? true : boolean(input.is_autoplay_enabled, "is_autoplay_enabled"),
-    sell_start_at: sellStart, sell_end_at: sellEnd, redeem_until: redeemUntil, ...campaign, variants,
+    sell_start_at: sellStart, sell_end_at: sellEnd, redeem_until: redeemUntil,
+    minimum_total_quantity: minimumTotalQuantity(input.minimum_total_quantity),
+    ...campaign, variants,
   };
 }
 
@@ -138,6 +163,8 @@ async function listBundles(db) {
     show_sale_countdown: Boolean(row.show_sale_countdown),
     promotion_supporting_text: row.promotion_supporting_text || null,
     booking_flow_policy: row.booking_flow_policy || "scheduled_only",
+    minimum_total_quantity: row.service_package_minimum_total_quantity == null
+      ? null : Number(row.service_package_minimum_total_quantity),
     variants: byItem.get(String(row.item_id)) || [],
   }));
 }
@@ -155,6 +182,7 @@ function createStoreServicePackageCatalogService({ pool, packageRepository = rep
       fixed_total_price: booking.fixedTotal,
       duration_minutes: booking.durationMin,
       machine_count: booking.payload.machine_count,
+      minimum_total_quantity: booking.minimumTotalQuantity ?? null,
       groups: booking.payload.service_package_groups,
       components: booking.items.map((item) => ({
         package_key: item.snapshot.package.key,
@@ -178,14 +206,15 @@ function createStoreServicePackageCatalogService({ pool, packageRepository = rep
             (item_name,item_category,base_price,unit_label,job_category,ac_type,is_active,is_customer_visible,
              short_description,long_description,highlights,service_conditions,booking_mode,is_featured,is_autoplay_enabled,
              service_bundle_key,service_package_sell_start_at,service_package_sell_end_at,service_package_redeem_until,
-             promotion_badge_text,promotion_theme_preset,promotion_effect_preset,show_sale_countdown,promotion_supporting_text,booking_flow_policy)
-           VALUES ($1,'service',0,'package',$2,$3,$4,$5,$6,$7,$8,$9,'contact_admin',$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
+             promotion_badge_text,promotion_theme_preset,promotion_effect_preset,show_sale_countdown,promotion_supporting_text,booking_flow_policy,
+             service_package_minimum_total_quantity)
+           VALUES ($1,'service',0,'package',$2,$3,$4,$5,$6,$7,$8,$9,'contact_admin',$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
            RETURNING *`,
           [value.item_name, value.variants[0].job_type, value.variants[0].ac_type, value.is_active, value.is_customer_visible,
             value.short_description, value.long_description, JSON.stringify(value.highlights), value.service_conditions,
             value.is_featured, value.is_autoplay_enabled, generatedKey("bundle"), value.sell_start_at, value.sell_end_at, value.redeem_until,
             value.promotion_badge_text, value.promotion_theme_preset, value.promotion_effect_preset, value.show_sale_countdown,
-            value.promotion_supporting_text, value.booking_flow_policy]
+            value.promotion_supporting_text, value.booking_flow_policy, value.minimum_total_quantity]
         );
         parent = inserted.rows[0];
       } else {
@@ -194,13 +223,14 @@ function createStoreServicePackageCatalogService({ pool, packageRepository = rep
              short_description=$7,long_description=$8,highlights=$9,service_conditions=$10,is_featured=$11,
              is_autoplay_enabled=$12,service_package_sell_start_at=$13,service_package_sell_end_at=$14,
              service_package_redeem_until=$15,promotion_badge_text=$16,promotion_theme_preset=$17,
-             promotion_effect_preset=$18,show_sale_countdown=$19,promotion_supporting_text=$20,booking_flow_policy=$21
+             promotion_effect_preset=$18,show_sale_countdown=$19,promotion_supporting_text=$20,booking_flow_policy=$21,
+             service_package_minimum_total_quantity=$22
              WHERE item_id=$1 RETURNING *`,
           [parent.item_id, value.item_name, value.variants[0].job_type, value.variants[0].ac_type, value.is_active,
             value.is_customer_visible, value.short_description, value.long_description, JSON.stringify(value.highlights),
             value.service_conditions, value.is_featured, value.is_autoplay_enabled, value.sell_start_at, value.sell_end_at, value.redeem_until,
             value.promotion_badge_text, value.promotion_theme_preset, value.promotion_effect_preset, value.show_sale_countdown,
-            value.promotion_supporting_text, value.booking_flow_policy]
+            value.promotion_supporting_text, value.booking_flow_policy, value.minimum_total_quantity]
         );
         parent = updated.rows[0];
       }

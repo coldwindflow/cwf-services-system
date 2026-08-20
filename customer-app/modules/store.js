@@ -131,14 +131,29 @@
     return best[requestedQuantity];
   }
 
+  // Optional parent-level minimum total quantity (Issue 310). Anything that is
+  // not a usable 2-99 integer is treated as "no minimum", so a malformed value
+  // can never invent a restriction the server would not enforce.
+  function bundleMinimumTotalQuantity(item) {
+    const raw = item == null ? null : item.minimum_total_quantity;
+    if (raw == null || raw === "") return null;
+    const value = Number(raw);
+    if (!Number.isSafeInteger(value) || value < 2 || value > 99) return null;
+    return value;
+  }
+
   function renderBundleConfigurator(item) {
     if (!isServicePackageBundle(item)) return "";
-    return `<section class="store-bundle-config" data-store-bundle-config><p class="muted">รวมแอร์หลายขนาดในงานเดียวได้ และเลือกมากกว่า 4 เครื่องได้</p>${item.service_package_variants.map((variant, index) => {
+    const minimum = bundleMinimumTotalQuantity(item);
+    const minimumNotice = minimum
+      ? `<p class="store-bundle-minimum" data-bundle-minimum-notice>โปรนี้จองขั้นต่ำ ${minimum} เครื่อง <small>นับรวมทุกขนาด BTU ในการจองเดียวกัน</small></p>`
+      : "";
+    return `<section class="store-bundle-config" data-store-bundle-config${minimum ? ` data-bundle-minimum="${minimum}"` : ""}><p class="muted">รวมแอร์หลายขนาดในงานเดียวได้ และเลือกมากกว่า 4 เครื่องได้</p>${minimumNotice}${item.service_package_variants.map((variant, index) => {
       const options = bundleBtuOptions(variant);
       const quantityId = `bundle-quantity-${index}`;
       const errorId = `bundle-quantity-error-${index}`;
       return `<div class="store-bundle-row" data-bundle-package="${root.utils.escapeHtml(variant.package_key)}"><div class="store-bundle-package"><strong>${root.utils.escapeHtml(variant.package_name)}</strong>${variant.description ? `<small>${root.utils.escapeHtml(variant.description)}</small>` : ""}</div><label class="store-bundle-btu">BTU<select class="select" data-bundle-btu>${options.map((option) => `<option value="${option.btu}">${root.utils.escapeHtml(option.label || `${option.btu} BTU`)}</option>`).join("")}</select></label><div class="store-bundle-quantity"><span>จำนวน</span><div class="store-bundle-stepper" role="group" aria-label="จำนวนเครื่องสำหรับ ${root.utils.escapeHtml(variant.package_name)}"><button class="qty-btn" type="button" data-bundle-dec aria-label="ลดจำนวน ${root.utils.escapeHtml(variant.package_name)}" aria-controls="${quantityId}">−</button><input class="input" id="${quantityId}" data-bundle-quantity type="number" min="0" max="99" step="1" inputmode="numeric" value="0" aria-describedby="${errorId}" aria-label="จำนวนเครื่องสำหรับ ${root.utils.escapeHtml(variant.package_name)}"><button class="qty-btn" type="button" data-bundle-inc aria-label="เพิ่มจำนวน ${root.utils.escapeHtml(variant.package_name)}" aria-controls="${quantityId}">+</button></div><small class="store-bundle-row-error" id="${errorId}" data-bundle-row-error aria-live="polite"></small></div></div>`;
-    }).join("")}<div class="store-bundle-live-summary" data-bundle-summary aria-live="polite"><div><span>จำนวนเครื่อง</span><strong data-bundle-count>0 เครื่อง</strong></div><div><span>ราคาที่ระบบยืนยัน</span><strong data-bundle-price>—</strong></div><div data-bundle-duration-row hidden><span>ระยะเวลาโดยประมาณ</span><strong data-bundle-duration></strong></div><p data-bundle-quote-status>เลือกอย่างน้อย 1 เครื่องเพื่อดูราคา</p></div><div class="inline-error store-bundle-error" data-bundle-error aria-live="polite"></div></section>`;
+    }).join("")}<div class="store-bundle-live-summary" data-bundle-summary aria-live="polite"><div><span>จำนวนเครื่อง</span><strong data-bundle-count>0 เครื่อง</strong></div>${minimum ? `<div data-bundle-minimum-row><span>ความคืบหน้าขั้นต่ำ</span><strong data-bundle-minimum-progress>เลือกแล้ว 0 จากขั้นต่ำ ${minimum} เครื่อง</strong></div>` : ""}<div><span>ราคาที่ระบบยืนยัน</span><strong data-bundle-price>—</strong></div><div data-bundle-duration-row hidden><span>ระยะเวลาโดยประมาณ</span><strong data-bundle-duration></strong></div><p data-bundle-quote-status>เลือกอย่างน้อย 1 เครื่องเพื่อดูราคา</p></div><div class="inline-error store-bundle-error" data-bundle-error aria-live="polite"></div></section>`;
   }
 
   function parseBundleQuantity(value) {
@@ -225,6 +240,8 @@
     const durationRow = mount.querySelector("[data-bundle-duration-row]");
     const status = mount.querySelector("[data-bundle-quote-status]");
     const errorBox = mount.querySelector("[data-bundle-error]");
+    const minimumTotalQuantity = bundleMinimumTotalQuantity(item);
+    const minimumProgress = mount.querySelector("[data-bundle-minimum-progress]");
     let quoteTimer = null;
     let verifiedQuote = null;
     let verifiedSignature = "";
@@ -232,6 +249,11 @@
 
     const setSummary = (machineCount, state, quote = null) => {
       if (count) count.textContent = `${machineCount} เครื่อง`;
+      if (minimumProgress && minimumTotalQuantity) {
+        minimumProgress.textContent = machineCount >= minimumTotalQuantity
+          ? `เลือกแล้ว ${machineCount} เครื่อง ครบขั้นต่ำ ${minimumTotalQuantity} เครื่องแล้ว`
+          : `เลือกแล้ว ${machineCount} จากขั้นต่ำ ${minimumTotalQuantity} เครื่อง`;
+      }
       if (price) price.textContent = state === "loading" ? "กำลังตรวจสอบ..." : (quote ? root.utils.formatBaht(quote.fixed_total_price) : "—");
       const minutes = Number(quote?.duration_minutes);
       if (durationRow) durationRow.hidden = !(Number.isFinite(minutes) && minutes > 0);
@@ -274,6 +296,15 @@
       } catch (cause) {
         if (errorBox) errorBox.textContent = cause.message;
         setSummary(machineCount, "empty");
+        return;
+      }
+      // Below the parent's minimum there is nothing to quote and nothing to
+      // confirm. The server enforces the same rule, so a client that skips this
+      // is still rejected — this only saves the customer a failed round trip.
+      if (minimumTotalQuantity && machineCount < minimumTotalQuantity) {
+        if (errorBox) errorBox.textContent = `โปรนี้จองขั้นต่ำ ${minimumTotalQuantity} เครื่อง • เลือกแล้ว ${machineCount} เครื่อง กรุณาเพิ่มจำนวนให้ครบขั้นต่ำ`;
+        setSummary(machineCount, "empty");
+        if (confirm) confirm.disabled = true;
         return;
       }
       const signature = bundleSelectionSignature(result.groups);
@@ -332,6 +363,8 @@
       if (confirm.disabled || !verifiedQuote) return;
       try {
         const result = collectBundleDraft(mount, item);
+        const confirmedTotal = result.groups.reduce((sum, group) => sum + Number(group.quantity || 0), 0);
+        if (minimumTotalQuantity && confirmedTotal < minimumTotalQuantity) { refreshQuote(); return; }
         if (bundleSelectionSignature(result.groups) !== verifiedSignature) { refreshQuote(); return; }
         confirm.disabled = true;
         close({ restoreFocus: false });
@@ -2524,6 +2557,7 @@
   store._test = { loadDetail, loadReviewsList, loadEligibility, detailItemId, renderDetailBody, renderReviewsSectionBody,
     composeBundleTiers, renderBundleConfigurator, parseBundleQuantity, clampBundleQuantity, collectBundleDraft,
     bundleSelectionSignature, beginOrdinaryBooking,
+    bundleMinimumTotalQuantity, openBundleConfigurator,
     bindCampaignCountdowns, clearCampaignCountdowns };
 
   root.store = store;

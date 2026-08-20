@@ -531,8 +531,18 @@ async function attachCatalogServicePackages(pool, rows, { customer = false } = {
   `);
   if (Number(ready.rows?.[0]?.cnt || 0) !== 5) return rows;
   const ids = rows.map((row) => row.item_id);
+  // Issue 310's minimum column ships in a later migration than the five columns
+  // gated above, so a Store that has the bundle schema but not this one must
+  // still serve bundles instead of erroring with 42703.
+  const minimumReady = await pool.query(`
+    SELECT COUNT(*)::int AS cnt FROM information_schema.columns
+     WHERE table_schema='public' AND table_name='catalog_items'
+       AND column_name='service_package_minimum_total_quantity'
+  `);
+  const minimumColumn = Number(minimumReady.rows?.[0]?.cnt || 0) === 1
+    ? ",service_package_minimum_total_quantity" : "";
   const parents = await pool.query(
-    `SELECT item_id,service_bundle_key,service_package_sell_start_at,service_package_sell_end_at,service_package_redeem_until
+    `SELECT item_id,service_bundle_key,service_package_sell_start_at,service_package_sell_end_at,service_package_redeem_until${minimumColumn}
        FROM public.catalog_items WHERE item_id=ANY($1::bigint[])`, [ids]
   );
   const parentById = new Map(parents.rows.map((row) => [String(row.item_id), row]));
@@ -926,6 +936,11 @@ function serializeCatalogRow(row) {
     service_package_sell_start_at: isServicePackageBundle ? (row.service_package_sell_start_at || null) : null,
     service_package_sell_end_at: isServicePackageBundle ? (row.service_package_sell_end_at || null) : null,
     service_package_redeem_until: isServicePackageBundle ? (row.service_package_redeem_until || null) : null,
+    // Optional parent-level minimum total quantity (Issue 310). Null both for
+    // non-bundles and for bundles with no configured minimum, so the storefront
+    // only ever shows a restriction that really exists.
+    minimum_total_quantity: isServicePackageBundle && row.service_package_minimum_total_quantity != null
+      ? Number(row.service_package_minimum_total_quantity) : null,
     service_package_variants: isServicePackageBundle && Array.isArray(row.service_package_variants)
       ? row.service_package_variants : [],
     // Needed on the list endpoint so the Store card's "book" button can build a
