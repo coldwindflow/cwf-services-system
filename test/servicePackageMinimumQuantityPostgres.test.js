@@ -8,6 +8,14 @@
 //
 //   CWF_ISSUE310_TEST_DATABASE_URL=postgres://user:pass@127.0.0.1:5432/cwf_test \
 //     node --test test/servicePackageMinimumQuantityPostgres.test.js
+//
+// Against a database that already carries the app schema, that is all you need.
+// Against a BARE throwaway database, add CWF_ISSUE310_TEST_BOOTSTRAP=1 and the
+// suite will provision the minimum schema this flow touches: a catalog_items
+// base holding exactly the columns storeServicePackageCatalogService writes,
+// then the repo's own 20260807, 20260809 and 20260820 migrations on top. The
+// bootstrap is opt-in and only creates what is missing, so pointing at an
+// already-provisioned database is unaffected.
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
@@ -20,10 +28,48 @@ const { resolveCompositeBooking } = require("../server/services/packages/composi
 
 const url = process.env.CWF_ISSUE310_TEST_DATABASE_URL || process.env.CWF_ISSUE267_TEST_DATABASE_URL;
 const integration = url ? test : test.skip;
+const BOOTSTRAP = process.env.CWF_ISSUE310_TEST_BOOTSTRAP === "1";
 
 const ROOT = path.join(__dirname, "..");
-const FORWARD = fs.readFileSync(path.join(ROOT, "migrations/20260820_service_package_minimum_total_quantity.sql"), "utf8");
-const ROLLBACK = fs.readFileSync(path.join(ROOT, "migrations/rollback/20260820_service_package_minimum_total_quantity.sql"), "utf8");
+const migration = (file) => fs.readFileSync(path.join(ROOT, "migrations", file), "utf8");
+const FORWARD = migration("20260820_service_package_minimum_total_quantity.sql");
+const ROLLBACK = migration("rollback/20260820_service_package_minimum_total_quantity.sql");
+
+// Only the catalog_items columns this booking flow reads or writes. Everything
+// else about the parent row is irrelevant here and is deliberately not faked.
+const CATALOG_ITEMS_BASE = `
+CREATE TABLE IF NOT EXISTS public.catalog_items (
+  item_id BIGSERIAL PRIMARY KEY,
+  item_name TEXT NOT NULL,
+  item_category TEXT NOT NULL DEFAULT 'service',
+  base_price NUMERIC(12,2) NOT NULL DEFAULT 0,
+  unit_label TEXT,
+  job_category TEXT,
+  ac_type TEXT,
+  is_active BOOLEAN NOT NULL DEFAULT FALSE,
+  is_customer_visible BOOLEAN NOT NULL DEFAULT FALSE,
+  short_description TEXT,
+  long_description TEXT,
+  highlights JSONB NOT NULL DEFAULT '[]'::jsonb,
+  service_conditions TEXT,
+  booking_mode TEXT NOT NULL DEFAULT 'contact_admin',
+  is_featured BOOLEAN NOT NULL DEFAULT FALSE,
+  is_autoplay_enabled BOOLEAN NOT NULL DEFAULT TRUE
+);
+-- 20260809 also adds idempotency columns to jobs; a bare key is enough here
+-- because this suite never books a job, it only exercises catalog + resolver.
+CREATE TABLE IF NOT EXISTS public.jobs (job_id BIGSERIAL PRIMARY KEY);`;
+
+async function ensureSchema(pool) {
+  if (!BOOTSTRAP) return;
+  await pool.query(CATALOG_ITEMS_BASE);
+  await pool.query(migration("20260807_service_packages.sql"));
+  // 20260809 uses bare ADD CONSTRAINT, so tolerate a second run on a warm database.
+  for (const statement of [migration("20260809_store_service_package_bundles.sql"), FORWARD]) {
+    try { await pool.query(statement); }
+    catch (error) { if (error.code !== "42710" && error.code !== "42P07") throw error; }
+  }
+}
 
 function variant(name, min, max, prices) {
   return {
@@ -53,6 +99,7 @@ function bundleInput(extra = {}) {
 integration("isolated PostgreSQL: the column is nullable for existing rows and CHECK-bounded to 2..99", async () => {
   const pool = new Pool({ connectionString: url, ssl: false });
   try {
+    await ensureSchema(pool);
     await pool.query("TRUNCATE service_package_tiers, service_packages, catalog_items RESTART IDENTITY CASCADE");
 
     // An ordinary catalog row created before this migration keeps NULL.
@@ -97,6 +144,7 @@ integration("isolated PostgreSQL: the column is nullable for existing rows and C
 integration("isolated PostgreSQL: the minimum round-trips through create, update and the booking resolver", async () => {
   const pool = new Pool({ connectionString: url, ssl: false });
   try {
+    await ensureSchema(pool);
     await pool.query("TRUNCATE service_package_tiers, service_packages, catalog_items RESTART IDENTITY CASCADE");
     const service = createStoreServicePackageCatalogService({ pool });
 
@@ -172,6 +220,7 @@ integration("isolated PostgreSQL: the minimum round-trips through create, update
 integration("isolated PostgreSQL: rollback removes the column and forward re-applies cleanly", async () => {
   const pool = new Pool({ connectionString: url, ssl: false });
   try {
+    await ensureSchema(pool);
     await pool.query("TRUNCATE service_package_tiers, service_packages, catalog_items RESTART IDENTITY CASCADE");
     const exists = async () => {
       const r = await pool.query(`

@@ -440,11 +440,57 @@ test("Issue 310: the public catalog DTO exposes the minimum only for bundles tha
   assert.equal(ordinary.minimum_total_quantity, null);
 });
 
-test("Issue 310: the bundle read path degrades safely before the migration is applied", () => {
+test("Issue 310: the public storefront read degrades safely before the migration is applied", () => {
   const source = read("server/routes/catalog/items.js");
   assert.match(source, /column_name='service_package_minimum_total_quantity'/);
   assert.match(source, /const minimumColumn = Number\(minimumReady\.rows\?\.\[0\]\?\.cnt \|\| 0\) === 1/);
   assert.match(source, /\$\{minimumColumn\}/);
+});
+
+test("Issue 310: the authoritative booking read fails closed, never silently unrestricted", async () => {
+  const repository = require("../server/services/packages/servicePackageRepository");
+
+  // happy path still selects the column and returns rows
+  const rows = await repository.findLinkedPackagesByKeys(
+    { query: async (sql) => ({ rows: [{ selectsMinimum: sql.includes("ci.service_package_minimum_total_quantity") }] }) },
+    ["k"]
+  );
+  assert.equal(rows[0].selectsMinimum, true);
+
+  // a missing column must NOT degrade to "no minimum" - it must fail closed with
+  // a code that names the migration to apply
+  const missing = Object.assign(new Error("column ci.service_package_minimum_total_quantity does not exist"), { code: "42703" });
+  await assert.rejects(
+    repository.findLinkedPackagesByKeys({ query: async () => { throw missing; } }, ["k"]),
+    (error) => error.code === "SERVICE_PACKAGE_SCHEMA_NOT_READY"
+      && error.statusCode === 503
+      && /20260820_service_package_minimum_total_quantity\.sql/.test(error.detail)
+      && error.cause === missing
+  );
+
+  // unrelated failures are rethrown untouched, so this guard cannot mask them
+  const otherColumn = Object.assign(new Error("column ci.some_other_column does not exist"), { code: "42703" });
+  await assert.rejects(repository.findLinkedPackagesByKeys({ query: async () => { throw otherColumn; } }, ["k"]), (e) => e === otherColumn);
+  const connection = Object.assign(new Error("connection reset"), { code: "ECONNRESET" });
+  await assert.rejects(repository.findLinkedPackagesByKeys({ query: async () => { throw connection; } }, ["k"]), (e) => e === connection);
+});
+
+test("Issue 310: a 503 schema failure stays generic to the customer while staying specific in logs", async () => {
+  // customerCatalogQuote maps any non-4xx to CATALOG_QUOTE_UNAVAILABLE, so the
+  // operator-facing code never reaches the storefront.
+  const source = read("server/services/booking/customerCatalogQuote.js");
+  assert.match(source, /const safeStatus = status >= 400 && status < 500 \? status : 503/);
+  assert.match(source, /safeStatus === 503 \? "CATALOG_QUOTE_UNAVAILABLE"/);
+});
+
+test("Issue 310: the new migration is registered for the deploy gate by exact SHA", () => {
+  const name = "20260820_service_package_minimum_total_quantity.sql";
+  const sha = crypto.createHash("sha256").update(fs.readFileSync(path.join(ROOT, `migrations/${name}`))).digest("hex");
+  const entries = read("migrations/.deploy-approved.tsv").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  assert.ok(entries.includes(`${sha}\t${name}\texpand`), "the forward migration must be approved in the expand lane by its exact content hash");
+  // approving it must not drop or alter the Issue 267 approval
+  assert.ok(entries.some((line) => line.endsWith("20260809_store_service_package_bundles.sql\texpand")));
+  assert.equal(entries.length, 2);
 });
 
 // ---------------------------------------------------------------------------
