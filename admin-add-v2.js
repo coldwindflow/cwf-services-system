@@ -1450,6 +1450,37 @@ function selectedBundleGroups() {
   try { return JSON.parse(bundleFingerprint()).groups; } catch (_) { return []; }
 }
 
+// Optional parent-level minimum total quantity for the selected Store bundle
+// (Issue 310). Anything that is not a usable 2-99 integer means "no minimum",
+// so the Admin UI never invents a restriction the server would not enforce.
+function selectedBundleMinimumTotalQuantity() {
+  const bundle = state.service_bundles.find((item) => item.service_bundle_key === String(el("store_service_bundle_key")?.value || ""));
+  const raw = bundle == null ? null : bundle.minimum_total_quantity;
+  if (raw == null || raw === "") return null;
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value) || value < 2 || value > 99) return null;
+  return value;
+}
+
+// Parent-level total across every BTU/package group of the selected bundle.
+function selectedBundleTotalQuantity() {
+  return selectedBundleGroups().reduce((sum, group) => sum + Number(group?.quantity || 0), 0);
+}
+
+// Live Thai progress line under the bundle groups. Renders nothing when the
+// promotion has no configured minimum.
+function renderServiceBundleMinimum() {
+  const box = el("store_service_bundle_minimum");
+  if (!box) return;
+  const minimum = selectedBundleMinimumTotalQuantity();
+  if (!minimum) { box.style.display = "none"; box.textContent = ""; return; }
+  const total = selectedBundleTotalQuantity();
+  box.style.display = "";
+  box.textContent = total >= minimum
+    ? `โปรนี้จองขั้นต่ำ ${minimum} เครื่อง • เลือกแล้ว ${total} เครื่อง ครบขั้นต่ำแล้ว`
+    : `โปรนี้จองขั้นต่ำ ${minimum} เครื่อง • เลือกแล้ว ${total} จากขั้นต่ำ ${minimum} เครื่อง (นับรวมทุกขนาด BTU ในการจองเดียวกัน)`;
+}
+
 function renderServiceBundleGroups() {
   const wrap = el("store_service_bundle_groups");
   const bundle = state.service_bundles.find((item) => item.service_bundle_key === String(el("store_service_bundle_key")?.value || ""));
@@ -1461,8 +1492,12 @@ function renderServiceBundleGroups() {
       <div><label>${escapeHtml(variant.display_name)}</label><div class="muted2 mini">BTU ${variant.btu_min ?? "ไม่จำกัด"}-${variant.btu_max ?? "ไม่จำกัด"}</div></div>
       <div><label>BTU จริง</label><input type="number" min="1" step="1" data-admin-bundle-btu value="${escapeHtml(variant.btu_min || variant.btu_max || "")}"></div>
       <div><label>จำนวนเครื่อง</label><input type="number" min="0" step="1" value="0" data-admin-bundle-quantity></div>
-    </div>`).join("") + '<div id="store_service_bundle_quote" class="muted2" style="margin-top:8px"></div>';
+    </div>`).join("")
+    + '<div id="store_service_bundle_minimum" class="muted2 mini" style="display:none;margin-top:8px;padding:8px 10px;border-radius:12px;background:#fffbeb;border:1px solid rgba(245,158,11,0.26);color:#92400e;font-weight:800"></div>'
+    + '<div id="store_service_bundle_quote" class="muted2" style="margin-top:8px"></div>';
+  wrap.querySelectorAll("input").forEach((input) => input.addEventListener("input", renderServiceBundleMinimum));
   wrap.querySelectorAll("input").forEach((input) => input.addEventListener("change", () => previewServiceBundle().catch((e) => showToast(e.message, "error"))));
+  renderServiceBundleMinimum();
 }
 
 async function previewServiceBundle() {
@@ -1476,7 +1511,17 @@ async function previewServiceBundle() {
   state.effective_block_min = 0;
   const groups = selectedBundleGroups();
   const panel = el("store_service_bundle_quote");
+  renderServiceBundleMinimum();
   if (!bundleSelected() || !groups.length) { if (panel) panel.textContent = "กรุณาระบุจำนวนเครื่องอย่างน้อย 1 รายการ"; return; }
+  // Issue 310: below the promotion's minimum there is nothing to quote. The
+  // server enforces the same rule, so this only saves a failed round trip and
+  // keeps the save button locked until the Admin reaches the minimum.
+  const minimumTotalQuantity = selectedBundleMinimumTotalQuantity();
+  if (minimumTotalQuantity && selectedBundleTotalQuantity() < minimumTotalQuantity) {
+    if (panel) panel.textContent = `ยังจองไม่ได้ • โปรนี้จองขั้นต่ำ ${minimumTotalQuantity} เครื่อง (นับรวมทุกขนาด BTU ในการจองเดียวกัน)`;
+    const blocked = el("btnSubmit"); if (blocked) blocked.disabled = true;
+    return;
+  }
   const fingerprint = bundleFingerprint();
   if (panel) panel.textContent = "กำลังโหลดราคาและเวลาของแพ็กเกจ...";
   const submit = el("btnSubmit"); if (submit) submit.disabled = true;
@@ -3237,6 +3282,13 @@ async function submitBooking() {
   if(services) payload.services = services;
   if (packageSelected()) {
     if (bundleSelected()) {
+      // Issue 310: last client-side gate before the payload is built. The
+      // authoritative check still runs on the server for stale/direct clients.
+      const minimumTotalQuantity = selectedBundleMinimumTotalQuantity();
+      if (minimumTotalQuantity && selectedBundleTotalQuantity() < minimumTotalQuantity) {
+        showToast(`โปรนี้จองขั้นต่ำ ${minimumTotalQuantity} เครื่อง กรุณาเพิ่มจำนวนเครื่องรวมทุกขนาด BTU ให้ครบก่อนบันทึกงาน`, "error");
+        el("btnSubmit").disabled = false; return;
+      }
       if (!packagePreviewIsFresh()) {
         showToast("กรุณาระบุจำนวนเครื่องของแพ็กเกจร้านค้า แล้วรอให้เซิร์ฟเวอร์คำนวณราคาก่อน", "error");
         el("btnSubmit").disabled = false; return;

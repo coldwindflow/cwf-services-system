@@ -201,6 +201,17 @@ function compositeBookingFromSnapshots({ body, snapshots }) {
   });
   if (storedGroups.size !== requestedGroups.size
       || [...storedGroups].some(([key, quantity]) => requestedGroups.get(key) !== quantity)) return null;
+  // Issue 310: a replay may only reproduce a booking that already satisfied the
+  // minimum it was booked under. Snapshots written before this field existed
+  // carry no minimum and stay replayable unchanged.
+  const snapshotMinimum = items
+    .map((item) => Number(item.snapshot?.minimum_total_quantity))
+    .filter((value) => Number.isSafeInteger(value) && value > 0)
+    .reduce((max, value) => (value > max ? value : max), 0);
+  if (snapshotMinimum > 0) {
+    const replayTotal = [...requestedGroups.values()].reduce((sum, quantity) => sum + quantity, 0);
+    if (replayTotal < snapshotMinimum) return null;
+  }
   if (body.catalog_item_id != null && String(body.catalog_item_id).trim() !== bundleId) return null;
   const first = items[0].snapshot;
   return {

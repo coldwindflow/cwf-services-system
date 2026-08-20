@@ -71,6 +71,7 @@ async function findLinkedPackagesByKeys(db, packageKeys) {
             ci.is_customer_visible AS catalog_is_customer_visible,
             ci.service_package_sell_start_at, ci.service_package_sell_end_at,
             ci.service_package_redeem_until, ci.booking_flow_policy,
+            ci.service_package_minimum_total_quantity,
             COALESCE(jsonb_agg(
               to_jsonb(t) || jsonb_build_object('fixed_total_price', t.fixed_total_price::text)
               ORDER BY t.sort_order, t.service_package_tier_id

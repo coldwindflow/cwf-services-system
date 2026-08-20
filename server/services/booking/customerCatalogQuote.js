@@ -10,6 +10,9 @@ function safeCompositeQuote(booking) {
     fixed_total_price: booking.fixedTotal,
     duration_minutes: booking.durationMin,
     machine_count: booking.payload.machine_count,
+    // Authoritative minimum this quote was accepted under (Issue 310); null when
+    // the Store parent has no additional minimum.
+    minimum_total_quantity: booking.minimumTotalQuantity ?? null,
     groups: booking.payload.service_package_groups,
     services: booking.payload.services || [],
     components: booking.items.map((item) => ({
