@@ -10,6 +10,7 @@ const adminIdempotency = require("./adminBookingIdempotency");
 const persistedBookingReplay = require("./persistedBookingReplay");
 const { validateAdminStorePromotionRequest } = require("./adminStorePromotionPolicy");
 const { resolveUrgentCompositePreflight } = require("./urgentCompositePreflight");
+const { validateCustomerLocationPin, persistableLocationPin } = require("./customerLocationPin");
 
 function safePackagePreview(selection) {
   const line = selection.service_lines[0];
@@ -1552,8 +1553,23 @@ function createBookingJobService(dependencies = {}) {
     if (clientApp === "customer_app_v2" && allowTimeProposal == null) {
       return res.status(400).json({ error: "กรุณาเลือกเงื่อนไขการเสนอเวลา" });
     }
-    const persistedGpsLatitude = bm === "urgent" && gps_latitude != null ? Number(gps_latitude) : null;
-    const persistedGpsLongitude = bm === "urgent" && gps_longitude != null ? Number(gps_longitude) : null;
+    // Issue 316: a location pin belongs to the booking, not to the booking mode.
+    // Scheduled bookings used to have their pin discarded here, so the technician
+    // reached the site with no coordinate. Customer-app requests are validated
+    // server-side first, so a stale or hand-crafted client cannot store a broken
+    // pair - the UI is never the only thing enforcing this.
+    if (clientApp === "customer_app_v2" && (coordFieldProvided(gps_latitude) || coordFieldProvided(gps_longitude))) {
+      const submittedPin = validateCustomerLocationPin(gps_latitude, gps_longitude);
+      if (!submittedPin.ok) {
+        return res.status(400).json({
+          error: "ข้อมูลตำแหน่งไม่ถูกต้อง กรุณาปักหมุดใหม่อีกครั้ง",
+          code: "INVALID_GPS",
+        });
+      }
+    }
+    const persistedPin = persistableLocationPin(bm, gps_latitude, gps_longitude);
+    const persistedGpsLatitude = persistedPin.latitude;
+    const persistedGpsLongitude = persistedPin.longitude;
 
     // New bookings persist a canonical request fingerprint. A replay can be
     // returned before resolving mutable package/catalog/promotion state.

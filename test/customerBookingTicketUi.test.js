@@ -303,7 +303,7 @@ test("ticket handoff keeps tracking/new-booking actions, 44px controls, mobile l
   assert.match(index, /modules\/bookingTicket\.js\?v=/);
   assert.match(sw, /modules\/bookingTicket\.js\?v=\$\{BUILD_ID\}/);
   for (const source of [index, sw, manifest, appEntry]) {
-    assert.match(source, /20260821_issue318_package_starting_price_v1/);
+    assert.match(source, /20260822_customer_pin_and_package_price_v1/);
     assert.doesNotMatch(source, /20260809_issue267_catalog_flow_v8/);
   }
 });

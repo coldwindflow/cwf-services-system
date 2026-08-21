@@ -5,7 +5,7 @@ const path = require("node:path");
 const vm = require("node:vm");
 
 const ROOT = path.resolve(__dirname, "..");
-const BUILD = "20260821_issue318_package_starting_price_v1";
+const BUILD = "20260822_customer_pin_and_package_price_v1";
 
 function read(relativePath) {
   return fs.readFileSync(path.join(ROOT, relativePath), "utf8");

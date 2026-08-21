@@ -2,7 +2,7 @@
   "name": "CWF Customer Service",
   "short_name": "CWF Service",
   "description": "แอปลูกค้า Coldwindflow สำหรับเลือกบริการ จองคิว และติดตามงาน",
-  "start_url": "/customer-app/index.html?v=20260821_issue318_package_starting_price_v1#home",
+  "start_url": "/customer-app/index.html?v=20260822_customer_pin_and_package_price_v1#home",
   "scope": "/customer-app/",
   "id": "/customer-app/",
   "display": "standalone",

@@ -158,7 +158,7 @@ test("Issue 318: the shared resolver is exported from utils", () => {
 });
 
 test("Issue 318: the customer runtime is cache-busted and admin ids stay put", () => {
-  const BUILD = "20260821_issue318_package_starting_price_v1";
+  const BUILD = "20260822_customer_pin_and_package_price_v1";
   assert.match(read("customer-app/sw.js"), new RegExp(`BUILD_ID = "${BUILD}"`));
   assert.match(read("customer-app/assets/customer-app.js"), new RegExp(`BUILD_ID = "${BUILD}"`));
   assert.match(read("customer-app/index.html"), new RegExp(`modules/utils\\.js\\?v=${BUILD}`));
