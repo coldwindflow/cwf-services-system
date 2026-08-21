@@ -5,6 +5,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
+const { catalogPriceHelpers } = require("./helpers/customerCatalogPrice");
 
 const ROOT = path.resolve(__dirname, "..");
 const UI_SOURCE = fs.readFileSync(path.join(ROOT, "customer-app/modules/ui.js"), "utf8");
@@ -165,6 +166,7 @@ function loadUi(items, { reducedMotion = false } = {}) {
     utils: {
       escapeHtml: (value) => String(value == null ? "" : value),
       formatBaht: (value) => `${value} บาท`,
+      ...catalogPriceHelpers(),
       icon: () => "<i></i>",
       stateBox: (_kind, message) => `<p>${message}</p>`,
     },
@@ -418,6 +420,6 @@ test("compact CSS and cache build remain consistent with six-card rotation", () 
   assert.match(css, /\.homepage-featured-page\s*\{[^}]*grid-area:\s*1\s*\/\s*1/s);
   assert.match(css, /transition:\s*opacity 350ms/);
   assert.match(css, /prefers-reduced-motion:\s*reduce/);
-  const build = "20260821_issue316_scheduled_location_pin_v1";
+  const build = "20260822_customer_pin_and_package_price_v1";
   for (const source of [html, sw, boot, manifest]) assert.match(source, new RegExp(build));
 });

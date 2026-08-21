@@ -3,7 +3,7 @@
 
   const App = window.CWFCustomerAppV2;
   const BOOT_TIMEOUT_MS = 3500;
-  const BUILD_ID = "20260821_issue316_scheduled_location_pin_v1";
+  const BUILD_ID = "20260822_customer_pin_and_package_price_v1";
 
   function withTimeout(promise, timeoutMs) {
     return Promise.race([

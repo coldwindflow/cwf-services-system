@@ -600,9 +600,9 @@ test("Issue 310: exactly the changed runtime assets get the new build id", () =>
 
   // The Customer App ships ONE shared build id across sw.js, index.html, the
   // bootstrap and the manifest. Pinning the literal here would go stale on the
-  // next customer release and leave this guard permanently red (exactly the
-  // failure mode Issue 314 had to repair), so assert the invariant instead:
-  // every customer asset reference moves together, and never lags Issue 310.
+  // next customer release and leave this guard permanently red (the exact
+  // failure mode Test 15 had), so assert the invariant instead: every customer
+  // asset moves together, and never lags Issue 310.
   const swBuild = /BUILD_ID = "([^"]+)"/.exec(read("customer-app/sw.js"))?.[1];
   assert.ok(swBuild, "customer-app/sw.js must declare a BUILD_ID");
   assert.equal(/BUILD_ID = "([^"]+)"/.exec(read("customer-app/assets/customer-app.js"))?.[1], swBuild);

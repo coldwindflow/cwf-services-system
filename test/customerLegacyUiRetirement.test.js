@@ -5,6 +5,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
+const { catalogPriceHelpers } = require("./helpers/customerCatalogPrice");
 
 const ROOT = path.resolve(__dirname, "..");
 const read = (file) => fs.readFileSync(path.join(ROOT, file), "utf8");
@@ -15,6 +16,7 @@ function loadHomepage(items) {
     utils: {
       escapeHtml: (value) => String(value == null ? "" : value),
       formatBaht: (value) => `${Number(value).toLocaleString("th-TH")} บาท`,
+      ...catalogPriceHelpers(),
       icon: () => "<i></i>",
       stateBox: (_kind, message) => `<p>${message}</p>`,
     },
