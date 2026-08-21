@@ -845,7 +845,7 @@ test("Customer History search and preview keep 360px and 390px width contracts",
 });
 
 test("Customer App cache version is bumped consistently", () => {
-  const expected = "20260820_issue310_package_minimum_quantity_v1";
+  const expected = "20260821_issue316_scheduled_location_pin_v1";
   for (const file of [
     "customer-app/index.html",
     "customer-app/sw.js",
