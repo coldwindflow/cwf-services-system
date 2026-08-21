@@ -593,13 +593,25 @@ test("Issue 310: manual Admin Add flows and the PR #308 technician picker are un
 
 test("Issue 310: exactly the changed runtime assets get the new build id", () => {
   const BUILD = "20260820_issue310_package_minimum_quantity_v1";
+  // Admin runtimes changed in Issue 310 and have not changed since, so their ids
+  // stay pinned to that exact release.
   assert.match(read("admin-add-v2.html"), new RegExp(`admin-add-v2\\.js\\?v=${BUILD}`));
   assert.match(read("admin-store-catalog.html"), new RegExp(`admin-store-catalog\\.js\\?v=${BUILD}`));
-  assert.match(read("customer-app/sw.js"), new RegExp(`BUILD_ID = "${BUILD}"`));
-  assert.match(read("customer-app/index.html"), new RegExp(`modules/store\\.js\\?v=${BUILD}`));
-  assert.match(read("customer-app/index.html"), new RegExp(`assets/customer-app\\.css\\?v=${BUILD}`));
-  assert.match(read("customer-app/assets/customer-app.js"), new RegExp(`BUILD_ID = "${BUILD}"`));
-  assert.match(read("customer-app/manifest.webmanifest"), new RegExp(BUILD));
+
+  // The Customer App ships ONE shared build id across sw.js, index.html, the
+  // bootstrap and the manifest. Pinning the literal here would go stale on the
+  // next customer release and leave this guard permanently red (exactly the
+  // failure mode Issue 314 had to repair), so assert the invariant instead:
+  // every customer asset reference moves together, and never lags Issue 310.
+  const swBuild = /BUILD_ID = "([^"]+)"/.exec(read("customer-app/sw.js"))?.[1];
+  assert.ok(swBuild, "customer-app/sw.js must declare a BUILD_ID");
+  assert.equal(/BUILD_ID = "([^"]+)"/.exec(read("customer-app/assets/customer-app.js"))?.[1], swBuild);
+  assert.match(read("customer-app/index.html"), new RegExp(`modules/store\\.js\\?v=${swBuild}`));
+  assert.match(read("customer-app/index.html"), new RegExp(`assets/customer-app\\.css\\?v=${swBuild}`));
+  assert.match(read("customer-app/manifest.webmanifest"), new RegExp(swBuild));
+  const stale = [...read("customer-app/index.html").matchAll(/\?v=([^"']+)/g)].map((m) => m[1]).filter((id) => id !== swBuild);
+  assert.deepEqual(stale, [], `every customer asset must carry the same build id, found stragglers: ${stale.join(", ")}`);
+  assert.ok(swBuild >= BUILD, `the customer build must not regress behind Issue 310: ${swBuild}`);
   // admin-store-catalog.css did not change in this issue, so its id must not move
   assert.match(read("admin-store-catalog.html"), /admin-store-catalog\.css\?v=20260809_issue267_merchandising_v3/);
   // no debug markers were shipped with the bump
