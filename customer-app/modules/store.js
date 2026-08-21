@@ -45,27 +45,20 @@
     return Array.from(set).sort((a, b) => a.localeCompare(b, "th"));
   }
 
+  // Issue 318: this page already resolved package prices correctly while the
+  // homepage and the Smart Advisor did not. All three now share one resolver in
+  // utils so they cannot drift apart again; behaviour here is unchanged.
   function effectiveSalePrice(item) {
-    if (item?.booking_mode === "service_package") {
-      const prices = (item.service_package_variants || []).flatMap((variant) => (variant.tiers || []))
-        .filter((tier) => tier.is_active !== false).map((tier) => Number(tier.fixed_total_price)).filter((price) => Number.isFinite(price) && price > 0);
-      if (prices.length) return Math.min(...prices);
-    }
-    const display = Number(item.display_price);
-    if (Number.isFinite(display) && display > 0) return display;
-    const base = Number(item.base_price);
-    if (Number.isFinite(base) && base > 0) return base;
-    return null;
+    const price = root.utils.catalogStartingPrice(item);
+    return price ? price.amount : null;
   }
 
   function priceIsAsk(item) {
-    return effectiveSalePrice(item) === null;
+    return root.utils.catalogPriceIsAsk(item);
   }
 
   function priceLabel(item) {
-    const sale = effectiveSalePrice(item);
-    if (sale === null) return "สอบถามราคา";
-    return `${item?.booking_mode === "service_package" ? "เริ่ม " : ""}${root.utils.formatBaht(sale)}`;
+    return root.utils.catalogPriceLabel(item);
   }
 
   function hasPromo(item) {
@@ -929,7 +922,7 @@
         <div class="store-card-price">
           <span class="price-text${priceIsAsk(item) ? " is-estimate" : ""}">${root.utils.escapeHtml(priceLabel(item))}</span>
           ${promo ? `<span class="price-strike">${root.utils.escapeHtml(root.utils.formatBaht(item.normal_price))}</span>` : ""}
-          ${unit && !priceIsAsk(item) ? `<span class="muted price-unit">/ ${root.utils.escapeHtml(unit)}</span>` : ""}
+          ${root.utils.catalogPriceUnitLabel(item) ? `<span class="muted price-unit">/ ${root.utils.escapeHtml(root.utils.catalogPriceUnitLabel(item))}</span>` : ""}
         </div>
         ${renderPromoInfo(item)}
         <div class="store-card-actions">
@@ -1907,7 +1900,7 @@
       <div class="store-detail-price" data-store-detail-price>
         <span class="price-text${priceIsAsk(item) ? " is-estimate" : ""}">${root.utils.escapeHtml(priceLabel(item))}</span>
         ${promo ? `<span class="price-strike">${root.utils.escapeHtml(root.utils.formatBaht(item.normal_price))}</span>` : ""}
-        ${unit && !priceIsAsk(item) ? `<span class="muted">/ ${root.utils.escapeHtml(unit)}</span>` : ""}
+        ${root.utils.catalogPriceUnitLabel(item) ? `<span class="muted">/ ${root.utils.escapeHtml(root.utils.catalogPriceUnitLabel(item))}</span>` : ""}
       </div>
       ${renderPromoInfo(item)}
       ${renderVariantSelector(item, siblings)}

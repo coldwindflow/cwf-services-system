@@ -41,6 +41,63 @@
     return `${n.toLocaleString("th-TH", { maximumFractionDigits: 0 })} บาท`;
   }
 
+  // --- Catalog price (Issue 318) ------------------------------------------
+  // A Store service-package bundle is stored with base_price = 0 and carries its
+  // real prices on its tiers, so any helper that only reads
+  // display_price/active_price/base_price renders "สอบถามราคา" for a package that
+  // very much has a price. The homepage cards and the Smart Advisor each had
+  // their own copy of that helper and both showed the wrong thing, while the
+  // Store page had a third copy that got it right.
+  //
+  // This is the one resolver every customer surface uses, so they cannot drift
+  // apart again.
+
+  /**
+   * Lowest price a customer can actually pay for this item, or null when there
+   * genuinely is no published price.
+   * @returns {{amount: number, isFrom: boolean}|null} isFrom marks a package,
+   * where the amount is a starting price rather than the only price.
+   */
+  function catalogStartingPrice(item) {
+    if (item && item.booking_mode === "service_package") {
+      const prices = (Array.isArray(item.service_package_variants) ? item.service_package_variants : [])
+        .flatMap((variant) => (variant && Array.isArray(variant.tiers) ? variant.tiers : []))
+        .filter((tier) => tier && tier.is_active !== false)
+        .map((tier) => Number(tier.fixed_total_price))
+        .filter((price) => Number.isFinite(price) && price > 0);
+      if (prices.length) return { amount: Math.min(...prices), isFrom: true };
+    }
+    for (const value of [item?.display_price, item?.active_price, item?.base_price]) {
+      const amount = Number(value);
+      if (Number.isFinite(amount) && amount > 0) return { amount, isFrom: false };
+    }
+    return null;
+  }
+
+  /** True when there is no published price and the customer must ask. */
+  function catalogPriceIsAsk(item) {
+    return catalogStartingPrice(item) === null;
+  }
+
+  /** Customer-facing price text, e.g. "เริ่ม 699 บาท" / "699 บาท" / "สอบถามราคา". */
+  function catalogPriceLabel(item) {
+    const price = catalogStartingPrice(item);
+    if (!price) return "สอบถามราคา";
+    return `${price.isFrom ? "เริ่ม " : ""}${formatBaht(price.amount)}`;
+  }
+
+  /**
+   * Unit suffix to show after the price, or "" when none applies.
+   * A package is deliberately unit-less: its stored unit_label is the internal
+   * token "package", and a tier can cover several machines, so "/ เครื่อง" would
+   * be wrong and "/ package" would leak English into a Thai screen.
+   */
+  function catalogPriceUnitLabel(item) {
+    if (!item || item.booking_mode === "service_package") return "";
+    if (catalogPriceIsAsk(item)) return "";
+    return String(item.unit_label || "").trim();
+  }
+
   function formatDateTime(value) {
     if (!value) return "-";
     const dt = new Date(value);
@@ -214,6 +271,10 @@
     routeTo,
     randomKey,
     formatBaht,
+    catalogStartingPrice,
+    catalogPriceIsAsk,
+    catalogPriceLabel,
+    catalogPriceUnitLabel,
     formatDateTime,
     stepCards,
     timeline,

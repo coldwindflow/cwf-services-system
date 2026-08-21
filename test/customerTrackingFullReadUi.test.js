@@ -5,6 +5,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
+const { catalogPriceHelpers } = require("./helpers/customerCatalogPrice");
 
 const ROOT = path.resolve(__dirname, "..");
 const CUSTOMER_COPY_SOURCE = fs.readFileSync(path.join(ROOT, "customer-app/modules/customerCopy.js"), "utf8");
@@ -32,6 +33,7 @@ function loadTrackingRuntime(options = {}) {
       escapeHtml,
       formatDateTime: (value) => value ? `DATE:${value}` : "-",
       formatBaht: (value) => `${Number(value) || 0} บาท`,
+      ...catalogPriceHelpers(),
       stateBox: (status, message) => `<div class="${escapeHtml(status)}">${escapeHtml(message)}</div>`,
       timeline: (items) => items.map((item) => `<div>${escapeHtml(item.title)}:${escapeHtml(item.copy)}</div>`).join(""),
     },
@@ -1191,7 +1193,7 @@ test("tracking UI exposes loading, not-found, rate-limit and offline states", ()
 });
 
 test("tracking assets share the full-read cache build id", () => {
-  const build = "20260820_issue310_package_minimum_quantity_v1";
+  const build = "20260821_issue318_package_starting_price_v1";
   for (const file of [
     "customer-app/index.html",
     "customer-app/sw.js",

@@ -5,6 +5,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
+const { catalogPriceHelpers } = require("./helpers/customerCatalogPrice");
 
 const ROOT = path.resolve(__dirname, "..");
 const SOURCE = fs.readFileSync(path.join(ROOT, "customer-app/modules/advisor.js"), "utf8");
@@ -243,6 +244,7 @@ function loadAdvisor(options = {}) {
     utils: {
       escapeHtml,
       formatBaht: (value) => `${value} บาท`,
+      ...catalogPriceHelpers(),
       icon: (name) => `<i data-icon="${name}"></i>`,
       routeTo: (route) => routes.push(route),
     },
@@ -1157,7 +1159,7 @@ test("Home places built-in advisor after Quick Actions and before Featured Servi
       catalog: { status: "success", items: [] },
     },
     advisor: { renderSection: () => `<section data-smart-advisor>Advisor</section>` },
-    utils: { escapeHtml, icon: () => "", formatBaht: () => "-", stateBox: () => "" },
+    utils: { escapeHtml, icon: () => "", formatBaht: () => "-", stateBox: () => "", ...catalogPriceHelpers() },
     services: { quickServices: [], WALL_AC: "ผนัง" },
   };
   vm.runInNewContext(UI_SOURCE, {
@@ -1174,7 +1176,7 @@ test("Home places built-in advisor after Quick Actions and before Featured Servi
 });
 
 test("advisor module is loaded before ui.js and precached under the shared build id", () => {
-  const build = "20260820_issue310_package_minimum_quantity_v1";
+  const build = "20260821_issue318_package_starting_price_v1";
   assert.ok(INDEX_SOURCE.indexOf(`modules/advisor.js?v=${build}`) < INDEX_SOURCE.indexOf(`modules/ui.js?v=${build}`));
   assert.match(SW_SOURCE, new RegExp(`BUILD_ID = "${build}"`));
   assert.match(SW_SOURCE, /modules\/advisor\.js\?v=\$\{BUILD_ID\}/);
