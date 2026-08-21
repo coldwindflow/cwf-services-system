@@ -24,6 +24,7 @@ const cors = require("cors");
 const path = require("path");
 const crypto = require("crypto");
 const fs = require("fs");
+const { createCompressionMiddleware, staticOptions } = require("./server/middleware/staticAssetDelivery");
 const normalizerHelpers = require("./server/normalizers");
 const pricingHelpers = require("./server/pricing");
 const jobTiming = require("./server/services/jobTiming");
@@ -577,6 +578,9 @@ const technicianDeductionPayoutApply = createTechnicianDeductionPayoutApplyServi
 const app = express();
 // Render/Reverse-proxy: allow req.protocol to reflect X-Forwarded-Proto
 app.set('trust proxy', 1);
+// Issue 314: compress text responses before anything else can send one, so API
+// JSON and the Customer App shell both benefit. See server/middleware/staticAssetDelivery.js.
+app.use(createCompressionMiddleware());
 app.use(cors());
 app.use(createLineWebhookRoutes({ pool }));
 app.use(express.json({
@@ -1120,7 +1124,7 @@ const upload = multer({
   limits: { fileSize: 12 * 1024 * 1024 }, // 12MB
 });
 
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+app.use("/uploads", express.static(path.join(__dirname, "uploads"), staticOptions()));
 
 const PARTNER_APPLICATION_UPLOAD_DIR = path.join(UPLOAD_DIR, "partner_applications");
 if (!fs.existsSync(PARTNER_APPLICATION_UPLOAD_DIR)) fs.mkdirSync(PARTNER_APPLICATION_UPLOAD_DIR, { recursive: true });
@@ -24990,8 +24994,10 @@ app.get(["/customer", "/customer.html"], (_req, res) => redirectLegacyCustomerPa
 app.get(["/register", "/register.html"], (_req, res) => redirectLegacyCustomerPage(res, CUSTOMER_APP_PROFILE_URL));
 app.get(["/track", "/track.html"], (req, res) => redirectLegacyCustomerPage(res, legacyTrackingRedirectTarget(req)));
 
-if (fs.existsSync(FRONTEND_DIR)) app.use(express.static(FRONTEND_DIR));
-app.use(express.static(ROOT_DIR));
+// Issue 314: versioned assets (?v=BUILD_ID) may be cached immutably; HTML,
+// service workers and unversioned files must keep revalidating.
+if (fs.existsSync(FRONTEND_DIR)) app.use(express.static(FRONTEND_DIR, staticOptions()));
+app.use(express.static(ROOT_DIR, staticOptions()));
 
 // ✅ รองรับ Refresh/Deep-link แบบ "ไม่ต้องมี .html" (กันรีเฟรชเด้งไปหน้าแรก)
 // - ตัวอย่าง: /tech, /admin, /track, /customer
