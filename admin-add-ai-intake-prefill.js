@@ -7,7 +7,7 @@
   function clean(v){ return String(v == null ? "" : v).replace(/\s+/g, " ").trim(); }
   function byId(id){ return document.getElementById(id); }
   function toast(msg, type){ try { if (typeof showToast === "function") showToast(msg, type || "info"); } catch(_){} }
-  function clearPendingIntakeStorage(){ try { localStorage.removeItem("cwf_line_ai_intake_pending_id"); localStorage.removeItem("cwf_line_ai_intake_pending_payload"); } catch(_){} }
+  function clearPendingIntakeStorage(){ try { localStorage.removeItem("cwf_line_ai_intake_pending_id"); localStorage.removeItem("cwf_line_ai_intake_pending_payload"); localStorage.removeItem("cwf_accounting_quote_prefill"); } catch(_){} }
   function isIntentionalLineAiFlow(p){ return p && p.get("source") === "line_ai"; }
   function api(url, options){
     if (typeof apiFetch === "function") return apiFetch(url, options || {});
