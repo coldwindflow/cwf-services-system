@@ -217,7 +217,11 @@ test("Test 14: check-in 500 m + accuracy policy is unchanged", () => {
 test("Test 15: PWA + admin cache build IDs are bumped consistently", () => {
   const BUILD = "20260712_job_location_roundtrip_v1";
   const ADMIN_ADD_BUILD = "20260820_issue310_package_minimum_quantity_v1";
-  const URGENT_REVIEW_BUILD = "20260726_urgent_preferred_time_gps_v1";
+  // Issue 314: this constant went stale when PR #304 bumped admin-review-v2 to
+  // the structured-services build, which left this guard permanently red - and a
+  // permanently red guard cannot catch the NEXT missed cache bust. Realigned to
+  // what admin-review-v2.html actually ships; the guard itself is unchanged.
+  const URGENT_REVIEW_BUILD = "20260819_admin_structured_services_v1";
   assert.match(read("app.js"), new RegExp(`__CWF_TECH_APP_VERSION__ = "${BUILD}"`));
   assert.match(read("sw.js"), new RegExp(`CWF_TECH_BUILD_ID = "${BUILD}"`));
   assert.match(read("cwf-pwa.js"), new RegExp(`VERSION = '${BUILD}'`));
@@ -225,6 +229,25 @@ test("Test 15: PWA + admin cache build IDs are bumped consistently", () => {
   assert.match(read("admin-add-v2.html"), new RegExp(`admin-add-v2\\.js\\?v=${ADMIN_ADD_BUILD}`));
   assert.match(read("admin-job-view-v2.html"), new RegExp(`admin-job-view-v2\\.js\\?v=${BUILD}`));
   assert.match(read("admin-review-v2.html"), new RegExp(`admin-review-v2\\.js\\?v=${URGENT_REVIEW_BUILD}`));
+  // The paired editor script ships in the same release and must move together,
+  // otherwise a client can run a new page against a cached old editor.
+  assert.match(read("admin-review-v2.html"), new RegExp(`admin-review-service-editor\\.js\\?v=${URGENT_REVIEW_BUILD}`));
+});
+
+// Issue 314: the guard above only works while it is green. Prove it still fails
+// on a mismatch, so a stale constant can never quietly disable it again.
+test("Test 15b: the cache build-id guard actually fails when an id drifts", () => {
+  const html = read("admin-review-v2.html");
+  assert.doesNotMatch(html, /admin-review-v2\.js\?v=20260726_urgent_preferred_time_gps_v1/,
+    "the previously pinned id is gone from the page - the guard was asserting a build that no longer ships");
+  for (const file of ["admin-add-v2.html", "admin-job-view-v2.html", "admin-review-v2.html", "tech.html"]) {
+    const source = read(file);
+    const versioned = [...source.matchAll(/src="\/?([a-z0-9-]+\.js)\?v=([^"]+)"/g)];
+    assert.ok(versioned.length > 0, `${file} must cache-bust its scripts`);
+    for (const [, script, id] of versioned) {
+      assert.ok(String(id).trim().length >= 2, `${file} -> ${script} has an empty cache-busting id`);
+    }
+  }
 });
 
 // ---------------------------------------------------------------------------

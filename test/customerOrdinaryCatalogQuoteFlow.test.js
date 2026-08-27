@@ -7,6 +7,7 @@ const vm = require("node:vm");
 
 const servicesSource = fs.readFileSync("customer-app/modules/services.js", "utf8");
 const storeSource = fs.readFileSync("customer-app/modules/store.js", "utf8");
+const { catalogPriceHelpers } = require("./helpers/customerCatalogPrice");
 
 function item(id) {
   return {
@@ -56,6 +57,7 @@ function harness(quoteCatalogBooking) {
       formatBaht(value) { return String(value); },
       escapeHtml(value) { return String(value); },
       icon() { return ""; },
+      ...catalogPriceHelpers(),
     },
   };
   const window = { CWFCustomerAppV2: root, scrollY: 0, pageYOffset: 0 };

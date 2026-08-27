@@ -371,10 +371,10 @@
     `).join("")}</div>`;
   }
 
+  // Issue 318: shared resolver, so a recommended Store service-package bundle
+  // shows its starting price instead of "สอบถามราคา".
   function priceText(item) {
-    const value = item.display_price ?? item.active_price ?? item.base_price;
-    const numeric = Number(value);
-    return Number.isFinite(numeric) && numeric > 0 ? root.utils.formatBaht(numeric) : "สอบถามราคา";
+    return root.utils.catalogPriceLabel(item);
   }
 
   function firstImage(item) {

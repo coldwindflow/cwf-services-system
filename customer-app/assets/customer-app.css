@@ -528,6 +528,37 @@ p { margin: 0; }
 .secondary-btn:active:not([disabled]) { transform: scale(0.98); background: var(--soft-blue-2); }
 .secondary-btn[disabled] { color: var(--muted-2); background: #f1f5fa; border-color: var(--line); cursor: not-allowed; }
 
+/* Location pin (Issue 316) — shared by the scheduled and urgent booking flows. */
+.booking-pin-hint { margin: 0 0 8px; font-size: 12.5px; line-height: 1.5; }
+.booking-pin-saved {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg-2);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+}
+.booking-pin-saved span { min-width: 0; overflow-wrap: anywhere; }
+.link-btn {
+  flex: none;
+  min-height: 44px;
+  padding: 0 6px;
+  border: 0;
+  background: none;
+  color: var(--blue);
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.link-btn:active { opacity: 0.7; }
+
 .action-btn { width: 100%; }
 
 .disabled-btn {

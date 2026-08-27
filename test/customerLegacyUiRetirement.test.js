@@ -5,6 +5,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
+const { catalogPriceHelpers } = require("./helpers/customerCatalogPrice");
 
 const ROOT = path.resolve(__dirname, "..");
 const read = (file) => fs.readFileSync(path.join(ROOT, file), "utf8");
@@ -15,6 +16,7 @@ function loadHomepage(items) {
     utils: {
       escapeHtml: (value) => String(value == null ? "" : value),
       formatBaht: (value) => `${Number(value).toLocaleString("th-TH")} บาท`,
+      ...catalogPriceHelpers(),
       icon: () => "<i></i>",
       stateBox: (_kind, message) => `<p>${message}</p>`,
     },
@@ -165,7 +167,11 @@ test("legacy tracking stub maps only audited q/token credentials into the fragme
 test("server legacy redirects are registered before static serving and keep credentials out of destination query", () => {
   const source = read("index.js");
   const routeIndex = source.indexOf('app.get(["/customer", "/customer.html"]');
-  const staticIndex = source.indexOf("app.use(express.static(ROOT_DIR))");
+  // Locate the root static mount by shape, not by an exact call string: Issue 314
+  // added delivery options to it, and this guard is about ORDERING, not arguments.
+  const staticMatch = /app\.use\(express\.static\(ROOT_DIR[\s\S]{0,80}?\)\);/.exec(source);
+  assert.ok(staticMatch, "root express.static(ROOT_DIR) mount not found");
+  const staticIndex = staticMatch.index;
   assert.ok(routeIndex > 0 && routeIndex < staticIndex);
   assert.match(source, /app\.get\(\["\/register", "\/register\.html"\]/);
   assert.match(source, /app\.get\(\["\/track", "\/track\.html"\]/);

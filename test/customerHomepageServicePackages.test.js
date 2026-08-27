@@ -5,6 +5,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
+const { catalogPriceHelpers } = require("./helpers/customerCatalogPrice");
 
 const ROOT = path.resolve(__dirname, "..");
 const read = (name) => fs.readFileSync(path.join(ROOT, name), "utf8");
@@ -26,6 +27,7 @@ function loadUi() {
       escapeHtml: (value) => String(value == null ? "" : value),
       routeTo: (route) => routed.push(route),
       formatBaht: String,
+      ...catalogPriceHelpers(),
       icon: () => "",
       iconSlot: () => "",
       stateBox: () => "",

@@ -215,10 +215,11 @@
     return primary?.image_url || item?.image_url || "";
   }
 
+  // Issue 318: use the shared resolver so a Store service-package bundle shows
+  // its real starting price here instead of "สอบถามราคา". A bundle is stored
+  // with base_price = 0, so the old display/active/base lookup always missed it.
   function catalogDisplayPrice(item) {
-    const value = item?.display_price ?? item?.active_price ?? item?.base_price;
-    const n = Number(value);
-    return Number.isFinite(n) && n > 0 ? root.utils.formatBaht(n) : "สอบถามราคา";
+    return root.utils.catalogPriceLabel(item);
   }
 
   function strictCatalogCommerceDraft(item) {
@@ -308,6 +309,7 @@
     const bookable = item.booking_mode === "bookable" || item.booking_mode === "service_package";
     const campaign = featuredCampaignPresentation(item);
     const price = catalogDisplayPrice(item);
+    const priceUnit = root.utils.catalogPriceUnitLabel(item);
     const tabIndex = interactive ? "" : ` tabindex="-1"`;
     return `
       <article class="homepage-service-card campaign-theme-${campaign.theme} campaign-effect-${campaign.effect}">
@@ -321,7 +323,7 @@
           ${campaign.html}
           <div class="homepage-card-body">
             <strong>${root.utils.escapeHtml(item.item_name || "-")}</strong>
-            ${showPrice ? `<span>${root.utils.escapeHtml(price)}${item.unit_label && price !== "สอบถามราคา" ? ` / ${root.utils.escapeHtml(item.unit_label)}` : ""}</span>` : ""}
+            ${showPrice ? `<span>${root.utils.escapeHtml(price)}${priceUnit ? ` / ${root.utils.escapeHtml(priceUnit)}` : ""}</span>` : ""}
           </div>
         </button>
         <button type="button" class="${bookable ? "primary-btn" : "secondary-btn"} homepage-service-action" data-home-featured-action="${id}"${tabIndex}>
