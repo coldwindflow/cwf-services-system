@@ -77,6 +77,82 @@
     return Math.max(1, Math.min(STEP_MAX, Number(root.state.scheduledWizard?.step || 1)));
   }
 
+  // --- Location pin (Issue 316) -------------------------------------------
+  // Same rules the server enforces for every customer booking: both values or
+  // neither, finite, in range, and never (0,0). The UI is a convenience; the
+  // server rejects a broken pair regardless of what the client sends.
+  function normalizePin(source) {
+    const rawLatitude = source?.gps_latitude;
+    const rawLongitude = source?.gps_longitude;
+    const latProvided = rawLatitude !== undefined && rawLatitude !== null && String(rawLatitude).trim() !== "";
+    const lngProvided = rawLongitude !== undefined && rawLongitude !== null && String(rawLongitude).trim() !== "";
+    if (!latProvided || !lngProvided) return null;
+    const latitude = Number(rawLatitude);
+    const longitude = Number(rawLongitude);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+    if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) return null;
+    if (latitude === 0 && longitude === 0) return null;
+    return { latitude, longitude };
+  }
+
+  function hasLocationPin(source) {
+    return normalizePin(source) !== null;
+  }
+
+  function formatPin(source) {
+    const pin = normalizePin(source);
+    if (!pin) return "";
+    return `${pin.latitude.toFixed(5)}, ${pin.longitude.toFixed(5)}`;
+  }
+
+  function clearLocationPin() {
+    root.state.updateDraft("scheduled", { gps_latitude: null, gps_longitude: null });
+    root.state.setScheduledWizard({ locationStatus: "idle", locationMessage: "ลบหมุดแล้ว ช่างจะใช้ที่อยู่และลิงก์แผนที่แทน" });
+  }
+
+  function requestCurrentLocation() {
+    if (!navigator.geolocation || typeof navigator.geolocation.getCurrentPosition !== "function") {
+      root.state.setScheduledWizard({
+        locationStatus: "error",
+        locationMessage: "เบราว์เซอร์นี้ไม่รองรับการอ่านตำแหน่ง กรุณาวางลิงก์ Google Maps เอง",
+      });
+      return Promise.resolve(false);
+    }
+    root.state.setScheduledWizard({ locationStatus: "loading", locationMessage: "กำลังอ่านตำแหน่งปัจจุบัน..." });
+    return new Promise((resolve) => {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const pin = normalizePin({
+            gps_latitude: position?.coords?.latitude,
+            gps_longitude: position?.coords?.longitude,
+          });
+          if (!pin) {
+            root.state.setScheduledWizard({ locationStatus: "error", locationMessage: "อ่านตำแหน่งไม่สำเร็จ กรุณาลองอีกครั้ง" });
+            resolve(false);
+            return;
+          }
+          root.state.updateDraft("scheduled", {
+            gps_latitude: pin.latitude,
+            gps_longitude: pin.longitude,
+            maps_url: `https://www.google.com/maps?q=${pin.latitude},${pin.longitude}`,
+          });
+          root.state.setScheduledWizard({ locationStatus: "success", locationMessage: "ปักหมุดตำแหน่งสำเร็จ ช่างจะนำทางมาที่จุดนี้" });
+          resolve(true);
+        },
+        (error) => {
+          const message = Number(error?.code) === 1
+            ? "คุณปฏิเสธสิทธิ์ตำแหน่ง กรุณาอนุญาตสิทธิ์หรือวางลิงก์ Google Maps เอง"
+            : Number(error?.code) === 3
+              ? "อ่านตำแหน่งหมดเวลา กรุณาลองอีกครั้ง"
+              : "อ่านตำแหน่งไม่สำเร็จ กรุณาลองอีกครั้ง";
+          root.state.setScheduledWizard({ locationStatus: "error", locationMessage: message });
+          resolve(false);
+        },
+        { enableHighAccuracy: false, timeout: 10000, maximumAge: 0 }
+      );
+    });
+  }
+
   function finalPrice() {
     if (hasPackageSelection()) return packagePreview()?.fixed_total_price ?? null;
     const data = root.state.scheduledPreview.pricing.data;
@@ -250,6 +326,7 @@
   function renderStepContactLocation() {
     const d = draft();
     const saved = root.state.savedAddress();
+    const wizard = root.state.scheduledWizard || {};
     return `
       <section class="card booking-wizard-card" data-booking-step="2">
         <div class="section-head">
@@ -271,8 +348,20 @@
             <textarea id="scheduled-address" class="textarea" rows="4" data-scheduled-field="address_text" placeholder="บ้าน/คอนโด อาคาร ชั้น ห้อง ซอย ถนน และจุดนัดพบ">${root.utils.escapeHtml(d.address_text || "")}</textarea>
           </div>
           <div class="field field-wide">
-            <label for="scheduled-map">ลิงก์ Google Maps</label>
+            <label for="scheduled-map">ปักหมุดตำแหน่งบ้าน</label>
+            <p class="muted booking-pin-hint">ปักหมุดให้ช่างหาบ้านเจอแม่นยำ โดยเฉพาะซอยลึก หมู่บ้าน หรือคอนโด • หรือจะวางลิงก์ Google Maps เองก็ได้</p>
             <input id="scheduled-map" class="input" type="url" inputmode="url" value="${root.utils.escapeHtml(d.maps_url || "")}" data-scheduled-field="maps_url" placeholder="https://maps.app.goo.gl/...">
+            <button class="secondary-btn" type="button" data-scheduled-action="use-location" ${wizard.locationStatus === "loading" ? "disabled" : ""}>
+              ${wizard.locationStatus === "loading" ? "กำลังอ่านตำแหน่ง..." : (hasLocationPin(d) ? "ปักหมุดใหม่" : "ใช้ตำแหน่งปัจจุบัน")}
+            </button>
+            ${hasLocationPin(d) ? `
+              <div class="booking-pin-saved" data-scheduled-pin>
+                <span>📍 ปักหมุดแล้ว (${root.utils.escapeHtml(formatPin(d))})</span>
+                <button class="link-btn" type="button" data-scheduled-action="clear-location">ลบหมุด</button>
+              </div>` : ""}
+            ${wizard.locationMessage
+              ? `<small class="${wizard.locationStatus === "success" ? "muted" : "danger-text"}" role="status">${root.utils.escapeHtml(wizard.locationMessage)}</small>`
+              : ""}
           </div>
           <div class="field">
             <label for="scheduled-zone">พื้นที่ / เขต</label>
@@ -793,7 +882,7 @@
         <div class="data-row"><strong>ระยะเวลา</strong><span class="muted">${root.utils.escapeHtml(pricing.duration_min || "-")} นาที</span></div>
         <div class="data-row"><strong>ผู้ติดต่อ</strong><span class="muted">${root.utils.escapeHtml(d.customer_name || "-")} · ${root.utils.escapeHtml(d.customer_phone || "-")}</span></div>
         <div class="data-row"><strong>ที่อยู่</strong><span class="muted">${root.utils.escapeHtml(d.address_text || "-")}</span></div>
-        <div class="data-row"><strong>แผนที่</strong><span class="muted">${map ? "แนบลิงก์ Google Maps แล้ว" : "ไม่มีลิงก์แผนที่"}</span></div>
+        <div class="data-row"><strong>แผนที่</strong><span class="muted">${hasLocationPin(d) ? `ปักหมุดแล้ว (${root.utils.escapeHtml(formatPin(d))})` : (map ? "แนบลิงก์ Google Maps แล้ว" : "ไม่มีลิงก์แผนที่")}</span></div>
         <div class="data-row"><strong>พื้นที่</strong><span class="muted">${root.utils.escapeHtml(d.job_zone || "-")}</span></div>
         <div class="data-row"><strong>หมายเหตุ</strong><span class="muted">${root.utils.escapeHtml(d.customer_note || "-")}</span></div>
         <div class="data-row"><strong>วันและเวลา</strong><span class="muted">${root.utils.escapeHtml(d.date || "-")} · ${root.utils.escapeHtml(selected.start || "-")}-${root.utils.escapeHtml(selected.end || "-")} น.</span></div>
@@ -928,6 +1017,10 @@
       appointment_datetime: appointmentDatetime(),
       address_text: String(d.address_text || "").trim(),
       maps_url: String(d.maps_url || "").trim(),
+      // Issue 316: send the pin only when it is a complete, valid pair. A half
+      // pair is omitted entirely rather than sent as a partial the server has
+      // to reject.
+      ...(normalizePin(d) ? { gps_latitude: normalizePin(d).latitude, gps_longitude: normalizePin(d).longitude } : {}),
       customer_note: String(d.customer_note || "").trim(),
       booking_mode: "scheduled",
       client_app: "customer_app_v2",
@@ -1294,10 +1387,28 @@
       const eventName = input.tagName === "SELECT" ? "change" : "input";
       input.addEventListener(eventName, () => {
         const field = input.getAttribute("data-scheduled-field");
-        root.state.updateDraft("scheduled", { [field]: input.value });
+        const patch = { [field]: input.value };
+        // Issue 316: a hand-edited map link no longer matches the pinned
+        // coordinate, so drop the pin rather than send the technician to a
+        // point the customer has just overridden.
+        if (field === "maps_url" && hasLocationPin(draft())) {
+          patch.gps_latitude = null;
+          patch.gps_longitude = null;
+        }
+        root.state.updateDraft("scheduled", patch);
         root.state.setScheduledWizard({ error: "" });
       });
       if (eventName === "input") input.addEventListener("change", () => root.state.persistScheduledDraft());
+    });
+
+    container.querySelectorAll("[data-scheduled-action]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const action = button.getAttribute("data-scheduled-action");
+        if (action === "use-location") await requestCurrentLocation();
+        if (action === "clear-location") clearLocationPin();
+        root.state.persistScheduledDraft();
+        paint(container);
+      });
     });
 
     container.querySelectorAll("[data-calendar-month]").forEach((button) => {

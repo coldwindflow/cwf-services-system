@@ -85,6 +85,11 @@
       customer_phone: "",
       address_text: "",
       maps_url: "",
+      // Issue 316: scheduled bookings can pin the site the same way urgent can.
+      // The technician navigates by coordinate first, so this is what gets them
+      // to the right soi/building instead of a free-text address.
+      gps_latitude: null,
+      gps_longitude: null,
       customer_note: "",
       job_zone: "",
       service_package_key: "",
@@ -189,6 +194,9 @@
       step: 1,
       maxStep: MAX_SCHEDULED_STEP,
       error: "",
+      // Issue 316: location-pin request state, mirroring the urgent flow.
+      locationStatus: "idle",
+      locationMessage: "",
     },
     scheduledPreview: {
       packages: { status: "idle", items: [], error: "" },
@@ -240,7 +248,7 @@
     },
     resetScheduledDraft() {
       this.draft.scheduled = defaultScheduledDraft();
-      this.scheduledWizard = { step: 1, maxStep: MAX_SCHEDULED_STEP, error: "" };
+      this.scheduledWizard = { step: 1, maxStep: MAX_SCHEDULED_STEP, error: "", locationStatus: "idle", locationMessage: "" };
       this.scheduledPreview = {
         packages: { status: "idle", items: [], error: "" },
         package: { status: "idle", data: null, error: "", verified: false },
