@@ -24,7 +24,7 @@ const cors = require("cors");
 const path = require("path");
 const crypto = require("crypto");
 const fs = require("fs");
-const { createCompressionMiddleware, staticOptions } = require("./server/middleware/staticAssetDelivery");
+const { createCompressionMiddleware, staticOptions, uploadStaticOptions } = require("./server/middleware/staticAssetDelivery");
 const normalizerHelpers = require("./server/normalizers");
 const pricingHelpers = require("./server/pricing");
 const jobTiming = require("./server/services/jobTiming");
@@ -1124,7 +1124,7 @@ const upload = multer({
   limits: { fileSize: 12 * 1024 * 1024 }, // 12MB
 });
 
-app.use("/uploads", express.static(path.join(__dirname, "uploads"), staticOptions()));
+app.use("/uploads", express.static(path.join(__dirname, "uploads"), uploadStaticOptions()));
 
 const PARTNER_APPLICATION_UPLOAD_DIR = path.join(UPLOAD_DIR, "partner_applications");
 if (!fs.existsSync(PARTNER_APPLICATION_UPLOAD_DIR)) fs.mkdirSync(PARTNER_APPLICATION_UPLOAD_DIR, { recursive: true });

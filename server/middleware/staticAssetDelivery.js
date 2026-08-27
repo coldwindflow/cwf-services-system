@@ -24,6 +24,7 @@
 const compression = require("compression");
 
 const ONE_YEAR_SECONDS = 365 * 24 * 60 * 60;
+const UPLOAD_CACHE_CONTROL = "private, no-store";
 
 // Service workers control which build every client runs. A stale one is not a
 // slow page, it is a client permanently pinned to an old release, so these can
@@ -84,6 +85,19 @@ function staticOptions(extra = {}) {
 }
 
 /**
+ * Uploaded job/customer/partner files are mutable, user-generated content.
+ * A caller-controlled ?v= must never turn them into public immutable assets.
+ */
+function uploadStaticOptions(extra = {}) {
+  return {
+    ...extra,
+    setHeaders(res) {
+      res.setHeader("Cache-Control", UPLOAD_CACHE_CONTROL);
+    },
+  };
+}
+
+/**
  * gzip/deflate for text responses. Mounted once, ahead of every route, so API
  * JSON benefits too - not just static files.
  */
@@ -104,8 +118,10 @@ function createCompressionMiddleware(options = {}) {
 
 module.exports = {
   ONE_YEAR_SECONDS,
+  UPLOAD_CACHE_CONTROL,
   cacheControlFor,
   isVersionedRequest,
   staticOptions,
+  uploadStaticOptions,
   createCompressionMiddleware,
 };

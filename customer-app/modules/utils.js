@@ -52,6 +52,83 @@
   // This is the one resolver every customer surface uses, so they cannot drift
   // apart again.
 
+  const MAX_CATALOG_PACKAGE_QUANTITY = 99;
+
+  function catalogPriceMinor(value) {
+    const match = /^(\d+)(?:\.(\d{1,2}))?$/.exec(String(value == null ? "" : value).trim());
+    if (!match) return null;
+    const fraction = String(match[2] || "").padEnd(2, "0");
+    const minor = Number(match[1]) * 100 + Number(fraction || 0);
+    return Number.isSafeInteger(minor) && minor > 0 ? minor : null;
+  }
+
+  // Mirrors compositeServicePackage.composeTiers(): an exact-quantity tier is
+  // authoritative even when composing smaller tiers would be one baht cheaper;
+  // quantities without an exact tier use the cheapest active composition.
+  function catalogVariantQuantityPrices(variant) {
+    const tiers = (variant && Array.isArray(variant.tiers) ? variant.tiers : [])
+      .filter((tier) => tier && tier.is_active !== false)
+      .map((tier) => ({
+        quantity: Number(tier.quantity ?? tier.service_quantity),
+        priceMinor: catalogPriceMinor(tier.fixed_total_price),
+        sortOrder: Number(tier.sort_order || 0),
+      }))
+      .filter((tier) => Number.isSafeInteger(tier.quantity)
+        && tier.quantity > 0 && tier.quantity <= MAX_CATALOG_PACKAGE_QUANTITY
+        && tier.priceMinor != null);
+    if (!tiers.length) return null;
+
+    const composed = Array(MAX_CATALOG_PACKAGE_QUANTITY + 1).fill(null);
+    composed[0] = 0;
+    for (let target = 1; target <= MAX_CATALOG_PACKAGE_QUANTITY; target += 1) {
+      for (const tier of tiers) {
+        const previous = target - tier.quantity;
+        if (previous < 0 || composed[previous] == null) continue;
+        const candidate = composed[previous] + tier.priceMinor;
+        if (composed[target] == null || candidate < composed[target]) composed[target] = candidate;
+      }
+    }
+
+    const result = composed.slice();
+    for (let quantity = 1; quantity <= MAX_CATALOG_PACKAGE_QUANTITY; quantity += 1) {
+      const exact = tiers.filter((tier) => tier.quantity === quantity)
+        .sort((a, b) => a.priceMinor - b.priceMinor || a.sortOrder - b.sortOrder)[0];
+      if (exact) result[quantity] = exact.priceMinor;
+    }
+    return result;
+  }
+
+  // Lowest total that can pass the parent's minimum across all visible package
+  // variants. Each variant is one selectable group; a group itself can use the
+  // existing tier-composition rule up to the booking maximum of 99 machines.
+  function catalogPackageStartingPriceMinor(item) {
+    const rawMinimum = Number(item?.minimum_total_quantity);
+    const minimum = Number.isSafeInteger(rawMinimum) && rawMinimum >= 2
+      && rawMinimum <= MAX_CATALOG_PACKAGE_QUANTITY ? rawMinimum : 1;
+    const variants = (Array.isArray(item?.service_package_variants) ? item.service_package_variants : [])
+      .filter((variant) => variant && variant.is_active !== false && variant.is_customer_visible !== false);
+
+    let totals = Array(MAX_CATALOG_PACKAGE_QUANTITY + 1).fill(null);
+    totals[0] = 0;
+    for (const variant of variants) {
+      const quantityPrices = catalogVariantQuantityPrices(variant);
+      if (!quantityPrices) continue;
+      const next = totals.slice();
+      for (let current = 0; current <= MAX_CATALOG_PACKAGE_QUANTITY; current += 1) {
+        if (totals[current] == null) continue;
+        for (let quantity = 1; current + quantity <= MAX_CATALOG_PACKAGE_QUANTITY; quantity += 1) {
+          if (quantityPrices[quantity] == null) continue;
+          const totalQuantity = current + quantity;
+          const candidate = totals[current] + quantityPrices[quantity];
+          if (next[totalQuantity] == null || candidate < next[totalQuantity]) next[totalQuantity] = candidate;
+        }
+      }
+      totals = next;
+    }
+    const usable = totals.slice(minimum).filter((price) => price != null);
+    return usable.length ? Math.min(...usable) : null;
+  }
+
   /**
    * Lowest price a customer can actually pay for this item, or null when there
    * genuinely is no published price.
@@ -60,12 +137,8 @@
    */
   function catalogStartingPrice(item) {
     if (item && item.booking_mode === "service_package") {
-      const prices = (Array.isArray(item.service_package_variants) ? item.service_package_variants : [])
-        .flatMap((variant) => (variant && Array.isArray(variant.tiers) ? variant.tiers : []))
-        .filter((tier) => tier && tier.is_active !== false)
-        .map((tier) => Number(tier.fixed_total_price))
-        .filter((price) => Number.isFinite(price) && price > 0);
-      if (prices.length) return { amount: Math.min(...prices), isFrom: true };
+      const priceMinor = catalogPackageStartingPriceMinor(item);
+      if (priceMinor != null) return { amount: priceMinor / 100, isFrom: true };
     }
     for (const value of [item?.display_price, item?.active_price, item?.base_price]) {
       const amount = Number(value);

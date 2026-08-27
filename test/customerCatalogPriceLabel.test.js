@@ -41,11 +41,11 @@ function bundle(overrides = {}) {
     base_price: 0, display_price: 0, active_price: null, unit_label: "package",
     service_package_variants: [
       { package_key: "small", tiers: [
-        { tier_key: "q1", fixed_total_price: "699.00", is_active: true },
-        { tier_key: "q2", fixed_total_price: "1399.00", is_active: true },
+        { tier_key: "q1", quantity: 1, fixed_total_price: "699.00", is_active: true },
+        { tier_key: "q2", quantity: 2, fixed_total_price: "1399.00", is_active: true },
       ] },
       { package_key: "large", tiers: [
-        { tier_key: "q1", fixed_total_price: "899.00", is_active: true },
+        { tier_key: "q1", quantity: 1, fixed_total_price: "899.00", is_active: true },
       ] },
     ],
     ...overrides,
@@ -64,23 +64,59 @@ test("Issue 318: a package advertises its lowest active tier price, marked as a 
   assert.equal(utils.catalogPriceIsAsk(item), false);
 });
 
+test("Issue 322: a minimum-2 package advertises the lowest total the customer can actually book", () => {
+  const utils = loadUtils();
+  const item = bundle({ minimum_total_quantity: 2 });
+  // The exact q2 tier is authoritative. Even though q1 + q1 is 1 baht less,
+  // the server's composeTiers() deliberately chooses an exact tier first.
+  assert.deepEqual({ ...utils.catalogStartingPrice(item) }, { amount: 1399, isFrom: true });
+  assert.equal(utils.catalogPriceLabel(item), "เริ่ม 1,399 บาท");
+});
+
+test("Issue 322: minimum pricing preserves exact-tier priority, composition and mixed variants", () => {
+  const utils = loadUtils();
+
+  const composed = bundle({
+    minimum_total_quantity: 2,
+    service_package_variants: [{ package_key: "small", tiers: [
+      { tier_key: "q1", quantity: 1, fixed_total_price: "699.00", is_active: true },
+    ] }],
+  });
+  assert.equal(utils.catalogPriceLabel(composed), "เริ่ม 1,398 บาท");
+
+  const mixedWins = bundle({
+    minimum_total_quantity: 2,
+    service_package_variants: [
+      { package_key: "small", tiers: [
+        { tier_key: "q1", quantity: 1, fixed_total_price: "699.00", is_active: true },
+        { tier_key: "q2", quantity: 2, fixed_total_price: "2000.00", is_active: true },
+      ] },
+      { package_key: "large", tiers: [
+        { tier_key: "q1", quantity: 1, fixed_total_price: "899.00", is_active: true },
+        { tier_key: "q2", quantity: 2, fixed_total_price: "2000.00", is_active: true },
+      ] },
+    ],
+  });
+  assert.equal(utils.catalogPriceLabel(mixedWins), "เริ่ม 1,598 บาท");
+});
+
 test("Issue 318: an inactive or unpriced tier never becomes the advertised price", () => {
   const utils = loadUtils();
   // a cheaper but DEACTIVATED tier must not be advertised
   const withInactive = bundle({ service_package_variants: [
     { package_key: "small", tiers: [
-      { tier_key: "old", fixed_total_price: "199.00", is_active: false },
-      { tier_key: "q1", fixed_total_price: "699.00", is_active: true },
+      { tier_key: "old", quantity: 1, fixed_total_price: "199.00", is_active: false },
+      { tier_key: "q1", quantity: 1, fixed_total_price: "699.00", is_active: true },
     ] },
   ] });
   assert.equal(utils.catalogPriceLabel(withInactive), "เริ่ม 699 บาท");
   // zero / negative / non-numeric tier prices are ignored, never shown as free
   const junk = bundle({ service_package_variants: [
     { package_key: "small", tiers: [
-      { tier_key: "a", fixed_total_price: "0.00", is_active: true },
-      { tier_key: "b", fixed_total_price: "-5.00", is_active: true },
-      { tier_key: "c", fixed_total_price: "ฟรี", is_active: true },
-      { tier_key: "d", fixed_total_price: "899.00", is_active: true },
+      { tier_key: "a", quantity: 1, fixed_total_price: "0.00", is_active: true },
+      { tier_key: "b", quantity: 1, fixed_total_price: "-5.00", is_active: true },
+      { tier_key: "c", quantity: 1, fixed_total_price: "ฟรี", is_active: true },
+      { tier_key: "d", quantity: 1, fixed_total_price: "899.00", is_active: true },
     ] },
   ] });
   assert.equal(utils.catalogPriceLabel(junk), "เริ่ม 899 บาท");
@@ -88,7 +124,7 @@ test("Issue 318: an inactive or unpriced tier never becomes the advertised price
 
 test("Issue 318: a package with nothing sellable still says สอบถามราคา", () => {
   const utils = loadUtils();
-  for (const variants of [[], [{ package_key: "x", tiers: [] }], [{ package_key: "x", tiers: [{ fixed_total_price: "0.00", is_active: true }] }]]) {
+  for (const variants of [[], [{ package_key: "x", tiers: [] }], [{ package_key: "x", tiers: [{ quantity: 1, fixed_total_price: "0.00", is_active: true }] }]]) {
     const item = bundle({ service_package_variants: variants });
     assert.equal(utils.catalogPriceLabel(item), "สอบถามราคา");
     assert.equal(utils.catalogPriceIsAsk(item), true);
@@ -96,6 +132,26 @@ test("Issue 318: a package with nothing sellable still says สอบถาม�
   // and a malformed variants payload must not throw
   assert.equal(utils.catalogPriceLabel(bundle({ service_package_variants: null })), "สอบถามราคา");
   assert.equal(utils.catalogPriceLabel(bundle({ service_package_variants: [null, { tiers: null }] })), "สอบถามราคา");
+});
+
+test("Issue 322: inactive variants and malformed quantities cannot become the advertised price", () => {
+  const utils = loadUtils();
+  const item = bundle({
+    minimum_total_quantity: 2,
+    service_package_variants: [
+      { package_key: "inactive", is_active: false, tiers: [
+        { tier_key: "q2", quantity: 2, fixed_total_price: "99.00", is_active: true },
+      ] },
+      { package_key: "hidden", is_customer_visible: false, tiers: [
+        { tier_key: "q2", quantity: 2, fixed_total_price: "199.00", is_active: true },
+      ] },
+      { package_key: "valid", tiers: [
+        { tier_key: "bad", quantity: "two", fixed_total_price: "1.00", is_active: true },
+        { tier_key: "q2", quantity: 2, fixed_total_price: "1399.00", is_active: true },
+      ] },
+    ],
+  });
+  assert.equal(utils.catalogPriceLabel(item), "เริ่ม 1,399 บาท");
 });
 
 test("Issue 318: ordinary catalog items keep their existing price behaviour exactly", () => {
@@ -158,7 +214,7 @@ test("Issue 318: the shared resolver is exported from utils", () => {
 });
 
 test("Issue 318: the customer runtime is cache-busted and admin ids stay put", () => {
-  const BUILD = "20260822_customer_pin_and_package_price_v1";
+  const BUILD = "20260827_minimum_price_upload_cache_v1";
   assert.match(read("customer-app/sw.js"), new RegExp(`BUILD_ID = "${BUILD}"`));
   assert.match(read("customer-app/assets/customer-app.js"), new RegExp(`BUILD_ID = "${BUILD}"`));
   assert.match(read("customer-app/index.html"), new RegExp(`modules/utils\\.js\\?v=${BUILD}`));

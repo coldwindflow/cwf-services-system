@@ -1193,7 +1193,7 @@ test("tracking UI exposes loading, not-found, rate-limit and offline states", ()
 });
 
 test("tracking assets share the full-read cache build id", () => {
-  const build = "20260822_customer_pin_and_package_price_v1";
+  const build = "20260827_minimum_price_upload_cache_v1";
   for (const file of [
     "customer-app/index.html",
     "customer-app/sw.js",
