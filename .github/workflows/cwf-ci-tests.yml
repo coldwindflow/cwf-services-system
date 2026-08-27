@@ -40,6 +40,10 @@ jobs:
     steps:
       - name: Check out the commit under test
         uses: actions/checkout@v4
+        with:
+          # The whitespace/conflict-marker gate compares the exact base and head
+          # SHAs. A shallow checkout does not contain both sides of that diff.
+          fetch-depth: 0
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -62,7 +66,19 @@ jobs:
           exit $FAILED
 
       - name: Reject stray conflict markers and trailing whitespace
-        run: git diff --check "$(git rev-list --max-parents=0 HEAD | tail -1)" HEAD || true
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+          PUSH_HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            git diff --check "$PR_BASE_SHA" "$PR_HEAD_SHA"
+          else
+            git diff --check "$PUSH_BEFORE_SHA" "$PUSH_HEAD_SHA"
+          fi
 
       - name: Run the test suite
         # Database-backed suites self-skip when no isolated Postgres URL is set,
