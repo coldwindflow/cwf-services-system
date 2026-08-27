@@ -25,6 +25,8 @@ const {
   cacheControlFor,
   isVersionedRequest,
   staticOptions,
+  uploadStaticOptions,
+  UPLOAD_CACHE_CONTROL,
   createCompressionMiddleware,
   ONE_YEAR_SECONDS,
 } = require("../server/middleware/staticAssetDelivery");
@@ -77,6 +79,14 @@ test("Issue 314: an unversioned asset is never cached long, because nothing can 
   assert.equal(cacheControlFor("/style.css", { query: { v: "   " }, url: "/style.css?v=%20%20" }), short);
 });
 
+test("Issue 322: uploads stay private and no-store even when a caller appends a version marker", () => {
+  const headers = {};
+  const options = uploadStaticOptions();
+  options.setHeaders({ setHeader(name, value) { headers[name] = value; }, req: versioned("attacker-value") });
+  assert.equal(headers["Cache-Control"], UPLOAD_CACHE_CONTROL);
+  assert.equal(UPLOAD_CACHE_CONTROL, "private, no-store");
+});
+
 test("Issue 314: version detection survives a missing query parser and array values", () => {
   assert.equal(isVersionedRequest({ url: "/style.css?v=abc123" }), true);
   assert.equal(isVersionedRequest({ url: "/style.css?foo=1&v=abc123" }), true);
@@ -99,11 +109,14 @@ test("Issue 314: index.js mounts compression first and passes the policy to ever
   const compressionAt = source.indexOf("app.use(createCompressionMiddleware());");
   const corsAt = source.indexOf("app.use(cors());");
   assert.ok(compressionAt > appInit && compressionAt < corsAt, "compression must be the first mounted middleware");
-  // No static mount may be left on the old default options. Matched per line,
-  // because a nested path.join(...) makes a naive bracket match stop too early.
+  // No static mount may be left on the old default options. Uploaded files use
+  // their dedicated privacy policy; application assets use the version policy.
   const staticMounts = source.split("\n").filter((line) => line.includes("express.static(") && !line.trim().startsWith("//"));
   assert.ok(staticMounts.length >= 3, `expected every static mount, found ${staticMounts.length}`);
-  for (const mount of staticMounts) {
+  const uploadMount = staticMounts.find((line) => line.includes('app.use("/uploads"'));
+  assert.match(uploadMount || "", /uploadStaticOptions\(\)/);
+  assert.doesNotMatch(uploadMount || "", /, staticOptions\(\)\)/);
+  for (const mount of staticMounts.filter((line) => line !== uploadMount)) {
     assert.match(mount, /staticOptions\(\)/, `static mount without the delivery policy: ${mount.trim()}`);
   }
 });
