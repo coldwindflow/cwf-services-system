@@ -75,7 +75,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ "$EVENT_NAME" = "pull_request" ]; then
-            git diff --check "$PR_BASE_SHA" "$PR_HEAD_SHA"
+            git diff --check "$PR_BASE_SHA...$PR_HEAD_SHA"
           else
             git diff --check "$PUSH_BEFORE_SHA" "$PUSH_HEAD_SHA"
           fi
