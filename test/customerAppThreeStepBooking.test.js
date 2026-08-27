@@ -204,16 +204,23 @@ test("review screen displays selected time preference", () => {
 
 test("calendar marks available and full dates without technician identity", () => {
   const { root } = loadBooking();
+  // Keep the fixture ahead of the real clock. Fixed August 25/26 dates made
+  // this test turn red after those dates passed even though rendering was fine.
+  const now = new Date();
+  const nextMonthIndex = now.getMonth() + 1;
+  const year = now.getFullYear() + Math.floor(nextMonthIndex / 12);
+  const monthNumber = (nextMonthIndex % 12) + 1;
+  const month = `${year}-${String(monthNumber).padStart(2, "0")}`;
+  const availableDate = `${month}-10`;
+  const fullDate = `${month}-11`;
+  const noOpenDate = `${month}-12`;
+  root.state.updateDraft("scheduled", { date: availableDate, calendar_month: month });
   root.state.setScheduledPreview("pricing", { status: "success", data: { duration_min: 60, active_price: 500 }, error: "" });
-  const month = root.state.draft.scheduled.calendar_month;
-  const [year, monthNumber] = month.split("-").map(Number);
-  const fullDate = `${year}-${String(monthNumber).padStart(2, "0")}-25`;
-  const noOpenDate = `${year}-${String(monthNumber).padStart(2, "0")}-26`;
   const key = root.availability.calendarQueryKey(root.bookingScheduled._test.currentCalendarQuery());
   root.state.setScheduledPreview("calendar", {
     status: "success",
     data: { month: root.state.draft.scheduled.calendar_month, days: [
-      { date: root.state.draft.scheduled.date, available: true, first_available: "09:00", technician_name: "Hidden" },
+      { date: availableDate, available: true, first_available: "09:00", technician_name: "Hidden" },
       { date: fullDate, available: false, status: "full", reason_code: "COLLISION_FULL", first_available: null, technician_count: 3 },
       { date: noOpenDate, available: false, status: "no_open_slots", reason_code: "NO_ADVANCE_CALENDAR_ROW", first_available: null },
     ] },
