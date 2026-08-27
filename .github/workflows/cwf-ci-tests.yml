@@ -1,0 +1,86 @@
+name: CWF CI Tests
+
+# Issue 320: nothing ran the test suite automatically.
+#
+# `main` is a protected branch that requires a pull request, and the release
+# promotion workflow opens a main -> staging promotion PR on every push to main.
+# So the path from a merge to production was fully automated while the 1600+
+# tests that guard booking, pricing, availability, package minimums, the Thai
+# Admin UI and the cross-app contracts only ever ran on a developer's machine.
+#
+# This workflow closes that gap. It is deliberately boring: install exactly what
+# package-lock.json pins, syntax-check every changed script, and run the suite.
+# It never touches a database, a deploy target, or Production.
+
+on:
+  pull_request:
+    branches:
+      - main
+      - staging/home-server-test
+      - production/home-server
+  push:
+    branches:
+      - main
+
+# Read-only: this workflow must never be able to change the repository.
+permissions:
+  contents: read
+
+# A newer commit on the same branch supersedes an in-flight run, except on main
+# where every merged commit deserves its own recorded result.
+concurrency:
+  group: cwf-ci-tests-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    name: npm test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out the commit under test
+        uses: actions/checkout@v4
+        with:
+          # The whitespace/conflict-marker gate compares the exact base and head
+          # SHAs. A shallow checkout does not contain both sides of that diff.
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          # Matches the runtime the app is developed and deployed against.
+          node-version: '22'
+          cache: npm
+
+      - name: Install exactly the pinned dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Syntax-check every shipped script
+        # Catches a broken file even if no test happens to require it.
+        run: |
+          set -e
+          FAILED=0
+          for file in $(git ls-files '*.js' | grep -v '^node_modules/'); do
+            node --check "$file" || { echo "::error file=$file::syntax error"; FAILED=1; }
+          done
+          exit $FAILED
+
+      - name: Reject stray conflict markers and trailing whitespace
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+          PUSH_HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            git diff --check "$PR_BASE_SHA" "$PR_HEAD_SHA"
+          else
+            git diff --check "$PUSH_BEFORE_SHA" "$PUSH_HEAD_SHA"
+          fi
+
+      - name: Run the test suite
+        # Database-backed suites self-skip when no isolated Postgres URL is set,
+        # exactly as they do locally. They are never pointed at a real database.
+        run: npm test
