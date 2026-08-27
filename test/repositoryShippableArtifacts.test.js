@@ -131,6 +131,11 @@ test("Issue 320: CI runs the suite on pull requests into every deploy branch", (
   }
   assert.match(workflow, /run: npm ci --no-audit --no-fund/);
   assert.match(workflow, /run: npm test/);
+  assert.match(workflow, /fetch-depth: 0/, "the diff gate needs both compared commits");
+  assert.match(workflow, /git diff --check \"\$PR_BASE_SHA\" \"\$PR_HEAD_SHA\"/);
+  assert.match(workflow, /git diff --check \"\$PUSH_BEFORE_SHA\" \"\$PUSH_HEAD_SHA\"/);
+  assert.doesNotMatch(workflow, /git diff --check[^\n]*(?:\|\|\s*true|;\s*true)/,
+    "the whitespace/conflict-marker gate must fail the workflow, never swallow errors");
   // read-only: a test workflow must never be able to write to the repository
   assert.match(workflow, /permissions:\s*\n\s*contents: read/);
   assert.doesNotMatch(workflow, /contents: write|pull-requests: write|packages: write/);
