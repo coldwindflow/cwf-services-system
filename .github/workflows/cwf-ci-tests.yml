@@ -81,6 +81,17 @@ jobs:
           fi
 
       - name: Run the test suite
-        # Database-backed suites self-skip when no isolated Postgres URL is set,
-        # exactly as they do locally. They are never pointed at a real database.
-        run: npm test
+        # Temporary Issue #329 diagnostic capture. This is removed once the
+        # failing regression is identified; the command still fails normally.
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee issue-329-test-output.log
+
+      - name: Upload Issue 329 diagnostic log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: issue-329-test-output
+          path: issue-329-test-output.log
+          if-no-files-found: ignore
+          retention-days: 1
