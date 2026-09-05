@@ -1,0 +1,28 @@
+diff --git a/test/customerTrackingFullReadUi.test.js b/test/customerTrackingFullReadUi.test.js
+index c21d213..0000000 100644
+--- a/test/customerTrackingFullReadUi.test.js
++++ b/test/customerTrackingFullReadUi.test.js
+@@ -52,7 +52,9 @@ function loadTrackingRuntime(options = {}) {
+     fetch: options.fetch || (async () => { throw new Error("unexpected fetch"); }),
+     setTimeout,
+     clearTimeout,
+-    Date,
++    Date: class FixedTrackingTestDate extends Date {
++      static now() { return Date.parse("2026-07-31T00:00:00Z"); }
++    },
+   };
+   vm.runInNewContext(CUSTOMER_COPY_SOURCE, sandbox, { filename: "customerCopy.js" });
+   vm.runInNewContext(TRACKING_SOURCE, sandbox, { filename: "tracking.js" });
+diff --git a/test/servicePackageMinimumQuantity.test.js b/test/servicePackageMinimumQuantity.test.js
+index 86c4f63..0000000 100644
+--- a/test/servicePackageMinimumQuantity.test.js
++++ b/test/servicePackageMinimumQuantity.test.js
+@@ -490,7 +490,7 @@ test("Issue 310: the new migration is registered for the deploy gate by exact SHA", () => {
+   assert.ok(entries.includes(`${sha}\t${name}\texpand`), "the forward migration must be approved in the expand lane by its exact content hash");
+   // approving it must not drop or alter the Issue 267 approval
+   assert.ok(entries.some((line) => line.endsWith("20260809_store_service_package_bundles.sql\texpand")));
+-  assert.equal(entries.length, 2);
++  assert.ok(entries.length >= 2, "later approved expand migrations must not break this historical gate");
+ });
+ 
+ // ---------------------------------------------------------------------------
