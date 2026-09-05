@@ -17,7 +17,9 @@ ALTER TABLE public.customer_orders
   ADD COLUMN IF NOT EXISTS customer_sub TEXT,
   ADD COLUMN IF NOT EXISTS order_kind TEXT NOT NULL DEFAULT 'product',
   ADD COLUMN IF NOT EXISTS catalog_item_id BIGINT,
-  ADD COLUMN IF NOT EXISTS service_purchase_snapshot JSONB;
+  ADD COLUMN IF NOT EXISTS service_purchase_snapshot JSONB,
+  ADD COLUMN IF NOT EXISTS payment_reference TEXT,
+  ADD COLUMN IF NOT EXISTS payment_confirmed_by TEXT;
 
 DO $$
 BEGIN
@@ -71,9 +73,12 @@ CREATE TABLE IF NOT EXISTS public.service_entitlements (
   refunded_at TIMESTAMPTZ,
   related_job_id BIGINT UNIQUE REFERENCES public.jobs(job_id) ON DELETE RESTRICT,
   warranty_days SMALLINT CHECK (warranty_days IS NULL OR warranty_days BETWEEN 1 AND 3650),
+  warranty_started_at TIMESTAMPTZ,
+  warranty_ends_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  CHECK (expires_at >= activated_at)
+  CHECK (expires_at >= activated_at),
+  CHECK (warranty_ends_at IS NULL OR warranty_started_at IS NULL OR warranty_ends_at >= warranty_started_at)
 );
 
 CREATE INDEX IF NOT EXISTS service_entitlements_customer_status_idx
