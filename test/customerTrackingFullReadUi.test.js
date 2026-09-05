@@ -55,7 +55,9 @@ function loadTrackingRuntime(options = {}) {
     fetch: options.fetch || (async () => { throw new Error("unexpected fetch"); }),
     setTimeout,
     clearTimeout,
-    Date,
+    Date: class FixedTrackingTestDate extends Date {
+      static now() { return Date.parse("2026-07-31T00:00:00Z"); }
+    },
   };
   vm.runInNewContext(CUSTOMER_COPY_SOURCE, sandbox, { filename: "customerCopy.js" });
   vm.runInNewContext(TRACKING_SOURCE, sandbox, { filename: "tracking.js" });
