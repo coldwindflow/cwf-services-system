@@ -81,4 +81,6 @@ jobs:
           fi
 
       - name: Run the test suite
+        # Database-backed suites self-skip when no isolated Postgres URL is set,
+        # exactly as they do locally. They are never pointed at a real database.
         run: npm test
