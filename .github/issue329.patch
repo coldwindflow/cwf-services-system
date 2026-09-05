@@ -1,0 +1,87 @@
+diff --git a/server/routes/customerOrders.js b/server/routes/customerOrders.js
+--- a/server/routes/customerOrders.js
++++ b/server/routes/customerOrders.js
+@@ -16,6 +16,7 @@ const {
+   isAmbiguousOmiseError,
+   isRetryableOmiseRejection,
+ } = require("../services/omise");
++const { createServiceEntitlementRoutes } = require("./serviceEntitlements");
+ 
+ const DELIVERY_METHODS = new Set(["pickup", "ship"]);
+ const INSTALL_OPTIONS = new Set(["none", "cwf"]);
+@@ -342,6 +343,13 @@ function createCustomerOrdersRoutes(deps = {}) {
+   const omise = deps.omiseClient || createOmiseClient({ env });
+   const router = express.Router();
+   const adminGuard = typeof requireAdminSession === "function" ? requireAdminSession : (_req, _res, next) => next();
++
++  router.use(createServiceEntitlementRoutes({
++    pool,
++    requireAdminSession: adminGuard,
++    env,
++    logger: deps.logger || console,
++  }));
+ 
+   router.post("/public/orders", async (req, res) => {
+     const result = normalizeOrder(req.body);
+diff --git a/server/services/packages/promotionPolicyAdmin.js b/server/services/packages/promotionPolicyAdmin.js
+--- a/server/services/packages/promotionPolicyAdmin.js
++++ b/server/services/packages/promotionPolicyAdmin.js
+@@ -10,6 +10,7 @@ class PromotionPolicyAdminError extends Error {
+     this.name = "PromotionPolicyAdminError";
+     this.code = code;
+     this.status = status;
++    this.statusCode = status;
+   }
+ }
+ 
+diff --git a/server/services/packages/storeServicePackageCatalogService.js b/server/services/packages/storeServicePackageCatalogService.js
+--- a/server/services/packages/storeServicePackageCatalogService.js
++++ b/server/services/packages/storeServicePackageCatalogService.js
+@@ -10,6 +10,7 @@ const {
+   MIN_COMPOSITE_PACKAGE_MINIMUM,
+ } = require("./compositeServicePackage");
++const { updatePromotionPolicy } = require("./promotionPolicyAdmin");
+ 
+ class StoreServicePackageCatalogError extends Error {
+@@ -132,6 +133,9 @@ function variantDto(row) {
+     ac_type: row.ac_type, wash_variant: row.wash_variant, btu_min: row.btu_min, btu_max: row.btu_max,
+     service_unit_duration_minutes: Number(row.service_unit_duration_minutes), sort_order: Number(row.sort_order || 0),
+     is_active: Boolean(row.is_active), is_customer_visible: Boolean(row.is_customer_visible),
++    service_level_key: row.service_level_key || null,
++    service_level_label: row.service_level_label || null,
++    unit_price_modifier: String(row.unit_price_modifier == null ? "0.00" : row.unit_price_modifier),
+     tiers: (row.tiers || []).map((tier) => ({
+       tier_key: tier.tier_key, display_name: tier.display_name, service_quantity: Number(tier.service_quantity),
+@@ -174,6 +178,13 @@ async function listBundles(db) {
+     minimum_total_quantity: row.service_package_minimum_total_quantity == null
+       ? null : Number(row.service_package_minimum_total_quantity),
++    pricing_strategy: row.service_package_pricing_strategy || "per_variant_tier",
++    selection_mode: row.service_package_selection_mode || "multi_variant",
++    maximum_total_quantity: row.service_package_maximum_total_quantity == null
++      ? null : Number(row.service_package_maximum_total_quantity),
++    payment_mode: row.service_package_payment_mode || "book_now",
++    warranty_days: row.service_package_warranty_days == null
++      ? null : Number(row.service_package_warranty_days),
+     variants: byItem.get(String(row.item_id)) || [],
+   }));
+@@ -291,6 +302,11 @@ function createStoreServicePackageCatalogService({ pool, packageRepository = repository }) {
+     quote,
+     create: (input) => save(input),
+     update: (key, input) => save(input, requiredText(key, "service_bundle_key", 128)),
++    updatePromotionPolicy: async (key, input) => {
++      const bundleKey = requiredText(key, "service_bundle_key", 128);
++      await updatePromotionPolicy(pool, bundleKey, input);
++      return (await listBundles(pool)).find((row) => row.service_bundle_key === bundleKey) || null;
++    },
+   };
+ }
+diff --git a/server/routes/admin/storeServicePackageCatalog.js b/server/routes/admin/storeServicePackageCatalog.js
+--- a/server/routes/admin/storeServicePackageCatalog.js
++++ b/server/routes/admin/storeServicePackageCatalog.js
+@@ -24,6 +24,9 @@ function createStoreServicePackageCatalogRoutes({ service, requireAdminSession }) {
+   router.post("/admin/catalog/service-package-bundles", requireAdminSession, handle(async (req, res) => res.status(201).json(await service.create(req.body || {}))));
+   router.patch("/admin/catalog/service-package-bundles/:bundleKey", requireAdminSession, handle(async (req, res) => res.json(await service.update(req.params.bundleKey, req.body || {}))));
++  router.patch("/admin/catalog/service-package-bundles/:bundleKey/promotion-policy", requireAdminSession,
++    handle(async (req, res) => res.json(await service.updatePromotionPolicy(req.params.bundleKey, req.body || {}))));
+   return router;
+ }
