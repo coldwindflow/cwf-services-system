@@ -41,13 +41,16 @@ test("deploy catalog approves only forward expand migrations by exact SHA", () =
   // in application order. Any migration edited after approval must fail here.
   const minimumName = "20260820_service_package_minimum_total_quantity.sql";
   const minimumHash = crypto.createHash("sha256").update(fs.readFileSync(`migrations/${minimumName}`)).digest("hex");
-  const promotionName = "20260905_promotion_engine_prepaid_entitlements.sql";
+  const promotionName = "20260905_promotion_engine_policy_fields.sql";
   const promotionHash = crypto.createHash("sha256").update(fs.readFileSync(`migrations/${promotionName}`)).digest("hex");
+  const airResetSeedName = "20260906_air_reset_60_book_now_seed.sql";
+  const airResetSeedHash = crypto.createHash("sha256").update(fs.readFileSync(`migrations/${airResetSeedName}`)).digest("hex");
   const entries = approvals.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   assert.deepEqual(entries, [
     `${hash}\t${migrationName}\texpand`,
     `${minimumHash}\t${minimumName}\texpand`,
     `${promotionHash}\t${promotionName}\texpand`,
+    `${airResetSeedHash}\t${airResetSeedName}\texpand`,
   ]);
   for (const entry of entries) assert.match(entry, /\texpand$/);
   const rootRollbackFiles = fs.readdirSync("migrations", { withFileTypes: true })
