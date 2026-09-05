@@ -9,17 +9,25 @@ async function queryUnlinkedPackages(db, sql, params) {
   try { return await requireDb(db).query(sql, params); }
   catch (error) {
     if (error?.code !== "42703") throw error;
-    return requireDb(db).query(sql.replace(/\s+AND p\.catalog_item_id IS NULL/, "").replace(/\s+WHERE p\.catalog_item_id IS NULL/, ""), params);
+    return requireDb(db).query(sql
+      .replace(/\s+AND p\.catalog_item_id IS NULL/, "")
+      .replace(/\s+WHERE p\.catalog_item_id IS NULL/, ""), params);
   }
 }
 
 async function findPackageById(db, packageId) {
-  const result = await requireDb(db).query("SELECT * FROM public.service_packages WHERE service_package_id=$1", [packageId]);
+  const result = await requireDb(db).query(
+    "SELECT * FROM public.service_packages WHERE service_package_id=$1",
+    [packageId]
+  );
   return result.rows[0] || null;
 }
 
 async function findPackageByKey(db, packageKey) {
-  const result = await requireDb(db).query("SELECT * FROM public.service_packages WHERE package_key=$1", [packageKey]);
+  const result = await requireDb(db).query(
+    "SELECT * FROM public.service_packages WHERE package_key=$1",
+    [packageKey]
+  );
   return result.rows[0] || null;
 }
 
@@ -27,7 +35,10 @@ async function findTier(db, { packageId, tierId, tierKey }) {
   if (tierId == null && !String(tierKey || "").trim()) throw new TypeError("Tier ID or key is required");
   const identitySql = tierId != null ? "service_package_tier_id=$2" : "tier_key=$2";
   const identity = tierId != null ? tierId : tierKey;
-  const result = await requireDb(db).query(`SELECT * FROM public.service_package_tiers WHERE service_package_id=$1 AND ${identitySql}`, [packageId, identity]);
+  const result = await requireDb(db).query(
+    `SELECT * FROM public.service_package_tiers WHERE service_package_id=$1 AND ${identitySql}`,
+    [packageId, identity]
+  );
   return result.rows[0] || null;
 }
 
@@ -38,17 +49,26 @@ async function listCustomerVisiblePackages(db, { at = new Date() } = {}) {
        ORDER BY t.sort_order, t.service_package_tier_id
      ) FILTER (WHERE t.service_package_tier_id IS NOT NULL), '[]'::jsonb) AS tiers
      FROM public.service_packages p
-     LEFT JOIN public.service_package_tiers t ON t.service_package_id=p.service_package_id AND t.is_active=TRUE
+     LEFT JOIN public.service_package_tiers t
+       ON t.service_package_id=p.service_package_id AND t.is_active=TRUE
      WHERE p.is_active=TRUE AND p.is_customer_visible=TRUE
        AND p.catalog_item_id IS NULL
        AND (p.sell_start_at IS NULL OR p.sell_start_at <= $1)
        AND (p.sell_end_at IS NULL OR p.sell_end_at >= $1)
      GROUP BY p.service_package_id
-     ORDER BY p.service_package_id`, [at]);
+     ORDER BY p.service_package_id`,
+    [at]
+  );
   return result.rows;
 }
 
+// Issue 310: this read is authoritative for the booking minimum, so it must NOT
+// degrade to "no minimum" when the column is missing - that would silently admit
+// under-quantity bookings. Instead it fails closed with a code an operator can
+// act on (apply the 20260820 migration) rather than a raw 42703 in the logs.
+// The public storefront read path is separately guarded and degrades safely.
 const MINIMUM_COLUMN = "service_package_minimum_total_quantity";
+
 function schemaNotReadyError(cause) {
   const error = new Error("SERVICE_PACKAGE_SCHEMA_NOT_READY");
   error.code = "SERVICE_PACKAGE_SCHEMA_NOT_READY";
@@ -67,7 +87,9 @@ async function findLinkedPackagesByKeys(db, packageKeys) {
 async function runLinkedPackagesQuery(db, packageKeys) {
   try { return await queryLinkedPackages(db, packageKeys); }
   catch (error) {
-    if (error?.code === "42703" && String(error?.message || "").includes(MINIMUM_COLUMN)) throw schemaNotReadyError(error);
+    if (error?.code === "42703" && String(error?.message || "").includes(MINIMUM_COLUMN)) {
+      throw schemaNotReadyError(error);
+    }
     throw error;
   }
 }
@@ -92,7 +114,9 @@ async function queryLinkedPackages(db, packageKeys) {
        JOIN public.catalog_items ci ON ci.item_id=p.catalog_item_id
        LEFT JOIN public.service_package_tiers t ON t.service_package_id=p.service_package_id
       WHERE p.package_key = ANY($1::text[])
-      GROUP BY p.service_package_id, ci.item_id`, [packageKeys]);
+      GROUP BY p.service_package_id, ci.item_id`,
+    [packageKeys]
+  );
 }
 
 async function listLinkedPackagesForCatalogItems(db, itemIds, { customer = false, at = new Date() } = {}) {
@@ -113,10 +137,13 @@ async function listLinkedPackagesForCatalogItems(db, itemIds, { customer = false
      ) FILTER (WHERE t.service_package_tier_id IS NOT NULL), '[]'::jsonb) AS tiers
        FROM public.service_packages p
        JOIN public.catalog_items ci ON ci.item_id=p.catalog_item_id
-       LEFT JOIN public.service_package_tiers t ON t.service_package_id=p.service_package_id ${customer ? "AND t.is_active=TRUE" : ""}
+       LEFT JOIN public.service_package_tiers t ON t.service_package_id=p.service_package_id
+        ${customer ? "AND t.is_active=TRUE" : ""}
       WHERE p.catalog_item_id = ANY($1::bigint[]) ${customerSql}
       GROUP BY p.service_package_id
-      ORDER BY p.catalog_item_id, p.sort_order, p.service_package_id`, params);
+      ORDER BY p.catalog_item_id, p.sort_order, p.service_package_id`,
+    params
+  );
   return result.rows;
 }
 
@@ -130,17 +157,25 @@ async function listCatalogPackages(db) {
      LEFT JOIN public.service_package_tiers t ON t.service_package_id=p.service_package_id
      WHERE p.catalog_item_id IS NULL
      GROUP BY p.service_package_id
-     ORDER BY p.created_at DESC, p.service_package_id DESC`);
+     ORDER BY p.created_at DESC, p.service_package_id DESC`
+  );
   return result.rows;
 }
 
 async function findPackageByKeyForUpdate(db, packageKey) {
-  const result = await requireDb(db).query("SELECT * FROM public.service_packages WHERE package_key=$1 FOR UPDATE", [packageKey]);
+  const result = await requireDb(db).query(
+    "SELECT * FROM public.service_packages WHERE package_key=$1 FOR UPDATE",
+    [packageKey]
+  );
   return result.rows[0] || null;
 }
 
 async function listTiersForUpdate(db, packageId) {
-  const result = await requireDb(db).query(`SELECT * FROM public.service_package_tiers WHERE service_package_id=$1 ORDER BY sort_order, service_package_tier_id FOR UPDATE`, [packageId]);
+  const result = await requireDb(db).query(
+    `SELECT * FROM public.service_package_tiers WHERE service_package_id=$1
+     ORDER BY sort_order, service_package_tier_id FOR UPDATE`,
+    [packageId]
+  );
   return result.rows;
 }
 
@@ -156,7 +191,8 @@ async function insertPackage(db, value) {
       value.job_type, value.ac_type, value.wash_variant, value.btu_min, value.btu_max,
       value.service_unit_duration_minutes, value.sell_start_at, value.sell_end_at, value.redeem_until,
       value.is_active, value.is_customer_visible, value.catalog_item_id || null, Number(value.sort_order || 0),
-      value.service_level_key || null, value.service_level_label || null, value.unit_price_modifier || "0.00"]);
+      value.service_level_key || null, value.service_level_label || null, value.unit_price_modifier || "0.00"]
+  );
   return result.rows[0];
 }
 
@@ -172,7 +208,8 @@ async function updatePackage(db, packageId, value) {
       value.job_type, value.ac_type, value.wash_variant, value.btu_min, value.btu_max,
       value.service_unit_duration_minutes, value.sell_start_at, value.sell_end_at, value.redeem_until,
       value.is_active, value.is_customer_visible, value.catalog_item_id || null, Number(value.sort_order || 0),
-      value.service_level_key || null, value.service_level_label || null, value.unit_price_modifier || "0.00"]);
+      value.service_level_key || null, value.service_level_label || null, value.unit_price_modifier || "0.00"]
+  );
   return result.rows[0];
 }
 
@@ -181,7 +218,9 @@ async function insertTier(db, packageId, value) {
     `INSERT INTO public.service_package_tiers
        (service_package_id, tier_key, display_name, service_quantity, fixed_total_price, sort_order, is_active)
      VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-    [packageId, value.tier_key, value.display_name, value.service_quantity, value.fixed_total_price, value.sort_order, value.is_active]);
+    [packageId, value.tier_key, value.display_name, value.service_quantity,
+      value.fixed_total_price, value.sort_order, value.is_active]
+  );
   return result.rows[0];
 }
 
@@ -190,14 +229,17 @@ async function updateTier(db, tierId, value) {
     `UPDATE public.service_package_tiers SET display_name=$2, service_quantity=$3,
        fixed_total_price=$4, sort_order=$5, is_active=$6, updated_at=NOW()
      WHERE service_package_tier_id=$1 RETURNING *`,
-    [tierId, value.display_name, value.service_quantity, value.fixed_total_price, value.sort_order, value.is_active]);
+    [tierId, value.display_name, value.service_quantity, value.fixed_total_price, value.sort_order, value.is_active]
+  );
   return result.rows[0];
 }
 
 async function deactivateTiers(db, packageId, keepTierIds) {
   await requireDb(db).query(
     `UPDATE public.service_package_tiers SET is_active=FALSE, updated_at=NOW()
-     WHERE service_package_id=$1 AND NOT (service_package_tier_id = ANY($2::bigint[]))`, [packageId, keepTierIds]);
+     WHERE service_package_id=$1 AND NOT (service_package_tier_id = ANY($2::bigint[]))`,
+    [packageId, keepTierIds]
+  );
 }
 
 module.exports = {
