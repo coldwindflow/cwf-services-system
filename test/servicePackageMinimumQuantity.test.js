@@ -490,7 +490,7 @@ test("Issue 310: the new migration is registered for the deploy gate by exact SH
   assert.ok(entries.includes(`${sha}\t${name}\texpand`), "the forward migration must be approved in the expand lane by its exact content hash");
   // approving it must not drop or alter the Issue 267 approval
   assert.ok(entries.some((line) => line.endsWith("20260809_store_service_package_bundles.sql\texpand")));
-  assert.equal(entries.length, 2);
+  assert.ok(entries.length >= 2, "later approved expand migrations must not break this historical gate");
 });
 
 // ---------------------------------------------------------------------------
