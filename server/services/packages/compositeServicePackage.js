@@ -23,9 +23,19 @@ class CompositePackageError extends Error {
   }
 }
 
+// Keep public quantity expansion within the booking domain's safe upper bound.
+// This check must run before allocating the dynamic-programming table.
 const MAX_COMPOSITE_PACKAGE_QUANTITY = 99;
+
+// A Store parent may require a minimum total quantity per booking. "Minimum 1"
+// is meaningless (every booking already needs a positive quantity), so a
+// configured minimum starts at 2 and shares the public maximum.
 const MIN_COMPOSITE_PACKAGE_MINIMUM = 2;
 
+// Authoritative read of the parent's configured minimum. The value comes only
+// from the Store parent row loaded by the resolver: a client-sent minimum is
+// never consulted, and anything malformed is treated as "no minimum" rather
+// than as a number that could accidentally relax a real restriction.
 function bundleMinimumTotalQuantity(bundle) {
   const raw = bundle == null ? null : bundle.service_package_minimum_total_quantity;
   if (raw == null || raw === "") return null;
@@ -35,6 +45,8 @@ function bundleMinimumTotalQuantity(bundle) {
   return value;
 }
 
+// Parent-level total: every selected BTU/package group under the same Store
+// parent counts toward one minimum. Never call this per group.
 function totalGroupQuantity(groups) {
   return (Array.isArray(groups) ? groups : []).reduce((sum, group) => sum + Number(group?.quantity || 0), 0);
 }
@@ -104,7 +116,9 @@ function composeTiers(tiers, requestedQuantity) {
 }
 
 function normalizeGroups(body = {}) {
-  if (body.service_package_id != null || body.service_package_tier_id != null) fail("PACKAGE_IDENTITY_MALFORMED", 400);
+  if (body.service_package_id != null || body.service_package_tier_id != null) {
+    fail("PACKAGE_IDENTITY_MALFORMED", 400);
+  }
   if (!Object.prototype.hasOwnProperty.call(body, "service_package_groups")) return null;
   if (!Array.isArray(body.service_package_groups) || !body.service_package_groups.length) fail("INVALID_PACKAGE_SELECTION", 400);
   let totalQuantity = 0;
@@ -128,12 +142,22 @@ function inWindow(value, start, end) {
   return Number.isFinite(at.getTime()) && (!start || at >= new Date(start)) && (!end || at <= new Date(end));
 }
 
-function buildComponentSnapshot({ bundle, variant, tier, btu, appointmentDatetime, quantityOverride = null,
-  fixedTotalOverride = null, pricing = null }) {
+function buildComponentSnapshot({
+  bundle,
+  variant,
+  tier,
+  btu,
+  appointmentDatetime,
+  quantityOverride = null,
+  fixedTotalOverride = null,
+  pricing = null,
+}) {
   const fixedTotal = fixedTotalOverride || formatMoney(parseMoney(tier.fixed_total_price));
   const quantity = quantityOverride == null ? Number(tier.service_quantity) : Number(quantityOverride);
   return {
     schema_version: pricing ? 3 : 2,
+    // Additive since Issue 310. Older snapshots simply lack the key and stay
+    // valid; readers must treat a missing value as "no minimum was configured".
     minimum_total_quantity: bundleMinimumTotalQuantity(bundle),
     maximum_total_quantity: maximumTotalQuantity(bundle, MAX_COMPOSITE_PACKAGE_QUANTITY),
     catalog_item: { id: String(bundle.item_id), key: bundle.service_bundle_key, name: bundle.item_name },
@@ -149,7 +173,9 @@ function buildComponentSnapshot({ bundle, variant, tier, btu, appointmentDatetim
       btu_max: variant.btu_max == null ? null : Number(variant.btu_max),
       selected_btu: btu,
     },
-    service_level: variant.service_level_key ? { key: variant.service_level_key, label: variant.service_level_label || variant.service_level_key } : null,
+    service_level: variant.service_level_key
+      ? { key: variant.service_level_key, label: variant.service_level_label || variant.service_level_key }
+      : null,
     quantity,
     unit_duration_minutes: Number(variant.service_unit_duration_minutes),
     fixed_total_price: fixedTotal,
@@ -171,20 +197,37 @@ function serviceName(variant, btu, quantity) {
   if (jobType === "ล้าง") {
     parts.push(`ล้างแอร์${acType}`.trim());
     if (acType === "ผนัง") parts.push(normalizeWashVariantLabel(variant.wash_variant));
-  } else if (jobType === "ซ่อม") parts.push(`ซ่อมแอร์${acType}`.trim());
-  else if (jobType === "ติดตั้ง") parts.push(`ติดตั้งแอร์${acType}`.trim());
-  else parts.push(jobType);
+  } else if (jobType === "ซ่อม") {
+    parts.push(`ซ่อมแอร์${acType}`.trim());
+  } else if (jobType === "ติดตั้ง") {
+    parts.push(`ติดตั้งแอร์${acType}`.trim());
+  } else {
+    parts.push(jobType);
+  }
   parts.push(`${btu} BTU`, `${quantity} เครื่อง`);
   return parts.filter(Boolean).join(" • ");
 }
 
 function validateVariantSelection(variant, group, identity) {
-  if (!variant.is_active || (identity === "customer" && !variant.is_customer_visible)) fail("SERVICE_PACKAGE_NOT_AVAILABLE", 404);
+  if (!variant.is_active || (identity === "customer" && !variant.is_customer_visible)) {
+    fail("SERVICE_PACKAGE_NOT_AVAILABLE", 404);
+  }
   if ((variant.btu_min != null && group.btu < Number(variant.btu_min))
-      || (variant.btu_max != null && group.btu > Number(variant.btu_max))) fail("PACKAGE_BTU_MISMATCH", 400);
+      || (variant.btu_max != null && group.btu > Number(variant.btu_max))) {
+    fail("PACKAGE_BTU_MISMATCH", 400);
+  }
 }
 
-async function resolveCompositeBooking({ body, bookingMode, appointmentDatetime, repository, db, identity = "customer", now = () => new Date(), purchaseOnly = false }) {
+async function resolveCompositeBooking({
+  body,
+  bookingMode,
+  appointmentDatetime,
+  repository,
+  db,
+  identity = "customer",
+  now = () => new Date(),
+  purchaseOnly = false,
+}) {
   const groups = normalizeGroups(body);
   if (!groups) return null;
   if (!purchaseOnly && bookingMode !== "scheduled" && bookingMode !== "urgent") fail("UNKNOWN_BOOKING_MODE", 400);
@@ -194,7 +237,9 @@ async function resolveCompositeBooking({ body, bookingMode, appointmentDatetime,
   const bundleIds = new Set(variants.map((variant) => String(variant.catalog_item_id || "")));
   if (bundleIds.size !== 1 || bundleIds.has("")) fail("PACKAGE_IDENTITY_MALFORMED", 400);
   const bundle = variants[0];
-  if (body.catalog_item_id != null && String(body.catalog_item_id).trim() !== String(bundle.catalog_item_id)) fail("PACKAGE_IDENTITY_MALFORMED", 400);
+  if (body.catalog_item_id != null && String(body.catalog_item_id).trim() !== String(bundle.catalog_item_id)) {
+    fail("PACKAGE_IDENTITY_MALFORMED", 400);
+  }
   if (!bundle.catalog_is_active || (identity === "customer" && !bundle.catalog_is_customer_visible)
       || bundle.booking_mode !== "service_package" || !inWindow(now(), bundle.service_package_sell_start_at, bundle.service_package_sell_end_at)) {
     fail("SERVICE_PACKAGE_NOT_AVAILABLE", 404);
@@ -203,15 +248,28 @@ async function resolveCompositeBooking({ body, bookingMode, appointmentDatetime,
   if (!purchaseOnly && !inWindow(appointmentDatetime, null, bundle.service_package_redeem_until)) fail("PACKAGE_REDEEM_WINDOW_EXCEEDED");
   if (purchaseOnly && promotionPaymentMode(bundle) !== "prepaid_full") fail("PACKAGE_PREPAID_PURCHASE_NOT_ALLOWED", 409);
 
+  // Parent-level minimum total quantity (Issue 310). Runs on the shared
+  // resolution path, so customer scheduled/urgent, Admin booking-on-behalf and
+  // any stale or direct client all hit the same authoritative rule before a
+  // single booking mutation happens.
   const minimumTotalQuantity = bundleMinimumTotalQuantity(bundle);
   const totalQuantity = totalGroupQuantity(groups);
-  if (minimumTotalQuantity != null && totalQuantity < minimumTotalQuantity) fail("SERVICE_PACKAGE_MINIMUM_QUANTITY_NOT_MET", 400);
+  if (minimumTotalQuantity != null && totalQuantity < minimumTotalQuantity) {
+    fail("SERVICE_PACKAGE_MINIMUM_QUANTITY_NOT_MET", 400);
+  }
   const maximum = maximumTotalQuantity(bundle, MAX_COMPOSITE_PACKAGE_QUANTITY);
   if (totalQuantity > maximum) fail("SERVICE_PACKAGE_MAXIMUM_QUANTITY_EXCEEDED", 400);
 
   for (const group of groups) validateVariantSelection(byKey.get(group.packageKey), group, identity);
 
-  const aggregate = resolveTotalQuantityTierPlusModifiers({ bundle, groups, byKey, parseMoney, formatMoney, fail });
+  const aggregate = resolveTotalQuantityTierPlusModifiers({
+    bundle,
+    groups,
+    byKey,
+    parseMoney,
+    formatMoney,
+    fail,
+  });
   let total = 0n;
   let durationMin = 0;
   let machineCount = 0;
@@ -226,11 +284,22 @@ async function resolveCompositeBooking({ body, bookingMode, appointmentDatetime,
       durationMin += group.quantity * Number(variant.service_unit_duration_minutes);
       machineCount += group.quantity;
       payloadGroups.push({ package_key: group.packageKey, btu: group.btu, quantity: group.quantity });
-      services.push({ job_type: variant.job_type, ac_type: variant.ac_type, btu: group.btu,
-        machine_count: group.quantity, wash_variant: variant.wash_variant || "", repair_variant: "" });
+      services.push({
+        job_type: variant.job_type,
+        ac_type: variant.ac_type,
+        btu: group.btu,
+        machine_count: group.quantity,
+        wash_variant: variant.wash_variant || "",
+        repair_variant: "",
+      });
       const snapshot = buildComponentSnapshot({
-        bundle, variant, tier, btu: group.btu, appointmentDatetime,
-        quantityOverride: group.quantity, fixedTotalOverride: priced.lineTotal,
+        bundle,
+        variant,
+        tier,
+        btu: group.btu,
+        appointmentDatetime,
+        quantityOverride: group.quantity,
+        fixedTotalOverride: priced.lineTotal,
         pricing: {
           strategy: aggregate.pricingStrategy,
           selection_mode: aggregate.selectionMode,
@@ -244,10 +313,16 @@ async function resolveCompositeBooking({ body, bookingMode, appointmentDatetime,
         },
       });
       items.push({
-        item_id: String(bundle.item_id), item_name: serviceName(variant, group.btu, group.quantity), qty: group.quantity,
-        unit_price: allocateUnitMoney(priced.lineTotalMinor, group.quantity), line_total: priced.lineTotal,
-        is_service: true, customer_price_source: "service_package",
-        packageId: String(variant.service_package_id), tierId: String(tier.service_package_tier_id), snapshot,
+        item_id: String(bundle.item_id),
+        item_name: serviceName(variant, group.btu, group.quantity),
+        qty: group.quantity,
+        unit_price: allocateUnitMoney(priced.lineTotalMinor, group.quantity),
+        line_total: priced.lineTotal,
+        is_service: true,
+        customer_price_source: "service_package",
+        packageId: String(variant.service_package_id),
+        tierId: String(tier.service_package_tier_id),
+        snapshot,
       });
     }
   } else {
@@ -276,14 +351,20 @@ async function resolveCompositeBooking({ body, bookingMode, appointmentDatetime,
   return {
     bundleId: String(bundle.item_id), bundleKey: bundle.service_bundle_key,
     fixedTotal: formatMoney(total), durationMin, items,
-    minimumTotalQuantity, maximumTotalQuantity: maximum,
-    pricingStrategy: promotionPricingStrategy(bundle), selectionMode: promotionSelectionMode(bundle),
-    paymentMode: promotionPaymentMode(bundle), warrantyDays: warrantyDays(bundle),
+    // Authoritative values the booking was accepted under, so quotes and
+    // Admin/customer summaries never have to guess them from client fields.
+    minimumTotalQuantity,
+    maximumTotalQuantity: maximum,
+    pricingStrategy: promotionPricingStrategy(bundle),
+    selectionMode: promotionSelectionMode(bundle),
+    paymentMode: promotionPaymentMode(bundle),
+    warrantyDays: warrantyDays(bundle),
     redeemUntil: bundle.service_package_redeem_until ? new Date(bundle.service_package_redeem_until).toISOString() : null,
     payload: {
       job_type: first.job_type, ac_type: first.ac_type, btu: groups[0].btu, machine_count: machineCount,
       wash_variant: first.wash_variant || "", repair_variant: "", admin_override_duration_min: 0,
-      service_package_groups: payloadGroups, services,
+      service_package_groups: payloadGroups,
+      services,
     },
   };
 }
