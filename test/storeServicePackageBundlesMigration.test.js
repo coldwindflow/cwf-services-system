@@ -37,17 +37,18 @@ test("bundle migration links variants to Store parent through additive schema", 
 
 test("deploy catalog approves only forward expand migrations by exact SHA", () => {
   const hash = crypto.createHash("sha256").update(fs.readFileSync(migrationPath)).digest("hex");
-  // Issue 310 adds a second expand migration. The manifest still pins every
-  // approved file by exact content hash, in application order - an entry whose
-  // SHA drifts (i.e. the file was edited after approval) fails here.
+  // The manifest pins every approved forward migration by exact content hash,
+  // in application order. Any migration edited after approval must fail here.
   const minimumName = "20260820_service_package_minimum_total_quantity.sql";
   const minimumHash = crypto.createHash("sha256").update(fs.readFileSync(`migrations/${minimumName}`)).digest("hex");
+  const promotionName = "20260905_promotion_engine_prepaid_entitlements.sql";
+  const promotionHash = crypto.createHash("sha256").update(fs.readFileSync(`migrations/${promotionName}`)).digest("hex");
   const entries = approvals.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   assert.deepEqual(entries, [
     `${hash}\t${migrationName}\texpand`,
     `${minimumHash}\t${minimumName}\texpand`,
+    `${promotionHash}\t${promotionName}\texpand`,
   ]);
-  // every approved lane is expand-only; nothing may be approved as contract/destructive
   for (const entry of entries) assert.match(entry, /\texpand$/);
   const rootRollbackFiles = fs.readdirSync("migrations", { withFileTypes: true })
     .filter((entry) => entry.isFile() && /\.rollback\.sql$/i.test(entry.name));
