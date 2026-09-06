@@ -24,6 +24,7 @@ const APP_SHELL = [
   `./modules/availability.js?v=${BUILD_ID}`,
   `./modules/bookingTicket.js?v=${BUILD_ID}`,
   `./modules/bookingScheduled.js?v=${BUILD_ID}`,
+  `./modules/prepaid.js?v=${BUILD_ID}`,
   `./modules/bookingUrgent.js?v=${BUILD_ID}`,
   `./modules/tracking.js?v=${BUILD_ID}`,
   `./modules/profile.js?v=${BUILD_ID}`,
@@ -61,13 +62,6 @@ self.addEventListener("fetch", (event) => {
   }
   if (!url.pathname.startsWith("/customer-app/")) return;
 
-  // Secure Tracking deep link: a navigation that carries the PRIVATE tracking
-  // credential (?q= or ?token=) must NEVER touch Cache Storage — the credential
-  // would otherwise become part of a cache key. Fetch network-only and return
-  // the response directly: no cache.put, and no caches.match on this
-  // credential-bearing request. Offline → fall back to the canonical cached app
-  // shell (a credential-free key); the in-app boot re-reads ?q= from the URL.
-  // The credential is never logged.
   const hasTrackingCredential = url.searchParams.has("q") || url.searchParams.has("token");
   if (request.mode === "navigate" && hasTrackingCredential) {
     event.respondWith(
