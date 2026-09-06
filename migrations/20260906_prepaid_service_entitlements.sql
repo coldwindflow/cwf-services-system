@@ -12,7 +12,9 @@ ALTER TABLE public.customer_orders
   ADD COLUMN IF NOT EXISTS prepaid_redeem_until TIMESTAMPTZ,
   ADD COLUMN IF NOT EXISTS prepaid_warranty_days INTEGER,
   ADD COLUMN IF NOT EXISTS manual_payment_reference TEXT,
-  ADD COLUMN IF NOT EXISTS payment_verified_by TEXT;
+  ADD COLUMN IF NOT EXISTS payment_verified_by TEXT,
+  ADD COLUMN IF NOT EXISTS prepaid_purchase_request_key TEXT,
+  ADD COLUMN IF NOT EXISTS prepaid_purchase_fingerprint TEXT;
 
 DO $$
 BEGIN
@@ -40,6 +42,9 @@ END $$;
 CREATE UNIQUE INDEX IF NOT EXISTS uq_customer_orders_prepaid_entitlement_code
   ON public.customer_orders(prepaid_entitlement_code)
   WHERE prepaid_entitlement_code IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_customer_orders_prepaid_purchase_request
+  ON public.customer_orders(prepaid_purchase_request_key)
+  WHERE order_kind='service_prepaid' AND prepaid_purchase_request_key IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS public.customer_service_entitlements (
   entitlement_id BIGSERIAL PRIMARY KEY,
@@ -117,9 +122,14 @@ BEGIN
   END IF;
 END $$;
 
-CREATE UNIQUE INDEX IF NOT EXISTS uq_jobs_prepaid_entitlement
+-- A cancelled, unfinished prepaid job remains linked for audit, but must not
+-- permanently burn the customer's right. Excluding cancelled jobs lets the same
+-- entitlement create one new live replacement job after the cancellation trigger
+-- restores the right to active.
+DROP INDEX IF EXISTS public.uq_jobs_prepaid_entitlement;
+CREATE UNIQUE INDEX uq_jobs_prepaid_entitlement
   ON public.jobs(prepaid_entitlement_id)
-  WHERE prepaid_entitlement_id IS NOT NULL;
+  WHERE prepaid_entitlement_id IS NOT NULL AND canceled_at IS NULL;
 
 -- Once a verified payment moves a prepaid order to PAID, create exactly one
 -- service entitlement in the same database transaction. Any malformed prepaid
@@ -266,5 +276,40 @@ CREATE TRIGGER trg_consume_prepaid_entitlement_after_job_insert
 AFTER INSERT ON public.jobs
 FOR EACH ROW
 EXECUTE FUNCTION public.consume_prepaid_entitlement_after_job_insert();
+
+-- Cancellation before completion restores the purchased right. The cancelled job
+-- stays linked to prepaid_entitlement_id as immutable audit history; only the
+-- entitlement's live redemption pointer is cleared. Finished jobs never restore.
+CREATE OR REPLACE FUNCTION public.restore_prepaid_entitlement_after_job_cancel()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF OLD.canceled_at IS NULL
+     AND NEW.canceled_at IS NOT NULL
+     AND NEW.prepaid_entitlement_id IS NOT NULL
+     AND NEW.finished_at IS NULL THEN
+    UPDATE public.customer_service_entitlements
+       SET status = CASE WHEN redeem_until < NOW() THEN 'expired' ELSE 'active' END,
+           redeemed_job_id=NULL,
+           redeemed_at=NULL,
+           redemption_token_hash=NULL,
+           redemption_request_key=NULL,
+           redemption_booking_token=NULL,
+           redemption_expires_at=NULL,
+           updated_at=NOW()
+     WHERE entitlement_id=NEW.prepaid_entitlement_id
+       AND redeemed_job_id=NEW.job_id
+       AND status='redeemed';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_restore_prepaid_entitlement_after_job_cancel ON public.jobs;
+CREATE TRIGGER trg_restore_prepaid_entitlement_after_job_cancel
+AFTER UPDATE OF canceled_at ON public.jobs
+FOR EACH ROW
+EXECUTE FUNCTION public.restore_prepaid_entitlement_after_job_cancel();
 
 COMMIT;
