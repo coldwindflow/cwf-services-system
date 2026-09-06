@@ -133,6 +133,35 @@ async function loadVariants(db, itemId, { lock = false } = {}) {
   return result.rows || [];
 }
 
+async function prepaidSchemaReady(db) {
+  try {
+    const result = await db.query(`
+      SELECT
+        to_regclass('public.customer_service_entitlements') IS NOT NULL AS has_entitlements,
+        EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_schema='public' AND table_name='customer_orders'
+            AND column_name IN (
+              'order_kind','customer_sub','service_entitlement_snapshot','prepaid_entitlement_code',
+              'prepaid_redeem_until','prepaid_warranty_days','prepaid_purchase_request_key',
+              'prepaid_purchase_fingerprint'
+            )
+          GROUP BY table_name HAVING COUNT(*)=8
+        ) AS has_order_columns,
+        EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_schema='public' AND table_name='jobs'
+            AND column_name IN ('customer_due','payment_source','prepaid_entitlement_id')
+          GROUP BY table_name HAVING COUNT(*)=3
+        ) AS has_job_columns
+    `);
+    const row = result.rows?.[0] || {};
+    return Boolean(row.has_entitlements && row.has_order_columns && row.has_job_columns);
+  } catch (_) {
+    return false;
+  }
+}
+
 function assertExactVariantSet(current, supplied) {
   const currentKeys = current.map((row) => String(row.package_key)).sort();
   const suppliedKeys = supplied.map((row) => String(row.package_key)).sort();
@@ -153,13 +182,16 @@ function assertLevelPolicy(current, policy) {
   }
 }
 
-function assertPrepaidPolicy(parent, policy) {
+async function assertPrepaidPolicy(db, parent, policy) {
   if (policy.payment_mode !== "prepaid_full") return;
   if (!parent.service_package_redeem_until) {
     fail("PREPAID_REDEEM_DEADLINE_REQUIRED", "prepaid promotions require redeem_until");
   }
   if (!policy.warranty_days) {
     fail("PREPAID_WARRANTY_REQUIRED", "prepaid promotions require warranty_days");
+  }
+  if ((policy.is_active || policy.is_customer_visible) && !(await prepaidSchemaReady(db))) {
+    fail("PREPAID_SCHEMA_NOT_READY", "prepaid backend schema is not ready; keep the promotion hidden", 503);
   }
 }
 
@@ -188,7 +220,7 @@ function createPromotionPolicyAdminService({ pool }) {
       const variants = await loadVariants(client, parent.item_id, { lock: true });
       assertExactVariantSet(variants, policy.variants);
       assertLevelPolicy(variants, policy);
-      assertPrepaidPolicy(parent, policy);
+      await assertPrepaidPolicy(client, parent, policy);
 
       await client.query(
         `UPDATE public.catalog_items
@@ -233,4 +265,5 @@ module.exports = {
   PromotionPolicyAdminError,
   normalizePolicy,
   createPromotionPolicyAdminService,
+  prepaidSchemaReady,
 };
