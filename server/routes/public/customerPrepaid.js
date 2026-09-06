@@ -6,7 +6,7 @@ const { baseProviderConfig, jwtVerify } = require("../../customerAuth");
 const {
   PrepaidServiceError,
   createPrepaidOrderService,
-} = require("../../services/prepaid/prepaidOrderService");
+} = require("../../services/prepaid/prepaidOrderServiceV2");
 
 function clean(value) {
   return String(value == null ? "" : value).trim();
@@ -73,12 +73,64 @@ function createCustomerPrepaidRoutes(options = {}) {
     }
   };
 
+  // Tiny public policy probe used only to decide whether the Store should follow
+  // the existing book-now path or the prepaid purchase path. Never returns price
+  // internals or hidden catalog rows.
+  router.get("/public/prepaid-policy/:item_id", handle(async (req, res) => {
+    const itemId = Number(req.params.item_id);
+    if (!Number.isSafeInteger(itemId) || itemId <= 0) {
+      return res.status(404).json({ error: "NOT_FOUND", code: "NOT_FOUND" });
+    }
+    let row;
+    try {
+      const result = await pool.query(
+        `SELECT item_id, booking_mode, is_active, is_customer_visible,
+                service_package_sell_start_at, service_package_sell_end_at,
+                service_package_redeem_until, service_package_payment_mode,
+                service_package_warranty_days
+           FROM public.catalog_items
+          WHERE item_id=$1 LIMIT 1`, [itemId]
+      );
+      row = result.rows?.[0] || null;
+    } catch (error) {
+      if (error?.code === "42703") {
+        return res.json({ ok: true, prepaid: false, payment_mode: "book_now", prepaid_ready: false });
+      }
+      throw error;
+    }
+    const now = Date.now();
+    const onSale = row
+      && row.booking_mode === "service_package"
+      && row.is_active === true
+      && row.is_customer_visible === true
+      && (!row.service_package_sell_start_at || now >= new Date(row.service_package_sell_start_at).getTime())
+      && (!row.service_package_sell_end_at || now <= new Date(row.service_package_sell_end_at).getTime());
+    if (!onSale) return res.status(404).json({ error: "NOT_FOUND", code: "NOT_FOUND" });
+    const prepaid = String(row.service_package_payment_mode || "book_now") === "prepaid_full";
+    return res.json({
+      ok: true,
+      prepaid,
+      payment_mode: prepaid ? "prepaid_full" : "book_now",
+      prepaid_ready: prepaid ? await service.schemaReady() : true,
+      redeem_until: prepaid ? row.service_package_redeem_until : null,
+      warranty_days: prepaid && row.service_package_warranty_days != null ? Number(row.service_package_warranty_days) : null,
+    });
+  }));
+
+  router.post("/public/prepaid-orders/quote", requireCustomerJwt, handle(async (req, res) => {
+    const customerSub = clean(req.customer?.sub);
+    if (!customerSub) return res.status(401).json({ error: "NOT_LOGGED_IN", code: "NOT_LOGGED_IN" });
+    const quote = await service.quoteOrder(req.body || {}, { identity: "customer" });
+    return res.json({ ok: true, quote });
+  }));
+
   router.post("/public/prepaid-orders", requireCustomerJwt, handle(async (req, res) => {
     const customerSub = clean(req.customer?.sub);
     if (!customerSub) return res.status(401).json({ error: "NOT_LOGGED_IN", code: "NOT_LOGGED_IN" });
     const created = await service.createOrder(req.body || {}, { customerSub, identity: "customer" });
-    return res.status(201).json({
+    return res.status(created.replayed ? 200 : 201).json({
       ok: true,
+      replayed: Boolean(created.replayed),
       order: created.order,
       entitlement_code: created.entitlement_code,
       service: created.service,
