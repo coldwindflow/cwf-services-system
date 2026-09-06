@@ -161,6 +161,24 @@ function packageBookingFromSnapshot({ body, appointmentDatetime, snapshot, packa
   }
 }
 
+function validAggregateSnapshot(snapshot) {
+  if (snapshot.schema_version !== 3) return true;
+  const pricing = snapshot.pricing;
+  if (!pricing || pricing.strategy !== "total_quantity_tier_plus_unit_modifiers") return false;
+  const totalQuantity = Number(pricing.total_quantity);
+  if (!Number.isSafeInteger(totalQuantity) || totalQuantity <= 0) return false;
+  try {
+    const fixed = parseMoney(snapshot.fixed_total_price);
+    const baseShare = parseMoney(pricing.group_base_share);
+    const modifierLine = parseMoney(pricing.modifier_line_total);
+    const finalLine = parseMoney(pricing.final_line_total);
+    if (fixed !== finalLine || baseShare + modifierLine !== finalLine) return false;
+  } catch (_) {
+    return false;
+  }
+  return true;
+}
+
 function compositeBookingFromSnapshots({ body, snapshots }) {
   let groups;
   try { groups = normalizeGroups(body); } catch (_) { return null; }
@@ -171,16 +189,29 @@ function compositeBookingFromSnapshots({ body, snapshots }) {
   let durationMin = 0;
   let bundleKey = null;
   let bundleId = null;
+  let aggregateTotalQuantity = null;
+  let aggregateLevelKey = null;
   for (const row of snapshots) {
     let snapshot = row.service_package_snapshot;
     if (typeof snapshot === "string") { try { snapshot = JSON.parse(snapshot); } catch (_) { return null; } }
-    if (!snapshot || snapshot.schema_version !== 2) return null;
+    if (!snapshot || (snapshot.schema_version !== 2 && snapshot.schema_version !== 3)) return null;
+    if (!validAggregateSnapshot(snapshot)) return null;
     if (String(snapshot.package?.id) !== String(row.service_package_id)
         || String(snapshot.tier?.id) !== String(row.service_package_tier_id)) return null;
     if (bundleKey && bundleKey !== snapshot.catalog_item?.key) return null;
     bundleKey = snapshot.catalog_item?.key; bundleId = String(snapshot.catalog_item?.id || "");
     const btu = Number(snapshot.taxonomy?.selected_btu); const quantity = Number(snapshot.quantity);
     if (!bundleKey || !bundleId || !snapshot.package?.key || !Number.isInteger(btu) || !Number.isInteger(quantity) || quantity <= 0) return null;
+    if (snapshot.schema_version === 3) {
+      const currentTotal = Number(snapshot.pricing.total_quantity);
+      if (aggregateTotalQuantity != null && aggregateTotalQuantity !== currentTotal) return null;
+      aggregateTotalQuantity = currentTotal;
+      if (snapshot.pricing.selection_mode === "exclusive_level") {
+        const currentLevel = String(snapshot.service_level?.key || snapshot.pricing.service_level_key || "").trim();
+        if (!currentLevel || (aggregateLevelKey && aggregateLevelKey !== currentLevel)) return null;
+        aggregateLevelKey = currentLevel;
+      }
+    }
     let price;
     try { price = parseMoney(snapshot.fixed_total_price); } catch (_) { return null; }
     total += price;
@@ -201,17 +232,18 @@ function compositeBookingFromSnapshots({ body, snapshots }) {
   });
   if (storedGroups.size !== requestedGroups.size
       || [...storedGroups].some(([key, quantity]) => requestedGroups.get(key) !== quantity)) return null;
-  // Issue 310: a replay may only reproduce a booking that already satisfied the
-  // minimum it was booked under. Snapshots written before this field existed
-  // carry no minimum and stay replayable unchanged.
+  const replayTotal = [...requestedGroups.values()].reduce((sum, quantity) => sum + quantity, 0);
+  if (aggregateTotalQuantity != null && replayTotal !== aggregateTotalQuantity) return null;
   const snapshotMinimum = items
     .map((item) => Number(item.snapshot?.minimum_total_quantity))
     .filter((value) => Number.isSafeInteger(value) && value > 0)
     .reduce((max, value) => (value > max ? value : max), 0);
-  if (snapshotMinimum > 0) {
-    const replayTotal = [...requestedGroups.values()].reduce((sum, quantity) => sum + quantity, 0);
-    if (replayTotal < snapshotMinimum) return null;
-  }
+  if (snapshotMinimum > 0 && replayTotal < snapshotMinimum) return null;
+  const snapshotMaximum = items
+    .map((item) => Number(item.snapshot?.maximum_total_quantity))
+    .filter((value) => Number.isSafeInteger(value) && value > 0)
+    .reduce((min, value) => (min === 0 || value < min ? value : min), 0);
+  if (snapshotMaximum > 0 && replayTotal > snapshotMaximum) return null;
   if (body.catalog_item_id != null && String(body.catalog_item_id).trim() !== bundleId) return null;
   const first = items[0].snapshot;
   return {

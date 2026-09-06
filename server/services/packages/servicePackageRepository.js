@@ -103,6 +103,9 @@ async function queryLinkedPackages(db, packageKeys) {
             ci.service_package_sell_start_at, ci.service_package_sell_end_at,
             ci.service_package_redeem_until, ci.booking_flow_policy,
             ci.service_package_minimum_total_quantity,
+            ci.service_package_pricing_strategy, ci.service_package_selection_mode,
+            ci.service_package_maximum_total_quantity, ci.service_package_payment_mode,
+            ci.service_package_warranty_days,
             COALESCE(jsonb_agg(
               to_jsonb(t) || jsonb_build_object('fixed_total_price', t.fixed_total_price::text)
               ORDER BY t.sort_order, t.service_package_tier_id
@@ -181,12 +184,14 @@ async function insertPackage(db, value) {
     `INSERT INTO public.service_packages
        (package_key, display_name, description, service_key, service_name, job_type, ac_type,
         wash_variant, btu_min, btu_max, service_unit_duration_minutes, sell_start_at, sell_end_at,
-        redeem_until, is_active, is_customer_visible, catalog_item_id, sort_order)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING *`,
+        redeem_until, is_active, is_customer_visible, catalog_item_id, sort_order,
+        service_level_key, service_level_label, unit_price_modifier)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21) RETURNING *`,
     [value.package_key, value.display_name, value.description, value.service_key, value.service_name,
       value.job_type, value.ac_type, value.wash_variant, value.btu_min, value.btu_max,
       value.service_unit_duration_minutes, value.sell_start_at, value.sell_end_at, value.redeem_until,
-      value.is_active, value.is_customer_visible, value.catalog_item_id || null, Number(value.sort_order || 0)]
+      value.is_active, value.is_customer_visible, value.catalog_item_id || null, Number(value.sort_order || 0),
+      value.service_level_key || null, value.service_level_label || null, value.unit_price_modifier || "0.00"]
   );
   return result.rows[0];
 }
@@ -197,12 +202,13 @@ async function updatePackage(db, packageId, value) {
        service_name=$5, job_type=$6, ac_type=$7, wash_variant=$8, btu_min=$9, btu_max=$10,
        service_unit_duration_minutes=$11, sell_start_at=$12, sell_end_at=$13, redeem_until=$14,
        is_active=$15, is_customer_visible=$16, catalog_item_id=COALESCE($17,catalog_item_id),
-       sort_order=$18, updated_at=NOW()
+       sort_order=$18, service_level_key=$19, service_level_label=$20, unit_price_modifier=$21, updated_at=NOW()
      WHERE service_package_id=$1 RETURNING *`,
     [packageId, value.display_name, value.description, value.service_key, value.service_name,
       value.job_type, value.ac_type, value.wash_variant, value.btu_min, value.btu_max,
       value.service_unit_duration_minutes, value.sell_start_at, value.sell_end_at, value.redeem_until,
-      value.is_active, value.is_customer_visible, value.catalog_item_id || null, Number(value.sort_order || 0)]
+      value.is_active, value.is_customer_visible, value.catalog_item_id || null, Number(value.sort_order || 0),
+      value.service_level_key || null, value.service_level_label || null, value.unit_price_modifier || "0.00"]
   );
   return result.rows[0];
 }
