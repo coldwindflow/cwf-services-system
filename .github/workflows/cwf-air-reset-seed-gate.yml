@@ -1,0 +1,71 @@
+name: CWF AIR RESET Seed Gate
+
+on:
+  workflow_run:
+    workflows:
+      - CWF Home Staging
+      - CWF Home Production
+    types:
+      - completed
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cwf-air-reset-seed-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+
+jobs:
+  seed-staging:
+    name: Verify and seed AIR RESET on staging
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'staging/home-server-test'
+    runs-on:
+      - self-hosted
+      - linux
+      - x64
+      - cwf-home
+    timeout-minutes: 15
+    steps:
+      - name: Check out deployed staging revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 1
+
+      - name: Apply guarded AIR RESET seed
+        shell: bash
+        env:
+          EXPECTED_RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -Eeuo pipefail
+          bash scripts/apply-air-reset-60-seed.sh staging | tee /tmp/cwf-air-reset-seed.log
+          cat /tmp/cwf-air-reset-seed.log >> "$GITHUB_STEP_SUMMARY"
+
+  seed-production:
+    name: Verify and seed AIR RESET on production
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'production/home-server'
+    runs-on:
+      - self-hosted
+      - linux
+      - x64
+      - cwf-home
+    timeout-minutes: 15
+    steps:
+      - name: Check out deployed production revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 1
+
+      - name: Apply guarded AIR RESET seed
+        shell: bash
+        env:
+          EXPECTED_RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -Eeuo pipefail
+          bash scripts/apply-air-reset-60-seed.sh production | tee /tmp/cwf-air-reset-seed.log
+          cat /tmp/cwf-air-reset-seed.log >> "$GITHUB_STEP_SUMMARY"

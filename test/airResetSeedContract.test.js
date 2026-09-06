@@ -4,7 +4,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 
-const seed = fs.readFileSync("migrations/20260906_air_reset_60_book_now_seed.sql", "utf8");
+const seed = fs.readFileSync("data-seeds/20260906_air_reset_60_book_now.sql", "utf8");
 
 test("AIR RESET seed persists canonical Thai booking taxonomy", () => {
   assert.match(seed, /'ล้าง', 'ผนัง'/);
