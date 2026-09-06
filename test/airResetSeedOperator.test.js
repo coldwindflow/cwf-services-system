@@ -37,6 +37,7 @@ test("AIR RESET seed gate runs only after successful staging or production deplo
   assert.match(workflow, /workflow_run:/);
   assert.match(workflow, /CWF Home Staging/);
   assert.match(workflow, /CWF Home Production/);
+  assert.match(workflow, /GIT_CONFIG_NOSYSTEM: "1"/);
   assert.match(workflow, /workflow_run\.conclusion == 'success'/);
   assert.match(workflow, /staging\/home-server-test/);
   assert.match(workflow, /production\/home-server/);
