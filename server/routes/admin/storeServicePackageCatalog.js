@@ -10,7 +10,7 @@ const {
 const {
   PrepaidServiceError,
   createPrepaidOrderService,
-} = require("../../services/prepaid/prepaidOrderService");
+} = require("../../services/prepaid/prepaidOrderServiceV2");
 
 function createStoreServicePackageCatalogRoutes({ service, requireAdminSession, promotionPolicyService, prepaidOrderService, pool = defaultPool }) {
   if (!service) throw new TypeError("store service-package catalog service is required");
@@ -44,13 +44,10 @@ function createStoreServicePackageCatalogRoutes({ service, requireAdminSession, 
   router.patch("/admin/catalog/service-package-bundles/:bundleKey/promotion-policy", requireAdminSession,
     handle(async (req, res) => res.json(await policyService.update(req.params.bundleKey, req.body || {}))));
 
-  // Admin can create the same server-authoritative prepaid order on behalf of a
-  // customer. If no customer_sub is supplied, a high-entropy claim token is
-  // returned once so the customer can claim the paid right in Customer App.
   router.post("/admin/prepaid-orders", requireAdminSession, handle(async (req, res) => {
     const customerSub = String(req.body?.customer_sub || "").trim() || null;
     const created = await prepaidService.createOrder(req.body || {}, { customerSub, identity: "admin" });
-    return res.status(201).json({ ok: true, ...created });
+    return res.status(created.replayed ? 200 : 201).json({ ok: true, ...created });
   }));
 
   router.post("/admin/prepaid-orders/:code/confirm-payment", requireAdminSession, handle(async (req, res) => {
