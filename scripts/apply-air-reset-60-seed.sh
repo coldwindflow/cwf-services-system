@@ -12,17 +12,10 @@ case "$ENVIRONMENT" in
   *) printf 'ERROR: environment must be staging or production\n' >&2; exit 2 ;;
 esac
 
-die() {
-  printf 'ERROR: %s\n' "$*" >&2
-  exit 1
-}
+die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 
 docker_cmd() {
-  if /usr/bin/docker info >/dev/null 2>&1; then
-    /usr/bin/docker "$@"
-  else
-    sudo -n /usr/bin/docker "$@"
-  fi
+  if /usr/bin/docker info >/dev/null 2>&1; then /usr/bin/docker "$@"; else sudo -n /usr/bin/docker "$@"; fi
 }
 
 db_query() {
@@ -32,16 +25,35 @@ db_query() {
     sh "$sql"
 }
 
-verify_seed_shape() {
+verify_prepaid_schema() {
+  local entitlements order_columns job_columns
+  entitlements="$(db_query "SELECT CASE WHEN to_regclass('public.customer_service_entitlements') IS NULL THEN 0 ELSE 1 END")"
+  order_columns="$(db_query "
+    SELECT count(*) FROM information_schema.columns
+    WHERE table_schema='public' AND table_name='customer_orders'
+      AND column_name IN (
+        'order_kind','customer_sub','service_entitlement_snapshot','prepaid_entitlement_code',
+        'prepaid_redeem_until','prepaid_warranty_days','prepaid_purchase_request_key',
+        'prepaid_purchase_fingerprint'
+      )
+  ")"
+  job_columns="$(db_query "
+    SELECT count(*) FROM information_schema.columns
+    WHERE table_schema='public' AND table_name='jobs'
+      AND column_name IN ('customer_due','payment_source','prepaid_entitlement_id')
+  ")"
+  [[ "$entitlements" == "1" && "$order_columns" == "8" && "$job_columns" == "3" ]] ||
+    die "PREPAID entitlement schema is not ready; refusing AIR RESET cutover"
+}
+
+verify_core_shape() {
   local parents variants tiers
   parents="$(db_query "
-    SELECT count(*)
-    FROM public.catalog_items
+    SELECT count(*) FROM public.catalog_items
     WHERE service_bundle_key IN ('air-reset-60-standard','air-reset-60-premium')
       AND service_package_pricing_strategy='total_quantity_tier_plus_unit_modifiers'
       AND service_package_selection_mode='multi_variant'
       AND service_package_maximum_total_quantity=4
-      AND service_package_payment_mode='book_now'
       AND service_package_warranty_days=60
       AND service_package_sell_start_at='2026-09-05T00:00:00+07:00'::timestamptz
       AND service_package_sell_end_at='2026-09-12T23:59:59.999+07:00'::timestamptz
@@ -50,8 +62,7 @@ verify_seed_shape() {
   [[ "$parents" == "2" ]] || die "AIR RESET parent verification failed: expected 2, got $parents"
 
   variants="$(db_query "
-    SELECT count(*)
-    FROM public.service_packages
+    SELECT count(*) FROM public.service_packages
     WHERE
       (package_key='air-reset-60-standard-small' AND job_type='ล้าง' AND ac_type='ผนัง'
        AND wash_variant='ล้างธรรมดา' AND btu_min IS NULL AND btu_max=12000
@@ -76,27 +87,33 @@ verify_seed_shape() {
     FROM public.service_package_tiers t
     JOIN public.service_packages p ON p.service_package_id=t.service_package_id
     WHERE
-      (
-        p.package_key IN ('air-reset-60-standard-small','air-reset-60-standard-large')
-        AND (
-          (t.tier_key='q1' AND t.service_quantity=1 AND t.fixed_total_price=550.00)
-          OR (t.tier_key='q2' AND t.service_quantity=2 AND t.fixed_total_price=959.00)
-          OR (t.tier_key='q3' AND t.service_quantity=3 AND t.fixed_total_price=1399.00)
-          OR (t.tier_key='q4' AND t.service_quantity=4 AND t.fixed_total_price=1799.00)
-        )
-      )
+      (p.package_key IN ('air-reset-60-standard-small','air-reset-60-standard-large') AND (
+        (t.tier_key='q1' AND t.service_quantity=1 AND t.fixed_total_price=550.00) OR
+        (t.tier_key='q2' AND t.service_quantity=2 AND t.fixed_total_price=959.00) OR
+        (t.tier_key='q3' AND t.service_quantity=3 AND t.fixed_total_price=1399.00) OR
+        (t.tier_key='q4' AND t.service_quantity=4 AND t.fixed_total_price=1799.00)))
       OR
-      (
-        p.package_key IN ('air-reset-60-premium-small','air-reset-60-premium-large')
-        AND (
-          (t.tier_key='q1' AND t.service_quantity=1 AND t.fixed_total_price=790.00)
-          OR (t.tier_key='q2' AND t.service_quantity=2 AND t.fixed_total_price=1490.00)
-          OR (t.tier_key='q3' AND t.service_quantity=3 AND t.fixed_total_price=2090.00)
-          OR (t.tier_key='q4' AND t.service_quantity=4 AND t.fixed_total_price=2690.00)
-        )
-      )
+      (p.package_key IN ('air-reset-60-premium-small','air-reset-60-premium-large') AND (
+        (t.tier_key='q1' AND t.service_quantity=1 AND t.fixed_total_price=790.00) OR
+        (t.tier_key='q2' AND t.service_quantity=2 AND t.fixed_total_price=1490.00) OR
+        (t.tier_key='q3' AND t.service_quantity=3 AND t.fixed_total_price=2090.00) OR
+        (t.tier_key='q4' AND t.service_quantity=4 AND t.fixed_total_price=2690.00)))
   ")"
   [[ "$tiers" == "16" ]] || die "AIR RESET tier verification failed: expected 16, got $tiers"
+}
+
+verify_prepaid_cutover() {
+  local count
+  count="$(db_query "
+    SELECT count(*) FROM public.catalog_items
+    WHERE service_bundle_key IN ('air-reset-60-standard','air-reset-60-premium')
+      AND booking_mode='service_package'
+      AND booking_flow_policy='scheduled_only'
+      AND service_package_payment_mode='prepaid_full'
+      AND service_package_warranty_days=60
+      AND is_active=TRUE AND is_customer_visible=TRUE
+  ")"
+  [[ "$count" == "2" ]] || die "AIR RESET prepaid cutover verification failed: expected 2, got $count"
 }
 
 [[ -f "$SEED_PATH" ]] || die "seed file is missing: $SEED_PATH"
@@ -104,72 +121,71 @@ actual_sha="$(sha256sum "$SEED_PATH" | awk '{print $1}')"
 [[ "$actual_sha" == "$EXPECTED_SEED_SHA" ]] || die "seed SHA mismatch"
 
 if [[ -n "${EXPECTED_RELEASE_SHA:-}" ]]; then
-  status_output="$(sudo -n /usr/local/sbin/cwf-deployctl "$ENVIRONMENT" status)" ||
-    die "could not read deployed $ENVIRONMENT status"
-  grep -Fq "$EXPECTED_RELEASE_SHA" <<<"$status_output" ||
-    die "deployed $ENVIRONMENT revision does not match $EXPECTED_RELEASE_SHA"
+  status_output="$(sudo -n /usr/local/sbin/cwf-deployctl "$ENVIRONMENT" status)" || die "could not read deployed $ENVIRONMENT status"
+  grep -Fq "$EXPECTED_RELEASE_SHA" <<<"$status_output" || die "deployed $ENVIRONMENT revision does not match $EXPECTED_RELEASE_SHA"
 fi
 
-[[ "$(docker_cmd inspect -f '{{.State.Running}}' "$DB_CONTAINER" 2>/dev/null)" == "true" ]] ||
-  die "$DB_CONTAINER is not running"
+[[ "$(docker_cmd inspect -f '{{.State.Running}}' "$DB_CONTAINER" 2>/dev/null)" == "true" ]] || die "$DB_CONTAINER is not running"
 [[ "$(db_query 'SELECT 1')" == "1" ]] || die "database connectivity check failed"
+verify_prepaid_schema
 
 required_columns="$(db_query "
-  SELECT count(*)
-  FROM information_schema.columns
-  WHERE table_schema='public'
-    AND (
-      (table_name='catalog_items' AND column_name IN (
-        'service_package_pricing_strategy',
-        'service_package_selection_mode',
-        'service_package_maximum_total_quantity',
-        'service_package_payment_mode',
-        'service_package_warranty_days'
-      ))
-      OR
-      (table_name='service_packages' AND column_name IN (
-        'service_level_key',
-        'service_level_label',
-        'unit_price_modifier'
-      ))
-    )
+  SELECT count(*) FROM information_schema.columns
+  WHERE table_schema='public' AND (
+    (table_name='catalog_items' AND column_name IN (
+      'service_package_pricing_strategy','service_package_selection_mode',
+      'service_package_maximum_total_quantity','service_package_payment_mode',
+      'service_package_warranty_days'))
+    OR
+    (table_name='service_packages' AND column_name IN (
+      'service_level_key','service_level_label','unit_price_modifier'))
+  )
 ")"
 [[ "$required_columns" == "8" ]] || die "promotion policy schema is not ready"
 
-existing_parents="$(db_query "
-  SELECT count(*) FROM public.catalog_items
-  WHERE service_bundle_key IN ('air-reset-60-standard','air-reset-60-premium')
-")"
-existing_variants="$(db_query "
-  SELECT count(*) FROM public.service_packages
-  WHERE package_key IN (
-    'air-reset-60-standard-small','air-reset-60-standard-large',
-    'air-reset-60-premium-small','air-reset-60-premium-large'
-  )
-")"
+existing_parents="$(db_query "SELECT count(*) FROM public.catalog_items WHERE service_bundle_key IN ('air-reset-60-standard','air-reset-60-premium')")"
+existing_variants="$(db_query "SELECT count(*) FROM public.service_packages WHERE package_key IN ('air-reset-60-standard-small','air-reset-60-standard-large','air-reset-60-premium-small','air-reset-60-premium-large')")"
 existing_tiers="$(db_query "
-  SELECT count(*)
-  FROM public.service_package_tiers t
-  JOIN public.service_packages p ON p.service_package_id=t.service_package_id
-  WHERE p.package_key IN (
-    'air-reset-60-standard-small','air-reset-60-standard-large',
-    'air-reset-60-premium-small','air-reset-60-premium-large'
-  )
+  SELECT count(*) FROM public.service_package_tiers t JOIN public.service_packages p ON p.service_package_id=t.service_package_id
+  WHERE p.package_key IN ('air-reset-60-standard-small','air-reset-60-standard-large','air-reset-60-premium-small','air-reset-60-premium-large')
 ")"
 
-if [[ "$existing_parents" == "2" && "$existing_variants" == "4" && "$existing_tiers" == "16" ]]; then
-  verify_seed_shape
-  printf 'AIR_RESET_SEED_ALREADY_APPLIED environment=%s\n' "$ENVIRONMENT"
-  exit 0
-fi
-
-if [[ "$existing_parents" != "0" || "$existing_variants" != "0" || "$existing_tiers" != "0" ]]; then
+if [[ "$existing_parents" == "0" && "$existing_variants" == "0" && "$existing_tiers" == "0" ]]; then
+  docker_cmd exec -i "$DB_CONTAINER" sh -ceu \
+    'exec psql -X -U "${POSTGRES_USER:?}" -d "${POSTGRES_DB:?}" -v ON_ERROR_STOP=1 --single-transaction' \
+    < "$SEED_PATH"
+elif [[ "$existing_parents" != "2" || "$existing_variants" != "4" || "$existing_tiers" != "16" ]]; then
   die "partial or unexpected AIR RESET data exists; refusing to overwrite it"
 fi
 
-docker_cmd exec -i "$DB_CONTAINER" sh -ceu \
-  'exec psql -X -U "${POSTGRES_USER:?}" -d "${POSTGRES_DB:?}" -v ON_ERROR_STOP=1 --single-transaction' \
-  < "$SEED_PATH"
+verify_core_shape
 
-verify_seed_shape
-printf 'AIR_RESET_SEED_OK environment=%s parents=2 variants=4 tiers=16\n' "$ENVIRONMENT"
+# Exact, narrow cutover. Only the two already-verified AIR RESET parent rows can
+# be made PREPAID. Price tiers/BTU modifiers are untouched.
+docker_cmd exec "$DB_CONTAINER" sh -ceu \
+  'exec psql -X -U "${POSTGRES_USER:?}" -d "${POSTGRES_DB:?}" -v ON_ERROR_STOP=1 -c "
+    BEGIN;
+    UPDATE public.catalog_items
+       SET booking_mode='"'"'service_package'"'"',
+           booking_flow_policy='"'"'scheduled_only'"'"',
+           service_package_payment_mode='"'"'prepaid_full'"'"',
+           service_package_warranty_days=60,
+           is_active=TRUE,
+           is_customer_visible=TRUE,
+           updated_at=NOW()
+     WHERE service_bundle_key IN ('"'"'air-reset-60-standard'"'"','"'"'air-reset-60-premium'"'"')
+       AND service_package_pricing_strategy='"'"'total_quantity_tier_plus_unit_modifiers'"'"'
+       AND service_package_selection_mode='"'"'multi_variant'"'"'
+       AND service_package_maximum_total_quantity=4
+       AND service_package_warranty_days=60
+       AND service_package_redeem_until='"'"'2027-01-31T23:59:59.999+07:00'"'"'::timestamptz;
+    SELECT CASE WHEN count(*)=2 THEN 1 ELSE (1/0) END
+      FROM public.catalog_items
+     WHERE service_bundle_key IN ('"'"'air-reset-60-standard'"'"','"'"'air-reset-60-premium'"'"')
+       AND booking_mode='"'"'service_package'"'"'
+       AND service_package_payment_mode='"'"'prepaid_full'"'"';
+    COMMIT;
+  "' >/dev/null
+
+verify_prepaid_cutover
+printf 'AIR_RESET_PREPAID_READY environment=%s parents=2 variants=4 tiers=16 payment_mode=prepaid_full\n' "$ENVIRONMENT"
