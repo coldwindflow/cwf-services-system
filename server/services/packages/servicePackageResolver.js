@@ -1,15 +1,22 @@
 "use strict";
 
+const crypto = require("crypto");
 const repository = require("./servicePackageRepository");
 const { normalizeServiceType, normalizeAcType, normalizeWashVariantLabel, normalizeWashKey } = require("../../normalizers");
 const { resolveCompositeBooking } = require("./compositeServicePackage");
+const { compositeBookingFromSnapshots } = require("../booking/servicePackageBooking");
 const { JOB_TYPE_VALUES, AC_TYPE_VALUES, WASH_VARIANT_VALUES } = require("./servicePackageTaxonomy");
 
 class ServicePackageResolutionError extends Error {
-  constructor(code, message) { super(message); this.name = "ServicePackageResolutionError"; this.code = code; }
+  constructor(code, message, statusCode) {
+    super(message);
+    this.name = "ServicePackageResolutionError";
+    this.code = code;
+    if (statusCode) this.statusCode = statusCode;
+  }
 }
 
-function fail(code, message) { throw new ServicePackageResolutionError(code, message); }
+function fail(code, message, statusCode) { throw new ServicePackageResolutionError(code, message, statusCode); }
 function instant(value) { return value == null ? null : new Date(value).toISOString(); }
 function nonEmptyString(value) { return typeof value === "string" && value.length > 0; }
 function positiveIntegerString(value) { return typeof value === "string" && /^[1-9]\d*$/.test(value); }
@@ -93,6 +100,28 @@ function readSnapshot(snapshot) {
   return structuredClone(value);
 }
 
+function tokenHash(value) {
+  return crypto.createHash("sha256").update(String(value)).digest("hex");
+}
+
+function scheduledBookingToken(requestKey) {
+  return crypto.createHash("sha256").update(`scheduled_v1:${String(requestKey)}`).digest("hex").slice(0, 24);
+}
+
+function parseEntitlementSnapshot(value) {
+  let snapshot = value;
+  if (typeof snapshot === "string") {
+    try { snapshot = JSON.parse(snapshot); } catch (_) { snapshot = null; }
+  }
+  if (!snapshot || snapshot.schema_version !== 1
+      || !Array.isArray(snapshot.snapshots) || !snapshot.snapshots.length
+      || !Array.isArray(snapshot.service_package_groups) || !snapshot.service_package_groups.length
+      || !snapshot.catalog_item_id || snapshot.payment_mode !== "prepaid_full") {
+    fail("PREPAID_SNAPSHOT_INVALID", "Paid service snapshot is invalid", 409);
+  }
+  return snapshot;
+}
+
 function createServicePackageResolver({ db, packageRepository = repository, now = () => new Date() }) {
   return {
     async resolveSelection(input = {}, { identity = "customer" } = {}) {
@@ -124,6 +153,73 @@ function createServicePackageResolver({ db, packageRepository = repository, now 
     listCustomerVisible(options) { return packageRepository.listCustomerVisiblePackages(db, options); },
     resolveComposite(input) {
       return resolveCompositeBooking({ ...input, repository: packageRepository, db, now });
+    },
+
+    // Resolve only an already-paid one-time entitlement. Mutable campaign/sale
+    // state is deliberately not consulted here: the purchased immutable snapshot
+    // is the contract. The final job INSERT is still protected by DB triggers that
+    // verify ownership and atomically consume the same entitlement.
+    async resolvePrepaidRedemption({ body = {}, bookingMode, appointmentDatetime }) {
+      if (bookingMode !== "scheduled") fail("PREPAID_SCHEDULED_ONLY", "Prepaid rights can only create scheduled bookings", 409);
+      const redemptionToken = String(body.prepaid_redemption_token || "").trim();
+      const requestKey = String(body.scheduled_request_key || "").trim();
+      if (!redemptionToken || !/^[A-Za-z0-9_-]{16,128}$/.test(requestKey)) {
+        fail("PREPAID_REDEMPTION_REQUIRED", "A valid paid entitlement is required", 409);
+      }
+      const bookingToken = scheduledBookingToken(requestKey);
+      let result;
+      try {
+        result = await db.query(
+          `SELECT entitlement_id, entitlement_code, customer_sub, service_snapshot, status,
+                  redeem_until, warranty_days, redemption_request_key,
+                  redemption_booking_token, redemption_expires_at, redeemed_job_id
+             FROM public.customer_service_entitlements
+            WHERE redemption_token_hash=$1
+              AND redemption_booking_token=$2
+            LIMIT 1
+            FOR UPDATE`,
+          [tokenHash(redemptionToken), bookingToken]
+        );
+      } catch (error) {
+        if (error?.code === "42P01" || error?.code === "42703") {
+          fail("PREPAID_SCHEMA_NOT_READY", "Prepaid service schema is not ready", 503);
+        }
+        throw error;
+      }
+      const entitlement = result.rows?.[0];
+      const at = now();
+      const appointment = new Date(appointmentDatetime);
+      if (!entitlement
+          || entitlement.status !== "redeeming"
+          || !entitlement.customer_sub
+          || entitlement.redeemed_job_id
+          || entitlement.redemption_request_key !== requestKey
+          || entitlement.redemption_booking_token !== bookingToken
+          || !entitlement.redemption_expires_at
+          || at >= new Date(entitlement.redemption_expires_at)
+          || at > new Date(entitlement.redeem_until)
+          || !Number.isFinite(appointment.getTime())
+          || appointment > new Date(entitlement.redeem_until)) {
+        fail("PREPAID_REDEMPTION_NOT_ALLOWED", "Paid entitlement cannot be redeemed", 409);
+      }
+      const purchased = parseEntitlementSnapshot(entitlement.service_snapshot);
+      const booking = compositeBookingFromSnapshots({
+        body,
+        snapshots: purchased.snapshots,
+      });
+      if (!booking
+          || String(booking.bundleId) !== String(purchased.catalog_item_id)
+          || Number(booking.fixedTotal).toFixed(2) !== Number(purchased.fixed_total_price).toFixed(2)) {
+        fail("PREPAID_REDEMPTION_MISMATCH", "Booking does not match purchased service", 409);
+      }
+      return {
+        ...booking,
+        paymentMode: "prepaid_full",
+        prepaidEntitlementId: String(entitlement.entitlement_id),
+        prepaidEntitlementCode: entitlement.entitlement_code,
+        warrantyDays: Number(entitlement.warranty_days || purchased.warranty_days || 0),
+        redeemUntil: new Date(entitlement.redeem_until).toISOString(),
+      };
     },
   };
 }
