@@ -182,13 +182,12 @@ test("AIR RESET direct booking blocks quantity above the advertised 1-4 range", 
 });
 
 test("AIR RESET seed is data configuration, not hard-coded runtime business logic", () => {
-  const seed = fs.readFileSync("migrations/20260906_air_reset_60_book_now_seed.sql", "utf8");
+  const seed = fs.readFileSync("data-seeds/20260906_air_reset_60_book_now.sql", "utf8");
   assert.match(seed, /air-reset-60-standard/);
   assert.match(seed, /air-reset-60-premium/);
   assert.match(seed, /total_quantity_tier_plus_unit_modifiers/);
-  assert.match(seed, /service_package_payment_mode='book_now'/);
-  assert.match(seed, /service_package_maximum_total_quantity=4/);
-  assert.match(seed, /service_package_warranty_days=60/);
+  assert.match(seed, /'book_now'/);
+  assert.match(seed, /4, 'book_now', 60/);
   assert.match(seed, /550\.00::numeric/);
   assert.match(seed, /959\.00::numeric/);
   assert.match(seed, /1490\.00::numeric/);
