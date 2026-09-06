@@ -57,7 +57,10 @@ test("Issue #329 promotion policy rejects invalid max, warranty, modifier, dupli
 test("Admin Store loads generic promotion-policy extension after the stable editor", () => {
   const html = fs.readFileSync("admin-store-catalog.html", "utf8");
   const js = fs.readFileSync("admin-store-promotion-policy-extension.js", "utf8");
-  assert.match(html, /admin-store-catalog\.js[^\n]+admin-store-promotion-policy-extension\.js/s);
+  const baseIndex = html.indexOf("/admin-store-catalog.js");
+  const extensionIndex = html.indexOf("/admin-store-promotion-policy-extension.js");
+  assert.ok(baseIndex >= 0, "base Admin Store script must be present");
+  assert.ok(extensionIndex > baseIndex, "promotion policy extension must load after the base editor");
   assert.match(js, /bm_pricing_strategy/);
   assert.match(js, /bm_payment_mode/);
   assert.match(js, /bm_warranty_days/);
