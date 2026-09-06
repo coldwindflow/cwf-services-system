@@ -35,7 +35,7 @@
           <option value="book_now">จองวันบริการทันที (Book now)</option>
           <option value="prepaid_full">ชำระเต็มจำนวน เก็บสิทธิ์ไว้ใช้ภายหลัง (Prepaid)</option>
         </select>
-        <p class="muted2 mini">Prepaid ต้องมีวันหมดสิทธิ์และวันรับประกัน ระบบจะไม่อนุญาต policy ที่ข้อมูลไม่ครบ</p>
+        <p class="muted2 mini">Prepaid ต้องมีวันหมดสิทธิ์และวันรับประกัน ระบบจะเปิดขายเมื่อ backend + schema พร้อมเท่านั้น</p>
       </div>
     </div>`;
   }
@@ -163,7 +163,10 @@
       const payload = bundlePayload();
       const desiredActive = payload.is_active;
       const desiredVisible = payload.is_customer_visible;
-      // Fail closed: the parent stays hidden until the policy write succeeds.
+
+      // Production ordering is deliberate:
+      // 1) save content hidden, 2) upload media, 3) save/validate policy hidden,
+      // 4) publish LAST. Any failure before step 4 leaves the Store item hidden.
       payload.is_active = false;
       payload.is_customer_visible = false;
       const url = editingBundleKey
@@ -176,20 +179,32 @@
       const bundleKey = saved.service_bundle_key || editingBundleKey;
       if (!bundleKey) throw new Error("ระบบไม่ได้ส่งรหัสโปรโมชั่นกลับมา กรุณารีเฟรชและลองใหม่");
 
-      await apiFetch(`/admin/catalog/service-package-bundles/${encodeURIComponent(bundleKey)}/promotion-policy`, {
-        method: "PATCH",
-        body: JSON.stringify(promotionPolicyPayload(saved, desiredActive, desiredVisible)),
-      });
-
       const files = Array.from(el("bm_images")?.files || []);
       for (const file of files) {
         const formData = new FormData();
         formData.append("image", file);
         await apiFetch(`/admin/catalog/items/${saved.item_id}/images`, { method: "POST", body: formData });
       }
+
+      // Validate and persist every pricing/payment rule while still invisible.
+      await apiFetch(`/admin/catalog/service-package-bundles/${encodeURIComponent(bundleKey)}/promotion-policy`, {
+        method: "PATCH",
+        body: JSON.stringify(promotionPolicyPayload(saved, false, false)),
+      });
+
+      // Publish is the final mutation. For prepaid_full, backend readiness is
+      // checked here; if migration/backend is missing this call fails and the
+      // already-saved promotion remains hidden instead of breaking checkout.
+      if (desiredActive || desiredVisible) {
+        await apiFetch(`/admin/catalog/service-package-bundles/${encodeURIComponent(bundleKey)}/promotion-policy`, {
+          method: "PATCH",
+          body: JSON.stringify(promotionPolicyPayload(saved, desiredActive, desiredVisible)),
+        });
+      }
+
       el("bundle_modal_backdrop").classList.add("hidden");
       await Promise.all([loadServicePackages(), loadCatalogItems()]);
-      showToast("บันทึกโปรโมชั่นและนโยบายราคาแล้ว", "success");
+      showToast("บันทึกโปรโมชั่นและเปิดขายเรียบร้อย", "success");
     } catch (error) {
       box.textContent = error?.message || "บันทึกโปรโมชั่นไม่สำเร็จ ระบบคงรายการไว้ในสถานะซ่อนเพื่อความปลอดภัย";
       box.style.display = "block";
