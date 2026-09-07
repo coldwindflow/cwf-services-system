@@ -274,7 +274,6 @@ test("tracking selection references keep one absolute expiry across select and r
   const initial = trackingPrivacy.verifyTrackingSelectionReference(reference, secret, { now: issuedAt });
   assert.ok(initial.expires_at <= Math.floor(issuedAt / 1000) + (15 * 60));
 
-  // /public/track/select and subsequent refreshes return this same reference.
   const afterSelect = trackingPrivacy.verifyTrackingSelectionReference(reference, secret, { now: issuedAt + 5 * 60_000 });
   const afterRefresh = trackingPrivacy.verifyTrackingSelectionReference(reference, secret, { now: issuedAt + 14 * 60_000 });
   assert.equal(afterSelect.expires_at, initial.expires_at);
@@ -305,7 +304,6 @@ test("selection review limiter is stable per verified job and distinct across jo
   assert.notEqual(otherKey, firstKey);
   assert.equal(trackingPrivacy.selectionReviewLimiterKey(null), "");
 
-  // A fresh lookup/reference for the same job cannot reset the shared budget.
   const limiter = trackingPrivacy.createPublicLookupRateLimiter({ windowMs: 60_000, max: 1 });
   assert.equal(limiter.check(firstKey).allowed, true);
   assert.equal(limiter.check(secondKey).allowed, false);
@@ -391,11 +389,8 @@ test("rate limiter caps its key map (LRU) so it cannot grow without bound", () =
 });
 
 test("clientIpKey uses the framework-resolved req.ip and IGNORES raw X-Forwarded-For", () => {
-  // req.ip is derived under the app's `trust proxy` setting; the raw header is
-  // attacker-controlled and must not create a fresh identity.
   assert.equal(trackingPrivacy.clientIpKey({ ip: "203.0.113.7", headers: { "x-forwarded-for": "1.1.1.1, 2.2.2.2" } }), "203.0.113.7");
   assert.equal(trackingPrivacy.clientIpKey({ headers: { "x-forwarded-for": "9.9.9.9" }, socket: { remoteAddress: "10.0.0.5" } }), "10.0.0.5");
-  // Spoofing XFF cannot change the key when req.ip is stable.
   const a = trackingPrivacy.clientIpKey({ ip: "203.0.113.7", headers: { "x-forwarded-for": "1.1.1.1" } });
   const b = trackingPrivacy.clientIpKey({ ip: "203.0.113.7", headers: { "x-forwarded-for": "8.8.8.8" } });
   assert.equal(a, b);
@@ -408,7 +403,7 @@ function docsFakePool(job) {
     async query(sql) {
       const s = String(sql);
       if (s.includes("FROM public.jobs WHERE job_id=$1")) return { rows: job ? [job] : [] };
-      return { rows: [] }; // job_items, job_promotions, job_photos
+      return { rows: [] };
     },
   };
 }
@@ -429,9 +424,9 @@ function startDocsServer({ job, isAdmin = false } = {}) {
   return new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve(server)));
 }
 const durl = (s) => `http://127.0.0.1:${s.address().port}`;
-const JOB = { job_id: 7, booking_code: "CWFJOB7", booking_token: "tok_secret_77", customer_name: "ลูกค้า", customer_phone: "0810000000", job_type: "ล้างแอร์", address_text: "บ้านเลขที่ลับ", job_price: 500 };
+const JOB = { job_id: 7, booking_code: "CWFJOB7", booking_token: "tok_secret_77", customer_name: "ลูกค้า", customer_phone: "0810000000", job_type: "ล้างแอร์", address_text: "บ้านเลขที่ลับ", job_price: 500, finished_at: "2026-07-10T12:00:00.000Z" };
 
-test("job documents (quote/receipt/eslip) 404 on a bare job_id, 200 with the exact token key", async () => {
+test("finished job documents 404 on a bare job_id and 200 with the exact token key", async () => {
   const server = await startDocsServer({ job: JOB });
   try {
     for (const doc of ["quote", "receipt", "eslip"]) {
@@ -440,7 +435,7 @@ test("job documents (quote/receipt/eslip) 404 on a bare job_id, 200 with the exa
       const wrong = await fetch(`${durl(server)}/docs/${doc}/7?key=tok_wrong`);
       assert.equal(wrong.status, 404, `${doc} wrong key must 404`);
       const ok = await fetch(`${durl(server)}/docs/${doc}/7?key=tok_secret_77`);
-      assert.equal(ok.status, 200, `${doc} correct key must 200`);
+      assert.equal(ok.status, 200, `${doc} correct key must 200 after completion`);
       assert.match(ok.headers.get("cache-control") || "", /no-store/);
       assert.equal(ok.headers.get("referrer-policy"), "no-referrer");
       assert.match(ok.headers.get("x-robots-tag") || "", /noindex/);
@@ -448,8 +443,20 @@ test("job documents (quote/receipt/eslip) 404 on a bare job_id, 200 with the exa
   } finally { server.close(); }
 });
 
+test("customer quote remains available before completion but receipt and e-slip stay hidden", async () => {
+  const server = await startDocsServer({ job: { ...JOB, finished_at: null } });
+  try {
+    const quote = await fetch(`${durl(server)}/docs/quote/7?key=tok_secret_77`);
+    assert.equal(quote.status, 200);
+    for (const doc of ["receipt", "eslip"]) {
+      const res = await fetch(`${durl(server)}/docs/${doc}/7?key=tok_secret_77`);
+      assert.equal(res.status, 404, `${doc} must stay hidden until technician completion`);
+    }
+  } finally { server.close(); }
+});
+
 test("job documents open for an authenticated admin without any key", async () => {
-  const server = await startDocsServer({ job: JOB, isAdmin: true });
+  const server = await startDocsServer({ job: { ...JOB, finished_at: null }, isAdmin: true });
   try {
     const res = await fetch(`${durl(server)}/docs/receipt/7`);
     assert.equal(res.status, 200);
@@ -526,15 +533,10 @@ test("all three job-doc routes share one gate helper + sensitive headers", () =>
 });
 
 test("the customer app keeps document access token-only and injects review credentials from memory", () => {
-  // The receipt URL still carries the booking_token as ?key=, but it is now
-  // constructed at click time from state (receiptUrl(data)) instead of being
-  // interpolated into rendered HTML — see Blocker 1.
   assert.match(trackingClientSrc, /`\/docs\/receipt\/\$\{encodeURIComponent\(data\.job_id\)\}\?key=\$\{encodeURIComponent\(data\.booking_token\)\}`/);
-  // Documents remain token-only; selected jobs may use an opaque review reference.
   assert.match(trackingClientSrc, /if \(!canUseTokenActions\(data\)\) return "";/);
   assert.match(trackingClientSrc, /const reviewToken = canUseTokenActions\(data\)/);
   assert.match(trackingClientSrc, /if \(!catalogReview\.eligible \|\| !canUseTokenActions\(data\)\) return "";/);
-  // Neither credential may be embedded in rendered HTML or hidden inputs.
   assert.doesNotMatch(trackingClientSrc, /name="booking_token"/);
   assert.match(trackingClientSrc, /payload\.booking_token = token/);
   assert.match(trackingClientSrc, /payload\.selection_ref = selectionReference/);
