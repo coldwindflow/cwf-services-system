@@ -212,6 +212,19 @@ function createServicePackageResolver({ db, packageRepository = repository, now 
           || Number(booking.fixedTotal).toFixed(2) !== Number(purchased.fixed_total_price).toFixed(2)) {
         fail("PREPAID_REDEMPTION_MISMATCH", "Booking does not match purchased service", 409);
       }
+
+      // The booking service re-resolves the package inside the same DB transaction
+      // immediately before INSERT. Store the verified entitlement context in
+      // transaction-local settings so the INSERT trigger can bind the job to this
+      // exact paid right even though legacy booking code generates its own token.
+      // set_config(..., true) is transaction-local and disappears on commit/rollback.
+      await db.query(
+        `SELECT set_config('cwf.prepaid_entitlement_id',$1,true),
+                set_config('cwf.prepaid_customer_sub',$2,true),
+                set_config('cwf.prepaid_booking_token',$3,true)`,
+        [String(entitlement.entitlement_id), String(entitlement.customer_sub), bookingToken]
+      );
+
       return {
         ...booking,
         paymentMode: "prepaid_full",
