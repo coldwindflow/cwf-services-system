@@ -13,10 +13,6 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="CWF Service">
   <title>CWF Customer Service</title>
-  <!-- Load one web font (Noto Sans Thai) so every screen renders in the same
-       typeface regardless of what the device has installed. Loaded async
-       (media=print → all onload) so a slow/unreachable font CDN never blocks
-       first paint; the UI shows the fallback stack until the font arrives. -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700;800;900&display=swap" media="print" onload="this.media='all'">
@@ -34,22 +30,17 @@
           <img src="./assets/icons/cwf-customer-192.png" alt="">
           <span>CWF</span>
         </div>
-        <div>
-          <p class="eyebrow">Coldwindflow</p>
-          <h1>CWF Service</h1>
-        </div>
+        <div><p class="eyebrow">Coldwindflow</p><h1>CWF Service</h1></div>
       </div>
       <button class="icon-pill" type="button" data-route="profile" data-account-chip aria-label="เข้าสู่ระบบหรือดูบัญชี">
-        <span class="account-chip-avatar" data-account-chip-avatar aria-hidden="true"></span>
-        <span data-account-chip-label>บัญชี</span>
+        <span class="account-chip-avatar" data-account-chip-avatar aria-hidden="true"></span><span data-account-chip-label>บัญชี</span>
       </button>
     </header>
 
     <main id="app" class="app-main" tabindex="-1">
       <section class="app-boot-screen" aria-live="polite">
         <img src="./assets/icons/cwf-customer-192.png" alt="" width="72" height="72">
-        <strong>กำลังเปิด CWF Service</strong>
-        <span>เตรียมบริการและข้อมูลบัญชีของคุณ</span>
+        <strong>กำลังเปิด CWF Service</strong><span>เตรียมบริการและข้อมูลบัญชีของคุณ</span>
       </section>
     </main>
 
@@ -78,6 +69,7 @@
   <script src="./modules/availability.js?v=20260827_minimum_price_upload_cache_v1"></script>
   <script src="./modules/bookingTicket.js?v=20260827_minimum_price_upload_cache_v1"></script>
   <script src="./modules/bookingScheduled.js?v=20260827_minimum_price_upload_cache_v1"></script>
+  <script src="./modules/prepaid.js?v=20260827_minimum_price_upload_cache_v1"></script>
   <script src="./modules/bookingUrgent.js?v=20260827_minimum_price_upload_cache_v1"></script>
   <script src="./modules/tracking.js?v=20260827_minimum_price_upload_cache_v1"></script>
   <script src="./modules/profile.js?v=20260827_minimum_price_upload_cache_v1"></script>

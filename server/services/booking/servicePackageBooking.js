@@ -128,7 +128,22 @@ async function resolvePackageBooking({ body, bookingMode, appointmentDatetime, r
   try {
     if (request.composite) {
       if (!resolver || typeof resolver.resolveComposite !== "function") throw packageError("PACKAGE_UNAVAILABLE", 409);
-      return await resolver.resolveComposite({ body, bookingMode, appointmentDatetime, identity });
+
+      // A prepaid purchase is not a booking. Only begin-redemption can mint the
+      // one-time token/request-key pair accepted here; all other attempts to book
+      // a prepaid_full campaign are rejected before availability/job mutation.
+      if (String(body.prepaid_redemption_token || "").trim()) {
+        if (typeof resolver.resolvePrepaidRedemption !== "function") {
+          throw packageError("PREPAID_REDEMPTION_REQUIRED", 409);
+        }
+        return await resolver.resolvePrepaidRedemption({ body, bookingMode, appointmentDatetime, identity });
+      }
+
+      const booking = await resolver.resolveComposite({ body, bookingMode, appointmentDatetime, identity });
+      if (booking?.paymentMode === "prepaid_full") {
+        throw packageError("PREPAID_REDEMPTION_REQUIRED", 409);
+      }
+      return booking;
     }
     const selection = await resolver.resolveSelection(request, { identity });
     return canonicalizeSelection(selection, body, appointmentDatetime);

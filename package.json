@@ -20,6 +20,7 @@
     "migrate:store-service-package-bundles": "node scripts/run-store-service-package-bundles-migration.js",
     "migrate:customer-orders-payment": "node scripts/run-customer-orders-payment-migration.js",
     "migrate:customer-orders-fulfillment": "node scripts/run-customer-orders-fulfillment-migration.js",
+    "migrate:prepaid-service-entitlements": "node scripts/run-prepaid-service-entitlements-migration.js",
     "migrate:store-buy": "node scripts/run-store-buy-migrations.js",
     "test": "node --test test/*.test.js"
   },

@@ -21,16 +21,23 @@ test("AIR RESET data is not admitted to the schema-only expand migration lane", 
   assert.doesNotMatch(seed, /\b(?:UPDATE|DELETE FROM|TRUNCATE|DROP TABLE|DROP COLUMN)\b/i);
 });
 
-test("AIR RESET seed operator pins content, release revision and atomic application", () => {
+test("AIR RESET prepaid cutover pins seed and release, verifies schema and preserves advertised data", () => {
   const sha = crypto.createHash("sha256").update(seed).digest("hex");
   assert.equal(sha, "bc82b1bdf995284ec8a37393ed22161363e6d0aec840dc8df31bda8f43d8ae55");
   assert.match(operator, new RegExp(sha));
   assert.match(operator, /EXPECTED_RELEASE_SHA/);
   assert.match(operator, /cwf-deployctl.*status/);
-  assert.match(operator, /--single-transaction/);
+  assert.match(operator, /verify_prepaid_schema/);
   assert.match(operator, /partial or unexpected AIR RESET data exists; refusing to overwrite it/);
-  assert.match(operator, /AIR_RESET_SEED_OK environment=%s parents=2 variants=4 tiers=16/);
-  assert.match(operator, /AIR_RESET_SEED_ALREADY_APPLIED/);
+  assert.match(operator, /service_package_payment_mode='"'"'prepaid_full'"'"'/);
+  assert.match(operator, /booking_mode='"'"'service_package'"'"'/);
+  assert.match(operator, /AIR_RESET_PREPAID_READY environment=%s parents=2 variants=4 tiers=16 payment_mode=prepaid_full/);
+  assert.match(operator, /550\.00/);
+  assert.match(operator, /959\.00/);
+  assert.match(operator, /1490\.00/);
+  assert.match(operator, /2690\.00/);
+  assert.match(operator, /unit_price_modifier=100/);
+  assert.match(operator, /unit_price_modifier=200/);
 });
 
 test("AIR RESET seed gate runs only after successful staging or production deployment", () => {
@@ -43,6 +50,6 @@ test("AIR RESET seed gate runs only after successful staging or production deplo
   assert.match(workflow, /production\/home-server/);
   assert.match(workflow, /ref: \$\{\{ github\.event\.workflow_run\.head_sha \}\}/);
   assert.match(workflow, /EXPECTED_RELEASE_SHA: \$\{\{ github\.event\.workflow_run\.head_sha \}\}/);
-  assert.match(workflow, /apply-air-reset-60-seed\.sh staging/);
-  assert.match(workflow, /apply-air-reset-60-seed\.sh production/);
+  assert.match(workflow, /apply-prepaid-service-entitlements-home\.sh staging[\s\S]*apply-air-reset-60-seed\.sh staging/);
+  assert.match(workflow, /apply-prepaid-service-entitlements-home\.sh production[\s\S]*apply-air-reset-60-seed\.sh production/);
 });
