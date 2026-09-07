@@ -470,8 +470,10 @@
     installScheduledSubmitBridge();
     document.addEventListener("click", interceptStoreClick, true);
     updateRightsPill();
-    const observer = new MutationObserver(updateRightsPill);
-    observer.observe(document.body, { childList: true, subtree: false });
+    if (typeof MutationObserver === "function") {
+      const observer = new MutationObserver(updateRightsPill);
+      observer.observe(document.body, { childList: true, subtree: false });
+    }
     window.addEventListener("hashchange", updateRightsPill);
   }
 
