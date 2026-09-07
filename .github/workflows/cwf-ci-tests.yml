@@ -45,6 +45,9 @@ jobs:
           # SHAs. A shallow checkout does not contain both sides of that diff.
           fetch-depth: 0
 
+      - name: Print PREPAID migration approval hash
+        run: sha256sum migrations/20260906_prepaid_service_entitlements.sql
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
