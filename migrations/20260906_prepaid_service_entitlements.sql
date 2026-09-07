@@ -185,34 +185,50 @@ AFTER INSERT OR UPDATE OF status ON public.customer_orders
 FOR EACH ROW
 EXECUTE FUNCTION public.issue_prepaid_entitlement_from_paid_order();
 
--- A normal booking token is ignored. A token reserved by begin-redemption is a
--- database capability: lock its entitlement and attach prepaid settlement before
--- the job is inserted. This makes double redemption impossible even across app
--- instances and preserves jobs.job_price/job_items for technician income.
+-- The package resolver re-validates an entitlement inside the booking
+-- transaction and writes these three transaction-local settings immediately
+-- before INSERT. The trigger consumes only that exact context; it never guesses
+-- an entitlement from customer phone/name or mutable campaign state.
 CREATE OR REPLACE FUNCTION public.guard_prepaid_job_redemption()
 RETURNS TRIGGER
 LANGUAGE plpgsql
 AS $$
 DECLARE
   ent public.customer_service_entitlements%ROWTYPE;
+  context_entitlement_id BIGINT;
+  context_customer_sub TEXT;
+  context_booking_token TEXT;
+  prepaid_paid_at TIMESTAMPTZ;
 BEGIN
-  IF NEW.booking_token IS NULL OR btrim(NEW.booking_token) = '' THEN
+  context_entitlement_id := NULLIF(current_setting('cwf.prepaid_entitlement_id', true), '')::BIGINT;
+  context_customer_sub := NULLIF(current_setting('cwf.prepaid_customer_sub', true), '');
+  context_booking_token := NULLIF(current_setting('cwf.prepaid_booking_token', true), '');
+
+  -- Ordinary bookings have no transaction-local prepaid context and must retain
+  -- their existing behavior unchanged.
+  IF context_entitlement_id IS NULL
+     AND context_customer_sub IS NULL
+     AND context_booking_token IS NULL THEN
     RETURN NEW;
+  END IF;
+
+  IF context_entitlement_id IS NULL
+     OR context_customer_sub IS NULL
+     OR context_booking_token IS NULL THEN
+    RAISE EXCEPTION 'PREPAID_REDEMPTION_CONTEXT_INVALID'
+      USING ERRCODE = 'P0001';
   END IF;
 
   SELECT * INTO ent
     FROM public.customer_service_entitlements
-   WHERE redemption_booking_token = NEW.booking_token
+   WHERE entitlement_id = context_entitlement_id
+     AND redemption_booking_token = context_booking_token
    FOR UPDATE;
 
-  IF NOT FOUND THEN
-    RETURN NEW;
-  END IF;
-
-  IF ent.status <> 'redeeming'
+  IF NOT FOUND
+     OR ent.status <> 'redeeming'
      OR ent.customer_sub IS NULL
-     OR NEW.customer_sub IS NULL
-     OR ent.customer_sub <> NEW.customer_sub
+     OR ent.customer_sub <> context_customer_sub
      OR ent.redemption_expires_at IS NULL
      OR ent.redemption_expires_at <= NOW()
      OR ent.redeem_until < NOW()
@@ -224,9 +240,28 @@ BEGIN
       USING ERRCODE = 'P0001';
   END IF;
 
+  SELECT o.paid_at INTO prepaid_paid_at
+    FROM public.customer_orders o
+   WHERE o.order_id = ent.order_id
+     AND o.order_kind = 'service_prepaid'
+     AND o.status = 'paid'
+   LIMIT 1;
+
+  IF prepaid_paid_at IS NULL THEN
+    RAISE EXCEPTION 'PREPAID_ORDER_PAYMENT_NOT_VERIFIED'
+      USING ERRCODE = 'P0001';
+  END IF;
+
+  -- Preserve full job_price/job_items for revenue and technician earnings, but
+  -- mark the customer settlement as already paid so the job is never collected
+  -- a second time and never appears in unpaid follow-up.
   NEW.prepaid_entitlement_id := ent.entitlement_id;
+  NEW.customer_sub := ent.customer_sub;
+  NEW.booking_token := context_booking_token;
   NEW.payment_source := 'prepaid_entitlement';
   NEW.customer_due := 0.00;
+  NEW.payment_status := 'paid';
+  NEW.paid_at := prepaid_paid_at;
   RETURN NEW;
 END;
 $$;
