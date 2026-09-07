@@ -70,17 +70,16 @@ fi
 [[ "$(docker_cmd inspect -f '{{.State.Running}}' "$DB_CONTAINER" 2>/dev/null)" == "true" ]] || die "$DB_CONTAINER is not running"
 [[ "$(db_query 'SELECT 1')" == "1" ]] || die "database connectivity check failed"
 
-# The SQL is additive/idempotent and wraps itself in one transaction. Advisory
-# lock prevents two release-gate jobs from applying the same lifecycle migration
-# concurrently on one database.
+# Run lock + migration + unlock in the same PostgreSQL session. A session-level
+# advisory lock acquired by a separate psql process would be released as soon as
+# that process exits and would not protect the migration that follows.
 LOCK_KEY="202609060329"
-docker_cmd exec "$DB_CONTAINER" sh -ceu \
-  'exec psql -X -U "${POSTGRES_USER:?}" -d "${POSTGRES_DB:?}" -v ON_ERROR_STOP=1 -c "SELECT pg_advisory_lock('$LOCK_KEY'::bigint)"' >/dev/null
-trap 'docker_cmd exec "$DB_CONTAINER" sh -ceu '\''exec psql -X -U "${POSTGRES_USER:?}" -d "${POSTGRES_DB:?}" -v ON_ERROR_STOP=1 -c "SELECT pg_advisory_unlock('"$LOCK_KEY"'::bigint)"'\'' >/dev/null 2>&1 || true' EXIT
-
-docker_cmd exec -i "$DB_CONTAINER" sh -ceu \
-  'exec psql -X -U "${POSTGRES_USER:?}" -d "${POSTGRES_DB:?}" -v ON_ERROR_STOP=1' \
-  < "$MIGRATION_PATH"
+{
+  printf 'SELECT pg_advisory_lock(%s::bigint);\n' "$LOCK_KEY"
+  cat "$MIGRATION_PATH"
+  printf '\nSELECT pg_advisory_unlock(%s::bigint);\n' "$LOCK_KEY"
+} | docker_cmd exec -i "$DB_CONTAINER" sh -ceu \
+  'exec psql -X -U "${POSTGRES_USER:?}" -d "${POSTGRES_DB:?}" -v ON_ERROR_STOP=1'
 
 verify_schema
 printf 'PREPAID_SERVICE_ENTITLEMENTS_MIGRATION_OK environment=%s triggers=4\n' "$ENVIRONMENT"
