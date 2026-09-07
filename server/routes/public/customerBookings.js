@@ -9,15 +9,18 @@ function registerPublicCustomerBookingRoutes(app, options = {}) {
   }
 
   // PREPAID is mounted next to the existing customer booking surface so it uses
-  // the same app/process without creating a second booking engine. The prepaid
-  // router defaults to the canonical pool/JWT config when the caller does not
-  // explicitly inject them (legacy index wiring stays compatible).
-  app.use(createCustomerPrepaidRoutes({
-    pool: options.pool,
-    env: options.env,
-    requireCustomerJwt: options.requireCustomerJwt,
-    service: options.prepaidService,
-  }));
+  // the same app/process without creating a second booking engine. Real Express
+  // applications expose app.use(); route-adapter tests and compatible thin
+  // adapters may expose only app.post(), so keep the legacy registration contract
+  // intact without weakening the real production mount.
+  if (typeof app.use === "function") {
+    app.use(createCustomerPrepaidRoutes({
+      pool: options.pool,
+      env: options.env,
+      requireCustomerJwt: options.requireCustomerJwt,
+      service: options.prepaidService,
+    }));
+  }
 
   app.post("/public/urgent-dispatch-preflight", service.handlePublicUrgentPreflight);
   if (options.quoteService && typeof options.quoteService.handle === "function") {
