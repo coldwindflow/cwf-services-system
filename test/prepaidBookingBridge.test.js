@@ -128,5 +128,5 @@ test("customer app loads and precaches prepaid booking bridge after prepaid modu
   const bridge = index.indexOf("modules/prepaidBookingBridge.js");
   const router = index.indexOf("modules/router.js");
   assert.ok(prepaid >= 0 && bridge > prepaid && router > bridge);
-  assert.match(sw, /prepaidBookingBridge\.js\?v=20260908_prepaid_slot_hotfix_v1/);
+  assert.match(sw, /prepaidBookingBridge\.js\?v=\$\{BUILD_ID\}/);
 });
