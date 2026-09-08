@@ -125,6 +125,17 @@
     root.state.setScheduledWizard({ step: 2, error: "" });
   }
 
+  function openScheduledRoute() {
+    const currentRoute = typeof root.state?.readRouteFromHash === "function"
+      ? root.state.readRouteFromHash()
+      : "";
+    if (currentRoute === "scheduled" && typeof root.router?.refresh === "function") {
+      root.router.refresh();
+      return;
+    }
+    root.utils.routeTo("scheduled");
+  }
+
   async function useRight(entitlementCode) {
     if (inFlight) return;
     const code = String(entitlementCode || "").trim();
@@ -138,7 +149,7 @@
       });
       prepareScheduledDraft(data.redemption);
       closePrepaidModal();
-      root.utils.routeTo("scheduled");
+      openScheduledRoute();
     } catch (error) {
       showError(error);
     } finally {
@@ -158,6 +169,6 @@
 
   root.prepaidBookingBridge = {
     useRight,
-    _test: { prepareScheduledDraft },
+    _test: { prepareScheduledDraft, openScheduledRoute },
   };
 })();
