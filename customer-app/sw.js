@@ -25,6 +25,7 @@ const APP_SHELL = [
   `./modules/bookingTicket.js?v=${BUILD_ID}`,
   `./modules/bookingScheduled.js?v=${BUILD_ID}`,
   `./modules/prepaid.js?v=${BUILD_ID}`,
+  "./modules/prepaidBookingBridge.js?v=20260908_prepaid_slot_hotfix_v1",
   `./modules/bookingUrgent.js?v=${BUILD_ID}`,
   `./modules/tracking.js?v=${BUILD_ID}`,
   `./modules/profile.js?v=${BUILD_ID}`,
