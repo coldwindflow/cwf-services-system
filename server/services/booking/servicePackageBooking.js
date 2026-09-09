@@ -2,6 +2,8 @@
 
 const { normalizeGroups, parseMoney, formatMoney, allocateUnitMoney } = require("../packages/compositeServicePackage");
 
+const ADMIN_STORE_BOOKING_AUTH = Symbol.for("cwf.adminStoreBookingAuthorized");
+
 const PACKAGE_ERROR_STATUS = Object.freeze({
   PACKAGE_IDENTITY_REQUIRED: 400,
   TIER_IDENTITY_REQUIRED: 400,
@@ -129,18 +131,24 @@ async function resolvePackageBooking({ body, bookingMode, appointmentDatetime, r
     if (request.composite) {
       if (!resolver || typeof resolver.resolveComposite !== "function") throw packageError("PACKAGE_UNAVAILABLE", 409);
 
-      // A prepaid purchase is not a booking. Only begin-redemption can mint the
-      // one-time token/request-key pair accepted here; all other attempts to book
-      // a prepaid_full campaign are rejected before availability/job mutation.
+      // Only the server-side Admin Store validator can add this Symbol marker.
+      // It is impossible to send over JSON, so public/customer requests cannot
+      // impersonate the Admin booking-on-behalf path.
+      const adminBookingOnBehalf = body?.[ADMIN_STORE_BOOKING_AUTH] === true;
+      const effectiveIdentity = adminBookingOnBehalf ? "admin" : identity;
+
+      // Customer prepaid purchases remain redemption-only. Admin is an explicit
+      // operational override: an authenticated Admin may place the purchased
+      // promotion directly onto the technician schedule for a customer.
       if (String(body.prepaid_redemption_token || "").trim()) {
         if (typeof resolver.resolvePrepaidRedemption !== "function") {
           throw packageError("PREPAID_REDEMPTION_REQUIRED", 409);
         }
-        return await resolver.resolvePrepaidRedemption({ body, bookingMode, appointmentDatetime, identity });
+        return await resolver.resolvePrepaidRedemption({ body, bookingMode, appointmentDatetime, identity: effectiveIdentity });
       }
 
-      const booking = await resolver.resolveComposite({ body, bookingMode, appointmentDatetime, identity });
-      if (booking?.paymentMode === "prepaid_full") {
+      const booking = await resolver.resolveComposite({ body, bookingMode, appointmentDatetime, identity: effectiveIdentity });
+      if (booking?.paymentMode === "prepaid_full" && !adminBookingOnBehalf) {
         throw packageError("PREPAID_REDEMPTION_REQUIRED", 409);
       }
       return booking;
