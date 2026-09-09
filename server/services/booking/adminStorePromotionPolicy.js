@@ -1,5 +1,7 @@
 "use strict";
 
+const ADMIN_STORE_BOOKING_AUTH = Symbol.for("cwf.adminStoreBookingAuthorized");
+
 class AdminStorePromotionPolicyError extends Error {
   constructor(code, statusCode = 400) {
     super(code);
@@ -11,6 +13,15 @@ class AdminStorePromotionPolicyError extends Error {
 
 function present(value) { return value != null && String(value).trim() !== ""; }
 function positive(value) { return Number(value || 0) > 0; }
+
+function authorizeAdminStoreBooking(body) {
+  Object.defineProperty(body, ADMIN_STORE_BOOKING_AUTH, {
+    value: true,
+    configurable: true,
+    enumerable: false,
+    writable: false,
+  });
+}
 
 function validateAdminStorePromotionRequest(body = {}, { createdBySource = "admin" } = {}) {
   if (createdBySource !== "admin") return { kind: null };
@@ -24,18 +35,26 @@ function validateAdminStorePromotionRequest(body = {}, { createdBySource = "admi
   if (commonConflict) throw new AdminStorePromotionPolicyError("STORE_PROMOTION_STACKING_UNSUPPORTED");
 
   if (composite) {
-    if (present(body.catalog_item_id) || present(body.service_package_key) || present(body.service_package_tier_key)
+    // catalog_item_id is the parent Store promotion identity for a composite bundle.
+    // Admin Add intentionally sends it together with service_package_groups and the
+    // composite resolver needs it to bind the request to the correct Store item.
+    if (!present(body.catalog_item_id)) {
+      throw new AdminStorePromotionPolicyError("STORE_PROMOTION_CATALOG_ITEM_REQUIRED");
+    }
+    if (present(body.service_package_key) || present(body.service_package_tier_key)
         || (Array.isArray(body.services) && body.services.length > 0)
         || (Array.isArray(body.service_lines) && body.service_lines.length > 0)) {
       throw new AdminStorePromotionPolicyError("STORE_PROMOTION_STACKING_UNSUPPORTED");
     }
+    authorizeAdminStoreBooking(body);
     return { kind: "service_package" };
   }
 
   const services = Array.isArray(body.services) ? body.services
     : (Array.isArray(body.service_lines) ? body.service_lines : []);
   if (services.length > 0) throw new AdminStorePromotionPolicyError("STORE_PROMOTION_STACKING_UNSUPPORTED");
+  authorizeAdminStoreBooking(body);
   return { kind: "bookable" };
 }
 
-module.exports = { AdminStorePromotionPolicyError, validateAdminStorePromotionRequest };
+module.exports = { ADMIN_STORE_BOOKING_AUTH, AdminStorePromotionPolicyError, validateAdminStorePromotionRequest };
