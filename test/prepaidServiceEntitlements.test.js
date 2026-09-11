@@ -96,3 +96,16 @@ test("customer redemption carries both one-time token and stable scheduled reque
   assert.match(prepaidUi, /prepaid_redemption_token: token/);
   assert.match(scheduledUi, /scheduled_request_key: ensureScheduledRequestKey\(\)/);
 });
+
+test("prepaid entitlement migration is deploy-approved by exact SHA256 in the expand lane", () => {
+  const name = "20260906_prepaid_service_entitlements.sql";
+  const sha = crypto.createHash("sha256")
+    .update(fs.readFileSync(`migrations/${name}`))
+    .digest("hex");
+  const approvals = fs.readFileSync("migrations/.deploy-approved.tsv", "utf8")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const expected = `${sha}\t${name}\texpand`;
+  assert.ok(approvals.includes(expected), `missing deploy approval: ${expected}`);
+});
