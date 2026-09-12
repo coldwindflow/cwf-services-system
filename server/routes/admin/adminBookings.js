@@ -62,8 +62,11 @@ function registerAdminBookingRoutes(app, options = {}) {
       preparation = await prepaidService.prepareForAdminBooking(req.params.code);
       const body = {
         ...incoming,
-        customer_name: String(incoming.customer_name || preparation.customer_name || "").trim(),
-        customer_phone: String(incoming.customer_phone || preparation.customer_phone || "").trim(),
+        // Customer identity is part of the paid service-right contract. Admin may
+        // edit address/note/appointment for this visit, but cannot silently move
+        // the paid right to another customer's name or phone during redemption.
+        customer_name: String(preparation.customer_name || "").trim(),
+        customer_phone: String(preparation.customer_phone || "").trim(),
         booking_mode: "scheduled",
         service_package_groups: preparation.service_package_groups,
         prepaid_redemption_token: preparation.prepaid_redemption_token,
