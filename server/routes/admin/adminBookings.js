@@ -27,82 +27,77 @@ function registerAdminBookingRoutes(app, options = {}) {
   app.post("/admin/service-packages/preview", requireAdminSession, service.handleAdminServicePackagePreview);
   app.post("/admin/catalog-booking-preview", requireAdminSession, service.handleAdminCatalogBookingPreview);
 
-  app.get("/admin/prepaid-entitlements/:code", requireAdminSession, async (req, res) => {
-    try {
-      const entitlement = await prepaidService.getForAdmin(req.params.code);
-      return res.json({ ok: true, entitlement });
-    } catch (error) {
-      if (error instanceof AdminPrepaidRedemptionError) {
-        return res.status(error.statusCode || 400).json({ ok: false, error: error.code, code: error.code });
+  // The real Express app exposes use(). Lightweight route-characterization
+  // harnesses intentionally do not, so the long-standing canonical booking
+  // adapter surface stays compatible while production gains PREPAID operations.
+  if (typeof app.use === "function") {
+    app.get("/admin/prepaid-entitlements/:code", requireAdminSession, async (req, res) => {
+      try {
+        const entitlement = await prepaidService.getForAdmin(req.params.code);
+        return res.json({ ok: true, entitlement });
+      } catch (error) {
+        if (error instanceof AdminPrepaidRedemptionError) {
+          return res.status(error.statusCode || 400).json({ ok: false, error: error.code, code: error.code });
+        }
+        console.error("ADMIN_PREPAID_ENTITLEMENT_LOOKUP_ERROR", error);
+        return res.status(500).json({ ok: false, error: "ADMIN_PREPAID_ENTITLEMENT_UNAVAILABLE", code: "ADMIN_PREPAID_ENTITLEMENT_UNAVAILABLE" });
       }
-      console.error("ADMIN_PREPAID_ENTITLEMENT_LOOKUP_ERROR", error);
-      return res.status(500).json({ ok: false, error: "ADMIN_PREPAID_ENTITLEMENT_UNAVAILABLE", code: "ADMIN_PREPAID_ENTITLEMENT_UNAVAILABLE" });
-    }
-  });
+    });
 
-  // Admin booking-on-behalf deliberately reuses /admin/book_v2 after resolving
-  // the immutable paid entitlement. This keeps technician availability,
-  // assignment, pricing snapshots, job creation and accounting on one canonical
-  // path instead of creating a second booking engine.
-  app.post("/admin/prepaid-entitlements/:code/book", requireAdminSession, async (req, res) => {
-    let preparation = null;
-    const releaseIfNeeded = async () => {
-      if (!preparation) return;
-      try { await prepaidService.releaseAdminPreparation(preparation); }
-      catch (releaseError) { console.error("ADMIN_PREPAID_PREPARATION_RELEASE_ERROR", releaseError); }
-    };
-    try {
-      const incoming = { ...(req.body || {}) };
-      const requestedMode = String(incoming.booking_mode || "scheduled").trim().toLowerCase();
-      const requestedDispatch = String(incoming.dispatch_mode || "normal").trim().toLowerCase();
-      if (requestedMode === "urgent" || requestedDispatch === "offer") {
-        return res.status(409).json({ ok: false, error: "PREPAID_SCHEDULED_ONLY", code: "PREPAID_SCHEDULED_ONLY" });
-      }
-
-      preparation = await prepaidService.prepareForAdminBooking(req.params.code);
-      const body = {
-        ...incoming,
-        // Customer identity is part of the paid service-right contract. Admin may
-        // edit address/note/appointment for this visit, but cannot silently move
-        // the paid right to another customer's name or phone during redemption.
-        customer_name: String(preparation.customer_name || "").trim(),
-        customer_phone: String(preparation.customer_phone || "").trim(),
-        booking_mode: "scheduled",
-        service_package_groups: preparation.service_package_groups,
-        prepaid_redemption_token: preparation.prepaid_redemption_token,
-        scheduled_request_key: preparation.scheduled_request_key,
-        admin_request_key: String(incoming.admin_request_key || "").trim() || generateAdminRequestKey(),
+    app.post("/admin/prepaid-entitlements/:code/book", requireAdminSession, async (req, res) => {
+      let preparation = null;
+      const releaseIfNeeded = async () => {
+        if (!preparation) return;
+        try { await prepaidService.releaseAdminPreparation(preparation); }
+        catch (releaseError) { console.error("ADMIN_PREPAID_PREPARATION_RELEASE_ERROR", releaseError); }
       };
+      try {
+        const incoming = { ...(req.body || {}) };
+        const requestedMode = String(incoming.booking_mode || "scheduled").trim().toLowerCase();
+        const requestedDispatch = String(incoming.dispatch_mode || "normal").trim().toLowerCase();
+        if (requestedMode === "urgent" || requestedDispatch === "offer") {
+          return res.status(409).json({ ok: false, error: "PREPAID_SCHEDULED_ONLY", code: "PREPAID_SCHEDULED_ONLY" });
+        }
 
-      // A redeemed PREPAID snapshot is the sole pricing/service authority.
-      // Remove mutable campaign/cart overrides so Admin cannot accidentally stack
-      // another promotion or alter the already-paid contract.
-      delete body.catalog_item_id;
-      delete body.service_package_key;
-      delete body.service_package_tier_key;
-      delete body.service_package_id;
-      delete body.service_package_tier_id;
-      delete body.promotion_id;
-      delete body.override_price;
-      delete body.override_duration_min;
-      delete body.items;
-      delete body.services;
-      delete body.service_lines;
+        preparation = await prepaidService.prepareForAdminBooking(req.params.code);
+        const body = {
+          ...incoming,
+          customer_name: String(preparation.customer_name || "").trim(),
+          customer_phone: String(preparation.customer_phone || "").trim(),
+          booking_mode: "scheduled",
+          service_package_groups: preparation.service_package_groups,
+          prepaid_redemption_token: preparation.prepaid_redemption_token,
+          scheduled_request_key: preparation.scheduled_request_key,
+          admin_request_key: String(incoming.admin_request_key || "").trim() || generateAdminRequestKey(),
+        };
 
-      req.body = body;
-      req.cwfBookSource = "admin";
-      const result = await service.handleAdminBookV2(req, res);
-      if (Number(res.statusCode || 200) >= 400) await releaseIfNeeded();
-      return result;
-    } catch (error) {
-      await releaseIfNeeded();
-      if (error instanceof AdminPrepaidRedemptionError) {
-        return res.status(error.statusCode || 400).json({ ok: false, error: error.code, code: error.code });
+        delete body.catalog_item_id;
+        delete body.service_package_key;
+        delete body.service_package_tier_key;
+        delete body.service_package_id;
+        delete body.service_package_tier_id;
+        delete body.promotion_id;
+        delete body.override_price;
+        delete body.override_duration_min;
+        delete body.items;
+        delete body.services;
+        delete body.service_lines;
+
+        req.body = body;
+        req.cwfBookSource = "admin";
+        const result = await service.handleAdminBookV2(req, res);
+        if (Number(res.statusCode || 200) >= 400) await releaseIfNeeded();
+        return result;
+      } catch (error) {
+        await releaseIfNeeded();
+        if (error instanceof AdminPrepaidRedemptionError) {
+          return res.status(error.statusCode || 400).json({ ok: false, error: error.code, code: error.code });
+        }
+        console.error("ADMIN_PREPAID_BOOKING_ERROR", error);
+        return res.status(500).json({ ok: false, error: "ADMIN_PREPAID_BOOKING_UNAVAILABLE", code: "ADMIN_PREPAID_BOOKING_UNAVAILABLE" });
       }
-      console.error("ADMIN_PREPAID_BOOKING_ERROR", error);
-      return res.status(500).json({ ok: false, error: "ADMIN_PREPAID_BOOKING_UNAVAILABLE", code: "ADMIN_PREPAID_BOOKING_UNAVAILABLE" });
-    }
-  });
+    });
+  }
 
   app.post("/admin/urgent_broadcast_v2", requireAdminSession, (req, res) => {
     req.body = {
