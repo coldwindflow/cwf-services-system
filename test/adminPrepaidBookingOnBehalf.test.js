@@ -98,11 +98,12 @@ test("Admin prepaid routes reuse canonical booking and strip mutable paid-contra
   assert.match(routes, /service\.handleAdminBookV2\(req, res\)/);
   assert.match(routes, /customer_name:\s*String\(preparation\.customer_name/);
   assert.match(routes, /customer_phone:\s*String\(preparation\.customer_phone/);
-  assert.match(routes, /delete body\.promotion_id/);
-  assert.match(routes, /delete body\.override_price/);
-  assert.match(routes, /delete body\.override_duration_min/);
-  assert.match(routes, /delete body\.items/);
-  assert.match(routes, /delete body\.services/);
+  assert.match(routes, /PREPAID_BLOCKED_BOOKING_FIELDS/);
+  for (const field of ["promotion_id", "override_price", "override_duration_min", "items", "services", "service_lines"]) {
+    assert.match(routes, new RegExp(`"${field}"`));
+  }
+  assert.match(routes, /sanitizePrepaidAdminBookingInput/);
+  assert.doesNotMatch(routes, /\bdelete\b/i);
   assert.match(routes, /Number\(res\.statusCode \|\| 200\) >= 400[\s\S]*releaseIfNeeded/);
 });
 
@@ -117,7 +118,10 @@ test("Admin sale uses server-authoritative prepaid quote and existing payment ve
 test("Admin PREPAID UI exposes sale, payment, booking and promotion editing", () => {
   const html = fs.readFileSync("admin-prepaid-v2.html", "utf8");
   const js = fs.readFileSync("admin-prepaid-v2.js", "utf8");
+  const storeHtml = fs.readFileSync("admin-store-catalog.html", "utf8");
   assert.match(html, /href="\/admin-store-catalog\.html"[^>]*>แก้ไขโปรโมชั่น/);
+  assert.match(storeHtml, /admin-prepaid-v2\.html/);
+  assert.match(storeHtml, /PREPAID Admin/);
   assert.match(html, /id="btnCreateOrder"/);
   assert.match(html, /id="btnBookRight"/);
   assert.match(js, /\/admin\/prepaid-orders\/quote/);
