@@ -44,6 +44,14 @@ function createStoreServicePackageCatalogRoutes({ service, requireAdminSession, 
   router.patch("/admin/catalog/service-package-bundles/:bundleKey/promotion-policy", requireAdminSession,
     handle(async (req, res) => res.json(await policyService.update(req.params.bundleKey, req.body || {}))));
 
+  // Server-authoritative PREPAID quote for Admin sale-on-behalf. This uses the
+  // same immutable package resolver as customer checkout and never trusts a
+  // client-supplied total.
+  router.post("/admin/prepaid-orders/quote", requireAdminSession, handle(async (req, res) => {
+    const quote = await prepaidService.quoteOrder(req.body || {}, { identity: "admin" });
+    return res.json({ ok: true, quote });
+  }));
+
   router.post("/admin/prepaid-orders", requireAdminSession, handle(async (req, res) => {
     const customerSub = String(req.body?.customer_sub || "").trim() || null;
     const created = await prepaidService.createOrder(req.body || {}, { customerSub, identity: "admin" });
