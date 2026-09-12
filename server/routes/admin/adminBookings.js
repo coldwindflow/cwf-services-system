@@ -7,8 +7,28 @@ const {
   createAdminPrepaidRedemptionService,
 } = require("../../services/prepaid/adminPrepaidRedemptionService");
 
+const PREPAID_BLOCKED_BOOKING_FIELDS = new Set([
+  "catalog_item_id",
+  "service_package_key",
+  "service_package_tier_key",
+  "service_package_id",
+  "service_package_tier_id",
+  "promotion_id",
+  "override_price",
+  "override_duration_min",
+  "items",
+  "services",
+  "service_lines",
+]);
+
 function generateAdminRequestKey() {
   return `adminprepaid_${crypto.randomBytes(18).toString("base64url")}`;
+}
+
+function sanitizePrepaidAdminBookingInput(input = {}) {
+  return Object.fromEntries(
+    Object.entries(input).filter(([key]) => !PREPAID_BLOCKED_BOOKING_FIELDS.has(key))
+  );
 }
 
 function registerAdminBookingRoutes(app, options = {}) {
@@ -52,7 +72,7 @@ function registerAdminBookingRoutes(app, options = {}) {
         catch (releaseError) { console.error("ADMIN_PREPAID_PREPARATION_RELEASE_ERROR", releaseError); }
       };
       try {
-        const incoming = { ...(req.body || {}) };
+        const incoming = sanitizePrepaidAdminBookingInput(req.body || {});
         const requestedMode = String(incoming.booking_mode || "scheduled").trim().toLowerCase();
         const requestedDispatch = String(incoming.dispatch_mode || "normal").trim().toLowerCase();
         if (requestedMode === "urgent" || requestedDispatch === "offer") {
@@ -60,7 +80,7 @@ function registerAdminBookingRoutes(app, options = {}) {
         }
 
         preparation = await prepaidService.prepareForAdminBooking(req.params.code);
-        const body = {
+        req.body = {
           ...incoming,
           customer_name: String(preparation.customer_name || "").trim(),
           customer_phone: String(preparation.customer_phone || "").trim(),
@@ -70,20 +90,6 @@ function registerAdminBookingRoutes(app, options = {}) {
           scheduled_request_key: preparation.scheduled_request_key,
           admin_request_key: String(incoming.admin_request_key || "").trim() || generateAdminRequestKey(),
         };
-
-        delete body.catalog_item_id;
-        delete body.service_package_key;
-        delete body.service_package_tier_key;
-        delete body.service_package_id;
-        delete body.service_package_tier_id;
-        delete body.promotion_id;
-        delete body.override_price;
-        delete body.override_duration_min;
-        delete body.items;
-        delete body.services;
-        delete body.service_lines;
-
-        req.body = body;
         req.cwfBookSource = "admin";
         const result = await service.handleAdminBookV2(req, res);
         if (Number(res.statusCode || 200) >= 400) await releaseIfNeeded();
