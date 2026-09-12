@@ -45,6 +45,12 @@ function registerAdminBookingRoutes(app, options = {}) {
   // assignment, pricing snapshots, job creation and accounting on one canonical
   // path instead of creating a second booking engine.
   app.post("/admin/prepaid-entitlements/:code/book", requireAdminSession, async (req, res) => {
+    let preparation = null;
+    const releaseIfNeeded = async () => {
+      if (!preparation) return;
+      try { await prepaidService.releaseAdminPreparation(preparation); }
+      catch (releaseError) { console.error("ADMIN_PREPAID_PREPARATION_RELEASE_ERROR", releaseError); }
+    };
     try {
       const incoming = { ...(req.body || {}) };
       const requestedMode = String(incoming.booking_mode || "scheduled").trim().toLowerCase();
@@ -53,15 +59,15 @@ function registerAdminBookingRoutes(app, options = {}) {
         return res.status(409).json({ ok: false, error: "PREPAID_SCHEDULED_ONLY", code: "PREPAID_SCHEDULED_ONLY" });
       }
 
-      const redemption = await prepaidService.prepareForAdminBooking(req.params.code);
+      preparation = await prepaidService.prepareForAdminBooking(req.params.code);
       const body = {
         ...incoming,
-        customer_name: String(incoming.customer_name || redemption.customer_name || "").trim(),
-        customer_phone: String(incoming.customer_phone || redemption.customer_phone || "").trim(),
+        customer_name: String(incoming.customer_name || preparation.customer_name || "").trim(),
+        customer_phone: String(incoming.customer_phone || preparation.customer_phone || "").trim(),
         booking_mode: "scheduled",
-        service_package_groups: redemption.service_package_groups,
-        prepaid_redemption_token: redemption.prepaid_redemption_token,
-        scheduled_request_key: redemption.scheduled_request_key,
+        service_package_groups: preparation.service_package_groups,
+        prepaid_redemption_token: preparation.prepaid_redemption_token,
+        scheduled_request_key: preparation.scheduled_request_key,
         admin_request_key: String(incoming.admin_request_key || "").trim() || generateAdminRequestKey(),
       };
 
@@ -82,8 +88,11 @@ function registerAdminBookingRoutes(app, options = {}) {
 
       req.body = body;
       req.cwfBookSource = "admin";
-      return service.handleAdminBookV2(req, res);
+      const result = await service.handleAdminBookV2(req, res);
+      if (Number(res.statusCode || 200) >= 400) await releaseIfNeeded();
+      return result;
     } catch (error) {
+      await releaseIfNeeded();
       if (error instanceof AdminPrepaidRedemptionError) {
         return res.status(error.statusCode || 400).json({ ok: false, error: error.code, code: error.code });
       }
