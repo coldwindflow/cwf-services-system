@@ -136,13 +136,14 @@ function createAdminPrepaidRedemptionService({ pool, now = () => new Date() }) {
       }
 
       const snapshot = parseSnapshot(row.service_snapshot);
-      // Customers who bought through Admin may not have a LINE/app subject yet.
-      // Booking on behalf needs a non-null ownership principal because the same
-      // DB guard used by customer redemption intentionally refuses anonymous use.
-      // This principal is internal, unique to the paid right, and is used only
-      // when no real customer_sub exists. Once the job is created the right is
-      // consumed, so no claimable unused right is lost.
-      const ownerSub = clean(row.customer_sub, 256) || `admin-prepaid:${row.entitlement_id}`;
+      const previousCustomerSub = clean(row.customer_sub, 256) || null;
+      const previousStatus = String(row.status) === "unclaimed" ? "unclaimed" : "active";
+      const temporaryOwner = previousCustomerSub == null;
+      // The existing customer redemption guard deliberately requires ownership.
+      // For an unclaimed right, use a short-lived internal principal only while
+      // Admin attempts the booking. The original claim token is intentionally
+      // preserved; if booking fails releaseAdminPreparation restores unclaimed.
+      const ownerSub = previousCustomerSub || `admin-prepaid:${row.entitlement_id}`;
       const key = requestKey();
       const redemptionToken = randomToken(32);
       const bookingToken = bookingTokenFromScheduledRequestKey(key);
@@ -152,7 +153,6 @@ function createAdminPrepaidRedemptionService({ pool, now = () => new Date() }) {
         `UPDATE public.customer_service_entitlements
             SET customer_sub=$2,
                 status='redeeming',
-                claim_token_hash=NULL,
                 redemption_request_key=$3,
                 redemption_token_hash=$4,
                 redemption_booking_token=$5,
@@ -161,16 +161,9 @@ function createAdminPrepaidRedemptionService({ pool, now = () => new Date() }) {
           WHERE entitlement_id=$1`,
         [row.entitlement_id, ownerSub, key, sha256(redemptionToken), bookingToken, expiresAt]
       );
-      await client.query(
-        `UPDATE public.customer_orders
-            SET customer_sub=COALESCE(NULLIF(btrim(customer_sub),''),$2),
-                prepaid_claim_token_hash=NULL,
-                updated_at=NOW()
-          WHERE order_id=$1`,
-        [row.order_id, ownerSub]
-      );
 
       return {
+        entitlement_id: String(row.entitlement_id),
         entitlement_code: row.entitlement_code,
         order_code: row.order_code,
         customer_name: row.customer_name,
@@ -183,11 +176,42 @@ function createAdminPrepaidRedemptionService({ pool, now = () => new Date() }) {
         duration_min: Number(snapshot.duration_min || 0),
         redeem_until: redeemUntil.toISOString(),
         warranty_days: Number(row.warranty_days || snapshot.warranty_days || 0),
+        previous_customer_sub: previousCustomerSub,
+        previous_status: previousStatus,
+        temporary_owner: temporaryOwner,
       };
     });
   }
 
-  return { getForAdmin, prepareForAdminBooking };
+  async function releaseAdminPreparation(preparation) {
+    if (!preparation?.entitlement_id || !preparation?.scheduled_request_key) return false;
+    return withTransaction(async (client) => {
+      const result = await client.query(
+        `UPDATE public.customer_service_entitlements
+            SET customer_sub=$3,
+                status=$4,
+                redemption_request_key=NULL,
+                redemption_token_hash=NULL,
+                redemption_booking_token=NULL,
+                redemption_expires_at=NULL,
+                updated_at=NOW()
+          WHERE entitlement_id=$1
+            AND redemption_request_key=$2
+            AND redeemed_job_id IS NULL
+            AND status='redeeming'
+          RETURNING entitlement_id`,
+        [
+          preparation.entitlement_id,
+          preparation.scheduled_request_key,
+          preparation.previous_customer_sub || null,
+          preparation.previous_status === "unclaimed" ? "unclaimed" : "active",
+        ]
+      );
+      return Boolean(result.rows?.[0]);
+    });
+  }
+
+  return { getForAdmin, prepareForAdminBooking, releaseAdminPreparation };
 }
 
 module.exports = {
