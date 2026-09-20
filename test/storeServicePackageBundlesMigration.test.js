@@ -46,15 +46,12 @@ test("deploy catalog approves only forward expand migrations by exact SHA", () =
   const promotionHash = canonicalHash(`migrations/${promotionName}`);
   const brandName = "20260920_job_brand_foundation.sql";
   const brandHash = canonicalHash(`migrations/${brandName}`);
-  const prepaidName = "20260906_prepaid_service_entitlements.sql";
-  const prepaidHash = canonicalHash(`migrations/${prepaidName}`);
   const entries = approvals.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   assert.deepEqual(entries, [
     `${hash}\t${migrationName}\texpand`,
     `${minimumHash}\t${minimumName}\texpand`,
     `${promotionHash}\t${promotionName}\texpand`,
     `${brandHash}\t${brandName}\texpand`,
-    `${prepaidHash}\t${prepaidName}\texpand`,
   ]);
   for (const entry of entries) assert.match(entry, /\texpand$/);
   const rootRollbackFiles = fs.readdirSync("migrations", { withFileTypes: true })
