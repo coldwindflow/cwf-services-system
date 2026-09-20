@@ -1,0 +1,91 @@
+name: CWF Production Job Brand Migration
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type MIGRATE_JOB_BRAND_20260920 to run the approved job-brand migration
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cwf-home-production
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    name: Apply guarded AXS job-brand schema migration
+    runs-on:
+      - self-hosted
+      - linux
+      - x64
+      - cwf-home
+    timeout-minutes: 30
+    env:
+      CWF_ENVIRONMENT: production
+      REQUIRED_CONFIRMATION: MIGRATE_JOB_BRAND_20260920
+    steps:
+      - name: Validate manual gate
+        shell: bash
+        env:
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$GITHUB_REF" == "refs/heads/main" ]] || {
+            echo "This migration workflow may only be dispatched from main." >&2
+            exit 2
+          }
+          [[ "$CONFIRMATION" == "$REQUIRED_CONFIRMATION" ]] || {
+            echo "Typed confirmation does not match the approved job-brand migration gate." >&2
+            exit 2
+          }
+
+      - name: Checkout reviewed operator
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+
+      - name: Verify approved migration checksum
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          expected="99a280a2030aad01520d194f006bde469edd43dd70df417d1bb10b767a50a1c2"
+          actual="$(sha256sum migrations/20260920_job_brand_foundation.sql | awk '{print $1}')"
+          [[ "$actual" == "$expected" ]] || {
+            echo "Migration checksum mismatch: expected $expected, got $actual" >&2
+            exit 3
+          }
+
+      - name: Prepare trusted command wrappers
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p "$RUNNER_TEMP/cwf-job-brand-migration-bin"
+          cat > "$RUNNER_TEMP/cwf-job-brand-migration-bin/cwf-deployctl" <<'EOF'
+          #!/usr/bin/env bash
+          set -Eeuo pipefail
+          exec sudo -n /usr/local/sbin/cwf-deployctl "$@"
+          EOF
+          cat > "$RUNNER_TEMP/cwf-job-brand-migration-bin/docker" <<'EOF'
+          #!/usr/bin/env bash
+          set -Eeuo pipefail
+          if /usr/bin/docker info >/dev/null 2>&1; then
+            exec /usr/bin/docker "$@"
+          fi
+          exec sudo -n /usr/bin/docker "$@"
+          EOF
+          chmod 0755 "$RUNNER_TEMP/cwf-job-brand-migration-bin/cwf-deployctl" "$RUNNER_TEMP/cwf-job-brand-migration-bin/docker"
+
+      - name: Apply exact migration with backup and verification
+        shell: bash
+        env:
+          CWF_ENVIRONMENT: production
+        run: |
+          set -Eeuo pipefail
+          export PATH="$RUNNER_TEMP/cwf-job-brand-migration-bin:$PATH"
+          bash scripts/run-production-job-brand-migration.sh | tee /tmp/cwf-production-job-brand-migration.log
+          cat /tmp/cwf-production-job-brand-migration.log >> "$GITHUB_STEP_SUMMARY"
