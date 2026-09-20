@@ -63,6 +63,7 @@ const { createServicePackageResolver } = require("./server/services/packages/ser
 const { createPublicServicePackageService } = require("./server/services/public/servicePackages");
 const { registerAdminBookingRoutes } = require("./server/routes/admin/adminBookings");
 const { getJobBrand, serializeJobBrand, serializeJobBrands } = require("./server/domain/jobBrands");
+const { confirmationTemplateForJob } = require("./server/services/booking/brandConfirmationPolicy");
 const { createServicePackageCatalogService } = require("./server/services/packages/servicePackageCatalogService");
 const { createServicePackageCatalogRoutes } = require("./server/routes/admin/servicePackageCatalog");
 const { createStoreServicePackageCatalogService } = require("./server/services/packages/storeServicePackageCatalogService");
@@ -17835,7 +17836,7 @@ app.get("/jobs/:job_id/summary", async (req, res) => {
 
   try {
     const jobR = await pool.query(
-      `SELECT job_id, booking_code, booking_token, customer_name, customer_phone, appointment_datetime, address_text, job_type, job_price
+      `SELECT job_id, booking_code, booking_token, customer_name, customer_phone, appointment_datetime, address_text, job_type, job_price, brand_key
        FROM public.jobs WHERE job_id=$1`,
       [job_id]
     );
@@ -17878,7 +17879,8 @@ app.get("/jobs/:job_id/summary", async (req, res) => {
       ttEN,
     });
 
-    const template = await getCustomerConfirmationTemplate(lang);
+    const cwfTemplate = await getCustomerConfirmationTemplate(lang);
+    const template = confirmationTemplateForJob(job, lang, cwfTemplate);
     const text = renderCustomerConfirmationTemplate(template, vars);
 
 
