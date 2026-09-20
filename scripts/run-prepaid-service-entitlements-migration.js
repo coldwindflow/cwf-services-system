@@ -4,7 +4,7 @@ const fs = require("fs");
 const path = require("path");
 const { Client } = require("pg");
 
-const MIGRATION_RELATIVE_PATH = "migrations/20260906_prepaid_service_entitlements.sql";
+const MIGRATION_RELATIVE_PATH = "scripts/sql/20260906_prepaid_service_entitlements.sql";
 const ADVISORY_LOCK_KEY = "202609060329";
 
 function clean(value) {
@@ -20,7 +20,7 @@ function safeErrorMessage(error) {
 function resolveMigrationPath(repoRoot = path.resolve(__dirname, "..")) {
   const root = path.resolve(repoRoot);
   const migrationPath = path.resolve(root, MIGRATION_RELATIVE_PATH);
-  const expected = path.resolve(root, "migrations", "20260906_prepaid_service_entitlements.sql");
+  const expected = path.resolve(root, "scripts", "sql", "20260906_prepaid_service_entitlements.sql");
   if (migrationPath !== expected || !migrationPath.startsWith(root + path.sep)) {
     throw new Error("migration path rejected");
   }

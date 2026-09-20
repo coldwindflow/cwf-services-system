@@ -3,7 +3,7 @@ set -Eeuo pipefail
 
 ENVIRONMENT="${1:-}"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-MIGRATION_PATH="$ROOT_DIR/migrations/20260906_prepaid_service_entitlements.sql"
+MIGRATION_PATH="$ROOT_DIR/scripts/sql/20260906_prepaid_service_entitlements.sql"
 
 case "$ENVIRONMENT" in
   staging) DB_CONTAINER="cwf-staging-db" ;;
