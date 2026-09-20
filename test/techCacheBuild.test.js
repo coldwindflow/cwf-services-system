@@ -4,7 +4,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const root = path.join(__dirname, "..");
-const BUILD = "20260920_issue349_job_brand_v1";
+const BUILD = "20260920_issue366_axs_pricing_v1";
 
 function read(file) {
   return fs.readFileSync(path.join(root, file), "utf8");
