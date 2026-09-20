@@ -53,6 +53,7 @@ test("confirmation is brand-aware and CWF template remains untouched", () => {
   assert.match(axs, /AXS Air Service/);
   assert.match(axs, /60 วัน/);
   assert.doesNotMatch(axs, /Coldwindflow Air Services|@cwfair|098-877-7321/);
+  assert.doesNotMatch(axs, /tracking_url|ติดตามสถานะงาน|Track:/i);
   assert.equal(confirmationTemplateForJob({brand_key:"cwf"}, "th", cwf), cwf);
 });
 
