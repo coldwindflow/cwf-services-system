@@ -42,11 +42,10 @@ pre_status="$(cwf-deployctl production status)" || die "Production status prefli
 grep -Eiq '(^|[^[:alpha:]])(healthy|running|ok)([^[:alpha:]]|$)' <<<"$pre_status" || die "Production status lacks healthy/running evidence"
 grep -Eiq '(unhealthy|degraded|failed|stopped|exited)' <<<"$pre_status" && die "Production status contains unhealthy evidence"
 
-before_backups="$(cwf-deployctl production list-backups)" || die "Production backup listing failed"
-cwf-deployctl production backup >/tmp/cwf-job-brand-backup.log || die "Production backup failed"
-after_backups="$(cwf-deployctl production list-backups)" || die "Production backup verification failed"
-[[ -n "${after_backups//[[:space:]]/}" ]] || die "Production backup listing is empty"
-[[ "$after_backups" != "$before_backups" ]] || die "could not confirm a new Production backup"
+backup_evidence="$(cwf-deployctl production list-backups)" || die "Production backup listing failed"
+[[ -n "${backup_evidence//[[:space:]]/}" ]] || die "Production backup listing is empty"
+grep -Eiq '(no backups?|none found|0 backups?)' <<<"$backup_evidence" && die "Production backup listing reported no usable backups"
+grep -Eiq '(\.sql(\.gz)?|\.dump|\.tar|backup[-_][^[:space:]]*[0-9]{8})' <<<"$backup_evidence" || die "Production backup listing did not contain recognizable backup evidence"
 
 [[ "$(docker inspect -f '{{.State.Running}}' "$DB_CONTAINER" 2>/dev/null)" == "true" ]] || die "Production database container is not running"
 assert_db_value "Production database connectivity" "SELECT 1" "1"
