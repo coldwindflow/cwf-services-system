@@ -11,6 +11,7 @@ const persistedBookingReplay = require("./persistedBookingReplay");
 const { validateAdminStorePromotionRequest } = require("./adminStorePromotionPolicy");
 const { resolveUrgentCompositePreflight } = require("./urgentCompositePreflight");
 const { validateCustomerLocationPin, persistableLocationPin } = require("./customerLocationPin");
+const { resolveBookingJobBrand } = require("../../domain/jobBrands");
 
 function safePackagePreview(selection) {
   const line = selection.service_lines[0];
@@ -144,6 +145,12 @@ function createBookingJobService(dependencies = {}) {
 
   async function handleAdminBookV2(req, res) {
     const body = req.body || {};
+    let jobBrand;
+    try {
+      jobBrand = resolveBookingJobBrand(body.brand, { allowNonDefault: req.cwfJobBrandAdmin === true });
+    } catch (error) {
+      return res.status(Number(error.statusCode || 400)).json({ error: error.code, code: error.code });
+    }
     const hasPackageRequest = body.service_package_key != null || body.service_package_tier_key != null
       || body.service_package_groups != null
       || body.service_package_id != null || body.service_package_tier_id != null;
@@ -402,7 +409,7 @@ function createBookingJobService(dependencies = {}) {
       if (adminRequestKey) {
         await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [adminRequestKey]);
         const existingAdmin = await client.query(
-          `SELECT job_id, booking_code, booking_mode, dispatch_mode, duration_min, job_price,
+          `SELECT job_id, booking_code, booking_mode, dispatch_mode, duration_min, job_price, brand_key,
                   admin_request_fingerprint FROM public.jobs WHERE admin_request_key=$1 LIMIT 1`,
           [adminRequestKey]
         );
@@ -594,6 +601,7 @@ function createBookingJobService(dependencies = {}) {
         }
         const conflict = await checkTechCollision(selectedTech, apptIso, duration_min, null);
         if (conflict) {
+          await client.query("ROLLBACK");
           return http409Conflict(res, conflict);
         }
         if (detectedZoneCode) {
@@ -621,6 +629,7 @@ function createBookingJobService(dependencies = {}) {
       for (const u of tmList) {
         const conflict = await checkTechCollision(u, apptIso, duration_min, null);
         if (conflict) {
+          await client.query("ROLLBACK");
           return http409Conflict(res, conflict);
         }
       }
@@ -634,8 +643,8 @@ function createBookingJobService(dependencies = {}) {
          booking_token, job_source, dispatch_mode, customer_note,
          maps_url, job_zone, duration_min, booking_mode, admin_override_duration_min,
          gps_latitude, gps_longitude, service_zone_code, service_zone_source, allow_time_proposal, catalog_item_id,
-         admin_request_key, admin_request_fingerprint)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$22,$23,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$24,$25,$26)
+         admin_request_key, admin_request_fingerprint, brand_key)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$22,$23,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$24,$25,$26,$27)
         RETURNING job_id
         `,
         [
@@ -665,6 +674,7 @@ function createBookingJobService(dependencies = {}) {
           packageBooking?.bundleId || catalogBooking?.item_id || null,
           adminRequestKey,
           adminRequestFingerprint,
+          jobBrand.key,
         ]
       );
 
@@ -837,9 +847,9 @@ function createBookingJobService(dependencies = {}) {
       // ใส่ยอด “ที่ช่างจะได้รับ” ลงในแจ้งเตือน โดยใช้ preview ที่คำนวณไว้หลังสร้างงานทันที
       try {
         if (urgentPushTargets.length) {
-          _notifyUrgentOffer({ usernames: urgentPushTargets, job_id, booking_code, job_type, appointment_datetime: apptIso, job_zone, income_by_username: incomeByUsernameForNotify }).catch(()=>{});
+          _notifyUrgentOffer({ usernames: urgentPushTargets, job_id, booking_code, job_type, appointment_datetime: apptIso, job_zone, brand_key: jobBrand.key, income_by_username: incomeByUsernameForNotify }).catch(()=>{});
         } else if (directPushTargets.length) {
-          _notifyDirectJobAssigned({ usernames: directPushTargets, job_id, booking_code, job_type, appointment_datetime: apptIso, job_zone, income_by_username: incomeByUsernameForNotify }).catch(()=>{});
+          _notifyDirectJobAssigned({ usernames: directPushTargets, job_id, booking_code, job_type, appointment_datetime: apptIso, job_zone, brand_key: jobBrand.key, income_by_username: incomeByUsernameForNotify }).catch(()=>{});
         }
       } catch (_) {}
 
@@ -874,6 +884,8 @@ function createBookingJobService(dependencies = {}) {
         total_exact: pricing.total_exact,
         booking_mode: bm,
         dispatch_mode: mode,
+        brand_key: jobBrand.key,
+        brand: jobBrand,
         service_zone_code: detectedZoneCode,
         service_zone_label: detectedZoneLabel,
         service_zone_source: detectedZoneSource,
@@ -1420,6 +1432,12 @@ function createBookingJobService(dependencies = {}) {
       service_package_key,
       service_package_tier_key,
     } = req.body || {};
+
+    try {
+      resolveBookingJobBrand(req.body?.brand, { allowNonDefault: false });
+    } catch (error) {
+      return res.status(Number(error.statusCode || 400)).json({ error: error.code, code: error.code });
+    }
 
     // 🔒 Kill switch (fail closed) — CANONICAL GATE. /public/book is entirely
     // unauthenticated, so the gate keys off the canonical booking_mode ONLY.
