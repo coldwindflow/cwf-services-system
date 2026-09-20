@@ -1,6 +1,6 @@
 (function(){
   'use strict';
-  var VERSION = '20260712_job_location_roundtrip_v1';
+  var VERSION = '20260920_issue349_job_brand_v1';
   try { window.__CWF_PWA_BUILD__ = VERSION; } catch (_) {}
   function register(){
     if (!('serviceWorker' in navigator)) return;

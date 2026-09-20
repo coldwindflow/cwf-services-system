@@ -263,7 +263,7 @@ test("offline legacy navigation never returns cached legacy or Tech fallback", a
 });
 
 test("root cache activation removes prior root caches but preserves current and Customer App V2 caches", async () => {
-  const current = "cwf-root-tech-app-20260712_job_location_roundtrip_v1-20260703_accounting_payout_adjustment_v1-20260713_retire_legacy_customer_ui_v1";
+  const current = "cwf-root-tech-app-20260920_issue349_job_brand_v1-20260703_accounting_payout_adjustment_v1-20260713_retire_legacy_customer_ui_v1";
   const harness = loadRootServiceWorker({ cacheKeys: ["cwf-root-tech-app-old", current, "cwf-customer-app-v2-current", "other-cache"] });
   let activation;
   harness.listeners.activate({ waitUntil(value) { activation = Promise.resolve(value); } });

@@ -179,7 +179,7 @@ test("Issue 316: the customer runtime is cache-busted and admin ids stay put", (
   assert.match(read("customer-app/index.html"), new RegExp(`modules/bookingScheduled\\.js\\?v=${BUILD}`));
   assert.match(read("customer-app/index.html"), new RegExp(`assets/customer-app\\.css\\?v=${BUILD}`));
   assert.match(read("customer-app/manifest.webmanifest"), new RegExp(BUILD));
-  // admin runtimes did not change in this issue, so their ids must not move
-  assert.match(read("admin-add-v2.html"), /admin-add-v2\.js\?v=20260820_issue310_package_minimum_quantity_v1/);
+  // Admin Add moved in Issue 349; unrelated Admin Store remains pinned.
+  assert.match(read("admin-add-v2.html"), /admin-add-v2\.js\?v=20260920_issue349_job_brand_v1/);
   assert.match(read("admin-store-catalog.html"), /admin-store-catalog\.js\?v=20260820_issue310_package_minimum_quantity_v1/);
 });

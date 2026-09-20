@@ -42,7 +42,11 @@ function registerAdminBookingRoutes(app, options = {}) {
     throw new TypeError("admin booking service is required");
   }
 
-  app.post("/admin/book_v2", requireAdminSession, service.handleAdminBookV2);
+  app.post("/admin/book_v2", requireAdminSession, (req, res) => {
+    req.cwfBookSource = "admin";
+    req.cwfJobBrandAdmin = true;
+    return service.handleAdminBookV2(req, res);
+  });
   app.get("/admin/service-packages", requireAdminSession, service.handleAdminServicePackageList);
   app.post("/admin/service-packages/preview", requireAdminSession, service.handleAdminServicePackagePreview);
   app.post("/admin/catalog-booking-preview", requireAdminSession, service.handleAdminCatalogBookingPreview);
@@ -91,6 +95,7 @@ function registerAdminBookingRoutes(app, options = {}) {
           admin_request_key: String(incoming.admin_request_key || "").trim() || generateAdminRequestKey(),
         };
         req.cwfBookSource = "admin";
+        req.cwfJobBrandAdmin = true;
         const result = await service.handleAdminBookV2(req, res);
         if (Number(res.statusCode || 200) >= 400) await releaseIfNeeded();
         return result;
@@ -106,6 +111,8 @@ function registerAdminBookingRoutes(app, options = {}) {
   }
 
   app.post("/admin/urgent_broadcast_v2", requireAdminSession, (req, res) => {
+    req.cwfBookSource = "admin";
+    req.cwfJobBrandAdmin = true;
     req.body = {
       ...(req.body || {}),
       booking_mode: "urgent",

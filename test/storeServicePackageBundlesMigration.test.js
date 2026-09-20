@@ -11,6 +11,9 @@ const sql = fs.readFileSync(migrationPath, "utf8");
 const runner = require("../scripts/run-store-service-package-bundles-migration");
 const rollback = fs.readFileSync(rollbackPath, "utf8");
 const approvals = fs.readFileSync("migrations/.deploy-approved.tsv", "utf8");
+const canonicalHash = (file) => crypto.createHash("sha256")
+  .update(fs.readFileSync(file, "utf8").replace(/\r\n/g, "\n"))
+  .digest("hex");
 const catalogRoutes = require("../server/routes/catalog/items");
 const packageRepository = require("../server/services/packages/servicePackageRepository");
 
@@ -36,16 +39,19 @@ test("bundle migration links variants to Store parent through additive schema", 
 });
 
 test("deploy catalog approves only forward expand migrations by exact SHA", () => {
-  const hash = crypto.createHash("sha256").update(fs.readFileSync(migrationPath)).digest("hex");
+  const hash = canonicalHash(migrationPath);
   const minimumName = "20260820_service_package_minimum_total_quantity.sql";
-  const minimumHash = crypto.createHash("sha256").update(fs.readFileSync(`migrations/${minimumName}`)).digest("hex");
+  const minimumHash = canonicalHash(`migrations/${minimumName}`);
   const promotionName = "20260905_promotion_engine_policy_fields.sql";
-  const promotionHash = crypto.createHash("sha256").update(fs.readFileSync(`migrations/${promotionName}`)).digest("hex");
+  const promotionHash = canonicalHash(`migrations/${promotionName}`);
+  const brandName = "20260920_job_brand_foundation.sql";
+  const brandHash = canonicalHash(`migrations/${brandName}`);
   const entries = approvals.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   assert.deepEqual(entries, [
     `${hash}\t${migrationName}\texpand`,
     `${minimumHash}\t${minimumName}\texpand`,
     `${promotionHash}\t${promotionName}\texpand`,
+    `${brandHash}\t${brandName}\texpand`,
   ]);
   for (const entry of entries) assert.match(entry, /\texpand$/);
   const rootRollbackFiles = fs.readdirSync("migrations", { withFileTypes: true })

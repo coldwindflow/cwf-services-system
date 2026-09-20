@@ -1,8 +1,17 @@
 
 
 // CWF Technician App: payout no-pay status display fix
-window.__CWF_TECH_APP_VERSION__ = "20260712_job_location_roundtrip_v1";
+window.__CWF_TECH_APP_VERSION__ = "20260920_issue349_job_brand_v1";
 try { console.info('[CWF_TECH_APP_VERSION]', window.__CWF_TECH_APP_VERSION__); } catch (_) {}
+
+function renderJobBrandBadge(job) {
+  const key = String(job?.brand?.key || job?.brand_key || 'cwf').trim().toLowerCase();
+  const label = String(job?.brand?.label || (key === 'axs' ? 'AXS' : 'CWF')).trim();
+  const style = key === 'axs'
+    ? 'background:#111827;color:#fff;border:1px solid #374151'
+    : 'background:#dbeafe;color:#1e3a8a;border:1px solid #93c5fd';
+  return `<span style="${style};display:inline-block;border-radius:999px;padding:4px 9px;font-size:11px;font-weight:900;line-height:1">${escapeHTML(label)}</span>`;
+}
 
 // ✅ งานปัจจุบัน: งานล่วงหน้า (sub-tab)
 const activeUpcomingJobsEl = document.getElementById("active-upcoming-list");
@@ -1235,7 +1244,7 @@ function setPushUi(state, text) {
 
 async function ensureServiceWorkerForPush() {
   if (!('serviceWorker' in navigator)) throw new Error('เครื่องนี้ไม่รองรับ Service Worker');
-  const reg = await navigator.serviceWorker.register('/sw.js?v=20260712_job_location_roundtrip_v1', { updateViaCache: 'none' });
+  const reg = await navigator.serviceWorker.register('/sw.js?v=20260920_issue349_job_brand_v1', { updateViaCache: 'none' });
   try { await navigator.serviceWorker.ready; } catch (_) {}
   return reg;
 }
@@ -3178,7 +3187,7 @@ function renderOffers(offers) {
       <div class="job-card cwf-new-offer-card" style="border:1px solid rgba(251,191,36,0.55);">
         <div class="cwf-new-offer-head">
           <div>
-            <span class="cwf-new-offer-kicker">งานเข้าใหม่</span>
+            <span class="cwf-new-offer-kicker">งานเข้าใหม่</span> ${renderJobBrandBadge(o)}
             <b>งานใหม่เสนอให้รับ</b>
           </div>
           <span class="badge wait cwf-new-offer-countdown" data-offer-expires="${Number(expires)}">⏳ ${min}:${String(sec).padStart(2, "0")}</span>
@@ -5116,7 +5125,7 @@ function buildJobCard(job, historyMode = false) {
   div.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
       <div>
-        <b>📌 Booking: ${bookingCode}</b>
+        <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap"><b>📌 Booking: ${bookingCode}</b>${renderJobBrandBadge(job)}</div>
         <div class="muted" style="font-size:12px;margin-top:2px;">งานในระบบ: #${jobId}</div>
       </div>
       ${badge}
@@ -5264,7 +5273,7 @@ function buildHistorySummary(job){
   div.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">
       <div style="min-width:0;">
-        <b>📌 ${esc(bookingCode)}</b>
+        <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap"><b>📌 ${esc(bookingCode)}</b>${renderJobBrandBadge(job)}</div>
         <div class="muted" style="font-size:12px;margin-top:2px;">${apTxt}</div>
       </div>
       ${badge}

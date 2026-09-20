@@ -1,5 +1,7 @@
 /* Admin v2 - Jobs history with filters */
 
+console.info('[admin-history] issue349_job_brand_v1 loaded');
+
 let __TECH_MAP__ = new Map(); // username -> { full_name, employment_type }
 
 function statusPillStyle(status){
@@ -20,6 +22,19 @@ function fmtDT(iso){
 
 function safe(t){
   return (t || "").toString();
+}
+
+function escapeHtml(t){
+  return safe(t).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+}
+
+function brandBadgeHtml(job){
+  const key = String(job?.brand?.key || job?.brand_key || 'cwf').trim().toLowerCase();
+  const label = String(job?.brand?.label || (key === 'axs' ? 'AXS' : 'CWF')).trim();
+  const style = key === 'axs'
+    ? 'background:#111827;color:#fff;border:1px solid #374151'
+    : 'background:#dbeafe;color:#1e3a8a;border:1px solid #93c5fd';
+  return `<span style="${style};display:inline-block;border-radius:999px;padding:3px 8px;font-size:11px;font-weight:800;margin-top:5px">${escapeHtml(label)}</span>`;
 }
 
 function fmtMoney(n){
@@ -64,7 +79,7 @@ async function loadJobs(){
       const techU = safe(j.technician_username||"-");
       const techName = (__TECH_MAP__.get(techU)?.full_name) || techU;
       tr.innerHTML = `
-        <td><div class="code">${code}</div><div class="muted2">#${safe(j.job_id)}</div></td>
+        <td><div class="code">${code}</div>${brandBadgeHtml(j)}<div class="muted2">#${safe(j.job_id)}</div></td>
         <td>${dtTxt}</td>
         <td>
           <div class="job-main"><b title="${safe(j.customer_name||'')}">${safe(j.customer_name||'-')}</b><span class="muted2">${safe(j.customer_phone||'')}</span><span class="muted2" title="ยอดที่ลูกค้าชำระ">💰 ${priceTxt}</span></div>
