@@ -46,7 +46,7 @@ test("prepaid resolver binds the verified right to transaction-local DB context"
 });
 
 test("migration consumes only transaction-bound paid entitlement and preserves job value", () => {
-  const migration = fs.readFileSync("migrations/20260906_prepaid_service_entitlements.sql", "utf8");
+  const migration = fs.readFileSync("scripts/sql/20260906_prepaid_service_entitlements.sql", "utf8");
   assert.match(migration, /current_setting\('cwf\.prepaid_entitlement_id', true\)/);
   assert.match(migration, /current_setting\('cwf\.prepaid_customer_sub', true\)/);
   assert.match(migration, /current_setting\('cwf\.prepaid_booking_token', true\)/);
@@ -65,7 +65,7 @@ test("migration consumes only transaction-bound paid entitlement and preserves j
 });
 
 test("unfinished cancellation restores right but finished cancellation never does", () => {
-  const migration = fs.readFileSync("migrations/20260906_prepaid_service_entitlements.sql", "utf8");
+  const migration = fs.readFileSync("scripts/sql/20260906_prepaid_service_entitlements.sql", "utf8");
   assert.match(migration, /NEW\.canceled_at IS NOT NULL/);
   assert.match(migration, /NEW\.prepaid_entitlement_id IS NOT NULL/);
   assert.match(migration, /NEW\.finished_at IS NULL/);
