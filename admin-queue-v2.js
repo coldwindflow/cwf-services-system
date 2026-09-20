@@ -7,6 +7,8 @@
    - keep daily time filter in modal
 */
 
+console.info('[admin-queue] issue349_job_brand_v1 loaded');
+
 function pad2(x){ return String(x).padStart(2,'0'); }
 function ymd(d){ return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`; }
 function monthLabel(year, monthIdx){ return new Date(year, monthIdx, 1).toLocaleDateString('th-TH', { year:'numeric', month:'long' }); }
@@ -14,6 +16,14 @@ function fullThaiDate(dateStr){ return new Date(`${dateStr}T00:00:00`).toLocaleD
 function shortWeekday(dateStr){ return new Date(`${dateStr}T00:00:00`).toLocaleDateString('th-TH', { weekday:'short' }); }
 function shortDate(dateStr){ return new Date(`${dateStr}T00:00:00`).toLocaleDateString('th-TH', { day:'numeric', month:'short' }); }
 function escapeHtml(s){ return String(s || '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])); }
+function brandBadgeHtml(job){
+  const key = String(job?.brand?.key || job?.brand_key || 'cwf').trim().toLowerCase();
+  const label = String(job?.brand?.label || (key === 'axs' ? 'AXS' : 'CWF')).trim();
+  const style = key === 'axs'
+    ? 'background:#111827;color:#fff;border:1px solid #374151'
+    : 'background:#dbeafe;color:#1e3a8a;border:1px solid #93c5fd';
+  return `<span style="${style};border-radius:999px;padding:3px 8px;font-size:11px;font-weight:800">${escapeHtml(label)}</span>`;
+}
 function timeToMin(s){ if (!s) return null; const [h,m] = String(s).split(':').map(Number); return (h * 60) + (m || 0); }
 function addDays(dateObj, n){ const d = new Date(dateObj); d.setDate(d.getDate() + n); return d; }
 
@@ -555,7 +565,7 @@ async function renderModal(){
       if (x.job.job_id) div.style.cursor = 'pointer';
       div.innerHTML = `
         <div class="item-row">
-          <div class="item-title">${escapeHtml(x.job.booking_code || ('#'+x.job.job_id))} • ${escapeHtml(x.job.job_type || 'งานบริการ')}</div>
+          <div class="item-title" style="display:flex;align-items:center;gap:7px;flex-wrap:wrap">${brandBadgeHtml(x.job)} ${escapeHtml(x.job.booking_code || ('#'+x.job.job_id))} • ${escapeHtml(x.job.job_type || 'งานบริการ')}</div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
             <div class="type-badge ${x.type}">${x.type === 'company' ? 'บริษัท' : 'พาร์ทเนอร์'}</div>
             <div class="job-status ${normalizeStatusClass(x.job.job_status)}">${escapeHtml(x.job.job_status || 'รอดำเนินการ')}</div>

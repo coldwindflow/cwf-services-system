@@ -37,13 +37,15 @@ jobs:
           ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 1
 
-      - name: Apply guarded AIR RESET seed
+      - name: Apply prepaid schema and guarded AIR RESET cutover
         shell: bash
         env:
           EXPECTED_RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           set -Eeuo pipefail
+          bash scripts/apply-prepaid-service-entitlements-home.sh staging | tee /tmp/cwf-prepaid-migration.log
           bash scripts/apply-air-reset-60-seed.sh staging | tee /tmp/cwf-air-reset-seed.log
+          cat /tmp/cwf-prepaid-migration.log >> "$GITHUB_STEP_SUMMARY"
           cat /tmp/cwf-air-reset-seed.log >> "$GITHUB_STEP_SUMMARY"
 
   seed-production:
@@ -64,11 +66,13 @@ jobs:
           ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 1
 
-      - name: Apply guarded AIR RESET seed
+      - name: Apply prepaid schema and guarded AIR RESET cutover
         shell: bash
         env:
           EXPECTED_RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           set -Eeuo pipefail
+          bash scripts/apply-prepaid-service-entitlements-home.sh production | tee /tmp/cwf-prepaid-migration.log
           bash scripts/apply-air-reset-60-seed.sh production | tee /tmp/cwf-air-reset-seed.log
+          cat /tmp/cwf-prepaid-migration.log >> "$GITHUB_STEP_SUMMARY"
           cat /tmp/cwf-air-reset-seed.log >> "$GITHUB_STEP_SUMMARY"

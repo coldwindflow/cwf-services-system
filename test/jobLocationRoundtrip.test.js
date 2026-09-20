@@ -215,8 +215,9 @@ test("Test 14: check-in 500 m + accuracy policy is unchanged", () => {
 });
 
 test("Test 15: PWA + admin cache build IDs are bumped consistently", () => {
-  const BUILD = "20260712_job_location_roundtrip_v1";
-  const ADMIN_ADD_BUILD = "20260820_issue310_package_minimum_quantity_v1";
+  const BUILD = "20260920_issue349_job_brand_v1";
+  const ADMIN_ADD_BUILD = "20260920_issue349_job_brand_v1";
+  const ADMIN_JOB_VIEW_BUILD = "20260712_job_location_roundtrip_v1";
   // Issue 314: this constant went stale when PR #304 bumped admin-review-v2 to
   // the structured-services build, which left this guard permanently red - and a
   // permanently red guard cannot catch the NEXT missed cache bust. Realigned to
@@ -227,7 +228,7 @@ test("Test 15: PWA + admin cache build IDs are bumped consistently", () => {
   assert.match(read("cwf-pwa.js"), new RegExp(`VERSION = '${BUILD}'`));
   assert.match(read("tech.html"), new RegExp(`app\\.js\\?v=${BUILD}`));
   assert.match(read("admin-add-v2.html"), new RegExp(`admin-add-v2\\.js\\?v=${ADMIN_ADD_BUILD}`));
-  assert.match(read("admin-job-view-v2.html"), new RegExp(`admin-job-view-v2\\.js\\?v=${BUILD}`));
+  assert.match(read("admin-job-view-v2.html"), new RegExp(`admin-job-view-v2\\.js\\?v=${ADMIN_JOB_VIEW_BUILD}`));
   assert.match(read("admin-review-v2.html"), new RegExp(`admin-review-v2\\.js\\?v=${URGENT_REVIEW_BUILD}`));
   // The paired editor script ships in the same release and must move together,
   // otherwise a client can run a new page against a cached old editor.

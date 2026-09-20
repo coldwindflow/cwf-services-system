@@ -19,7 +19,10 @@
           <b>รายการบริการ</b>
           <div class="muted2 mini">บันทึกแล้วมีผลทันทีผ่าน API จริง</div>
         </div>
-        <button id="btnNewItem" class="primary" type="button">+ เพิ่มบริการ</button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="secondary" type="button" onclick="location.href='/admin-prepaid-v2.html'">💳 PREPAID Admin</button>
+          <button id="btnNewItem" class="primary" type="button">+ เพิ่มบริการ</button>
+        </div>
       </div>
       <div class="asc-toolbar-row">
         <input id="catalog_search" class="asc-search" placeholder="ค้นหาชื่อรายการ">
@@ -85,5 +88,6 @@
 
   <script src="/admin-v2-common.js?v=20260622_admin_menu_catalog_entry"></script>
   <script src="/admin-store-catalog.js?v=20260820_issue310_package_minimum_quantity_v1"></script>
+  <script src="/admin-store-promotion-policy-extension.js?v=20260906_issue329_promotion_policy_v1"></script>
 </body>
 </html>

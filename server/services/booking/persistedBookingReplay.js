@@ -1,10 +1,11 @@
 "use strict";
 
 const { exactMoney } = require("./bookingTicket");
+const { getJobBrand } = require("../../domain/jobBrands");
 
 async function findAdminReplay(db, requestKey) {
   const result = await db.query(
-    `SELECT job_id, booking_code, booking_mode, dispatch_mode, duration_min, job_price,
+    `SELECT job_id, booking_code, booking_mode, dispatch_mode, duration_min, job_price, brand_key,
             admin_request_fingerprint
        FROM public.jobs WHERE admin_request_key=$1 LIMIT 1`, [requestKey]
   );
@@ -35,6 +36,7 @@ async function findPublicReplay(pool, { requestKey, bookingToken, bookingMode })
 
 function adminReplayResponse(row, fallback = {}) {
   const totalExact = exactMoney(row?.job_price);
+  const brand = getJobBrand(row?.brand_key);
   return {
     success: true,
     replayed: true,
@@ -42,6 +44,8 @@ function adminReplayResponse(row, fallback = {}) {
     booking_code: row?.booking_code,
     booking_mode: row?.booking_mode || fallback.bookingMode,
     dispatch_mode: row?.dispatch_mode || fallback.dispatchMode,
+    brand_key: brand.key,
+    brand,
     duration_min: Number(row?.duration_min || fallback.durationMin || 0),
     total_exact: totalExact,
     // Legacy numeric field retained for cached Admin clients.

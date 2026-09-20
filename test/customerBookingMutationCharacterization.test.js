@@ -72,7 +72,7 @@ test("public/admin/internal routes and urgent alias preserve registration and no
   const service = {
     async handlePublicUrgentPreflight(req, res) { calls.push(["preflight", req.body]); return res.json({ can_dispatch: true }); },
     async handlePublicBook(req, res) { calls.push(["public", req.body]); return res.json({ ok: true }); },
-    async handleAdminBookV2(req, res) { calls.push(["admin", req.body]); return res.json({ ok: true }); },
+    async handleAdminBookV2(req, res) { calls.push(["admin", req.body, req.cwfJobBrandAdmin]); return res.json({ ok: true }); },
     async handleAdminServicePackageList(_req, res) { return res.json({ service_packages: [] }); },
     async handleAdminServicePackagePreview(_req, res) { return res.json({}); },
     async handleAdminCatalogBookingPreview(_req, res) { return res.json({}); },
@@ -103,6 +103,7 @@ test("public/admin/internal routes and urgent alias preserve registration and no
   assert.equal(calls.at(-1)[0], "admin");
   assert.equal(calls.at(-1)[1].booking_mode, "urgent");
   assert.equal(calls.at(-1)[1].dispatch_mode, "offer");
+  assert.equal(calls.at(-1)[2], true);
 
   await registrations[7].handlers.at(-1)({ body: { customer_name: "AI" } }, res);
   assert.equal(calls.at(-1)[0], "internal");
@@ -179,6 +180,7 @@ const PG_CONFIG = {
 
 let pool;
 let dbUnavailableReason = "";
+let jobBrandMigrationProof = null;
 
 test.before(async () => {
   const localHost = ["127.0.0.1", "localhost", "::1"].includes(String(PG_CONFIG.host).toLowerCase());
@@ -243,6 +245,43 @@ test.before(async () => {
       ,admin_request_fingerprint TEXT
     )
   `);
+  const columnsBeforeBrandMigration = (await pool.query(
+    `SELECT column_name FROM information_schema.columns
+      WHERE table_schema='public' AND table_name='jobs'
+      ORDER BY ordinal_position`
+  )).rows.map((row) => row.column_name);
+  const legacyJobId = Number((await pool.query(
+    `INSERT INTO public.jobs (customer_name) VALUES ('Issue 349 legacy sentinel') RETURNING job_id`
+  )).rows[0].job_id);
+  const brandMigrationSql = read("migrations/20260920_job_brand_foundation.sql");
+  await pool.query(brandMigrationSql);
+  await pool.query(brandMigrationSql);
+  const brandColumn = (await pool.query(
+    `SELECT data_type, is_nullable, column_default
+       FROM information_schema.columns
+      WHERE table_schema='public' AND table_name='jobs' AND column_name='brand_key'`
+  )).rows[0];
+  const legacyRow = (await pool.query(
+    `SELECT job_id, customer_name, brand_key FROM public.jobs WHERE job_id=$1`,
+    [legacyJobId]
+  )).rows[0];
+  const omittedBrand = (await pool.query(
+    `INSERT INTO public.jobs (customer_name) VALUES ('Issue 349 omitted brand')
+     RETURNING job_id, brand_key`
+  )).rows[0];
+  const columnsAfterBrandMigration = (await pool.query(
+    `SELECT column_name FROM information_schema.columns
+      WHERE table_schema='public' AND table_name='jobs'
+      ORDER BY ordinal_position`
+  )).rows.map((row) => row.column_name);
+  jobBrandMigrationProof = {
+    columnsBeforeBrandMigration,
+    columnsAfterBrandMigration,
+    brandColumn,
+    legacyRow,
+    omittedBrand,
+  };
+  await pool.query(`TRUNCATE public.jobs RESTART IDENTITY`);
   await pool.query(`
     CREATE TABLE public.job_items (
       job_item_id BIGSERIAL PRIMARY KEY,
@@ -379,6 +418,23 @@ function dbTest(name, fn) {
     return fn(t);
   });
 }
+
+dbTest("real PostgreSQL: additive job brand migration is idempotent and preserves legacy CWF behavior", async () => {
+  assert.ok(jobBrandMigrationProof);
+  assert.deepEqual(jobBrandMigrationProof.brandColumn, {
+    data_type: "text",
+    is_nullable: "NO",
+    column_default: "'cwf'::text",
+  });
+  assert.equal(Number(jobBrandMigrationProof.legacyRow.job_id), 1);
+  assert.equal(jobBrandMigrationProof.legacyRow.customer_name, "Issue 349 legacy sentinel");
+  assert.equal(jobBrandMigrationProof.legacyRow.brand_key, "cwf");
+  assert.equal(jobBrandMigrationProof.omittedBrand.brand_key, "cwf");
+  assert.deepEqual(
+    jobBrandMigrationProof.columnsAfterBrandMigration,
+    [...jobBrandMigrationProof.columnsBeforeBrandMigration, "brand_key"]
+  );
+});
 
 dbTest("real PostgreSQL: selected catalog policy locks its parent and preserves exact campaign price", async () => {
   const rule = await pool.query(
@@ -1216,6 +1272,99 @@ dbTest("real PostgreSQL: exact pending reservation is hidden until assignment ap
     [created.body.job_id, "tech-a"]
   );
   assert.equal(visible.rows.length, 1);
+});
+
+dbTest("real PostgreSQL: Admin brands persist, validate, assign, and share collision capacity both directions", async () => {
+  await seedTechnicians();
+  const collision = async (username, appointmentDatetime, durationMin) => {
+    const hit = await pool.query(
+      `SELECT job_id, brand_key
+         FROM public.jobs
+        WHERE technician_username=$1
+          AND canceled_at IS NULL
+          AND appointment_datetime < $2::timestamptz + ($3::int * INTERVAL '1 minute')
+          AND appointment_datetime + (COALESCE(duration_min,60) * INTERVAL '1 minute') > $2::timestamptz
+        LIMIT 1`,
+      [username, appointmentDatetime, Number(durationMin || 60)]
+    );
+    return hit.rows[0] || null;
+  };
+  const service = createBookingJobService(makeDependencies({ checkTechCollision: collision }));
+  const body = (time, overrides = {}) => ({
+    customer_name: "Admin Brand",
+    customer_phone: "0800000000",
+    job_type: "ล้างแอร์",
+    appointment_datetime: `2026-08-01T${time}:00+07:00`,
+    address_text: "กรุงเทพฯ",
+    booking_mode: "scheduled",
+    tech_type: "all",
+    assign_mode: "single",
+    technician_username: "tech-a",
+    ac_type: "ผนัง",
+    machine_count: 1,
+    wash_variant: "ล้างธรรมดา",
+    ...overrides,
+  });
+
+  const legacyDefault = await invoke(service.handleAdminBookV2, body("09:00"));
+  const explicitCwf = await invoke(service.handleAdminBookV2, body("11:00", { brand: "cwf" }));
+  const axs = await invoke(service.handleAdminBookV2, body("13:00", { brand: "axs" }), { cwfJobBrandAdmin: true });
+  assert.equal(legacyDefault.statusCode, 200);
+  assert.equal(explicitCwf.statusCode, 200);
+  assert.equal(axs.statusCode, 200);
+  assert.deepEqual(
+    (await pool.query(`SELECT brand_key FROM public.jobs ORDER BY appointment_datetime`)).rows.map((row) => row.brand_key),
+    ["cwf", "cwf", "axs"]
+  );
+  assert.deepEqual(axs.body.brand, { key: "axs", label: "AXS", name: "AXS Air Service" });
+  assert.deepEqual(
+    (await pool.query(`SELECT technician_username FROM public.job_assignments WHERE job_id=$1`, [axs.body.job_id])).rows,
+    [{ technician_username: "tech-a" }]
+  );
+
+  const invalid = await invoke(service.handleAdminBookV2, body("15:00", { brand: "future-brand" }), { cwfJobBrandAdmin: true });
+  const spoofed = await invoke(service.handleAdminBookV2, body("15:00", { brand: "axs" }));
+  assert.equal(invalid.statusCode, 400);
+  assert.equal(invalid.body.code, "UNKNOWN_JOB_BRAND");
+  assert.equal(spoofed.statusCode, 403);
+  assert.equal(spoofed.body.code, "JOB_BRAND_NOT_ALLOWED");
+
+  const idempotentRequest = body("16:00", {
+    brand: "cwf",
+    admin_request_key: "issue349-brand-idempotency-0001",
+  });
+  const firstIdempotent = await invoke(service.handleAdminBookV2, idempotentRequest);
+  const sameBrandReplay = await invoke(service.handleAdminBookV2, idempotentRequest);
+  const differentBrandReplay = await invoke(
+    service.handleAdminBookV2,
+    { ...idempotentRequest, brand: "axs" },
+    { cwfJobBrandAdmin: true }
+  );
+  assert.equal(firstIdempotent.statusCode, 200);
+  assert.notEqual(firstIdempotent.body.replayed, true);
+  assert.equal(firstIdempotent.body.brand_key, "cwf");
+  assert.equal(sameBrandReplay.statusCode, 200);
+  assert.equal(sameBrandReplay.body.replayed, true);
+  assert.equal(sameBrandReplay.body.brand_key, "cwf");
+  assert.deepEqual(sameBrandReplay.body.brand, { key: "cwf", label: "CWF", name: "Cold Wind Flow" });
+  assert.equal(differentBrandReplay.statusCode, 409);
+  assert.equal(differentBrandReplay.body.code, "ADMIN_IDEMPOTENCY_KEY_REUSED");
+  assert.deepEqual(
+    (await pool.query(
+      `SELECT brand_key FROM public.jobs WHERE admin_request_key=$1`,
+      [idempotentRequest.admin_request_key]
+    )).rows,
+    [{ brand_key: "cwf" }]
+  );
+
+  const axsAgainstCwf = await invoke(service.handleAdminBookV2, body("09:30", { brand: "axs" }), { cwfJobBrandAdmin: true });
+  assert.equal(axsAgainstCwf.statusCode, 409);
+
+  await pool.query(`TRUNCATE public.job_promotions, public.job_offers, public.job_assignments, public.job_team_members, public.job_items, public.jobs RESTART IDENTITY CASCADE`);
+  const axsFirst = await invoke(service.handleAdminBookV2, body("09:00", { brand: "axs" }), { cwfJobBrandAdmin: true });
+  const cwfAgainstAxs = await invoke(service.handleAdminBookV2, body("09:30", { brand: "cwf" }));
+  assert.equal(axsFirst.statusCode, 200);
+  assert.equal(cwfAgainstAxs.statusCode, 409);
 });
 
 dbTest("real PostgreSQL: Admin Auto, Single, Team, and Forced preserve assignments and status", async () => {

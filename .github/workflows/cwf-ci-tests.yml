@@ -84,3 +84,37 @@ jobs:
         # Database-backed suites self-skip when no isolated Postgres URL is set,
         # exactly as they do locally. They are never pointed at a real database.
         run: npm test
+
+      - name: Identify failing test files
+        if: failure()
+        shell: bash
+        run: |
+          set +e
+          FAILED=0
+          DIAG=/tmp/cwf-failing-tests.log
+          : > "$DIAG"
+          for file in test/*.test.js; do
+            node --test "$file" >/tmp/cwf-test-file.log 2>&1
+            STATUS=$?
+            if [ "$STATUS" -ne 0 ]; then
+              echo "::error file=$file::isolated test file failed"
+              echo "===== $file ====="
+              tail -n 200 /tmp/cwf-test-file.log
+              {
+                echo "===== $file ====="
+                tail -n 200 /tmp/cwf-test-file.log
+                echo
+              } >> "$DIAG"
+              FAILED=1
+            fi
+          done
+          exit "$FAILED"
+
+      - name: Upload failing test diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cwf-failing-tests
+          path: /tmp/cwf-failing-tests.log
+          if-no-files-found: warn
+          retention-days: 1

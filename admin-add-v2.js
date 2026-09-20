@@ -7,7 +7,7 @@
 // BTU preset for dropdown
 const BTU_OPTIONS = [9000, 12000, 18000, 24000, 30000, 36000, 38000, 40000, 48000, 60000];
 
-console.info('[admin-add] assignment/service fix loaded v1');
+console.info('[admin-add] issue349_job_brand_v1 loaded');
 
 let state = {
   standard_price: 0,
@@ -3104,6 +3104,11 @@ async function verifyCreatedAdminJob(jobId, payload, expectedSingleTechnician) {
   const job = detail?.job || detail || {};
   const items = detail?.items || detail?.job_items || job?.job_items || [];
   const mismatches = [];
+  const expectedBrand = String(payload?.brand || 'cwf').trim().toLowerCase();
+  const savedBrand = String(job?.brand_key || job?.brand?.key || 'cwf').trim().toLowerCase();
+  if (savedBrand !== expectedBrand) {
+    mismatches.push({ field: 'brand_key', expected: expectedBrand, actual: savedBrand });
+  }
 
   if (expectedSingleTechnician) {
     const savedTech = String(job.technician_username || '').trim();
@@ -3223,6 +3228,7 @@ async function submitBooking() {
   }
 
   const payload = Object.assign({}, getPayloadV2(), {
+    brand: (el("brand")?.value || "cwf").trim().toLowerCase(),
     customer_name: name,
     customer_phone: (el("customer_phone").value || "").trim(),
     customer_id: (el("customer_id")?.value || "").trim() || null,
