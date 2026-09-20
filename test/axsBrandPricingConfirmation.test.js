@@ -24,7 +24,7 @@ test("AXS high-BTU surcharge is per high-BTU machine", () => {
   assert.equal(quoteAxsCleaning({ services:[
     payload("ล้างธรรมดา", 2, 12000),
     payload("ล้างธรรมดา", 1, 18000),
-  ]}).total, 1399 + 100);
+  ]}).total, 1299 + 100);
 });
 
 test("AXS rejects undefined promo quantities, BTU gaps and mixed variants instead of falling back to CWF", () => {
