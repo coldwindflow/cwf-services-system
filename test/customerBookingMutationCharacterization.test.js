@@ -180,6 +180,7 @@ const PG_CONFIG = {
 
 let pool;
 let dbUnavailableReason = "";
+let jobBrandMigrationProof = null;
 
 test.before(async () => {
   const localHost = ["127.0.0.1", "localhost", "::1"].includes(String(PG_CONFIG.host).toLowerCase());
@@ -242,9 +243,45 @@ test.before(async () => {
       ,catalog_item_id BIGINT
       ,admin_request_key TEXT
       ,admin_request_fingerprint TEXT
-      ,brand_key TEXT NOT NULL DEFAULT 'cwf'
     )
   `);
+  const columnsBeforeBrandMigration = (await pool.query(
+    `SELECT column_name FROM information_schema.columns
+      WHERE table_schema='public' AND table_name='jobs'
+      ORDER BY ordinal_position`
+  )).rows.map((row) => row.column_name);
+  const legacyJobId = Number((await pool.query(
+    `INSERT INTO public.jobs (customer_name) VALUES ('Issue 349 legacy sentinel') RETURNING job_id`
+  )).rows[0].job_id);
+  const brandMigrationSql = read("migrations/20260920_job_brand_foundation.sql");
+  await pool.query(brandMigrationSql);
+  await pool.query(brandMigrationSql);
+  const brandColumn = (await pool.query(
+    `SELECT data_type, is_nullable, column_default
+       FROM information_schema.columns
+      WHERE table_schema='public' AND table_name='jobs' AND column_name='brand_key'`
+  )).rows[0];
+  const legacyRow = (await pool.query(
+    `SELECT job_id, customer_name, brand_key FROM public.jobs WHERE job_id=$1`,
+    [legacyJobId]
+  )).rows[0];
+  const omittedBrand = (await pool.query(
+    `INSERT INTO public.jobs (customer_name) VALUES ('Issue 349 omitted brand')
+     RETURNING job_id, brand_key`
+  )).rows[0];
+  const columnsAfterBrandMigration = (await pool.query(
+    `SELECT column_name FROM information_schema.columns
+      WHERE table_schema='public' AND table_name='jobs'
+      ORDER BY ordinal_position`
+  )).rows.map((row) => row.column_name);
+  jobBrandMigrationProof = {
+    columnsBeforeBrandMigration,
+    columnsAfterBrandMigration,
+    brandColumn,
+    legacyRow,
+    omittedBrand,
+  };
+  await pool.query(`TRUNCATE public.jobs RESTART IDENTITY`);
   await pool.query(`
     CREATE TABLE public.job_items (
       job_item_id BIGSERIAL PRIMARY KEY,
@@ -381,6 +418,23 @@ function dbTest(name, fn) {
     return fn(t);
   });
 }
+
+dbTest("real PostgreSQL: additive job brand migration is idempotent and preserves legacy CWF behavior", async () => {
+  assert.ok(jobBrandMigrationProof);
+  assert.deepEqual(jobBrandMigrationProof.brandColumn, {
+    data_type: "text",
+    is_nullable: "NO",
+    column_default: "'cwf'::text",
+  });
+  assert.equal(Number(jobBrandMigrationProof.legacyRow.job_id), 1);
+  assert.equal(jobBrandMigrationProof.legacyRow.customer_name, "Issue 349 legacy sentinel");
+  assert.equal(jobBrandMigrationProof.legacyRow.brand_key, "cwf");
+  assert.equal(jobBrandMigrationProof.omittedBrand.brand_key, "cwf");
+  assert.deepEqual(
+    jobBrandMigrationProof.columnsAfterBrandMigration,
+    [...jobBrandMigrationProof.columnsBeforeBrandMigration, "brand_key"]
+  );
+});
 
 dbTest("real PostgreSQL: selected catalog policy locks its parent and preserves exact campaign price", async () => {
   const rule = await pool.query(
@@ -1274,6 +1328,34 @@ dbTest("real PostgreSQL: Admin brands persist, validate, assign, and share colli
   assert.equal(invalid.body.code, "UNKNOWN_JOB_BRAND");
   assert.equal(spoofed.statusCode, 403);
   assert.equal(spoofed.body.code, "JOB_BRAND_NOT_ALLOWED");
+
+  const idempotentRequest = body("16:00", {
+    brand: "cwf",
+    admin_request_key: "issue349-brand-idempotency-0001",
+  });
+  const firstIdempotent = await invoke(service.handleAdminBookV2, idempotentRequest);
+  const sameBrandReplay = await invoke(service.handleAdminBookV2, idempotentRequest);
+  const differentBrandReplay = await invoke(
+    service.handleAdminBookV2,
+    { ...idempotentRequest, brand: "axs" },
+    { cwfJobBrandAdmin: true }
+  );
+  assert.equal(firstIdempotent.statusCode, 200);
+  assert.notEqual(firstIdempotent.body.replayed, true);
+  assert.equal(firstIdempotent.body.brand_key, "cwf");
+  assert.equal(sameBrandReplay.statusCode, 200);
+  assert.equal(sameBrandReplay.body.replayed, true);
+  assert.equal(sameBrandReplay.body.brand_key, "cwf");
+  assert.deepEqual(sameBrandReplay.body.brand, { key: "cwf", label: "CWF", name: "Cold Wind Flow" });
+  assert.equal(differentBrandReplay.statusCode, 409);
+  assert.equal(differentBrandReplay.body.code, "ADMIN_IDEMPOTENCY_KEY_REUSED");
+  assert.deepEqual(
+    (await pool.query(
+      `SELECT brand_key FROM public.jobs WHERE admin_request_key=$1`,
+      [idempotentRequest.admin_request_key]
+    )).rows,
+    [{ brand_key: "cwf" }]
+  );
 
   const axsAgainstCwf = await invoke(service.handleAdminBookV2, body("09:30", { brand: "axs" }), { cwfJobBrandAdmin: true });
   assert.equal(axsAgainstCwf.statusCode, 409);

@@ -601,6 +601,7 @@ function createBookingJobService(dependencies = {}) {
         }
         const conflict = await checkTechCollision(selectedTech, apptIso, duration_min, null);
         if (conflict) {
+          await client.query("ROLLBACK");
           return http409Conflict(res, conflict);
         }
         if (detectedZoneCode) {
@@ -628,6 +629,7 @@ function createBookingJobService(dependencies = {}) {
       for (const u of tmList) {
         const conflict = await checkTechCollision(u, apptIso, duration_min, null);
         if (conflict) {
+          await client.query("ROLLBACK");
           return http409Conflict(res, conflict);
         }
       }
