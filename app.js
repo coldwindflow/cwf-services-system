@@ -1,7 +1,7 @@
 
 
 // CWF Technician App: payout no-pay status display fix
-window.__CWF_TECH_APP_VERSION__ = "20260920_issue349_job_brand_v1";
+window.__CWF_TECH_APP_VERSION__ = "20260920_issue366_axs_pricing_v1";
 try { console.info('[CWF_TECH_APP_VERSION]', window.__CWF_TECH_APP_VERSION__); } catch (_) {}
 
 function renderJobBrandBadge(job) {
@@ -1244,7 +1244,7 @@ function setPushUi(state, text) {
 
 async function ensureServiceWorkerForPush() {
   if (!('serviceWorker' in navigator)) throw new Error('เครื่องนี้ไม่รองรับ Service Worker');
-  const reg = await navigator.serviceWorker.register('/sw.js?v=20260920_issue349_job_brand_v1', { updateViaCache: 'none' });
+  const reg = await navigator.serviceWorker.register('/sw.js?v=20260920_issue366_axs_pricing_v1', { updateViaCache: 'none' });
   try { await navigator.serviceWorker.ready; } catch (_) {}
   return reg;
 }

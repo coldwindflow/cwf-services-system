@@ -128,8 +128,8 @@ test("Admin Add and Queue no longer call public forced availability", () => {
 });
 
 test("changed Admin booking scripts have one shared cache-bust build", () => {
-  assert.match(read("admin-add-v2.html"), /admin-add-v2\.js\?v=20260920_issue349_job_brand_v1/);
-  assert.match(read("admin-queue-v2.html"), /admin-queue-v2\.js\?v=20260920_issue349_job_brand_v1/);
+  assert.match(read("admin-add-v2.html"), /admin-add-v2\.js\?v=20260920_issue366_axs_pricing_v1/);
+  assert.match(read("admin-queue-v2.html"), /admin-queue-v2\.js\?v=20260920_issue366_axs_pricing_v1/);
   assert.match(read("admin-review-v2.html"), /admin-review-service-editor\.js\?v=20260819_admin_structured_services_v1/);
   assert.match(read("admin-review-v2.html"), /admin-review-v2\.js\?v=20260819_admin_structured_services_v1/);
 });
