@@ -44,7 +44,7 @@ test("Admin Add Job selects Store parents, quotes arbitrary mixed groups and ret
 });
 
 test("Admin Add Job runtime uses the deploy-safe Issue 307 asset URL", () => {
-  assert.match(html, /admin-add-v2\.js\?v=20260920_issue349_job_brand_v1/);
+  assert.match(html, /admin-add-v2\.js\?v=20260920_issue366_axs_pricing_v1/);
   assert.doesNotMatch(html, /admin-add-v2\.js\?v=20260809_issue267_catalog_flow_v9/);
   assert.doesNotMatch(html, /admin-add-v2\.js\?v=20260809_issue267_catalog_flow_v2/);
 });
