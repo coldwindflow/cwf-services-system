@@ -34,6 +34,16 @@ jobs:
       - cwf-home
     timeout-minutes: 60
     steps:
+      - name: Apply guarded PREPAID lifecycle migration
+        if: github.event_name == 'push'
+        shell: bash
+        env:
+          EXPECTED_RELEASE_SHA: ${{ github.sha }}
+        run: |
+          set -Eeuo pipefail
+          bash scripts/apply-prepaid-service-entitlements-home.sh staging | tee /tmp/cwf-staging-prepaid-migration.log
+          cat /tmp/cwf-staging-prepaid-migration.log >> "$GITHUB_STEP_SUMMARY"
+
       - name: Auto deploy merged commit
         if: github.event_name == 'push'
         shell: bash
