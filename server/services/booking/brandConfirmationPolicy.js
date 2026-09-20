@@ -7,7 +7,6 @@ AXS Air Service
 แอดมินขออนุญาตยืนยันรายละเอียดนัดหมายดังนี้ค่ะ
 
 🔎 เลขงาน: {{booking_code}}
-🔗 ติดตามสถานะงาน: {{tracking_url}}
 👤 ชื่อลูกค้า: {{customer_name}}
 📞 เบอร์โทร: {{customer_phone}}
 📅 วันและเวลานัด: {{appointment_th}}
@@ -30,7 +29,6 @@ AXS Air Service
 Our admin team would like to confirm your appointment details:
 
 🔎 Job No.: {{booking_code}}
-🔗 Track: {{tracking_url}}
 📍 Customer: {{customer_name}}
 📞 Phone: {{customer_phone}}
 📅 Appointment: {{appointment_en}}
