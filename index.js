@@ -62,6 +62,7 @@ const { registerPublicServicePackageRoutes } = require("./server/routes/public/s
 const { createServicePackageResolver } = require("./server/services/packages/servicePackageResolver");
 const { createPublicServicePackageService } = require("./server/services/public/servicePackages");
 const { registerAdminBookingRoutes } = require("./server/routes/admin/adminBookings");
+const { getJobBrand, serializeJobBrand, serializeJobBrands } = require("./server/domain/jobBrands");
 const { createServicePackageCatalogService } = require("./server/services/packages/servicePackageCatalogService");
 const { createServicePackageCatalogRoutes } = require("./server/routes/admin/servicePackageCatalog");
 const { createStoreServicePackageCatalogService } = require("./server/services/packages/storeServicePackageCatalogService");
@@ -13438,7 +13439,7 @@ app.post('/jobs/:job_id/rebroadcast_offer_v2', requireAdminSession, async (req, 
   try {
     await client.query('BEGIN');
     const jobR = await client.query(
-      `SELECT job_id, job_type, booking_code, appointment_datetime, COALESCE(duration_min,60) AS duration_min,
+      `SELECT job_id, job_type, booking_code, appointment_datetime, COALESCE(duration_min,60) AS duration_min, brand_key,
               address_text, maps_url, job_zone, gps_latitude, gps_longitude,
               service_zone_code, service_zone_source, job_status, technician_username, technician_team
          FROM public.jobs WHERE job_id=$1 FOR UPDATE`,
@@ -13509,7 +13510,7 @@ app.post('/jobs/:job_id/rebroadcast_offer_v2', requireAdminSession, async (req, 
       [job_id]
     );
     await client.query('COMMIT');
-    try { _notifyUrgentOffer({ usernames: available, job_id, booking_code: job.booking_code, job_type: job.job_type, appointment_datetime: job.appointment_datetime, job_zone: job.job_zone }).catch(()=>{}); } catch (_) {}
+    try { _notifyUrgentOffer({ usernames: available, job_id, booking_code: job.booking_code, job_type: job.job_type, appointment_datetime: job.appointment_datetime, job_zone: job.job_zone, brand_key: job.brand_key }).catch(()=>{}); } catch (_) {}
     return res.json({
       success: true,
       job_id,
@@ -14196,7 +14197,7 @@ app.get("/admin/jobs_v2", requireAdminSoft, async (req, res) => {
       `
       SELECT job_id, booking_code, customer_name, customer_phone, job_type,
              appointment_datetime, job_status, job_price, address_text, maps_url, job_zone,
-             technician_username, job_source, dispatch_mode, booking_mode, duration_min,
+             technician_username, job_source, dispatch_mode, booking_mode, duration_min, brand_key,
              created_at
       FROM public.jobs
       ${sqlWhere}
@@ -14205,7 +14206,8 @@ app.get("/admin/jobs_v2", requireAdminSoft, async (req, res) => {
       `,
       params
     );
-    return res.json({ success: true, rows: r.rows, jobs: r.rows });
+    const rows = serializeJobBrands(r.rows);
+    return res.json({ success: true, rows, jobs: rows });
   } catch (e) {
     console.error("/admin/jobs_v2 error:", e);
     return res.status(500).json({ error: "โหลดประวัติงานไม่สำเร็จ" });
@@ -14458,7 +14460,7 @@ app.get("/admin/review_queue_v2", requireAdminSoft, async (req, res) => {
       SELECT job_id, booking_code, customer_name, customer_phone, job_type, job_source,
              appointment_datetime, job_status, duration_min, job_price,
              address_text, maps_url, job_zone,
-             technician_username, dispatch_mode, booking_mode,
+             technician_username, dispatch_mode, booking_mode, brand_key,
              created_at,
              COALESCE((
                SELECT json_agg(json_build_object(
@@ -14501,7 +14503,7 @@ app.get("/admin/review_queue_v2", requireAdminSoft, async (req, res) => {
     );
 
     console.log('[admin_review_queue_v2]', { status, q: q ? true : false, count: (r.rows||[]).length });
-    return res.json({ success: true, rows: r.rows });
+    return res.json({ success: true, rows: serializeJobBrands(r.rows) });
   } catch (e) {
     console.error('/admin/review_queue_v2 error:', e);
     return res.status(500).json({ error: 'โหลดคิวงานรอตรวจสอบไม่สำเร็จ' });
@@ -14551,7 +14553,7 @@ app.post("/admin/time-proposals/:proposal_id/approve", requireAdminSoft, async (
     if (proposal.status !== "pending") throw new Error("รายการนี้ถูกพิจารณาแล้ว");
 
     const jr = await client.query(
-      `SELECT job_id, job_type, booking_code, appointment_datetime, COALESCE(duration_min,60) AS duration_min,
+      `SELECT job_id, job_type, booking_code, appointment_datetime, COALESCE(duration_min,60) AS duration_min, brand_key,
               technician_username, technician_team, job_zone
        FROM public.jobs
        WHERE job_id=$1
@@ -14618,6 +14620,7 @@ app.post("/admin/time-proposals/:proposal_id/approve", requireAdminSoft, async (
         job_type: approved.job_type,
         appointment_datetime: approved.appointment_datetime,
         job_zone: approved.job_zone,
+        brand_key: approved.brand_key,
       });
     }
   } catch (_) {}
@@ -14743,7 +14746,7 @@ app.get("/admin/job_v2/:job_id", requireAdminSoft, async (req, res) => {
 
     return res.json({
       success: true,
-      job: Object.assign({}, job, { is_in_warranty: isInWarranty }),
+      job: serializeJobBrand(Object.assign({}, job, { is_in_warranty: isInWarranty })),
       items: ir.rows || [],
       promotion: pr.rows[0] || null,
       photos: ph.rows || [],
@@ -14785,7 +14788,7 @@ app.get("/admin/job_v2/:job_id", requireAdminSoft, async (req, res) => {
 
       return res.json({
         success: true,
-        job: Object.assign({}, job, { is_in_warranty: isInWarranty }),
+        job: serializeJobBrand(Object.assign({}, job, { is_in_warranty: isInWarranty })),
         items: ir.rows || [],
         promotion: null,
         photos: [],
@@ -16154,7 +16157,7 @@ app.get("/admin/schedule_v2", requireAdminSoft, async (req, res) => {
 
     const jobsR = await pool.query(
       `
-      SELECT job_id, booking_code, customer_name, job_type, job_status,
+      SELECT job_id, booking_code, customer_name, job_type, job_status, brand_key,
              appointment_datetime, duration_min, technician_username, address_text, job_zone
       FROM public.jobs
       WHERE technician_username = ANY($1::text[])
@@ -16172,6 +16175,7 @@ app.get("/admin/schedule_v2", requireAdminSoft, async (req, res) => {
       const end = new Date(start.getTime() + (Number(j.duration_min || 60) + TRAVEL_BUFFER_MIN) * 60000);
       jobs_by_tech[j.technician_username] = jobs_by_tech[j.technician_username] || [];
       jobs_by_tech[j.technician_username].push({
+        ...serializeJobBrand(j),
         job_id: j.job_id,
         booking_code: j.booking_code,
         customer_name: j.customer_name,
@@ -16300,7 +16304,7 @@ async function _loadTechnicianVisibleJobsByIds(username, jobIds) {
   const r = await pool.query(
     `
     SELECT
-      j.job_id, j.booking_code, j.booking_token, j.job_source, j.dispatch_mode,
+      j.job_id, j.booking_code, j.booking_token, j.job_source, j.dispatch_mode, j.brand_key,
       j.customer_name, j.customer_phone, j.job_type, j.appointment_datetime,
       j.job_status, j.job_price, j.paid_at, j.paid_by, j.payment_status, j.address_text,
       j.gps_latitude, j.gps_longitude, j.air_type, j.air_quantity,
@@ -16319,7 +16323,7 @@ async function _loadTechnicianVisibleJobsByIds(username, jobIds) {
     `,
     [aliases, ids]
   );
-  return r.rows || [];
+  return serializeJobBrands(r.rows);
 }
 
 // =======================================
@@ -16353,7 +16357,7 @@ app.get("/jobs/tech/:username", requireTechnicianSession, async (req, res) => {
       sql = `
         WITH visible AS (
           SELECT
-            j.job_id, j.booking_code, j.booking_token, j.job_source, j.dispatch_mode,
+            j.job_id, j.booking_code, j.booking_token, j.job_source, j.dispatch_mode, j.brand_key,
             j.customer_name, j.customer_phone, j.job_type, j.appointment_datetime,
             j.job_status, j.job_price, j.paid_at, j.paid_by, j.payment_status, j.address_text,
             j.gps_latitude, j.gps_longitude, j.air_type, j.air_quantity,
@@ -16393,7 +16397,7 @@ app.get("/jobs/tech/:username", requireTechnicianSession, async (req, res) => {
     } else {
       sql = `
       SELECT
-        j.job_id, j.booking_code, j.booking_token, j.job_source, j.dispatch_mode,
+        j.job_id, j.booking_code, j.booking_token, j.job_source, j.dispatch_mode, j.brand_key,
         j.customer_name, j.customer_phone, j.job_type, j.appointment_datetime,
         j.job_status, j.job_price, j.paid_at, j.paid_by, j.payment_status, j.address_text,
         j.gps_latitude, j.gps_longitude, j.air_type, j.air_quantity,
@@ -16421,7 +16425,7 @@ app.get("/jobs/tech/:username", requireTechnicianSession, async (req, res) => {
     // Income is loaded asynchronously by /tech/income-summary-batch after cards are already visible.
     const rows = (r.rows || []).map((row) => {
       const context = _techJobContextFromRow(row, 'current');
-      const clean = { ...row };
+      const clean = serializeJobBrand(row);
       delete clean.is_history;
       return { ...clean, ..._techJobMoneyFallback(row, username, context) };
     });
@@ -17996,9 +18000,10 @@ async function _sendPushToTechnicians(usernames = [], payload = {}) {
   return { targets: targets.length, attempted, sent };
 }
 
-async function _notifyDirectJobAssigned({ usernames, job_id, booking_code, job_type, appointment_datetime, job_zone, income_by_username }) {
+async function _notifyDirectJobAssigned({ usernames, job_id, booking_code, job_type, appointment_datetime, job_zone, brand_key, income_by_username }) {
   try {
-    const title = 'CWF มีงานใหม่';
+    const brand = getJobBrand(brand_key);
+    const title = `${brand.label} มีงานใหม่`;
     const body = _shortJobText({ job_type, appointment_datetime, job_zone }) || `งานใหม่ ${booking_code || ''}`;
     return await _sendPushToTechnicians(usernames, {
       title,
@@ -18006,15 +18011,16 @@ async function _notifyDirectJobAssigned({ usernames, job_id, booking_code, job_t
       income_by_username,
       job_id,
       kind: 'direct_job',
-      tag: `cwf-direct-${job_id}`,
+      tag: `${brand.key}-direct-${job_id}`,
       url: `/tech.html?tab=active&job_id=${encodeURIComponent(String(job_id || ''))}`
     });
   } catch (e) { console.warn('[webpush] direct job notify failed', e?.message); return null; }
 }
 
-async function _notifyUrgentOffer({ usernames, job_id, booking_code, job_type, appointment_datetime, job_zone, income_by_username }) {
+async function _notifyUrgentOffer({ usernames, job_id, booking_code, job_type, appointment_datetime, job_zone, brand_key, income_by_username }) {
   try {
-    const title = 'CWF มีงานให้รับ';
+    const brand = getJobBrand(brand_key);
+    const title = `${brand.label} มีงานให้รับ`;
     const body = _shortJobText({ job_type, appointment_datetime, job_zone }) || `มีงานให้รับ ${booking_code || ''}`;
     return await _sendPushToTechnicians(usernames, {
       title,
@@ -18022,7 +18028,7 @@ async function _notifyUrgentOffer({ usernames, job_id, booking_code, job_type, a
       income_by_username,
       job_id,
       kind: 'urgent_offer',
-      tag: `cwf-offer-${job_id}`,
+      tag: `${brand.key}-offer-${job_id}`,
       url: `/tech.html?tab=new&job_id=${encodeURIComponent(String(job_id || ''))}`
     });
   } catch (e) { console.warn('[webpush] urgent offer notify failed', e?.message); return null; }
@@ -18316,7 +18322,7 @@ async function loadPendingOffersForSessionTechnician(username) {
     `
     SELECT
       o.offer_id, o.job_id, o.status, o.offered_at, o.expires_at,
-      j.job_type, j.appointment_datetime,
+      j.job_type, j.appointment_datetime, j.brand_key,
       j.address_text, j.maps_url, j.gps_latitude, j.gps_longitude,
       j.job_price, j.job_status, j.booking_code, j.customer_note,
       COALESCE(j.allow_time_proposal,FALSE) AS allow_time_proposal,
@@ -18342,7 +18348,7 @@ async function loadPendingOffersForSessionTechnician(username) {
 
   const rows = [];
   for (const row of (r.rows || [])) {
-    const base = { ...row, ..._techJobMoneyFallback(row, username, 'offered') };
+    const base = { ...serializeJobBrand(row), ..._techJobMoneyFallback(row, username, 'offered') };
     try {
       const money = await _buildTechnicianJobMoneySummary(row, username, { context: 'offered' });
       if (money) Object.assign(base, money);
@@ -18436,7 +18442,7 @@ app.post("/offers/:offer_id/accept", requireTechnicianSession, async (req, res) 
     if (offerRefR.rows.length === 0) throw new Error("ไม่พบข้อเสนองาน");
 
     const jobR = await client.query(
-      `SELECT job_id, technician_team, technician_username, job_type, booking_code,
+      `SELECT job_id, technician_team, technician_username, job_type, booking_code, brand_key,
               appointment_datetime, job_zone, job_status, canceled_at,
               travel_started_at, checkin_at, started_at, finished_at
          FROM public.jobs WHERE job_id=$1 FOR UPDATE`,
@@ -18531,6 +18537,7 @@ app.post("/offers/:offer_id/accept", requireTechnicianSession, async (req, res) 
         job_type: jobR.rows[0].job_type,
         appointment_datetime: jobR.rows[0].appointment_datetime,
         job_zone: jobR.rows[0].job_zone,
+        brand_key: jobR.rows[0].brand_key,
       });
     } catch (notifyError) {
       console.warn("[urgent_accept] post-commit notification failed", {

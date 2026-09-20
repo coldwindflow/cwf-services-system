@@ -22,7 +22,7 @@ test("AIR RESET data is not admitted to the schema-only expand migration lane", 
 });
 
 test("AIR RESET prepaid cutover pins seed and release, verifies schema and preserves advertised data", () => {
-  const sha = crypto.createHash("sha256").update(seed).digest("hex");
+  const sha = crypto.createHash("sha256").update(seed.replace(/\r\n/g, "\n")).digest("hex");
   assert.equal(sha, "bc82b1bdf995284ec8a37393ed22161363e6d0aec840dc8df31bda8f43d8ae55");
   assert.match(operator, new RegExp(sha));
   assert.match(operator, /EXPECTED_RELEASE_SHA/);

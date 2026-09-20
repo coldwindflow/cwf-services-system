@@ -108,7 +108,7 @@ test("Issue 310: the forward migration is additive and expand-only", () => {
   assert.doesNotMatch(executable.replace(/\n/g, " "), /(^|[;\s])(BEGIN|COMMIT|ROLLBACK)([\s;]|$)/i);
   // The already-applied Issue 267 migration must not be edited.
   assert.equal(
-    crypto.createHash("sha256").update(fs.readFileSync(path.join(ROOT, "migrations/20260809_store_service_package_bundles.sql"))).digest("hex"),
+    crypto.createHash("sha256").update(read("migrations/20260809_store_service_package_bundles.sql").replace(/\r\n/g, "\n")).digest("hex"),
     "bf6512c628bfd5cf473c8af33cda31a01cdd6615dfe929755fe7f6b34ada432b"
   );
 });
@@ -485,7 +485,7 @@ test("Issue 310: a 503 schema failure stays generic to the customer while stayin
 
 test("Issue 310: the new migration is registered for the deploy gate by exact SHA", () => {
   const name = "20260820_service_package_minimum_total_quantity.sql";
-  const sha = crypto.createHash("sha256").update(fs.readFileSync(path.join(ROOT, `migrations/${name}`))).digest("hex");
+  const sha = crypto.createHash("sha256").update(read(`migrations/${name}`).replace(/\r\n/g, "\n")).digest("hex");
   const entries = read("migrations/.deploy-approved.tsv").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   assert.ok(entries.includes(`${sha}\t${name}\texpand`), "the forward migration must be approved in the expand lane by its exact content hash");
   // approving it must not drop or alter the Issue 267 approval
@@ -593,9 +593,10 @@ test("Issue 310: manual Admin Add flows and the PR #308 technician picker are un
 
 test("Issue 310: exactly the changed runtime assets get the new build id", () => {
   const BUILD = "20260820_issue310_package_minimum_quantity_v1";
+  const ADMIN_ADD_BUILD = "20260920_issue349_job_brand_v1";
   // Admin runtimes changed in Issue 310 and have not changed since, so their ids
   // stay pinned to that exact release.
-  assert.match(read("admin-add-v2.html"), new RegExp(`admin-add-v2\\.js\\?v=${BUILD}`));
+  assert.match(read("admin-add-v2.html"), new RegExp(`admin-add-v2\\.js\\?v=${ADMIN_ADD_BUILD}`));
   assert.match(read("admin-store-catalog.html"), new RegExp(`admin-store-catalog\\.js\\?v=${BUILD}`));
 
   // The Customer App ships ONE shared build id across sw.js, index.html, the
