@@ -22,8 +22,8 @@ test('production operator fails closed around target, checksum, backup and invar
   assert.match(s, /CWF_ENVIRONMENT:-.*production/);
   assert.match(s, /EXPECTED_MIGRATION_SHA256=/);
   assert.match(s, /migration SHA256 mismatch/);
-  assert.match(s, /cwf-deployctl production backup/);
-  assert.match(s, /could not confirm a new Production backup/);
+  assert.match(s, /cwf-deployctl production list-backups/);
+  assert.match(s, /Production backup listing did not contain recognizable backup evidence/);
   assert.match(s, /brand_key.*data_type='text'.*is_nullable='NO'/s);
   assert.match(s, /brand_key IS NULL/);
   assert.match(s, /brand_key <> 'cwf'/);
