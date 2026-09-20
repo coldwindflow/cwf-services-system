@@ -35,7 +35,7 @@ test('workflow is manual, main-only and confirmation-gated', () => {
   assert.match(s, /workflow_dispatch:/);
   assert.match(s, /MIGRATE_JOB_BRAND_20260920/);
   assert.match(s, /refs\/heads\/main/);
-  assert.match(s, /GIT_CONFIG_NOSYSTEM:[\\s\\S]*["']1["']/);
+  assert.ok(s.includes('GIT_CONFIG_NOSYSTEM: "1"'));
   assert.match(s, /99a280a2030aad01520d194f006bde469edd43dd70df417d1bb10b767a50a1c2/);
   assert.match(s, /scripts\/run-production-job-brand-migration\.sh/);
   assert.doesNotMatch(s, /cwf-deployctl production deploy/);
