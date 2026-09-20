@@ -1650,6 +1650,27 @@ async function refreshPreviewDebounced() {
   previewTimer = setTimeout(refreshPreview, 250);
 }
 
+function axsPreviewQuote(payload = {}) {
+  const source = Array.isArray(payload.services) && payload.services.length ? payload.services : [payload];
+  const lines = source.map((line) => ({
+    job: String(line.job_type || payload.job_type || "").toLowerCase(),
+    ac: String(line.ac_type || payload.ac_type || "").toLowerCase(),
+    wash: String(line.wash_variant || payload.wash_variant || "").toLowerCase(),
+    btu: Number(line.btu || payload.btu || 0),
+    qty: Math.max(1, Math.round(Number(line.machine_count || payload.machine_count || 1) || 1)),
+  }));
+  if (!lines.length || lines.some((x) => !(x.job.includes("ล้าง") || x.job.includes("wash") || x.job.includes("clean")) || !(x.ac.includes("ผนัง") || x.ac.includes("wall")))) return null;
+  const keys = lines.map((x) => (x.wash.includes("premium") || x.wash.includes("พรีเมียม")) ? "premium" : "normal");
+  if (new Set(keys).size !== 1) return null;
+  if (lines.some((x) => !(x.btu > 0 && (x.btu <= 12000 || x.btu >= 18000)))) return null;
+  const qty = lines.reduce((sum, x) => sum + x.qty, 0);
+  const table = keys[0] === "premium" ? {1:799,2:1499,3:2199,4:2799} : {1:499,2:899,3:1299,4:1699};
+  if (!table[qty]) return null;
+  const high = lines.reduce((sum, x) => sum + (x.btu >= 18000 ? x.qty : 0), 0);
+  const total = table[qty] + high * (keys[0] === "premium" ? 150 : 100);
+  return { total, label: keys[0] === "premium" ? "AXS PREMIUM" : "AXS STANDARD" };
+}
+
 async function refreshPreview() {
   if (packageSelected()) {
     if (packagePreviewIsFresh()) {
@@ -1731,7 +1752,13 @@ async function refreshPreview() {
     const payload = getPayloadV2();
     const services = getServicesPayload();
     if (services) payload.services = services;
-    const r = await apiFetch("/public/pricing_preview", { method: "POST", body: JSON.stringify(payload) });
+    let r = await apiFetch("/public/pricing_preview", { method: "POST", body: JSON.stringify(payload) });
+    if (String(el("brand")?.value || "cwf").trim().toLowerCase() === "axs") {
+      const axsQuote = axsPreviewQuote(payload);
+      if (!axsQuote) throw new Error("ราคา AXS รองรับล้างแอร์ผนัง STANDARD/PREMIUM 1-4 เครื่อง และ BTU ≤12,000 หรือ ≥18,000 เท่านั้น");
+      r = { ...r, normal_price: axsQuote.total, active_price: axsQuote.total, standard_price: axsQuote.total,
+        customer_price_label: "โปรโมชั่นเปิดร้าน AXS Air Service", campaign_name: axsQuote.label, customer_price_source: "axs_brand_policy" };
+    }
     state.normal_price = Number(r.normal_price ?? r.standard_price ?? 0);
     state.active_price = Number(r.active_price ?? r.standard_price ?? 0);
     state.standard_price = state.active_price;
@@ -3584,6 +3611,19 @@ function wireEvents() {
     }, 0);
   });
 
+  el("brand")?.addEventListener("change", () => {
+    if (String(el("brand")?.value || "cwf").trim().toLowerCase() === "axs") {
+      if (el("promotion_id")) el("promotion_id").value = "";
+      if (el("override_price")) el("override_price").value = "";
+      state.selected_items = [];
+      state.selected_store_catalog_item_id = null;
+      if (el("service_package_key")) el("service_package_key").value = "";
+      if (el("service_package_tier_key")) el("service_package_tier_key").value = "";
+      if (el("store_service_bundle_key")) el("store_service_bundle_key").value = "";
+      renderExtras();
+    }
+    refreshPreviewDebounced();
+  });
   ["btu","machine_count"].forEach((id) => el(id).addEventListener("change", refreshPreviewDebounced));
   el("ac_type").addEventListener("change", ()=>{ buildVariantUI(); renderServiceLines(); refreshPreviewDebounced(); setTimeout(()=>{ const w=document.getElementById("wash_variant"); if(w) w.addEventListener("change", refreshPreviewDebounced); },0); });
   el("machine_count").addEventListener("input", refreshPreviewDebounced);

@@ -12,6 +12,7 @@ const { validateAdminStorePromotionRequest } = require("./adminStorePromotionPol
 const { resolveUrgentCompositePreflight } = require("./urgentCompositePreflight");
 const { validateCustomerLocationPin, persistableLocationPin } = require("./customerLocationPin");
 const { resolveBookingJobBrand } = require("../../domain/jobBrands");
+const { buildAxsServiceLineItems, assertAxsBookingPricingInputs } = require("./brandPricingPolicy");
 
 function safePackagePreview(selection) {
   const line = selection.service_lines[0];
@@ -154,6 +155,10 @@ function createBookingJobService(dependencies = {}) {
     const hasPackageRequest = body.service_package_key != null || body.service_package_tier_key != null
       || body.service_package_groups != null
       || body.service_package_id != null || body.service_package_tier_id != null;
+    if (jobBrand.key === "axs") {
+      try { assertAxsBookingPricingInputs(body); }
+      catch (error) { return res.status(Number(error.statusCode || 400)).json({ error: error.message || error.code, code: error.code }); }
+    }
     let packageBooking = null;
     const {
       customer_name,
@@ -497,20 +502,28 @@ function createBookingJobService(dependencies = {}) {
       // resolve items
       const computedItems = packageBooking ? packageBooking.items : (catalogBooking ? [buildCatalogBookingItem(catalogBooking)] : []);
 
-      const serviceLineItems = packageBooking || catalogBooking ? [] : await customerPricingHelpers.buildCustomerServiceLineItemsFromPayload(
-    (payloadV2.services && Array.isArray(payloadV2.services))
-      ? payloadV2
-      : { ...payloadV2, services: [{
-          job_type: payloadV2.job_type,
-          ac_type: payloadV2.ac_type,
-          btu: payloadV2.btu,
-          machine_count: payloadV2.machine_count,
-          wash_variant: payloadV2.wash_variant,
-          repair_variant: payloadV2.repair_variant,
-          assigned_to: (isUrgentOffer ? null : (technician_username || null)),
-        }] },
-    client
-  );
+      let serviceLineItems;
+      try {
+        serviceLineItems = jobBrand.key === "axs"
+          ? buildAxsServiceLineItems(payloadV2)
+          : (packageBooking || catalogBooking ? [] : await customerPricingHelpers.buildCustomerServiceLineItemsFromPayload(
+              (payloadV2.services && Array.isArray(payloadV2.services))
+                ? payloadV2
+                : { ...payloadV2, services: [{
+                    job_type: payloadV2.job_type,
+                    ac_type: payloadV2.ac_type,
+                    btu: payloadV2.btu,
+                    machine_count: payloadV2.machine_count,
+                    wash_variant: payloadV2.wash_variant,
+                    repair_variant: payloadV2.repair_variant,
+                    assigned_to: (isUrgentOffer ? null : (technician_username || null)),
+                  }] },
+              client
+            ));
+      } catch (error) {
+        error.statusCode = Number(error.statusCode || 400);
+        throw error;
+      }
 
       if (!packageBooking && !catalogBooking && coerceNumber(override_price, 0) > 0) {
     // Customer override price only. Payroll must never use this as technician income.
