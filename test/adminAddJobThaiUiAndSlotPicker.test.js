@@ -357,6 +357,6 @@ test("Issue 307: the in-slot search box exists for both single and team assignme
 // ---------------------------------------------------------------------------
 
 test("Issue 307: admin-add-v2.js ships a new cache-busting build id", () => {
-  assert.match(html, /admin-add-v2\.js\?v=20260920_issue349_job_brand_v1/);
+  assert.match(html, /admin-add-v2\.js\?v=20260920_issue366_axs_pricing_v1/);
   assert.doesNotMatch(html, /admin-add-v2\.js\?v=20260809_issue267_catalog_flow_v9/);
 });

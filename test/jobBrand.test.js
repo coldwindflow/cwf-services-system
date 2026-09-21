@@ -98,7 +98,7 @@ test("admin/technician DTOs and UIs expose brand while assignment and collision 
 });
 
 test("technician cache/version markers match every changed shell reference", () => {
-  const build = "20260920_issue349_job_brand_v1";
+  const build = "20260920_issue366_axs_pricing_v1";
   assert.match(read("app.js"), new RegExp(build));
   assert.match(read("sw.js"), new RegExp(build));
   assert.match(read("cwf-pwa.js"), new RegExp(build));
