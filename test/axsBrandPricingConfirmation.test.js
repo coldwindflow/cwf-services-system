@@ -5,6 +5,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const { quoteAxsCleaning, buildAxsServiceLineItems, assertAxsBookingPricingInputs } = require("../server/services/booking/brandPricingPolicy");
 const { confirmationTemplateForJob } = require("../server/services/booking/brandConfirmationPolicy");
+const { parseCanonicalServiceItem } = require("../server/services/booking/bookingJobUnits");
 
 function payload(wash_variant, machine_count, btu=12000) {
   return { job_type:"ล้าง", ac_type:"ผนัง", wash_variant, machine_count, btu };
@@ -44,7 +45,20 @@ test("AXS service item persists exact brand-policy total", () => {
   const item = buildAxsServiceLineItems(payload("ล้างพรีเมียม", 4, 18000))[0];
   assert.equal(item.line_total, 2799 + 4*150);
   assert.equal(item.customer_price_source, "axs_brand_policy");
-  assert.match(item.item_name, /AXS PREMIUM/);
+  assert.equal(item.qty, 4);
+  assert.match(item.item_name, /ล้างแอร์ผนัง • ล้างพรีเมียม • 18000 BTU • 4 เครื่อง/);
+  assert.deepEqual(parseCanonicalServiceItem(item), {
+    job_type: "ล้าง", ac_type: "ผนัง", wash_variant: "ล้างพรีเมียม", repair_variant: "", btu: 18000, machine_count: 4,
+  });
+});
+
+test("AXS two-machine STANDARD item is canonical for booking job units", () => {
+  const items = buildAxsServiceLineItems(payload("ล้างธรรมดา", 2, 12000));
+  assert.equal(items.length, 1);
+  assert.equal(items[0].qty, 2);
+  assert.equal(items[0].line_total, 899);
+  assert.doesNotThrow(() => parseCanonicalServiceItem(items[0]));
+  assert.equal(parseCanonicalServiceItem(items[0]).machine_count, 2);
 });
 
 test("confirmation is brand-aware and CWF template remains untouched", () => {

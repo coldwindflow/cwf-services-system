@@ -58,19 +58,32 @@ function quoteAxsCleaning(payload = {}) {
 
 function buildAxsServiceLineItems(payload = {}) {
   const quote = quoteAxsCleaning(payload);
-  const label = quote.wash_key === "premium" ? "PREMIUM" : "STANDARD";
-  return [{
-    item_id: null,
-    item_name: `AXS ${label} • ล้างแอร์ผนัง • ${quote.quantity} เครื่อง`,
-    qty: 1,
-    unit_price: quote.total,
-    line_total: quote.total,
-    normal_unit_price: quote.total,
-    customer_price_label: "โปรโมชั่นเปิดร้าน AXS Air Service",
-    customer_campaign_name: "AXS Air Service Opening Promotion",
-    customer_price_source: "axs_brand_policy",
-    is_service: true,
-  }];
+  const lines = normalizedLines(payload);
+  let allocated = 0;
+  return lines.map((line, index) => {
+    const label = quote.wash_key === "premium" ? "ล้างพรีเมียม" : "ล้างธรรมดา";
+    const isLast = index === lines.length - 1;
+    const proportionalBase = isLast
+      ? quote.base_price - allocated
+      : Math.round((quote.base_price * line.machine_count / quote.quantity) * 100) / 100;
+    allocated += proportionalBase;
+    const lineSurcharge = (line.btu >= 18000 ? AXS_HIGH_BTU_SURCHARGE[quote.wash_key] : 0) * line.machine_count;
+    const lineTotal = proportionalBase + lineSurcharge;
+    return {
+      item_id: null,
+      // Keep the persisted service item in the same canonical contract consumed by bookingJobUnits.
+      // Brand identity/pricing remains in dedicated fields instead of overloading item_name.
+      item_name: `ล้างแอร์ผนัง • ${label} • ${line.btu} BTU • ${line.machine_count} เครื่อง`,
+      qty: line.machine_count,
+      unit_price: lineTotal / line.machine_count,
+      line_total: lineTotal,
+      normal_unit_price: lineTotal / line.machine_count,
+      customer_price_label: "โปรโมชั่นเปิดร้าน AXS Air Service",
+      customer_campaign_name: "AXS Air Service Opening Promotion",
+      customer_price_source: "axs_brand_policy",
+      is_service: true,
+    };
+  });
 }
 
 function assertAxsBookingPricingInputs(body = {}) {
