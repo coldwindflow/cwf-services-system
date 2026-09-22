@@ -3730,6 +3730,9 @@ function wireEvents() {
   if(amUI){
     amUI.addEventListener('change', ()=>{
       syncModesFromUI();
+      // syncModesFromUI updates the hidden legacy assign_mode programmatically;
+      // that does not fire its change handler, so refresh assignment controls here.
+      updateAssignUIVisibility();
       syncManualTechnicianSelection();
       renderSlots();
       try { renderWashAssign(); } catch(e){}

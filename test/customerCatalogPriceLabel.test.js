@@ -219,5 +219,5 @@ test("Issue 318: the customer runtime is cache-busted and admin ids stay put", (
   assert.match(read("customer-app/assets/customer-app.js"), new RegExp(`BUILD_ID = "${BUILD}"`));
   assert.match(read("customer-app/index.html"), new RegExp(`modules/utils\\.js\\?v=${BUILD}`));
   assert.match(read("customer-app/manifest.webmanifest"), new RegExp(BUILD));
-  assert.match(read("admin-add-v2.html"), /admin-add-v2\.js\?v=20260920_issue366_axs_pricing_v1/);
+  assert.match(read("admin-add-v2.html"), /admin-add-v2\.js\?v=20260921_issue374_single_tech_v1/);
 });
