@@ -103,7 +103,7 @@ test("technician cache/version markers match every changed shell reference", () 
   assert.match(read("sw.js"), new RegExp(build));
   assert.match(read("cwf-pwa.js"), new RegExp(build));
   assert.equal((read("tech.html").match(new RegExp(build, "g")) || []).length, 3);
-  assert.match(read("admin-add-v2.html"), new RegExp(build));
+  assert.match(read("admin-add-v2.html"), /20260921_issue374_single_tech_v1/);
   assert.match(read("admin-queue-v2.html"), new RegExp(build));
   assert.match(read("admin-history-v2.html"), new RegExp(build));
 });
