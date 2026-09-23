@@ -357,6 +357,12 @@ test("Issue 307: the in-slot search box exists for both single and team assignme
 // ---------------------------------------------------------------------------
 
 test("Issue 307: admin-add-v2.js ships a new cache-busting build id", () => {
-  assert.match(html, /admin-add-v2\.js\?v=20260920_issue366_axs_pricing_v1/);
+  assert.match(html, /admin-add-v2\.js\?v=20260921_issue374_single_tech_v1/);
   assert.doesNotMatch(html, /admin-add-v2\.js\?v=20260809_issue267_catalog_flow_v9/);
+});
+
+
+test("Issue 374: changing visible assignment mode refreshes technician picker visibility", () => {
+  assert.match(js, /amUI\.addEventListener\('change',[\s\S]*?syncModesFromUI\(\);[\s\S]*?updateAssignUIVisibility\(\);[\s\S]*?syncManualTechnicianSelection\(\);/);
+  assert.match(html, /id="assign_card"[\s\S]*?id="technician_username_select"/);
 });
