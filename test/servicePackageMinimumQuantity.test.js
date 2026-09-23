@@ -593,7 +593,7 @@ test("Issue 310: manual Admin Add flows and the PR #308 technician picker are un
 
 test("Issue 310: exactly the changed runtime assets get the new build id", () => {
   const BUILD = "20260820_issue310_package_minimum_quantity_v1";
-  const ADMIN_ADD_BUILD = "20260920_issue366_axs_pricing_v1";
+  const ADMIN_ADD_BUILD = "20260921_issue374_single_tech_v1";
   // Admin Add runtime changed again for the AXS pricing cache fix, so pin its current release id.
   assert.match(read("admin-add-v2.html"), new RegExp(`admin-add-v2\\.js\\?v=${ADMIN_ADD_BUILD}`));
   assert.match(read("admin-store-catalog.html"), new RegExp(`admin-store-catalog\\.js\\?v=${BUILD}`));

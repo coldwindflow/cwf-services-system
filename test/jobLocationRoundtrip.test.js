@@ -216,7 +216,7 @@ test("Test 14: check-in 500 m + accuracy policy is unchanged", () => {
 
 test("Test 15: PWA + admin cache build IDs are bumped consistently", () => {
   const BUILD = "20260920_issue366_axs_pricing_v1";
-  const ADMIN_ADD_BUILD = "20260920_issue366_axs_pricing_v1";
+  const ADMIN_ADD_BUILD = "20260921_issue374_single_tech_v1";
   const ADMIN_JOB_VIEW_BUILD = "20260712_job_location_roundtrip_v1";
   // Issue 314: this constant went stale when PR #304 bumped admin-review-v2 to
   // the structured-services build, which left this guard permanently red - and a
