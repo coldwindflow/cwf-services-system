@@ -2947,6 +2947,15 @@ app.post('/partner/apply', async (req, res) => {
   const consent_terms = body.consent_terms === true || body.consent_terms === 'true' || body.consent_terms === 1 || body.consent_terms === '1';
   const consent_contract_rate = body.consent_contract_rate === true || body.consent_contract_rate === 'true' || body.consent_contract_rate === 1 || body.consent_contract_rate === '1';
   const consent_deposit = body.consent_deposit === true || body.consent_deposit === 'true' || body.consent_deposit === 1 || body.consent_deposit === '1';
+  const bank_account_number = String(body.bank_account_number || '').replace(/\D/g, '').slice(0, 15) || null;
+  const bank_account_last4 = bank_account_number
+    ? bank_account_number.slice(-4)
+    : (String(body.bank_account_last4 || '').replace(/\D/g, '').slice(-4) || null);
+  const tax_id = String(body.tax_id || '').replace(/\D/g, '').slice(0, 13) || null;
+  const tax_address = String(body.tax_address || '').trim().slice(0, 1000) || null;
+  const tax_branch = String(body.tax_branch || '').trim().slice(0, 100) || null;
+  const wht_income_type = String(body.wht_income_type || 'ค่าบริการ/ค่าจ้างทำของ ตามมาตรา 40(8)').trim().slice(0, 255);
+  const wht_default_rate = normalizePartnerNumber(body.wht_default_rate, 3);
 
   if (!full_name) return res.status(400).json({ error: 'กรุณากรอกชื่อ-นามสกุล' });
   if (!phone) return res.status(400).json({ error: 'กรุณากรอกเบอร์โทร' });
@@ -2979,14 +2988,14 @@ app.post('/partner/apply', async (req, res) => {
       `INSERT INTO public.partner_applications
         (application_code, user_id, technician_username, full_name, phone, line_id, email, address_text,
          service_zones, preferred_job_types, experience_years, has_vehicle, vehicle_type, equipment_notes,
-         bank_account_name, bank_name, bank_account_last4, notes, consent_pdpa, consent_terms, status, submitted_at, updated_at,
+         bank_account_name, bank_name, bank_account_number, bank_account_last4, notes, consent_pdpa, consent_terms, status, submitted_at, updated_at,
          province, district, work_intent, available_days_per_week, preferred_work_days, max_jobs_per_day, max_units_per_day,
          can_accept_urgent_jobs, can_work_condo, can_issue_tax_invoice, has_helper_team, team_size, travel_method,
          service_radius_km, equipment_json, line_user_id, account_created_at, account_note,
          contract_version, contract_accepted_at, contract_accepted_ip, contract_user_agent, contract_acceptance_json)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,'submitted',NOW(),NOW(),
-         $21,$22,$23,$24,$25::jsonb,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35::jsonb,$36,NOW(),$37,
-         $38,NOW(),$39,$40,$41::jsonb)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,'submitted',NOW(),NOW(),
+         $22,$23,$24,$25,$26::jsonb,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36::jsonb,$37,NOW(),$38,
+         $39,NOW(),$40,$41,$42::jsonb)
        RETURNING *`,
       [
         application_code,
@@ -3005,7 +3014,8 @@ app.post('/partner/apply', async (req, res) => {
         body.equipment_notes ? String(body.equipment_notes).trim() : null,
         body.bank_account_name ? String(body.bank_account_name).trim() : null,
         body.bank_name ? String(body.bank_name).trim() : null,
-        body.bank_account_last4 ? String(body.bank_account_last4).trim().slice(-4) : null,
+        bank_account_number,
+        bank_account_last4,
         body.notes ? String(body.notes).trim() : null,
         consent_pdpa,
         consent_terms,
