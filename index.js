@@ -81,6 +81,8 @@ const createServiceZoneRoutes = require("./server/routes/serviceZones");
 const createPageRoutes = require("./server/routes/pages");
 const createDocumentRoutes = require("./server/routes/docs");
 const createAccountingReadOnlyRoutes = require("./server/routes/accountingReadOnly");
+const { registerPartnerApplicationRoutes } = require("./server/routes/partner/applications");
+const partnerAgreementContent = require("./server/services/partner/agreementContent");
 const { ensurePayoutPeriodAndSnapshotForPayment } = require("./server/services/technicianPayoutPrepay");
 const { buildAccountingPayoutCalendar, isPeriodCutoffClosed } = require("./server/services/technicianPayoutPeriods");
 const accountingPayoutAdjustments = require("./server/services/accountingPayoutAdjustments");
@@ -2937,149 +2939,12 @@ async function getPartnerApplicationById(id, client = pool) {
 // - Temporary public lookup token: application_code
 // - Phase 1B should bind this to LINE/customer/technician session before deeper onboarding.
 // =======================================
-app.post('/partner/apply', async (req, res) => {
-  const body = req.body || {};
-  const full_name = String(body.full_name || '').trim();
-  const phone = normalizePartnerPhone(body.phone);
-  const password = String(body.password || '').trim();
-  const confirm_password = String(body.confirm_password || '').trim();
-  const consent_pdpa = body.consent_pdpa === true || body.consent_pdpa === 'true' || body.consent_pdpa === 1 || body.consent_pdpa === '1';
-  const consent_terms = body.consent_terms === true || body.consent_terms === 'true' || body.consent_terms === 1 || body.consent_terms === '1';
-  const consent_contract_rate = body.consent_contract_rate === true || body.consent_contract_rate === 'true' || body.consent_contract_rate === 1 || body.consent_contract_rate === '1';
-  const consent_deposit = body.consent_deposit === true || body.consent_deposit === 'true' || body.consent_deposit === 1 || body.consent_deposit === '1';
-
-  if (!full_name) return res.status(400).json({ error: 'กรุณากรอกชื่อ-นามสกุล' });
-  if (!phone) return res.status(400).json({ error: 'กรุณากรอกเบอร์โทร' });
-  if (!password || password.length < 6) return res.status(400).json({ error: 'กรุณาตั้งรหัสผ่านอย่างน้อย 6 ตัวอักษร' });
-  if (password !== confirm_password) return res.status(400).json({ error: 'ยืนยันรหัสผ่านไม่ตรงกัน' });
-  if (!consent_pdpa || !consent_terms || !consent_contract_rate || !consent_deposit) return res.status(400).json({ error: 'กรุณายอมรับ PDPA เงื่อนไขการสมัคร สัญญาเรทเดียว และเงินประกันก่อนส่งใบสมัคร' });
-
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    const application_code = await generateUniquePartnerApplicationCode(client);
-    const service_zones = normalizeJsonArrayInput(body.service_zones);
-    const preferred_job_types = normalizeJsonArrayInput(body.preferred_job_types);
-    const equipment_json = normalizeJsonArrayInput(body.equipment_json).filter(x => PARTNER_EQUIPMENT_CHOICES.includes(x));
-    const preferred_work_days = normalizeJsonArrayInput(body.preferred_work_days);
-    const experienceRaw = body.experience_years === '' || body.experience_years == null ? null : Number(body.experience_years);
-    const experience_years = Number.isFinite(experienceRaw) ? Math.max(0, experienceRaw) : null;
-    const has_vehicle = body.has_vehicle === true || body.has_vehicle === 'true' || body.has_vehicle === 1 || body.has_vehicle === '1';
-    const work_intent = PARTNER_WORK_INTENTS.has(String(body.work_intent || '')) ? String(body.work_intent) : null;
-    const travel_method = PARTNER_TRAVEL_METHODS.has(String(body.travel_method || '')) ? String(body.travel_method) : null;
-    const account = await ensurePartnerTechnicianAccount(client, {
-      phone,
-      password,
-      fullName: full_name,
-      lineId: body.line_id ? String(body.line_id).trim() : null,
-      applicationCode: application_code,
-    });
-
-    const r = await client.query(
-      `INSERT INTO public.partner_applications
-        (application_code, user_id, technician_username, full_name, phone, line_id, email, address_text,
-         service_zones, preferred_job_types, experience_years, has_vehicle, vehicle_type, equipment_notes,
-         bank_account_name, bank_name, bank_account_last4, notes, consent_pdpa, consent_terms, status, submitted_at, updated_at,
-         province, district, work_intent, available_days_per_week, preferred_work_days, max_jobs_per_day, max_units_per_day,
-         can_accept_urgent_jobs, can_work_condo, can_issue_tax_invoice, has_helper_team, team_size, travel_method,
-         service_radius_km, equipment_json, line_user_id, account_created_at, account_note,
-         contract_version, contract_accepted_at, contract_accepted_ip, contract_user_agent, contract_acceptance_json)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,'submitted',NOW(),NOW(),
-         $21,$22,$23,$24,$25::jsonb,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35::jsonb,$36,NOW(),$37,
-         $38,NOW(),$39,$40,$41::jsonb)
-       RETURNING *`,
-      [
-        application_code,
-        body.user_id ? String(body.user_id).trim() : null,
-        account.username,
-        full_name,
-        phone,
-        body.line_id ? String(body.line_id).trim() : null,
-        body.email ? String(body.email).trim() : null,
-        body.address_text ? String(body.address_text).trim() : null,
-        JSON.stringify(service_zones),
-        JSON.stringify(preferred_job_types),
-        experience_years,
-        has_vehicle,
-        body.vehicle_type ? String(body.vehicle_type).trim() : null,
-        body.equipment_notes ? String(body.equipment_notes).trim() : null,
-        body.bank_account_name ? String(body.bank_account_name).trim() : null,
-        body.bank_name ? String(body.bank_name).trim() : null,
-        body.bank_account_last4 ? String(body.bank_account_last4).trim().slice(-4) : null,
-        body.notes ? String(body.notes).trim() : null,
-        consent_pdpa,
-        consent_terms,
-        body.province ? String(body.province).trim() : null,
-        body.district ? String(body.district).trim() : null,
-        work_intent,
-        normalizePartnerInt(body.available_days_per_week),
-        JSON.stringify(preferred_work_days),
-        normalizePartnerInt(body.max_jobs_per_day),
-        normalizePartnerInt(body.max_units_per_day),
-        normalizePartnerBool(body.can_accept_urgent_jobs),
-        normalizePartnerBool(body.can_work_condo),
-        normalizePartnerBool(body.can_issue_tax_invoice),
-        normalizePartnerBool(body.has_helper_team),
-        normalizePartnerInt(body.team_size),
-        travel_method,
-        normalizePartnerNumber(body.service_radius_km),
-        JSON.stringify(equipment_json),
-        body.line_user_id ? String(body.line_user_id).trim() : null,
-        account.created ? 'created_new_technician_account' : 'linked_existing_technician_account',
-        'partner_single_rate_2026_05',
-        req.ip || null,
-        String(req.headers['user-agent'] || '').slice(0, 500),
-        JSON.stringify({
-          consent_terms,
-          consent_contract_rate,
-          consent_deposit,
-          accepted_contract_pdf: '/docs/CWF_partner_contract_single_rate_2026.pdf',
-          accepted_contract_version: 'partner_single_rate_2026_05',
-          accepted_at: new Date().toISOString(),
-        }),
-      ]
-    );
-    const appRow = r.rows[0];
-    await client.query(
-      `UPDATE public.partner_applications
-          SET tax_id=$2, tax_address=$3, tax_branch=$4, wht_income_type=$5, wht_default_rate=$6, updated_at=NOW()
-        WHERE id=$1`,
-      [appRow.id, tax_id, tax_address, tax_branch, wht_income_type, wht_default_rate]
-    );
-    if (tax_id || tax_address) {
-      await client.query(
-        `UPDATE public.technician_profiles
-            SET tax_id=COALESCE($2, tax_id),
-                tax_address=COALESCE($3, tax_address),
-                tax_branch=COALESCE($4, tax_branch),
-                wht_income_type=COALESCE($5, wht_income_type),
-                wht_default_rate=COALESCE($6, wht_default_rate),
-                tax_profile_status=CASE WHEN COALESCE($2,'')<>'' AND COALESCE($3,'')<>'' THEN 'pending_review' ELSE COALESCE(tax_profile_status,'not_submitted') END,
-                updated_at=NOW()
-          WHERE username=$1`,
-        [account.username, tax_id, tax_address, tax_branch, wht_income_type, wht_default_rate]
-      );
-    }
-    await logPartnerOnboardingEvent(client, {
-      application_id: appRow.id,
-      actor_type: 'applicant',
-      event_type: 'application_submitted',
-      to_status: 'submitted',
-      note: 'Partner application submitted with partner_single_rate_2026_05 acceptance',
-      metadata: { application_code, technician_username: account.username, account_created: account.created },
-    });
-    await client.query('COMMIT');
-    notifyPartnerAdmins('partner_application_submitted', partnerNotifyTextNewApplication(appRow), appRow.id).catch(()=>{});
-    return res.json({ ok: true, application: partnerApplicationPublicShape(appRow) });
-  } catch (e) {
-    await client.query('ROLLBACK');
-    console.error('POST /partner/apply error:', e);
-    return res.status(500).json({ error: 'ส่งใบสมัครไม่สำเร็จ' });
-  } finally {
-    client.release();
-  }
+registerPartnerApplicationRoutes(app, {
+  pool, normalizePartnerPhone, normalizeJsonArrayInput, normalizePartnerInt, normalizePartnerBool, normalizePartnerNumber,
+  ensurePartnerTechnicianAccount, generateUniquePartnerApplicationCode, logPartnerOnboardingEvent,
+  notifyPartnerAdmins, partnerNotifyTextNewApplication, partnerApplicationPublicShape,
+  equipmentChoices: PARTNER_EQUIPMENT_CHOICES, workIntents: PARTNER_WORK_INTENTS, travelMethods: PARTNER_TRAVEL_METHODS,
 });
-
 app.get('/partner/application/:application_code', async (req, res) => {
   try {
     const application_code = sanitizePartnerApplicationCode(req.params.application_code);
@@ -3568,24 +3433,29 @@ app.get('/partner/agreement/:application_code', async (req, res) => {
       `SELECT * FROM public.agreement_templates WHERE template_code='partner_standard' AND is_active=TRUE ORDER BY version DESC LIMIT 1`
     );
     const sig = await pool.query(
-      `SELECT id, template_id, template_version, signer_full_name, signed_at
+      `SELECT id, template_id, template_version, signer_full_name, signed_at,
+              signature_snapshot_html, signature_template_title, signature_template_source_note
        FROM public.agreement_signatures
        WHERE application_id=$1
        ORDER BY signed_at DESC LIMIT 1`,
       [appRow.id]
     );
-    const template = tpl.rows[0] || null;
+    let template = tpl.rows[0] || null;
+    const signature = sig.rows[0] || null;
     if (template && Number(template.version || 0) >= 4) {
       const rateCtx = await _loadActiveTechnicianIncomeRateSet('partner');
-      template.content_html = _buildPartnerAgreementV4RateHtml(rateCtx.rate_source === 'database' ? rateCtx.items : CWF_TECHNICIAN_INCOME_DEFAULT_ITEMS);
+      const dynamicRateHtml = _buildPartnerAgreementV4RateHtml(rateCtx.rate_source === 'database' ? rateCtx.items : CWF_TECHNICIAN_INCOME_DEFAULT_ITEMS);
       template.source_note = `${template.source_note || 'TECHNICIAN_INCOME_RATE_SET_V4'};rate_source=${rateCtx.rate_source};rate_set=${rateCtx.rate_set_version || 'fallback'}`;
+      template = partnerAgreementContent.displayTemplate({ template, dynamicRateHtml, signature });
+    } else {
+      template = partnerAgreementContent.displayTemplate({ template, dynamicRateHtml: '', signature });
     }
-    const contract_ready = isPartnerAgreementTemplateReady(template);
+    const contract_ready = Boolean(signature) || isPartnerAgreementTemplateReady(template);
     return res.json({
       ok: true,
       application: partnerApplicationPublicShape(appRow),
       template,
-      signature: sig.rows[0] || null,
+      signature,
       contract_ready,
       contract_ready_message: contract_ready ? '' : partnerAgreementReadinessMessage(template),
     });
@@ -3620,8 +3490,9 @@ app.post('/partner/agreement/:application_code/sign', async (req, res) => {
     const tpl = tplR.rows[0];
     if (Number(tpl.version || 0) >= 4) {
       const rateCtx = await _loadActiveTechnicianIncomeRateSet('partner');
-      tpl.content_html = _buildPartnerAgreementV4RateHtml(rateCtx.rate_source === 'database' ? rateCtx.items : CWF_TECHNICIAN_INCOME_DEFAULT_ITEMS);
-      tpl.source_note = `${tpl.source_note || 'TECHNICIAN_INCOME_RATE_SET_V4'};rate_source=${rateCtx.rate_source};rate_set=${rateCtx.rate_set_version || 'fallback'}`;
+      const dynamicRateHtml = _buildPartnerAgreementV4RateHtml(rateCtx.rate_source === 'database' ? rateCtx.items : CWF_TECHNICIAN_INCOME_DEFAULT_ITEMS);
+      tpl.content_html = partnerAgreementContent.buildSigningSnapshot({ template: tpl, dynamicRateHtml });
+      tpl.source_note = `${tpl.source_note || 'TECHNICIAN_INCOME_RATE_SET_V4'};permanent_contract=${partnerAgreementContent.PERMANENT_CONTRACT_PDF};rate_source=${rateCtx.rate_source};rate_set=${rateCtx.rate_set_version || 'fallback'}`;
     }
     if (!isPartnerAgreementTemplateReady(tpl)) {
       await client.query('ROLLBACK');
