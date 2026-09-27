@@ -82,6 +82,7 @@ const createPageRoutes = require("./server/routes/pages");
 const createDocumentRoutes = require("./server/routes/docs");
 const createAccountingReadOnlyRoutes = require("./server/routes/accountingReadOnly");
 const { registerPartnerApplicationRoutes } = require("./server/routes/partner/applications");
+const partnerAgreementContent = require("./server/services/partner/agreementContent");
 const { ensurePayoutPeriodAndSnapshotForPayment } = require("./server/services/technicianPayoutPrepay");
 const { buildAccountingPayoutCalendar, isPeriodCutoffClosed } = require("./server/services/technicianPayoutPeriods");
 const accountingPayoutAdjustments = require("./server/services/accountingPayoutAdjustments");
@@ -3432,24 +3433,29 @@ app.get('/partner/agreement/:application_code', async (req, res) => {
       `SELECT * FROM public.agreement_templates WHERE template_code='partner_standard' AND is_active=TRUE ORDER BY version DESC LIMIT 1`
     );
     const sig = await pool.query(
-      `SELECT id, template_id, template_version, signer_full_name, signed_at
+      `SELECT id, template_id, template_version, signer_full_name, signed_at,
+              signature_snapshot_html, signature_template_title, signature_template_source_note
        FROM public.agreement_signatures
        WHERE application_id=$1
        ORDER BY signed_at DESC LIMIT 1`,
       [appRow.id]
     );
-    const template = tpl.rows[0] || null;
+    let template = tpl.rows[0] || null;
+    const signature = sig.rows[0] || null;
     if (template && Number(template.version || 0) >= 4) {
       const rateCtx = await _loadActiveTechnicianIncomeRateSet('partner');
-      template.content_html = _buildPartnerAgreementV4RateHtml(rateCtx.rate_source === 'database' ? rateCtx.items : CWF_TECHNICIAN_INCOME_DEFAULT_ITEMS);
+      const dynamicRateHtml = _buildPartnerAgreementV4RateHtml(rateCtx.rate_source === 'database' ? rateCtx.items : CWF_TECHNICIAN_INCOME_DEFAULT_ITEMS);
       template.source_note = `${template.source_note || 'TECHNICIAN_INCOME_RATE_SET_V4'};rate_source=${rateCtx.rate_source};rate_set=${rateCtx.rate_set_version || 'fallback'}`;
+      template = partnerAgreementContent.displayTemplate({ template, dynamicRateHtml, signature });
+    } else {
+      template = partnerAgreementContent.displayTemplate({ template, dynamicRateHtml: '', signature });
     }
-    const contract_ready = isPartnerAgreementTemplateReady(template);
+    const contract_ready = Boolean(signature) || isPartnerAgreementTemplateReady(template);
     return res.json({
       ok: true,
       application: partnerApplicationPublicShape(appRow),
       template,
-      signature: sig.rows[0] || null,
+      signature,
       contract_ready,
       contract_ready_message: contract_ready ? '' : partnerAgreementReadinessMessage(template),
     });
@@ -3484,8 +3490,9 @@ app.post('/partner/agreement/:application_code/sign', async (req, res) => {
     const tpl = tplR.rows[0];
     if (Number(tpl.version || 0) >= 4) {
       const rateCtx = await _loadActiveTechnicianIncomeRateSet('partner');
-      tpl.content_html = _buildPartnerAgreementV4RateHtml(rateCtx.rate_source === 'database' ? rateCtx.items : CWF_TECHNICIAN_INCOME_DEFAULT_ITEMS);
-      tpl.source_note = `${tpl.source_note || 'TECHNICIAN_INCOME_RATE_SET_V4'};rate_source=${rateCtx.rate_source};rate_set=${rateCtx.rate_set_version || 'fallback'}`;
+      const dynamicRateHtml = _buildPartnerAgreementV4RateHtml(rateCtx.rate_source === 'database' ? rateCtx.items : CWF_TECHNICIAN_INCOME_DEFAULT_ITEMS);
+      tpl.content_html = partnerAgreementContent.buildSigningSnapshot({ template: tpl, dynamicRateHtml });
+      tpl.source_note = `${tpl.source_note || 'TECHNICIAN_INCOME_RATE_SET_V4'};permanent_contract=${partnerAgreementContent.PERMANENT_CONTRACT_PDF};rate_source=${rateCtx.rate_source};rate_set=${rateCtx.rate_set_version || 'fallback'}`;
     }
     if (!isPartnerAgreementTemplateReady(tpl)) {
       await client.query('ROLLBACK');
