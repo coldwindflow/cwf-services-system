@@ -1,4 +1,4 @@
-name: CWF AIR RESET Seed Gate
+name: CWF Promotion Seed Gate
 
 on:
   workflow_run:
@@ -15,12 +15,12 @@ env:
   GIT_CONFIG_NOSYSTEM: "1"
 
 concurrency:
-  group: cwf-air-reset-seed-${{ github.event.workflow_run.head_branch }}
+  group: cwf-promotion-seed-${{ github.event.workflow_run.head_branch }}
   cancel-in-progress: false
 
 jobs:
   seed-staging:
-    name: Verify and seed AIR RESET on staging
+    name: Verify and seed active promotion on staging
     if: >-
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.head_branch == 'staging/home-server-test'
@@ -37,19 +37,19 @@ jobs:
           ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 1
 
-      - name: Apply prepaid schema and guarded AIR RESET cutover
+      - name: Apply prepaid schema and guarded CWF AIR CARE seed
         shell: bash
         env:
           EXPECTED_RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           set -Eeuo pipefail
           bash scripts/apply-prepaid-service-entitlements-home.sh staging | tee /tmp/cwf-prepaid-migration.log
-          bash scripts/apply-air-reset-60-seed.sh staging | tee /tmp/cwf-air-reset-seed.log
+          bash scripts/apply-air-reset-60-seed.sh staging | tee /tmp/cwf-promotion-seed.log
           cat /tmp/cwf-prepaid-migration.log >> "$GITHUB_STEP_SUMMARY"
-          cat /tmp/cwf-air-reset-seed.log >> "$GITHUB_STEP_SUMMARY"
+          cat /tmp/cwf-promotion-seed.log >> "$GITHUB_STEP_SUMMARY"
 
   seed-production:
-    name: Verify and seed AIR RESET on production
+    name: Verify and seed active promotion on production
     if: >-
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.head_branch == 'production/home-server'
@@ -66,13 +66,13 @@ jobs:
           ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 1
 
-      - name: Apply prepaid schema and guarded AIR RESET cutover
+      - name: Apply prepaid schema and guarded CWF AIR CARE seed
         shell: bash
         env:
           EXPECTED_RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           set -Eeuo pipefail
           bash scripts/apply-prepaid-service-entitlements-home.sh production | tee /tmp/cwf-prepaid-migration.log
-          bash scripts/apply-air-reset-60-seed.sh production | tee /tmp/cwf-air-reset-seed.log
+          bash scripts/apply-air-reset-60-seed.sh production | tee /tmp/cwf-promotion-seed.log
           cat /tmp/cwf-prepaid-migration.log >> "$GITHUB_STEP_SUMMARY"
-          cat /tmp/cwf-air-reset-seed.log >> "$GITHUB_STEP_SUMMARY"
+          cat /tmp/cwf-promotion-seed.log >> "$GITHUB_STEP_SUMMARY"
