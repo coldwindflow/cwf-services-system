@@ -35,3 +35,17 @@ test("both AIR CARE bundles receive 60-day purchase validity and full customer b
   assert.doesNotMatch(ui, /สิทธิ์บริการ CWF/);
   assert.doesNotMatch(ui, /จองสิทธิ์ CWF/);
 });
+
+
+test("AIR CARE prepaid UI scopes two BTU groups without changing generic prepaid BTU choices", () => {
+  assert.match(ui, /coldwindflow-air-care-standard/);
+  assert.match(ui, /coldwindflow-air-care-premium/);
+  assert.match(ui, /ไม่เกิน 12,000 BTU/);
+  assert.match(ui, /18,000 BTU ขึ้นไป/);
+  assert.match(ui, /bookableBtuOptions/);
+});
+
+test("AIR CARE is uncapped for server-side tier composition beyond q4", () => {
+  assert.match(seed, /service_package_maximum_total_quantity=NULL/);
+  assert.match(service, /60 \* 24 \* 60 \* 60 \* 1000/);
+});

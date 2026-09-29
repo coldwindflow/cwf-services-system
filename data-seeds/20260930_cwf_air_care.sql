@@ -32,7 +32,7 @@ SELECT d.item_name,'service',0,'package','ล้าง','ผนัง',TRUE,TRUE
  '2026-12-05T23:59:59.999+07:00'::timestamptz,
  'COLDWINDFLOW AIR CARE','limited_time','soft_glow',TRUE,
  'จ่ายวันนี้ → ล็อกราคาพิเศษ → เลือกวันล้างภายหลัง',
- 'scheduled_only',NULL,d.pricing_strategy,d.selection_mode,4,'prepaid_full',60
+ 'scheduled_only',NULL,d.pricing_strategy,d.selection_mode,NULL,'prepaid_full',60
 FROM desired d
 WHERE NOT EXISTS (SELECT 1 FROM public.catalog_items c WHERE c.service_bundle_key=d.bundle_key);
 
@@ -83,7 +83,7 @@ UPDATE public.catalog_items
    SET service_package_sell_start_at='2026-09-29T00:00:00+07:00'::timestamptz,
        service_package_sell_end_at='2026-10-06T23:59:59.999+07:00'::timestamptz,
        service_package_minimum_total_quantity=NULL,
-       service_package_maximum_total_quantity=4,
+       service_package_maximum_total_quantity=NULL,
        service_package_payment_mode='prepaid_full',
        service_package_warranty_days=60,
        is_active=TRUE,

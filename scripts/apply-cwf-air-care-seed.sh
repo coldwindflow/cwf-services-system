@@ -35,7 +35,7 @@ schema_ready="$(db_query "SELECT (to_regclass('public.customer_service_entitleme
 
 db_file < "$SEED_PATH" >/tmp/cwf-air-care-seed.out
 
-count="$(db_query "SELECT count(*) FROM public.catalog_items WHERE service_bundle_key IN ('coldwindflow-air-care-standard','coldwindflow-air-care-premium') AND booking_mode='contact_admin' AND is_active=TRUE AND is_customer_visible=TRUE AND service_package_payment_mode='prepaid_full' AND service_package_warranty_days=60 AND service_package_sell_start_at='2026-09-29T00:00:00+07:00'::timestamptz AND service_package_sell_end_at='2026-10-06T23:59:59.999+07:00'::timestamptz")"
+count="$(db_query "SELECT count(*) FROM public.catalog_items WHERE service_bundle_key IN ('coldwindflow-air-care-standard','coldwindflow-air-care-premium') AND booking_mode='contact_admin' AND is_active=TRUE AND is_customer_visible=TRUE AND service_package_payment_mode='prepaid_full' AND service_package_warranty_days=60 AND service_package_maximum_total_quantity IS NULL AND service_package_sell_start_at='2026-09-29T00:00:00+07:00'::timestamptz AND service_package_sell_end_at='2026-10-06T23:59:59.999+07:00'::timestamptz")"
 [[ "$count" == "2" ]] || die "AIR CARE parent verification failed"
 variants="$(db_query "SELECT count(*) FROM public.service_packages WHERE package_key IN ('coldwindflow-air-care-standard-small','coldwindflow-air-care-standard-large','coldwindflow-air-care-premium-small','coldwindflow-air-care-premium-large') AND is_active=TRUE AND is_customer_visible=TRUE")"
 [[ "$variants" == "4" ]] || die "AIR CARE variant verification failed"
