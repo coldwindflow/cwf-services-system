@@ -28,7 +28,7 @@ INSERT INTO public.catalog_items
  service_package_warranty_days)
 SELECT d.item_name,'service',0,'package','ล้าง','ผนัง',TRUE,TRUE,d.short_description,d.long_description,d.highlights,d.conditions,
  'contact_admin',TRUE,TRUE,d.bundle_key,
- '2026-09-30T00:00:00+07:00'::timestamptz,'2026-10-06T23:59:59.999+07:00'::timestamptz,
+ '2026-09-29T00:00:00+07:00'::timestamptz,'2026-10-06T23:59:59.999+07:00'::timestamptz,
  '2026-12-05T23:59:59.999+07:00'::timestamptz,
  'COLDWINDFLOW AIR CARE','limited_time','soft_glow',TRUE,
  'จ่ายวันนี้ → ล็อกราคาพิเศษ → เลือกวันล้างภายหลัง',
@@ -76,3 +76,16 @@ INSERT INTO public.service_package_tiers
 SELECT p.service_package_id,d.tier_key,d.label,d.qty,d.price,d.sort_order,TRUE
 FROM desired d JOIN public.service_packages p ON p.package_key=d.package_key
 ON CONFLICT (service_package_id,tier_key) DO NOTHING;
+
+
+-- Release correction: seed is rerunnable. Earlier INSERT-only runs must receive current campaign policy.
+UPDATE public.catalog_items
+   SET service_package_sell_start_at='2026-09-29T00:00:00+07:00'::timestamptz,
+       service_package_sell_end_at='2026-10-06T23:59:59.999+07:00'::timestamptz,
+       service_package_minimum_total_quantity=NULL,
+       service_package_maximum_total_quantity=4,
+       service_package_payment_mode='prepaid_full',
+       service_package_warranty_days=60,
+       is_active=TRUE,
+       is_customer_visible=TRUE
+ WHERE service_bundle_key IN ('coldwindflow-air-care-standard','coldwindflow-air-care-premium');
