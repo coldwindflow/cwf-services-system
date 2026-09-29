@@ -35,3 +35,11 @@ test("both AIR CARE bundles receive 60-day purchase validity and full customer b
   assert.doesNotMatch(ui, /สิทธิ์บริการ CWF/);
   assert.doesNotMatch(ui, /จองสิทธิ์ CWF/);
 });
+
+
+test("AIR CARE prepaid UI exposes exactly two BTU pricing groups per campaign item", () => {
+  assert.doesNotMatch(ui, /bookableBtuOptions/);
+  assert.match(ui, /ไม่เกิน 12,000 BTU/);
+  assert.match(ui, /18,000 BTU ขึ้นไป/);
+  assert.match(ui, /isSmall \? 12000 : isLarge \? 18000/);
+});
