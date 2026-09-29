@@ -50,6 +50,6 @@ test("AIR RESET seed gate runs only after successful staging or production deplo
   assert.match(workflow, /production\/home-server/);
   assert.match(workflow, /ref: \$\{\{ github\.event\.workflow_run\.head_sha \}\}/);
   assert.match(workflow, /EXPECTED_RELEASE_SHA: \$\{\{ github\.event\.workflow_run\.head_sha \}\}/);
-  assert.match(workflow, /apply-prepaid-service-entitlements-home\.sh staging[\s\\S]*apply-cwf-air-care-seed\.sh staging/);
+  assert.match(workflow, /apply-prepaid-service-entitlements-home\.sh staging[\s\S]*apply-cwf-air-care-seed\.sh staging/);
   assert.match(workflow, /apply-prepaid-service-entitlements-home\.sh production[\s\\S]*apply-cwf-air-care-seed\.sh production/);
 });
