@@ -50,6 +50,30 @@ function activeExactTier(variant, quantity, parseMoney) {
   return tiers[0] || null;
 }
 
+function activeTierOrBestComposition(variant, quantity, parseMoney) {
+  const exact = activeExactTier(variant, quantity, parseMoney);
+  if (exact) return exact;
+  const tiers = (Array.isArray(variant?.tiers) ? variant.tiers : [])
+    .filter((tier) => tier.is_active !== false && Number.isSafeInteger(Number(tier.service_quantity)) && Number(tier.service_quantity) > 0)
+    .map((tier) => ({ tier, quantity: Number(tier.service_quantity), price: parseMoney(tier.fixed_total_price) }));
+  const best = Array(quantity + 1).fill(null);
+  best[0] = { price: 0n, components: [] };
+  for (let target = 1; target <= quantity; target += 1) {
+    for (const candidate of tiers) {
+      if (candidate.quantity > target || !best[target - candidate.quantity]) continue;
+      const composed = {
+        price: best[target - candidate.quantity].price + candidate.price,
+        components: [...best[target - candidate.quantity].components, candidate.tier],
+      };
+      if (!best[target] || composed.price < best[target].price
+        || (composed.price === best[target].price && composed.components.length < best[target].components.length)) {
+        best[target] = composed;
+      }
+    }
+  }
+  if (!best[quantity]) return null;
+  return { tier: best[quantity].components[0], price: best[quantity].price, components: best[quantity].components };
+}
 function allocateBaseAcrossGroups(baseMinor, groups) {
   const totalQuantity = groups.reduce((sum, group) => sum + group.quantity, 0);
   const divisor = BigInt(totalQuantity);
@@ -79,7 +103,10 @@ function resolveTotalQuantityTierPlusModifiers({ bundle, groups, byKey, parseMon
     levelKey = [...levels][0];
   }
 
-  const exactTiers = selected.map(({ variant }) => activeExactTier(variant, totalQuantity, parseMoney));
+  const composeBeyondExplicitTiers = bundle?.service_package_maximum_total_quantity == null || bundle.service_package_maximum_total_quantity === "";
+  const exactTiers = selected.map(({ variant }) => composeBeyondExplicitTiers
+    ? activeTierOrBestComposition(variant, totalQuantity, parseMoney)
+    : activeExactTier(variant, totalQuantity, parseMoney));
   if (exactTiers.some((entry) => !entry)) fail("SERVICE_PACKAGE_TOTAL_TIER_REQUIRED", 409);
   const basePrices = new Set(exactTiers.map((entry) => entry.price.toString()));
   if (basePrices.size !== 1) fail("SERVICE_PACKAGE_LEVEL_TIER_MISMATCH", 409);
@@ -131,6 +158,7 @@ module.exports = {
   maximumTotalQuantity,
   warrantyDays,
   activeExactTier,
+  activeTierOrBestComposition,
   allocateBaseAcrossGroups,
   resolveTotalQuantityTierPlusModifiers,
 };

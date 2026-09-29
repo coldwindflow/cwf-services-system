@@ -109,3 +109,26 @@ test("prepaid purchase observes sale window without requiring a service date", a
     now: () => new Date("2026-09-13T00:00:00.000Z"),
   }), { code: "SERVICE_PACKAGE_NOT_AVAILABLE" });
 });
+
+
+
+test("uncapped total-quantity promotion composes q1-q4 tiers for q5+", async () => {
+  const uncappedRows = rows.slice(0, 2).map((row) => ({
+    ...row,
+    service_package_maximum_total_quantity: null,
+    tiers: makeTiers(`air-care-${row.package_key}-`, { 1: "499.00", 2: "899.00", 3: "1299.00", 4: "1699.00" }),
+  }));
+  const uncappedRepository = {
+    findLinkedPackagesByKeys: async (_db, keys) => uncappedRows.filter((row) => keys.includes(row.package_key)),
+  };
+  const result = await resolveCompositeBooking({
+    body: { catalog_item_id: 900, service_package_groups: [g("standard-small", 12000, 5)] },
+    bookingMode: "scheduled",
+    appointmentDatetime: null,
+    purchaseOnly: true,
+    repository: uncappedRepository,
+    db: {},
+    now: () => new Date("2026-09-10T05:00:00.000Z"),
+  });
+  assert.equal(result.fixedTotal, "2198.00");
+});
