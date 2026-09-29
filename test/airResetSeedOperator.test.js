@@ -40,7 +40,7 @@ test("AIR RESET prepaid cutover pins seed and release, verifies schema and prese
   assert.match(operator, /unit_price_modifier=200/);
 });
 
-test("AIR RESET seed gate runs only after successful staging or production deployment", () => {
+test("AIR CARE seed gate runs only after successful staging or production deployment", () => {
   assert.match(workflow, /workflow_run:/);
   assert.match(workflow, /CWF Home Staging/);
   assert.match(workflow, /CWF Home Production/);
