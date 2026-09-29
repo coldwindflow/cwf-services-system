@@ -197,8 +197,8 @@ function entitlementSnapshot(quote) {
 function orderItemsFromQuote(quote) {
   return (quote.items || []).map((item) => ({
     item_id: String(item.item_id || quote.bundleId || ""),
-    name: String(item.item_name || "สิทธิ์บริการ CWF"),
-    item_name: String(item.item_name || "สิทธิ์บริการ CWF"),
+    name: String(item.item_name || "สิทธิ์บริการ COLDWINDFLOW"),
+    item_name: String(item.item_name || "สิทธิ์บริการ COLDWINDFLOW"),
     qty: Number(item.qty || 1),
     unit_price: Number(item.unit_price || 0),
     line_total: Number(item.line_total || 0),

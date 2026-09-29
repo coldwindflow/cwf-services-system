@@ -69,7 +69,7 @@
     closeModal();
     modal = document.createElement("div");
     modal.className = "cwf-prepaid-backdrop";
-    modal.innerHTML = `<section class="cwf-prepaid-sheet" role="dialog" aria-modal="true"><div class="cwf-prepaid-head"><div><div class="cwf-prepaid-muted">CWF PREPAID</div><h2>${esc(title)}</h2></div><button type="button" class="cwf-prepaid-close" data-prepaid-close aria-label="ปิด">×</button></div><div data-prepaid-body>${body || ""}</div></section>`;
+    modal.innerHTML = `<section class="cwf-prepaid-sheet" role="dialog" aria-modal="true"><div class="cwf-prepaid-head"><div><div class="cwf-prepaid-muted">COLDWINDFLOW PREPAID</div><h2>${esc(title)}</h2></div><button type="button" class="cwf-prepaid-close" data-prepaid-close aria-label="ปิด">×</button></div><div data-prepaid-body>${body || ""}</div></section>`;
     modal.addEventListener("click", (event) => {
       if (event.target === modal || event.target.closest?.("[data-prepaid-close]")) closeModal();
     });
@@ -157,7 +157,7 @@
 
       function render() {
         body.innerHTML = `
-          <div class="cwf-prepaid-card"><b>${esc(actual.item_name || "โปรโมชั่น CWF")}</b><div class="cwf-prepaid-muted">เลือกจำนวนเครื่องตาม BTU ระบบคำนวณราคาจาก Server จริง</div><div class="cwf-prepaid-grid" data-prepaid-rows>${rows.map((row, index) => `<label class="cwf-prepaid-service"><span>${esc(row.label)}</span><input class="cwf-prepaid-qty" type="number" min="0" max="99" step="1" value="${row.quantity}" data-prepaid-qty="${index}" aria-label="จำนวนเครื่อง ${esc(row.label)}"></label>`).join("")}</div></div>
+          <div class="cwf-prepaid-card"><b>${esc(actual.item_name || "โปรโมชั่น COLDWINDFLOW")}</b><div class="cwf-prepaid-muted">เลือกจำนวนเครื่องตาม BTU ระบบคำนวณราคาจาก Server จริง</div><div class="cwf-prepaid-grid" data-prepaid-rows>${rows.map((row, index) => `<label class="cwf-prepaid-service"><span>${esc(row.label)}</span><input class="cwf-prepaid-qty" type="number" min="0" max="99" step="1" value="${row.quantity}" data-prepaid-qty="${index}" aria-label="จำนวนเครื่อง ${esc(row.label)}"></label>`).join("")}</div></div>
           <div class="cwf-prepaid-card"><div class="cwf-prepaid-muted">ราคาที่ต้องชำระ</div><div class="cwf-prepaid-total" data-prepaid-total>${quote ? baht(quote.fixed_total_price) : "กำลังคำนวณ..."}</div><div class="cwf-prepaid-muted" data-prepaid-terms>${quote ? `ใช้สิทธิ์ได้ถึง ${new Date(quote.redeem_until).toLocaleDateString("th-TH")} · รับประกัน ${quote.warranty_days} วันหลังปิดงาน` : ""}</div></div>
           <div class="cwf-prepaid-card"><label>ชื่อผู้ใช้สิทธิ์<input class="cwf-prepaid-input" data-prepaid-name value="${esc(contact.name)}" maxlength="120"></label><label style="display:block;margin-top:10px">เบอร์โทร<input class="cwf-prepaid-input" data-prepaid-phone value="${esc(contact.phone)}" maxlength="40" inputmode="tel"></label><button class="cwf-prepaid-primary" data-prepaid-buy ${quote ? "" : "disabled"}>ซื้อสิทธิ์ราคาพิเศษ</button><div data-prepaid-error></div></div>`;
         body.querySelectorAll("[data-prepaid-qty]").forEach((input) => input.addEventListener("input", () => {
@@ -266,7 +266,7 @@
     const body = modal?.querySelector("[data-prepaid-body]");
     if (!body) return;
     body.innerHTML = `<div class="cwf-prepaid-success"><b>จองสิทธิ์ราคาพิเศษสำเร็จ</b><br>รายการถูกส่งให้แอดมินแล้ว</div>
-      <div class="cwf-prepaid-card"><b>${esc(itemName || "สิทธิ์บริการ CWF")}</b><div class="cwf-prepaid-muted">เลขรายการ</div><b>${esc(order.order_code)}</b><div class="cwf-prepaid-total">${baht(order.subtotal)}</div>
+      <div class="cwf-prepaid-card"><b>${esc(itemName || "สิทธิ์บริการ COLDWINDFLOW")}</b><div class="cwf-prepaid-muted">เลขรายการ</div><b>${esc(order.order_code)}</b><div class="cwf-prepaid-total">${baht(order.subtotal)}</div>
       <p class="cwf-prepaid-muted">สถานะ: รอยืนยันการชำระ กรุณาชำระผ่านช่องทางที่ CWF แจ้งทาง LINE เมื่อแอดมินตรวจยอดและกดยืนยันแล้ว สิทธิ์จะเปิดใช้งานและสามารถเลือกวันเข้าบริการภายหลังได้</p>
       <a class="cwf-prepaid-primary" style="display:block;text-align:center;box-sizing:border-box;text-decoration:none" href="${esc(LINE_URL)}" target="_blank" rel="noopener">ติดต่อ LINE @cwfair เพื่อชำระ</a>
       <button class="cwf-prepaid-secondary" data-prepaid-rights>ดูรายการของฉัน</button></div>`;
@@ -356,16 +356,16 @@
         const right = rightsByCode.get(String(order.prepaid_entitlement_code || ""));
         if (right) {
           const snapshot = parseSnapshot(right.service_snapshot) || {};
-          const title = snapshot.bundle_key || "สิทธิ์บริการ CWF";
+          const title = snapshot.bundle_key || "สิทธิ์บริการ COLDWINDFLOW";
           const statusClass = right.status === "active" || right.status === "redeeming" ? "active" : right.status === "redeemed" ? "redeemed" : "";
           const statusLabel = right.status === "active" ? "ชำระแล้ว · รอเลือกวัน" : right.status === "redeeming" ? "กำลังเลือกวัน" : right.status === "redeemed" ? "จองวันแล้ว/ใช้สิทธิ์แล้ว" : right.status === "expired" ? "หมดอายุ" : right.status;
           return `<div class="cwf-prepaid-card"><div class="cwf-prepaid-row"><b>${esc(title)}</b><span class="cwf-prepaid-status ${statusClass}">${esc(statusLabel)}</span></div><div class="cwf-prepaid-muted">รายการ ${esc(order.order_code)} · ${esc(right.entitlement_code)} · มูลค่า ${baht(right.purchased_amount)}</div><div class="cwf-prepaid-muted">ใช้สิทธิ์ได้ถึง ${new Date(right.redeem_until).toLocaleDateString("th-TH")}</div>${right.booking_code ? `<div style="margin-top:6px">งาน: <b>${esc(right.booking_code)}</b></div>` : ""}${["active","redeeming"].includes(right.status) ? `<button class="cwf-prepaid-primary" data-use-right="${esc(right.entitlement_code)}">เลือกวันใช้สิทธิ์</button>` : ""}</div>`;
         }
         const pending = order.status === "pending_payment" || order.status === "payment_failed";
-        return `<div class="cwf-prepaid-card"><div class="cwf-prepaid-row"><b>จองสิทธิ์ CWF</b><span class="cwf-prepaid-status">${pending ? "รอยืนยันการชำระ" : esc(order.status)}</span></div><div class="cwf-prepaid-muted">รายการ ${esc(order.order_code)} · ${baht(order.subtotal)}</div><div class="cwf-prepaid-muted">จองเมื่อ ${new Date(order.created_at).toLocaleString("th-TH")}</div>${pending ? `<a class="cwf-prepaid-primary" style="display:block;text-align:center;box-sizing:border-box;text-decoration:none" href="${esc(LINE_URL)}" target="_blank" rel="noopener">ติดต่อ LINE @cwfair</a>` : ""}</div>`;
+        return `<div class="cwf-prepaid-card"><div class="cwf-prepaid-row"><b>จองสิทธิ์ COLDWINDFLOW</b><span class="cwf-prepaid-status">${pending ? "รอยืนยันการชำระ" : esc(order.status)}</span></div><div class="cwf-prepaid-muted">รายการ ${esc(order.order_code)} · ${baht(order.subtotal)}</div><div class="cwf-prepaid-muted">จองเมื่อ ${new Date(order.created_at).toLocaleString("th-TH")}</div>${pending ? `<a class="cwf-prepaid-primary" style="display:block;text-align:center;box-sizing:border-box;text-decoration:none" href="${esc(LINE_URL)}" target="_blank" rel="noopener">ติดต่อ LINE @cwfair</a>` : ""}</div>`;
       });
       rights.filter((right) => !orders.some((order) => String(order.prepaid_entitlement_code || "") === String(right.entitlement_code || ""))).forEach((right) => {
-        cards.push(`<div class="cwf-prepaid-card"><b>สิทธิ์บริการ CWF</b><div class="cwf-prepaid-muted">${esc(right.entitlement_code)} · ${baht(right.purchased_amount)}</div></div>`);
+        cards.push(`<div class="cwf-prepaid-card"><b>สิทธิ์บริการ COLDWINDFLOW</b><div class="cwf-prepaid-muted">${esc(right.entitlement_code)} · ${baht(right.purchased_amount)}</div></div>`);
       });
       body.innerHTML = cards.length ? cards.join("") : `<div class="cwf-prepaid-card">ยังไม่มีรายการจองโปรโมชั่นในบัญชีนี้</div>`;
       body.querySelectorAll("[data-use-right]").forEach((button) => button.addEventListener("click", () => useRight(button.dataset.useRight)));
