@@ -255,6 +255,11 @@ function createPrepaidOrderService({ pool }) {
       throw new PrepaidServiceError(error?.code || "PACKAGE_PREPAID_PURCHASE_NOT_ALLOWED", 409);
     }
     const snapshot = entitlementSnapshot(quote);
+    // CWF AIR CARE is valid for 60 days from the actual reservation purchase,
+    // not from a fixed campaign-wide redemption date.
+    if (String(quote.bundleKey || "") === "cwf-air-care") {
+      snapshot.redeem_until = new Date(Date.now() + (60 * 24 * 60 * 60 * 1000)).toISOString();
+    }
     return { normalized, quote, snapshot };
   }
 
@@ -398,6 +403,21 @@ function createPrepaidOrderService({ pool }) {
     });
   }
 
+  async function listOrders(customerSub) {
+    const sub = clean(customerSub, 256);
+    if (!sub) throw new PrepaidServiceError("NOT_LOGGED_IN", 401);
+    await requireSchema(pool);
+    const result = await pool.query(
+      `SELECT order_code, customer_name, customer_phone, subtotal, status, payment_status,
+              created_at, paid_at, prepaid_entitlement_code, prepaid_redeem_until,
+              prepaid_warranty_days
+         FROM public.customer_orders
+        WHERE order_kind='service_prepaid' AND customer_sub=$1
+        ORDER BY created_at DESC, order_id DESC LIMIT 200`, [sub]
+    );
+    return result.rows || [];
+  }
+
   async function listRights(customerSub) {
     const sub = clean(customerSub, 256);
     if (!sub) throw new PrepaidServiceError("NOT_LOGGED_IN", 401);
@@ -529,6 +549,7 @@ function createPrepaidOrderService({ pool }) {
     quoteOrder,
     createOrder,
     confirmManualPayment,
+    listOrders,
     listRights,
     claimRight,
     beginRedemption,
