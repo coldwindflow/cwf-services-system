@@ -116,22 +116,38 @@
 
   function packageRows(item) {
     const variants = Array.isArray(item.service_package_variants) ? item.service_package_variants : [];
-    const rows = variants.map((variant) => {
-      const min = Number(variant.btu_min || 0);
-      const max = Number(variant.btu_max || 0);
-      const isSmall = max > 0 && max <= 12000;
-      const isLarge = min >= 18000;
-      return {
-        package_key: String(variant.package_key),
-        label: isSmall
-          ? `${variant.service_level_label || variant.display_name || item.item_name} · ไม่เกิน 12,000 BTU`
-          : isLarge
-            ? `${variant.service_level_label || variant.display_name || item.item_name} · 18,000 BTU ขึ้นไป`
-            : String(variant.service_level_label || variant.display_name || variant.service_name || item.item_name),
-        btu: isSmall ? 12000 : isLarge ? 18000 : (min || max),
-        quantity: 0,
-      };
-    }).filter((row) => Number(row.btu) > 0);
+    const bundleKey = String(item.service_bundle_key || "");
+    const isAirCare = bundleKey === "coldwindflow-air-care-standard" || bundleKey === "coldwindflow-air-care-premium";
+    const rows = [];
+    if (isAirCare) {
+      variants.forEach((variant) => {
+        const min = Number(variant.btu_min || 0);
+        const max = Number(variant.btu_max || 0);
+        const isSmall = max > 0 && max <= 12000;
+        const isLarge = min >= 18000;
+        if (!isSmall && !isLarge) return;
+        rows.push({
+          package_key: String(variant.package_key),
+          label: isSmall ? "ไม่เกิน 12,000 BTU" : "18,000 BTU ขึ้นไป",
+          btu: isSmall ? 12000 : 18000,
+          quantity: 0,
+        });
+      });
+    } else {
+      const btuOptions = Array.isArray(root.services?.bookableBtuOptions) ? root.services.bookableBtuOptions : [];
+      variants.forEach((variant) => {
+        const min = Number(variant.btu_min || 0);
+        const max = Number(variant.btu_max || Number.MAX_SAFE_INTEGER);
+        btuOptions.filter((option) => Number(option.btu) >= min && Number(option.btu) <= max).forEach((option) => {
+          rows.push({
+            package_key: String(variant.package_key),
+            label: `${variant.display_name || variant.service_name || item.item_name} · ${Number(option.btu).toLocaleString("th-TH")} BTU`,
+            btu: Number(option.btu),
+            quantity: 0,
+          });
+        });
+      });
+    }
     if (rows[0]) rows[0].quantity = 1;
     return rows;
   }
