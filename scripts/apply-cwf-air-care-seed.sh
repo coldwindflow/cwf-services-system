@@ -12,15 +12,23 @@ case "$ENVIRONMENT" in
 esac
 
 die(){ echo "[FAIL] $*" >&2; exit 1; }
-db_query(){ sudo -n docker exec "$DB_CONTAINER" psql -U postgres -d cwf -Atqc "$1"; }
-db_file(){ sudo -n docker exec -i "$DB_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d cwf; }
+docker_cmd() {
+  if /usr/bin/docker info >/dev/null 2>&1; then /usr/bin/docker "$@"; else sudo -n /usr/bin/docker "$@"; fi
+}
+db_query() {
+  local sql="$1"
+  docker_cmd exec "$DB_CONTAINER" sh -ceu 'exec psql -X -U "${POSTGRES_USER:?}" -d "${POSTGRES_DB:?}" -v ON_ERROR_STOP=1 -Atqc "$1"' sh "$sql"
+}
+db_file() {
+  docker_cmd exec -i "$DB_CONTAINER" sh -ceu 'exec psql -X -U "${POSTGRES_USER:?}" -d "${POSTGRES_DB:?}" -v ON_ERROR_STOP=1'
+}
 
 [[ -f "$SEED_PATH" ]] || die "AIR CARE seed file missing"
 if [[ -n "${EXPECTED_RELEASE_SHA:-}" ]]; then
   status_output="$(sudo -n /usr/local/sbin/cwf-deployctl "$ENVIRONMENT" status)" || die "cannot read deployed revision"
   grep -Fq "$EXPECTED_RELEASE_SHA" <<<"$status_output" || die "deployed $ENVIRONMENT revision does not match EXPECTED_RELEASE_SHA"
 fi
-sudo -n docker exec "$DB_CONTAINER" pg_isready -U postgres -d cwf >/dev/null || die "database unavailable"
+docker_cmd exec "$DB_CONTAINER" sh -ceu 'exec pg_isready -U "${POSTGRES_USER:?}" -d "${POSTGRES_DB:?}"' >/dev/null || die "database unavailable"
 
 schema_ready="$(db_query "SELECT (to_regclass('public.customer_service_entitlements') IS NOT NULL AND EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='catalog_items' AND column_name='service_package_payment_mode'))::int")"
 [[ "$schema_ready" == "1" ]] || die "PREPAID schema not ready"
