@@ -45,7 +45,7 @@ test("AIR CARE prepaid UI exposes exactly two BTU pricing groups per campaign it
 });
 
 
-test("AIR CARE is uncapped and extends the q4 marginal rate for quantity 5+", () => {
+test("AIR CARE is uncapped for server-side tier composition beyond q4", () => {
   assert.match(seed, /service_package_maximum_total_quantity=NULL/);
   assert.match(service, /60 \* 24 \* 60 \* 60 \* 1000/);
 });
