@@ -111,7 +111,7 @@ test("prepaid purchase observes sale window without requiring a service date", a
 });
 
 
-test("uncapped total-quantity promotion extends the q4 marginal rate for q5+", () => {
+test("uncapped total-quantity promotion composes q1-q4 tiers for q5+", () => {
   const uncapped = { ...base, service_package_maximum_total_quantity: null };
   const variant = {
     ...standardVariant,
@@ -124,5 +124,5 @@ test("uncapped total-quantity promotion extends the q4 marginal rate for q5+", (
     groups: [{ package_key: variant.package_key, btu: 12000, quantity: 5 }],
     now: new Date("2026-09-06T00:00:00.000Z"),
   });
-  assert.equal(result.fixedTotal, "2099.00");
+  assert.equal(result.fixedTotal, "2198.00");
 });
