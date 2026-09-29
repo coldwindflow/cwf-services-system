@@ -50,6 +50,25 @@ function activeExactTier(variant, quantity, parseMoney) {
   return tiers[0] || null;
 }
 
+function activeTierAtOrExtendLastRate(variant, quantity, parseMoney) {
+  const exact = activeExactTier(variant, quantity, parseMoney);
+  if (exact) return exact;
+  const tiers = (Array.isArray(variant?.tiers) ? variant.tiers : [])
+    .filter((tier) => tier.is_active !== false && Number.isSafeInteger(Number(tier.service_quantity)) && Number(tier.service_quantity) > 0)
+    .map((tier) => ({ tier, quantity: Number(tier.service_quantity), price: parseMoney(tier.fixed_total_price) }))
+    .sort((a, b) => a.quantity - b.quantity);
+  if (tiers.length < 2 || quantity <= tiers[tiers.length - 1].quantity) return null;
+  const last = tiers[tiers.length - 1];
+  const previous = tiers[tiers.length - 2];
+  if (last.quantity - previous.quantity !== 1) return null;
+  const lastUnitRate = last.price - previous.price;
+  if (lastUnitRate < 0n) return null;
+  return {
+    tier: last.tier,
+    price: last.price + (lastUnitRate * BigInt(quantity - last.quantity)),
+  };
+}
+
 function allocateBaseAcrossGroups(baseMinor, groups) {
   const totalQuantity = groups.reduce((sum, group) => sum + group.quantity, 0);
   const divisor = BigInt(totalQuantity);
@@ -79,7 +98,10 @@ function resolveTotalQuantityTierPlusModifiers({ bundle, groups, byKey, parseMon
     levelKey = [...levels][0];
   }
 
-  const exactTiers = selected.map(({ variant }) => activeExactTier(variant, totalQuantity, parseMoney));
+  const extendLastRate = bundle?.service_package_maximum_total_quantity == null || bundle.service_package_maximum_total_quantity === "";
+  const exactTiers = selected.map(({ variant }) => extendLastRate
+    ? activeTierAtOrExtendLastRate(variant, totalQuantity, parseMoney)
+    : activeExactTier(variant, totalQuantity, parseMoney));
   if (exactTiers.some((entry) => !entry)) fail("SERVICE_PACKAGE_TOTAL_TIER_REQUIRED", 409);
   const basePrices = new Set(exactTiers.map((entry) => entry.price.toString()));
   if (basePrices.size !== 1) fail("SERVICE_PACKAGE_LEVEL_TIER_MISMATCH", 409);
@@ -131,6 +153,7 @@ module.exports = {
   maximumTotalQuantity,
   warrantyDays,
   activeExactTier,
+  activeTierAtOrExtendLastRate,
   allocateBaseAcrossGroups,
   resolveTotalQuantityTierPlusModifiers,
 };
