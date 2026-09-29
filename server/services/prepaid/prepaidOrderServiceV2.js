@@ -257,7 +257,7 @@ function createPrepaidOrderService({ pool }) {
     const snapshot = entitlementSnapshot(quote);
     // CWF AIR CARE is valid for 60 days from the actual reservation purchase,
     // not from a fixed campaign-wide redemption date.
-    if (String(quote.bundleKey || "") === "cwf-air-care") {
+    if (String(quote.bundleKey || "").startsWith("coldwindflow-air-care-")) {
       snapshot.redeem_until = new Date(Date.now() + (60 * 24 * 60 * 60 * 1000)).toISOString();
     }
     return { normalized, quote, snapshot };
