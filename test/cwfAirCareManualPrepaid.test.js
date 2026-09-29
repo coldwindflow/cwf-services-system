@@ -10,15 +10,15 @@ const prepaidUi = fs.readFileSync("customer-app/modules/prepaid.js", "utf8");
 const publicRoutes = fs.readFileSync("server/routes/public/customerPrepaid.js", "utf8");
 const service = fs.readFileSync("server/services/prepaid/prepaidOrderServiceV2.js", "utf8");
 
-test("CWF AIR CARE campaign has exact sale prices and manual-payment policy", () => {
-  assert.match(seed, /cwf-air-care/);
+test("COLDWINDFLOW AIR CARE campaign has exact Standard and Premium prices", () => {
+  assert.match(seed, /COLDWINDFLOW AIR CARE/);\n  assert.match(seed, /COLDWINDFLOW AIR SERVICES/);
   assert.match(seed, /2026-09-30T00:00:00\+07:00/);
   assert.match(seed, /2026-10-06T23:59:59\.999\+07:00/);
   assert.match(seed, /499\.00/);
   assert.match(seed, /899\.00/);
   assert.match(seed, /1299\.00/);
   assert.match(seed, /1699\.00/);
-  assert.match(seed, /100\.00/);
+  assert.match(seed, /100\.00/);\n  assert.match(seed, /699\.00/);\n  assert.match(seed, /1399\.00/);\n  assert.match(seed, /1899\.00/);\n  assert.match(seed, /2489\.00/);\n  assert.match(seed, /1799\.00/);\n  assert.match(seed, /2599\.00/);\n  assert.match(seed, /3399\.00/);
   assert.match(seed, /'prepaid_full',60/);
   assert.match(seed, /'contact_admin'/);
   assert.doesNotMatch(seed, /booking_mode[^\n]*service_package/);
@@ -40,7 +40,7 @@ test("customer can recover pending reservations and paid rights after reopening"
 });
 
 test("AIR CARE entitlement expires 60 days from reservation creation", () => {
-  assert.match(service, /bundleKey \|\| ""\) === "cwf-air-care"/);
+  assert.match(service, /startsWith\("coldwindflow-air-care-"\)/);
   assert.match(service, /60 \* 24 \* 60 \* 60 \* 1000/);
 });
 
@@ -53,6 +53,6 @@ test("public prepaid policy follows virtual service-package bundle architecture"
 test("guarded operator verifies campaign shape without changing schema", () => {
   assert.match(operator, /EXPECTED_RELEASE_SHA/);
   assert.match(operator, /cwf-deployctl/);
-  assert.match(operator, /parents=1 variants=2 tiers=8/);
+  assert.match(operator, /parents=2 variants=4 tiers=16/);
   assert.match(operator, /manual_payment=admin_verified/);
 });
