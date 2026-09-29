@@ -2,7 +2,7 @@
   "use strict";
 
   const root = window.CWFCustomerAppV2 = window.CWFCustomerAppV2 || {};
-  const LINE_URL = "https://lin.ee/";
+  const LINE_URL = "https://line.me/R/ti/p/@cwfair";
   let modal = null;
   let omiseJsPromise = null;
   let quoteSeq = 0;
@@ -109,7 +109,7 @@
 
   function requireLogin() {
     if (root.state.customer?.logged_in) return true;
-    const body = openModal("เข้าสู่ระบบเพื่อเก็บสิทธิ์", `<div class="cwf-prepaid-card"><b>โปร PREPAID ต้องผูกสิทธิ์กับบัญชีลูกค้า</b><p class="cwf-prepaid-muted">เข้าสู่ระบบด้วย LINE หรือ Google ก่อนชำระ เพื่อให้สิทธิ์ไม่สูญหายและป้องกันผู้อื่นนำไปใช้</p><button class="cwf-prepaid-primary" data-prepaid-login>เข้าสู่ระบบ</button></div>`);
+    const body = openModal("เข้าสู่ระบบเพื่อเก็บสิทธิ์", `<div class="cwf-prepaid-card"><b>โปร PREPAID ต้องผูกสิทธิ์กับบัญชีลูกค้า</b><p class="cwf-prepaid-muted">เข้าสู่ระบบด้วย LINE หรือ Google ก่อนจองสิทธิ์ เพื่อให้รายการจองและสิทธิ์หลังแอดมินยืนยันการชำระผูกกับบัญชีนี้</p><button class="cwf-prepaid-primary" data-prepaid-login>เข้าสู่ระบบ</button></div>`);
     body.querySelector("[data-prepaid-login]")?.addEventListener("click", () => { closeModal(); root.utils.routeTo("profile"); });
     return false;
   }
@@ -159,7 +159,7 @@
         body.innerHTML = `
           <div class="cwf-prepaid-card"><b>${esc(actual.item_name || "โปรโมชั่น CWF")}</b><div class="cwf-prepaid-muted">เลือกจำนวนเครื่องตาม BTU ระบบคำนวณราคาจาก Server จริง</div><div class="cwf-prepaid-grid" data-prepaid-rows>${rows.map((row, index) => `<label class="cwf-prepaid-service"><span>${esc(row.label)}</span><input class="cwf-prepaid-qty" type="number" min="0" max="99" step="1" value="${row.quantity}" data-prepaid-qty="${index}" aria-label="จำนวนเครื่อง ${esc(row.label)}"></label>`).join("")}</div></div>
           <div class="cwf-prepaid-card"><div class="cwf-prepaid-muted">ราคาที่ต้องชำระ</div><div class="cwf-prepaid-total" data-prepaid-total>${quote ? baht(quote.fixed_total_price) : "กำลังคำนวณ..."}</div><div class="cwf-prepaid-muted" data-prepaid-terms>${quote ? `ใช้สิทธิ์ได้ถึง ${new Date(quote.redeem_until).toLocaleDateString("th-TH")} · รับประกัน ${quote.warranty_days} วันหลังปิดงาน` : ""}</div></div>
-          <div class="cwf-prepaid-card"><label>ชื่อผู้ใช้สิทธิ์<input class="cwf-prepaid-input" data-prepaid-name value="${esc(contact.name)}" maxlength="120"></label><label style="display:block;margin-top:10px">เบอร์โทร<input class="cwf-prepaid-input" data-prepaid-phone value="${esc(contact.phone)}" maxlength="40" inputmode="tel"></label><button class="cwf-prepaid-primary" data-prepaid-buy ${quote ? "" : "disabled"}>ชำระเงินและเก็บสิทธิ์</button><div data-prepaid-error></div></div>`;
+          <div class="cwf-prepaid-card"><label>ชื่อผู้ใช้สิทธิ์<input class="cwf-prepaid-input" data-prepaid-name value="${esc(contact.name)}" maxlength="120"></label><label style="display:block;margin-top:10px">เบอร์โทร<input class="cwf-prepaid-input" data-prepaid-phone value="${esc(contact.phone)}" maxlength="40" inputmode="tel"></label><button class="cwf-prepaid-primary" data-prepaid-buy ${quote ? "" : "disabled"}>ซื้อสิทธิ์ราคาพิเศษ</button><div data-prepaid-error></div></div>`;
         body.querySelectorAll("[data-prepaid-qty]").forEach((input) => input.addEventListener("input", () => {
           const index = Number(input.dataset.prepaidQty);
           rows[index].quantity = Math.max(0, Math.min(99, Math.floor(Number(input.value || 0))));
@@ -204,7 +204,7 @@
           return;
         }
         button.disabled = true;
-        button.textContent = "กำลังสร้างสิทธิ์...";
+        button.textContent = "กำลังจองสิทธิ์...";
         try {
           const purchaseKey = root.utils?.randomKey?.() || `prepaid_${cryptoRandomKey()}`;
           const created = await request("/public/prepaid-orders", { method: "POST", body: {
@@ -214,10 +214,10 @@
             customer_phone: phone,
             purchase_request_key: purchaseKey,
           } });
-          renderPayment(created.order, created.entitlement_code, actual.item_name);
+          renderReservation(created.order, actual.item_name);
         } catch (error) {
           button.disabled = false;
-          button.textContent = "ชำระเงินและเก็บสิทธิ์";
+          button.textContent = "ซื้อสิทธิ์ราคาพิเศษ";
           if (errorBox) errorBox.innerHTML = `<div class="cwf-prepaid-error">สร้างรายการไม่สำเร็จ (${esc(error.code || error.message)})</div>`;
         }
       }
@@ -262,22 +262,15 @@
     });
   }
 
-  async function renderPayment(order, entitlementCode, itemName) {
+  function renderReservation(order, itemName) {
     const body = modal?.querySelector("[data-prepaid-body]");
     if (!body) return;
-    let config;
-    try { config = await root.api.getPaymentConfig(); } catch (_) { config = { enabled: false, methods: [] }; }
-    const methods = Array.isArray(config.methods) ? config.methods : [];
-    body.innerHTML = `<div class="cwf-prepaid-card"><b>${esc(itemName || "สิทธิ์บริการ CWF")}</b><div class="cwf-prepaid-muted">เลขรายการ ${esc(order.order_code)}</div><div class="cwf-prepaid-total">${baht(order.subtotal)}</div></div><div data-prepaid-payment></div>`;
-    const mount = body.querySelector("[data-prepaid-payment]");
-    if (!config.enabled || !methods.length) {
-      mount.innerHTML = `<div class="cwf-prepaid-card"><b>รายการถูกสร้างแล้ว แต่ระบบชำระออนไลน์ยังไม่พร้อม</b><p class="cwf-prepaid-muted">แจ้งเลขรายการ ${esc(order.order_code)} ให้แอดมินตรวจยอดและยืนยันการชำระ สิทธิ์จะ ACTIVE หลังตรวจสอบเงินเท่านั้น</p><button class="cwf-prepaid-secondary" data-prepaid-rights>ดูสิทธิ์ของฉัน</button></div>`;
-      mount.querySelector("[data-prepaid-rights]")?.addEventListener("click", openRights);
-      return;
-    }
-    mount.innerHTML = `<div class="cwf-prepaid-card"><b>เลือกวิธีชำระ</b>${methods.includes("promptpay") ? `<button class="cwf-prepaid-primary" data-pay-prompt>PromptPay QR</button>` : ""}${methods.includes("card") ? `<button class="cwf-prepaid-secondary" data-pay-card>บัตรเครดิต/เดบิต</button>` : ""}<div data-pay-area></div></div>`;
-    mount.querySelector("[data-pay-prompt]")?.addEventListener("click", () => payPromptPay(order.order_code, entitlementCode));
-    mount.querySelector("[data-pay-card]")?.addEventListener("click", () => cardForm(order.order_code, entitlementCode, config.public_key));
+    body.innerHTML = `<div class="cwf-prepaid-success"><b>จองสิทธิ์ราคาพิเศษสำเร็จ</b><br>รายการถูกส่งให้แอดมินแล้ว</div>
+      <div class="cwf-prepaid-card"><b>${esc(itemName || "สิทธิ์บริการ CWF")}</b><div class="cwf-prepaid-muted">เลขรายการ</div><b>${esc(order.order_code)}</b><div class="cwf-prepaid-total">${baht(order.subtotal)}</div>
+      <p class="cwf-prepaid-muted">สถานะ: รอยืนยันการชำระ กรุณาชำระผ่านช่องทางที่ CWF แจ้งทาง LINE เมื่อแอดมินตรวจยอดและกดยืนยันแล้ว สิทธิ์จะเปิดใช้งานและสามารถเลือกวันเข้าบริการภายหลังได้</p>
+      <a class="cwf-prepaid-primary" style="display:block;text-align:center;box-sizing:border-box;text-decoration:none" href="${esc(LINE_URL)}" target="_blank" rel="noopener">ติดต่อ LINE @cwfair เพื่อชำระ</a>
+      <button class="cwf-prepaid-secondary" data-prepaid-rights>ดูรายการของฉัน</button></div>`;
+    body.querySelector("[data-prepaid-rights]")?.addEventListener("click", openRights);
   }
 
   async function payPromptPay(orderCode, entitlementCode) {
@@ -350,20 +343,34 @@
 
   async function openRights() {
     if (!requireLogin()) return;
-    const body = openModal("สิทธิ์บริการของฉัน", `<div class="cwf-prepaid-card">กำลังโหลดสิทธิ์...</div>`);
+    const body = openModal("รายการจองและสิทธิ์ของฉัน", `<div class="cwf-prepaid-card">กำลังโหลดรายการ...</div>`);
     try {
-      const data = await request("/public/service-rights");
-      const items = Array.isArray(data.items) ? data.items : [];
-      body.innerHTML = items.length ? items.map((right) => {
-        const snapshot = parseSnapshot(right.service_snapshot) || {};
-        const title = snapshot.bundle_key || "สิทธิ์บริการ CWF";
-        const statusClass = right.status === "active" || right.status === "redeeming" ? "active" : right.status === "redeemed" ? "redeemed" : "";
-        const statusLabel = right.status === "active" ? "พร้อมใช้" : right.status === "redeeming" ? "กำลังเลือกวัน" : right.status === "redeemed" ? "ใช้สิทธิ์แล้ว" : right.status === "expired" ? "หมดอายุ" : right.status;
-        return `<div class="cwf-prepaid-card"><div class="cwf-prepaid-row"><b>${esc(title)}</b><span class="cwf-prepaid-status ${statusClass}">${esc(statusLabel)}</span></div><div class="cwf-prepaid-muted">${esc(right.entitlement_code)} · มูลค่า ${baht(right.purchased_amount)}</div><div class="cwf-prepaid-muted">ใช้สิทธิ์ได้ถึง ${new Date(right.redeem_until).toLocaleDateString("th-TH")}</div>${right.booking_code ? `<div style="margin-top:6px">งาน: <b>${esc(right.booking_code)}</b></div>` : ""}${right.warranty_until ? `<div class="cwf-prepaid-muted">รับประกันถึง ${new Date(right.warranty_until).toLocaleDateString("th-TH")}</div>` : ""}${["active","redeeming"].includes(right.status) ? `<button class="cwf-prepaid-primary" data-use-right="${esc(right.entitlement_code)}">เลือกวันใช้สิทธิ์</button>` : ""}</div>`;
-      }).join("") : `<div class="cwf-prepaid-card">ยังไม่มีสิทธิ์บริการในบัญชีนี้</div>`;
+      const [ordersData, rightsData] = await Promise.all([
+        request("/public/prepaid-orders"),
+        request("/public/service-rights"),
+      ]);
+      const orders = Array.isArray(ordersData.items) ? ordersData.items : [];
+      const rights = Array.isArray(rightsData.items) ? rightsData.items : [];
+      const rightsByCode = new Map(rights.map((right) => [String(right.entitlement_code || ""), right]));
+      const cards = orders.map((order) => {
+        const right = rightsByCode.get(String(order.prepaid_entitlement_code || ""));
+        if (right) {
+          const snapshot = parseSnapshot(right.service_snapshot) || {};
+          const title = snapshot.bundle_key || "สิทธิ์บริการ CWF";
+          const statusClass = right.status === "active" || right.status === "redeeming" ? "active" : right.status === "redeemed" ? "redeemed" : "";
+          const statusLabel = right.status === "active" ? "ชำระแล้ว · รอเลือกวัน" : right.status === "redeeming" ? "กำลังเลือกวัน" : right.status === "redeemed" ? "จองวันแล้ว/ใช้สิทธิ์แล้ว" : right.status === "expired" ? "หมดอายุ" : right.status;
+          return `<div class="cwf-prepaid-card"><div class="cwf-prepaid-row"><b>${esc(title)}</b><span class="cwf-prepaid-status ${statusClass}">${esc(statusLabel)}</span></div><div class="cwf-prepaid-muted">รายการ ${esc(order.order_code)} · ${esc(right.entitlement_code)} · มูลค่า ${baht(right.purchased_amount)}</div><div class="cwf-prepaid-muted">ใช้สิทธิ์ได้ถึง ${new Date(right.redeem_until).toLocaleDateString("th-TH")}</div>${right.booking_code ? `<div style="margin-top:6px">งาน: <b>${esc(right.booking_code)}</b></div>` : ""}${["active","redeeming"].includes(right.status) ? `<button class="cwf-prepaid-primary" data-use-right="${esc(right.entitlement_code)}">เลือกวันใช้สิทธิ์</button>` : ""}</div>`;
+        }
+        const pending = order.status === "pending_payment" || order.status === "payment_failed";
+        return `<div class="cwf-prepaid-card"><div class="cwf-prepaid-row"><b>จองสิทธิ์ CWF</b><span class="cwf-prepaid-status">${pending ? "รอยืนยันการชำระ" : esc(order.status)}</span></div><div class="cwf-prepaid-muted">รายการ ${esc(order.order_code)} · ${baht(order.subtotal)}</div><div class="cwf-prepaid-muted">จองเมื่อ ${new Date(order.created_at).toLocaleString("th-TH")}</div>${pending ? `<a class="cwf-prepaid-primary" style="display:block;text-align:center;box-sizing:border-box;text-decoration:none" href="${esc(LINE_URL)}" target="_blank" rel="noopener">ติดต่อ LINE @cwfair</a>` : ""}</div>`;
+      });
+      rights.filter((right) => !orders.some((order) => String(order.prepaid_entitlement_code || "") === String(right.entitlement_code || ""))).forEach((right) => {
+        cards.push(`<div class="cwf-prepaid-card"><b>สิทธิ์บริการ CWF</b><div class="cwf-prepaid-muted">${esc(right.entitlement_code)} · ${baht(right.purchased_amount)}</div></div>`);
+      });
+      body.innerHTML = cards.length ? cards.join("") : `<div class="cwf-prepaid-card">ยังไม่มีรายการจองโปรโมชั่นในบัญชีนี้</div>`;
       body.querySelectorAll("[data-use-right]").forEach((button) => button.addEventListener("click", () => useRight(button.dataset.useRight)));
     } catch (error) {
-      body.innerHTML = `<div class="cwf-prepaid-error">โหลดสิทธิ์ไม่สำเร็จ (${esc(error.code || error.message)})</div>`;
+      body.innerHTML = `<div class="cwf-prepaid-error">โหลดรายการไม่สำเร็จ (${esc(error.code || error.message)})</div>`;
     }
   }
 
