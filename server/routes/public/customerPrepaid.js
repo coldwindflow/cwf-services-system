@@ -84,7 +84,7 @@ function createCustomerPrepaidRoutes(options = {}) {
     let row;
     try {
       const result = await pool.query(
-        `SELECT item_id, booking_mode, is_active, is_customer_visible,
+        `SELECT item_id, booking_mode, service_bundle_key, is_active, is_customer_visible,
                 service_package_sell_start_at, service_package_sell_end_at,
                 service_package_redeem_until, service_package_payment_mode,
                 service_package_warranty_days
@@ -100,7 +100,7 @@ function createCustomerPrepaidRoutes(options = {}) {
     }
     const now = Date.now();
     const onSale = row
-      && row.booking_mode === "service_package"
+      && Boolean(clean(row.service_bundle_key))
       && row.is_active === true
       && row.is_customer_visible === true
       && (!row.service_package_sell_start_at || now >= new Date(row.service_package_sell_start_at).getTime())
@@ -135,6 +135,13 @@ function createCustomerPrepaidRoutes(options = {}) {
       entitlement_code: created.entitlement_code,
       service: created.service,
     });
+  }));
+
+  router.get("/public/prepaid-orders", requireCustomerJwt, handle(async (req, res) => {
+    const customerSub = clean(req.customer?.sub);
+    if (!customerSub) return res.status(401).json({ error: "NOT_LOGGED_IN", code: "NOT_LOGGED_IN" });
+    const items = await service.listOrders(customerSub);
+    return res.json({ ok: true, items });
   }));
 
   router.get("/public/service-rights", requireCustomerJwt, handle(async (req, res) => {
