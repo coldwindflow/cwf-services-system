@@ -72,12 +72,12 @@ test("unfinished cancellation restores right but finished cancellation never doe
   assert.match(migration, /CASE WHEN redeem_until < NOW\(\) THEN 'expired' ELSE 'active' END/);
 });
 
-test("release gate migrates entitlement schema before AIR RESET cutover in both environments", () => {
+test("release gate migrates entitlement schema before active promotion seed in both environments", () => {
   const workflow = fs.readFileSync(".github/workflows/cwf-air-reset-seed-gate.yml", "utf8");
   const stagingMigration = workflow.indexOf("apply-prepaid-service-entitlements-home.sh staging");
-  const stagingCutover = workflow.indexOf("apply-air-reset-60-seed.sh staging");
+  const stagingCutover = workflow.indexOf("apply-cwf-air-care-seed.sh staging");
   const productionMigration = workflow.indexOf("apply-prepaid-service-entitlements-home.sh production");
-  const productionCutover = workflow.indexOf("apply-air-reset-60-seed.sh production");
+  const productionCutover = workflow.indexOf("apply-cwf-air-care-seed.sh production");
   assert.ok(stagingMigration >= 0 && stagingCutover > stagingMigration);
   assert.ok(productionMigration >= 0 && productionCutover > productionMigration);
 });

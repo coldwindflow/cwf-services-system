@@ -171,8 +171,7 @@ docker_cmd exec "$DB_CONTAINER" sh -ceu \
            service_package_payment_mode='"'"'prepaid_full'"'"',
            service_package_warranty_days=60,
            is_active=TRUE,
-           is_customer_visible=TRUE,
-           updated_at=NOW()
+           is_customer_visible=TRUE
      WHERE service_bundle_key IN ('"'"'air-reset-60-standard'"'"','"'"'air-reset-60-premium'"'"')
        AND service_package_pricing_strategy='"'"'total_quantity_tier_plus_unit_modifiers'"'"'
        AND service_package_selection_mode='"'"'multi_variant'"'"'

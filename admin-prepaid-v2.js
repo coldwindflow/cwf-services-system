@@ -191,7 +191,11 @@
     setMessage("ordersMessage", "กำลังโหลด...");
     const data = await api("/admin/prepaid-orders");
     const orders = Array.isArray(data?.orders) ? data.orders : [];
-    $("ordersBody").innerHTML = orders.map((row) => {
+    const term = clean($("ordersSearch")?.value).toLowerCase();
+    const visible = term ? orders.filter((row) => [
+      row.order_code, row.customer_name, row.customer_phone, row.entitlement_code,
+    ].some((value) => clean(value).toLowerCase().includes(term))) : orders;
+    $("ordersBody").innerHTML = visible.map((row) => {
       const paid = row.payment_order_status === "paid";
       const canBook = Boolean(row.entitlement_code) && ["active", "unclaimed", "redeeming"].includes(String(row.entitlement_status || "")) && !row.redeemed_job_id;
       return `<tr>
@@ -208,7 +212,7 @@
         </div></td>
       </tr>`;
     }).join("") || '<tr><td colspan="8" class="muted">ยังไม่มีรายการ PREPAID</td></tr>';
-    setMessage("ordersMessage", `ทั้งหมด ${orders.length} รายการ`);
+    setMessage("ordersMessage", term ? `พบ ${visible.length} จาก ${orders.length} รายการ` : `ทั้งหมด ${orders.length} รายการ`);
   }
 
   async function confirmPayment(orderCode, amount) {
@@ -284,6 +288,7 @@
     $("btnQuote").addEventListener("click", () => quoteSale().catch((error) => setMessage("saleMessage", error.message, "error")));
     $("btnCreateOrder").addEventListener("click", () => createOrder().catch((error) => { $("btnCreateOrder").disabled = false; setMessage("saleMessage", error.message, "error"); }));
     $("btnRefreshOrders").addEventListener("click", () => loadOrders().catch((error) => setMessage("ordersMessage", error.message, "error")));
+    $("ordersSearch")?.addEventListener("input", () => loadOrders().catch((error) => setMessage("ordersMessage", error.message, "error")));
     $("bookingAssignMode").addEventListener("change", () => { $("singleTechBox").style.display = $("bookingAssignMode").value === "single" ? "block" : "none"; });
     $("btnBookRight").addEventListener("click", () => bookRight().catch((error) => setMessage("bookingMessage", error.message, "error")));
     $("btnCancelBookingPanel").addEventListener("click", () => { $("bookingCard").style.display = "none"; state.bookingRequestKey = ""; });
