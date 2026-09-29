@@ -109,3 +109,20 @@ test("prepaid purchase observes sale window without requiring a service date", a
     now: () => new Date("2026-09-13T00:00:00.000Z"),
   }), { code: "SERVICE_PACKAGE_NOT_AVAILABLE" });
 });
+
+
+test("uncapped total-quantity promotion extends the q4 marginal rate for q5+", () => {
+  const uncapped = { ...base, service_package_maximum_total_quantity: null };
+  const variant = {
+    ...standardVariant,
+    tiers: makeTiers("x", { 1: "499.00", 2: "899.00", 3: "1299.00", 4: "1699.00" }),
+    unit_price_modifier: "0.00",
+  };
+  const result = resolveCompositeBooking({
+    bundle: uncapped,
+    variants: [variant],
+    groups: [{ package_key: variant.package_key, btu: 12000, quantity: 5 }],
+    now: new Date("2026-09-06T00:00:00.000Z"),
+  });
+  assert.equal(result.fixedTotal, "2099.00");
+});
