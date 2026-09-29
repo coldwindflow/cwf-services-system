@@ -103,8 +103,8 @@ function resolveTotalQuantityTierPlusModifiers({ bundle, groups, byKey, parseMon
     levelKey = [...levels][0];
   }
 
-  const extendLastRate = bundle?.service_package_maximum_total_quantity == null || bundle.service_package_maximum_total_quantity === "";
-  const exactTiers = selected.map(({ variant }) => extendLastRate
+  const composeBeyondExplicitTiers = bundle?.service_package_maximum_total_quantity == null || bundle.service_package_maximum_total_quantity === "";
+  const exactTiers = selected.map(({ variant }) => composeBeyondExplicitTiers
     ? activeTierOrBestComposition(variant, totalQuantity, parseMoney)
     : activeExactTier(variant, totalQuantity, parseMoney));
   if (exactTiers.some((entry) => !entry)) fail("SERVICE_PACKAGE_TOTAL_TIER_REQUIRED", 409);
