@@ -27,3 +27,11 @@ The workflow `CWF AIR CARE Staging QA` supports `provision`, `accept`, and
 evidence, cancels/deletes its QA jobs through the existing Admin lifecycle, and
 then deletes only prepaid entitlements/orders owned by the designated QA
 customer. It never operates on production data.
+
+Staging does not expose the normal customer OAuth/JWT secret. For `accept`, the
+operator starts the exact deployed application in the staging container on an
+unpublished loopback-only port and supplies `CWF_STAGING_QA_SECRET` as the
+application's existing `CWF_JWT_SECRET`. The acceptance requests therefore use
+the normal JWT middleware and live staging database without adding a public QA
+login route or a parallel authentication implementation. The temporary process
+is always stopped by a shell trap.
