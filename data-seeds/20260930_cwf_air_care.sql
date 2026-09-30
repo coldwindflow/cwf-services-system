@@ -82,6 +82,7 @@ ON CONFLICT (service_package_id,tier_key) DO NOTHING;
 UPDATE public.catalog_items
    SET service_package_sell_start_at='2026-09-29T00:00:00+07:00'::timestamptz,
        service_package_sell_end_at='2026-10-06T23:59:59.999+07:00'::timestamptz,
+       service_package_redeem_until='2026-12-05T23:59:59.999+07:00'::timestamptz,
        service_package_minimum_total_quantity=NULL,
        service_package_maximum_total_quantity=NULL,
        service_package_payment_mode='prepaid_full',
