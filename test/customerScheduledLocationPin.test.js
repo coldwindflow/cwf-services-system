@@ -173,7 +173,7 @@ test("Issue 316: the urgent flow is untouched", () => {
 // ---------------------------------------------------------------------------
 
 test("Issue 316: the customer runtime is cache-busted and admin ids stay put", () => {
-  const BUILD = "20260929_cwf_air_care_manual_prepaid_v1";
+  const BUILD = "20260930_cwf_air_care_store_refresh_v2";
   assert.match(read("customer-app/sw.js"), new RegExp(`BUILD_ID = "${BUILD}"`));
   assert.match(read("customer-app/assets/customer-app.js"), new RegExp(`BUILD_ID = "${BUILD}"`));
   assert.match(read("customer-app/index.html"), new RegExp(`modules/bookingScheduled\\.js\\?v=${BUILD}`));
