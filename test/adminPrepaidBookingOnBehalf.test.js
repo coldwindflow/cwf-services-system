@@ -131,3 +131,16 @@ test("Admin PREPAID UI exposes sale, payment, booking and promotion editing", ()
   assert.match(js, /admin_request_key/);
   assert.match(js, /fixed_total_price/);
 });
+
+
+test("Admin AIR CARE exposes only the two locked BTU pricing groups while generic prepaid keeps numeric BTU", () => {
+  const js = fs.readFileSync("admin-prepaid-v2.js", "utf8");
+  assert.match(js, /coldwindflow-air-care-standard/);
+  assert.match(js, /coldwindflow-air-care-premium/);
+  assert.match(js, /ไม่เกิน 12,000 BTU/);
+  assert.match(js, /18,000 BTU ขึ้นไป/);
+  assert.match(js, /data-air-care-btu-label/);
+  assert.match(js, /data-btu type="hidden"/);
+  assert.match(js, /<label>BTU จริง<\/label><input data-btu type="number"/);
+  assert.match(js, /\/admin\/prepaid-orders\/quote/);
+});
