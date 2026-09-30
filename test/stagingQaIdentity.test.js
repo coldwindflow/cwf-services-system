@@ -138,4 +138,8 @@ test("repository contains only the secret contract, never an assigned QA credent
   const source = files.filter((file) => fs.existsSync(file)).map((file) => fs.readFileSync(file, "utf8")).join("\n");
   assert.doesNotMatch(source, /CWF_STAGING_QA_SECRET\s*[:=]\s*["'][^$\n]{8,}/);
   assert.doesNotMatch(source, /cwf_staging_qa_secret_[A-Za-z0-9_-]+/i);
+  assert.match(
+    fs.readFileSync(".github/workflows/cwf-air-care-staging-qa.yml", "utf8"),
+    /GIT_CONFIG_NOSYSTEM:\s*["']1["']/,
+  );
 });
