@@ -1347,25 +1347,38 @@
     requestAnimationFrame(() => window.scrollTo(0, y));
   }
 
-  async function loadCatalog(container) {
-    root.state.setCollection("catalog", { status: "loading", items: [], error: "" });
-    patchBody(container);
+  let catalogLoadSeq = 0;
+
+  async function loadCatalog(container, { preserveExisting = false } = {}) {
+    const requestSeq = ++catalogLoadSeq;
+    const previousItems = Array.isArray(root.state.catalog?.items) ? root.state.catalog.items : [];
+    if (!preserveExisting) {
+      root.state.setCollection("catalog", { status: "loading", items: [], error: "" });
+      patchBody(container);
+    }
     try {
       const data = await root.api.loadCatalogItems();
+      if (requestSeq !== catalogLoadSeq) return;
       const items = root.utils.normalizeList(data, "items");
       root.state.setCollection("catalog", { status: "success", items, error: "" });
     } catch (error) {
+      if (requestSeq !== catalogLoadSeq) return;
+      if (preserveExisting && previousItems.length) return;
       root.state.setCollection("catalog", { status: "error", items: [], error: error?.message || "โหลดข้อมูลไม่สำเร็จ" });
     }
     patchBody(container);
   }
 
   function ensureLoaded(container) {
-    if (root.state.catalog.status !== "idle") {
+    if (root.state.catalog.status === "success") {
       restoreScrollIfNeeded();
-      return;
+      // Catalog visibility can change after a guarded seed/deployment while an
+      // installed PWA remains alive. Revalidate on every Store entry so a
+      // previously cached in-memory list cannot hide a newly opened campaign.
+      return loadCatalog(container, { preserveExisting: true });
     }
-    loadCatalog(container);
+    if (root.state.catalog.status === "loading") return undefined;
+    return loadCatalog(container);
   }
 
   // ---------- Product Detail ----------
@@ -2547,7 +2560,7 @@
     clear: clearCampaignCountdowns,
   };
 
-  store._test = { loadDetail, loadReviewsList, loadEligibility, detailItemId, renderDetailBody, renderReviewsSectionBody,
+  store._test = { loadCatalog, ensureLoaded, renderCard, loadDetail, loadReviewsList, loadEligibility, detailItemId, renderDetailBody, renderReviewsSectionBody,
     composeBundleTiers, renderBundleConfigurator, parseBundleQuantity, clampBundleQuantity, collectBundleDraft,
     bundleSelectionSignature, beginOrdinaryBooking,
     bundleMinimumTotalQuantity, openBundleConfigurator,
