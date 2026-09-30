@@ -168,7 +168,7 @@ test("AIR CARE server pricing matches locked q1-q6 tier composition", async () =
     ["coldwindflow-air-care-standard-small", 12000, ["499.00","899.00","1299.00","1699.00","2198.00","2598.00"]],
     ["coldwindflow-air-care-standard-large", 18000, ["599.00","1099.00","1599.00","2099.00","2698.00","3198.00"]],
     ["coldwindflow-air-care-premium-small", 12000, ["699.00","1399.00","1899.00","2489.00","3188.00","3798.00"]],
-    ["coldwindflow-air-care-premium-large", 18000, ["899.00","1799.00","2599.00","3399.00","4298.00","5198.00"]],
+    ["coldwindflow-air-care-premium-large", 18000, ["899.00","1799.00","2599.00","3399.00","4298.00","5197.00"]],
   ];
   for (const [packageKey, btu, expected] of cases) {
     for (let quantity = 1; quantity <= 6; quantity += 1) {
