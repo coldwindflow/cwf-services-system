@@ -87,6 +87,11 @@ function allocateBaseAcrossGroups(baseMinor, groups) {
   });
 }
 
+function supportsTierComposition(bundle) {
+  const key = String(bundle?.service_bundle_key || "");
+  return key === "coldwindflow-air-care-standard" || key === "coldwindflow-air-care-premium";
+}
+
 function resolveTotalQuantityTierPlusModifiers({ bundle, groups, byKey, parseMoney, formatMoney, fail }) {
   if (strategy(bundle) !== PRICING_STRATEGIES.TOTAL_QUANTITY_PLUS_MODIFIERS) return null;
   const totalQuantity = groups.reduce((sum, group) => sum + group.quantity, 0);
@@ -103,7 +108,7 @@ function resolveTotalQuantityTierPlusModifiers({ bundle, groups, byKey, parseMon
     levelKey = [...levels][0];
   }
 
-  const composeBeyondExplicitTiers = bundle?.service_package_maximum_total_quantity == null || bundle.service_package_maximum_total_quantity === "";
+  const composeBeyondExplicitTiers = supportsTierComposition(bundle);
   const exactTiers = selected.map(({ variant }) => composeBeyondExplicitTiers
     ? activeTierOrBestComposition(variant, totalQuantity, parseMoney)
     : activeExactTier(variant, totalQuantity, parseMoney));
@@ -159,6 +164,7 @@ module.exports = {
   warrantyDays,
   activeExactTier,
   activeTierOrBestComposition,
+  supportsTierComposition,
   allocateBaseAcrossGroups,
   resolveTotalQuantityTierPlusModifiers,
 };
