@@ -1,6 +1,6 @@
 "use strict";
 
-const BUILD_ID = "20260929_cwf_air_care_manual_prepaid_v1";
+const BUILD_ID = "20260930_cwf_air_care_store_refresh_v2";
 const CACHE_NAME = `cwf-customer-app-v2-${BUILD_ID}`;
 const APP_SHELL = [
   `./index.html?v=${BUILD_ID}`,

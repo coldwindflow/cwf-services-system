@@ -303,7 +303,7 @@ test("ticket handoff keeps tracking/new-booking actions, 44px controls, mobile l
   assert.match(index, /modules\/bookingTicket\.js\?v=/);
   assert.match(sw, /modules\/bookingTicket\.js\?v=\$\{BUILD_ID\}/);
   for (const source of [index, sw, manifest, appEntry]) {
-    assert.match(source, /20260929_cwf_air_care_manual_prepaid_v1/);
+    assert.match(source, /20260930_cwf_air_care_store_refresh_v2/);
     assert.doesNotMatch(source, /20260809_issue267_catalog_flow_v8/);
   }
 });
