@@ -142,4 +142,9 @@ test("repository contains only the secret contract, never an assigned QA credent
     fs.readFileSync(".github/workflows/cwf-air-care-staging-qa.yml", "utf8"),
     /GIT_CONFIG_NOSYSTEM:\s*["']1["']/,
   );
+  const operator = fs.readFileSync("scripts/run-staging-air-care-qa.sh", "utf8");
+  assert.match(operator, /export CWF_JWT_SECRET="\$CWF_STAGING_QA_SECRET"/);
+  assert.match(operator, /127\.0\.0\.1:3901/);
+  assert.match(operator, /trap .*kill "\$qa_app_pid"/);
+  assert.doesNotMatch(operator, /-p\s|--publish/);
 });
