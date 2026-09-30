@@ -112,23 +112,88 @@ test("prepaid purchase observes sale window without requiring a service date", a
 
 
 
-test("uncapped total-quantity promotion composes q1-q4 tiers for q5+", async () => {
-  const uncappedRows = rows.slice(0, 2).map((row) => ({
-    ...row,
+const airCareStandardTiers = makeTiers("acs-", { 1: "499.00", 2: "899.00", 3: "1299.00", 4: "1699.00" });
+const airCarePremiumSmallTiers = makeTiers("acps-", { 1: "699.00", 2: "1399.00", 3: "1899.00", 4: "2489.00" });
+const airCarePremiumLargeTiers = makeTiers("acpl-", { 1: "899.00", 2: "1799.00", 3: "2599.00", 4: "3399.00" });
+
+function airCareRow(packageKey, bundleKey, tiers, btuMin, btuMax, levelKey, modifier = "0.00") {
+  return {
+    ...base,
+    catalog_item_id: bundleKey === "coldwindflow-air-care-standard" ? "910" : "911",
+    item_id: bundleKey === "coldwindflow-air-care-standard" ? "910" : "911",
+    item_name: bundleKey,
+    service_bundle_key: bundleKey,
+    service_package_sell_start_at: "2026-09-28T17:00:00.000Z",
+    service_package_sell_end_at: "2026-10-06T16:59:59.999Z",
     service_package_maximum_total_quantity: null,
-    tiers: makeTiers(`air-care-${row.package_key}-`, { 1: "499.00", 2: "899.00", 3: "1299.00", 4: "1699.00" }),
-  }));
-  const uncappedRepository = {
-    findLinkedPackagesByKeys: async (_db, keys) => uncappedRows.filter((row) => keys.includes(row.package_key)),
+    service_package_selection_mode: bundleKey.endsWith("-premium") ? "exclusive_level" : "multi_variant",
+    service_package_id: packageKey,
+    package_key: packageKey,
+    display_name: packageKey,
+    btu_min: btuMin,
+    btu_max: btuMax,
+    service_level_key: levelKey,
+    service_level_label: levelKey,
+    unit_price_modifier: modifier,
+    tiers,
   };
-  const result = await resolveCompositeBooking({
+}
+
+const airCareRows = [
+  airCareRow("coldwindflow-air-care-standard-small", "coldwindflow-air-care-standard", airCareStandardTiers, null, 12000, "standard"),
+  airCareRow("coldwindflow-air-care-standard-large", "coldwindflow-air-care-standard", airCareStandardTiers.map((t) => ({ ...t, service_package_tier_id: `acl-${t.service_package_tier_id}` })), 18000, null, "standard", "100.00"),
+  airCareRow("coldwindflow-air-care-premium-small", "coldwindflow-air-care-premium", airCarePremiumSmallTiers, null, 12000, "premium-small"),
+  airCareRow("coldwindflow-air-care-premium-large", "coldwindflow-air-care-premium", airCarePremiumLargeTiers, 18000, null, "premium-large"),
+];
+
+async function airCareQuote(packageKey, btu, quantity) {
+  const row = airCareRows.find((entry) => entry.package_key === packageKey);
+  const airCareRepository = {
+    findLinkedPackagesByKeys: async (_db, keys) => airCareRows.filter((entry) =>
+      entry.service_bundle_key === row.service_bundle_key && keys.includes(entry.package_key)),
+  };
+  return resolveCompositeBooking({
+    body: { catalog_item_id: Number(row.catalog_item_id), service_package_groups: [g(packageKey, btu, quantity)] },
+    bookingMode: "scheduled",
+    appointmentDatetime: null,
+    purchaseOnly: true,
+    repository: airCareRepository,
+    db: {},
+    now: () => new Date("2026-09-30T05:00:00.000Z"),
+  });
+}
+
+test("AIR CARE server pricing matches locked q1-q6 tier composition", async () => {
+  const cases = [
+    ["coldwindflow-air-care-standard-small", 12000, ["499.00","899.00","1299.00","1699.00","2198.00","2598.00"]],
+    ["coldwindflow-air-care-standard-large", 18000, ["599.00","1099.00","1599.00","2099.00","2698.00","3198.00"]],
+    ["coldwindflow-air-care-premium-small", 12000, ["699.00","1399.00","1899.00","2489.00","3188.00","3798.00"]],
+    ["coldwindflow-air-care-premium-large", 18000, ["899.00","1799.00","2599.00","3399.00","4298.00","5197.00"]],
+  ];
+  for (const [packageKey, btu, expected] of cases) {
+    for (let quantity = 1; quantity <= 6; quantity += 1) {
+      assert.equal((await airCareQuote(packageKey, btu, quantity)).fixedTotal, expected[quantity - 1],
+        `${packageKey} q${quantity}`);
+    }
+  }
+});
+
+test("generic uncapped total-quantity promotion does not inherit AIR CARE tier composition", async () => {
+  const genericRows = rows.slice(0, 2).map((row) => ({
+    ...row,
+    service_bundle_key: "generic-uncapped-promotion",
+    service_package_maximum_total_quantity: null,
+  }));
+  const genericRepository = {
+    findLinkedPackagesByKeys: async (_db, keys) => genericRows.filter((row) => keys.includes(row.package_key)),
+  };
+  await assert.rejects(resolveCompositeBooking({
     body: { catalog_item_id: 900, service_package_groups: [g("standard-small", 12000, 5)] },
     bookingMode: "scheduled",
     appointmentDatetime: null,
     purchaseOnly: true,
-    repository: uncappedRepository,
+    repository: genericRepository,
     db: {},
     now: () => new Date("2026-09-10T05:00:00.000Z"),
-  });
-  assert.equal(result.fixedTotal, "2198.00");
+  }), { code: "SERVICE_PACKAGE_TOTAL_TIER_REQUIRED" });
 });

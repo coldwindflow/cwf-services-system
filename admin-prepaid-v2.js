@@ -113,16 +113,26 @@
     }
 
     const variants = Array.isArray(state.selectedBundle.variants) ? state.selectedBundle.variants.filter((item) => item.is_active !== false) : [];
+    const bundleKey = clean(state.selectedBundle.service_bundle_key);
+    const isAirCare = bundleKey === "coldwindflow-air-care-standard" || bundleKey === "coldwindflow-air-care-premium";
     $("saleVariants").innerHTML = variants.map((variant) => {
-      const defaultBtu = Number(variant.btu_min || variant.btu_max || 12000);
-      const range = variant.btu_min || variant.btu_max
-        ? `${variant.btu_min || "ต่ำสุด"}–${variant.btu_max || "ขึ้นไป"} BTU`
-        : "BTU ไม่จำกัด";
+      const minBtu = Number(variant.btu_min || 0);
+      const maxBtu = Number(variant.btu_max || 0);
+      const airCareSmall = isAirCare && maxBtu > 0 && maxBtu <= 12000;
+      const airCareLarge = isAirCare && minBtu >= 18000;
+      const defaultBtu = airCareSmall ? 12000 : airCareLarge ? 18000 : Number(variant.btu_min || variant.btu_max || 12000);
+      const range = airCareSmall ? "ไม่เกิน 12,000 BTU" : airCareLarge ? "18,000 BTU ขึ้นไป"
+        : variant.btu_min || variant.btu_max
+          ? `${variant.btu_min || "ต่ำสุด"}–${variant.btu_max || "ขึ้นไป"} BTU`
+          : "BTU ไม่จำกัด";
+      const btuControl = isAirCare
+        ? `<div><label>กลุ่ม BTU</label><div class="muted" data-air-care-btu-label>${esc(range)}</div><input data-btu type="hidden" value="${esc(defaultBtu)}"></div>`
+        : `<div><label>BTU จริง</label><input data-btu type="number" min="1" step="1" value="${esc(defaultBtu)}"></div>`;
       return `<div class="variant" data-prepaid-variant="${esc(variant.package_key)}">
         <div class="variant-title">${esc(variant.display_name)}</div>
         <div class="muted">${esc(range)}</div>
         <div class="variant-grid">
-          <div><label>BTU จริง</label><input data-btu type="number" min="1" step="1" value="${esc(defaultBtu)}"></div>
+          ${btuControl}
           <div><label>จำนวนเครื่อง</label><input data-qty type="number" min="0" max="99" step="1" value="0"></div>
         </div>
       </div>`;
