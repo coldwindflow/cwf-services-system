@@ -420,6 +420,6 @@ test("compact CSS and cache build remain consistent with six-card rotation", () 
   assert.match(css, /\.homepage-featured-page\s*\{[^}]*grid-area:\s*1\s*\/\s*1/s);
   assert.match(css, /transition:\s*opacity 350ms/);
   assert.match(css, /prefers-reduced-motion:\s*reduce/);
-  const build = "20261001_air_care_purchase_options_v1";
+  const build = "20261001_air_care_production_quote_v2";
   for (const source of [html, sw, boot, manifest]) assert.match(source, new RegExp(build));
 });

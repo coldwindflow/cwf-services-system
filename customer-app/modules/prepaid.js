@@ -163,6 +163,24 @@
     }));
   }
 
+  function requireQuote(data) {
+    const quote = data?.quote;
+    if (!quote || !Number.isFinite(Number(quote.fixed_total_price))) {
+      const error = new Error("INVALID_PREPAID_QUOTE_RESPONSE");
+      error.code = "INVALID_PREPAID_QUOTE_RESPONSE";
+      throw error;
+    }
+    return quote;
+  }
+
+  function quoteErrorMessage(error) {
+    const code = String(error?.code || error?.message || "PREPAID_QUOTE_FAILED").trim() || "PREPAID_QUOTE_FAILED";
+    const message = code === "SERVICE_PACKAGE_MINIMUM_QUANTITY_NOT_MET"
+      ? "จำนวนเครื่องยังไม่ถึงขั้นต่ำของโปรโมชั่น"
+      : "ชุดบริการนี้ใช้โปรโมชั่นไม่ได้ กรุณาตรวจจำนวน/BTU";
+    return `${message} (${code})`;
+  }
+
   async function openPurchase(itemId) {
     if (!requireLogin()) return;
     const body = openModal("กำลังโหลดโปรโมชั่น", `<div class="cwf-prepaid-card">กำลังโหลดราคาและตัวเลือก...</div>`);
@@ -179,7 +197,7 @@
       function render() {
         body.innerHTML = `
           <div class="cwf-prepaid-card"><b>${esc(actual.item_name || "โปรโมชั่น COLDWINDFLOW")}</b><div class="cwf-prepaid-muted">เลือกจำนวนเครื่องตาม BTU ระบบคำนวณราคาจาก Server จริง</div><div class="cwf-prepaid-grid" data-prepaid-rows>${rows.map((row, index) => `<label class="cwf-prepaid-service"><span>${esc(row.label)}</span><input class="cwf-prepaid-qty" type="number" min="0" max="99" step="1" value="${row.quantity}" data-prepaid-qty="${index}" aria-label="จำนวนเครื่อง ${esc(row.label)}"></label>`).join("")}</div></div>
-          <div class="cwf-prepaid-card"><div class="cwf-prepaid-muted">ราคาที่ต้องชำระ</div><div class="cwf-prepaid-total" data-prepaid-total>${quote ? baht(quote.fixed_total_price) : "กำลังคำนวณ..."}</div><div class="cwf-prepaid-muted" data-prepaid-terms>${quote ? `ใช้สิทธิ์ได้ถึง ${new Date(quote.redeem_until).toLocaleDateString("th-TH")} · รับประกัน ${quote.warranty_days} วันหลังปิดงาน` : ""}</div></div>
+          <div class="cwf-prepaid-card"><div class="cwf-prepaid-muted">ราคาที่ระบบยืนยัน</div><div class="cwf-prepaid-total" data-prepaid-total>${quote ? baht(quote.fixed_total_price) : "กำลังคำนวณ..."}</div><div class="cwf-prepaid-muted" data-prepaid-terms>${quote ? `ใช้สิทธิ์ได้ถึง ${new Date(quote.redeem_until).toLocaleDateString("th-TH")} · รับประกัน ${quote.warranty_days} วันหลังปิดงาน` : ""}</div></div>
           <div class="cwf-prepaid-card"><label>ชื่อผู้ใช้สิทธิ์<input class="cwf-prepaid-input" data-prepaid-name value="${esc(contact.name)}" maxlength="120"></label><label style="display:block;margin-top:10px">เบอร์โทร<input class="cwf-prepaid-input" data-prepaid-phone value="${esc(contact.phone)}" maxlength="40" inputmode="tel"></label><button class="cwf-prepaid-primary" data-prepaid-buy ${quote ? "" : "disabled"}>ซื้อสิทธิ์ราคาพิเศษ</button><div data-prepaid-error></div></div>`;
         body.querySelectorAll("[data-prepaid-qty]").forEach((input) => input.addEventListener("input", () => {
           const index = Number(input.dataset.prepaidQty);
@@ -197,14 +215,14 @@
         try {
           const data = await request("/public/prepaid-orders/quote", { method: "POST", body: { catalog_item_id: Number(actual.item_id), service_package_groups: groups } });
           if (seq !== quoteSeq) return;
-          quote = data.quote;
+          quote = requireQuote(data);
           render();
         } catch (error) {
           if (seq !== quoteSeq) return;
           quote = null;
           render();
           const box = body.querySelector("[data-prepaid-error]");
-          if (box) box.innerHTML = `<div class="cwf-prepaid-error">${esc(error.code === "SERVICE_PACKAGE_MINIMUM_QUANTITY_NOT_MET" ? "จำนวนเครื่องยังไม่ถึงขั้นต่ำของโปรโมชั่น" : "ชุดบริการนี้ใช้โปรโมชั่นไม่ได้ กรุณาตรวจจำนวน/BTU")}</div>`;
+          if (box) box.innerHTML = `<div class="cwf-prepaid-error">${esc(quoteErrorMessage(error))}</div>`;
         }
       }
 
@@ -505,6 +523,6 @@
     window.addEventListener("hashchange", updateRightsPill);
   }
 
-  root.prepaid = { openRights, useRight, _test: { selectedGroups, packageRows, currentItemId } };
+  root.prepaid = { openRights, useRight, _test: { selectedGroups, packageRows, currentItemId, requireQuote, quoteErrorMessage } };
   init();
 })();

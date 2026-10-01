@@ -313,10 +313,10 @@ test("admin/customer frontend cache versions are bumped for booking notification
   assert.doesNotMatch(adminReviewHtml, /admin-review-v2\.js\?v=20260707_customer_booking_notify_v2/);
   assert.match(adminReviewHtml, /admin-review-ai-intake\.js\?v=ai-booking-intake-customer-cards-v11-admin-alert-gate/);
   assert.doesNotMatch(adminReviewHtml, /admin-review-ai-intake\.js\?v=ai-booking-intake-customer-cards-v10/);
-  assert.match(customerIndex, /bookingScheduled\.js\?v=20261001_air_care_purchase_options_v1/);
-  assert.match(customerIndex, /state\.js\?v=20261001_air_care_purchase_options_v1/);
-  assert.match(customerSw, /const BUILD_ID = "20261001_air_care_purchase_options_v1"/);
-  assert.match(customerManifest, /20261001_air_care_purchase_options_v1/);
+  assert.match(customerIndex, /bookingScheduled\.js\?v=20261001_air_care_production_quote_v2/);
+  assert.match(customerIndex, /state\.js\?v=20261001_air_care_production_quote_v2/);
+  assert.match(customerSw, /const BUILD_ID = "20261001_air_care_production_quote_v2"/);
+  assert.match(customerManifest, /20261001_air_care_production_quote_v2/);
 });
 
 test("behavior: review queue only includes customer urgent waiting rows while preserving review statuses", () => {

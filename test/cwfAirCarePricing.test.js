@@ -115,3 +115,14 @@ test("AIR CARE is uncapped for server-side tier composition beyond q4", () => {
   assert.match(seed, /service_package_maximum_total_quantity=NULL/);
   assert.match(service, /60 \* 24 \* 60 \* 60 \* 1000/);
 });
+
+test("prepaid UI accepts only a server price and exposes the exact quote error code", () => {
+  const root = loadPrepaidUi();
+  assert.equal(root.prepaid._test.requireQuote({ quote: { fixed_total_price: "699.00" } }).fixed_total_price, "699.00");
+  assert.throws(() => root.prepaid._test.requireQuote({ ok: true }), /INVALID_PREPAID_QUOTE_RESPONSE/);
+  assert.equal(
+    root.prepaid._test.quoteErrorMessage({ code: "SERVICE_PACKAGE_LEVEL_SELECTION_REQUIRED" }),
+    "ชุดบริการนี้ใช้โปรโมชั่นไม่ได้ กรุณาตรวจจำนวน/BTU (SERVICE_PACKAGE_LEVEL_SELECTION_REQUIRED)"
+  );
+  assert.match(ui, /ราคาที่ระบบยืนยัน/);
+});
