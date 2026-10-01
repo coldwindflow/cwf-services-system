@@ -71,9 +71,10 @@ async function schemaReady(db) {
             AND column_name IN (
               'order_kind','customer_sub','service_entitlement_snapshot','prepaid_entitlement_code',
               'prepaid_redeem_until','prepaid_warranty_days','prepaid_purchase_request_key',
-              'prepaid_purchase_fingerprint'
+              'prepaid_purchase_fingerprint','prepaid_maps_url','prepaid_gps_latitude',
+              'prepaid_gps_longitude'
             )
-          GROUP BY table_name HAVING COUNT(*)=8
+          GROUP BY table_name HAVING COUNT(*)=11
         ) AS has_order_columns,
         EXISTS (
           SELECT 1 FROM information_schema.columns
@@ -119,12 +120,44 @@ function normalizeQuoteInput(body = {}) {
   return { catalog_item_id: catalogItemId, service_package_groups: normalizeGroups(body) };
 }
 
-function normalizePurchase(body = {}, identity = "customer") {
-  const quote = normalizeQuoteInput(body);
+function normalizeReservation(body = {}) {
   const customerName = clean(body.customer_name, 120);
   const customerPhone = clean(body.customer_phone, 40);
+  const addressText = clean(body.address_text || body.address, 1000);
+  const mapsUrl = clean(body.maps_url, 1000);
+  const latitudePresent = body.gps_latitude !== undefined && body.gps_latitude !== null && String(body.gps_latitude).trim() !== "";
+  const longitudePresent = body.gps_longitude !== undefined && body.gps_longitude !== null && String(body.gps_longitude).trim() !== "";
   if (!customerName) throw new PrepaidServiceError("CUSTOMER_NAME_REQUIRED", 400);
   if (!customerPhone) throw new PrepaidServiceError("CUSTOMER_PHONE_REQUIRED", 400);
+  if (!addressText) throw new PrepaidServiceError("SERVICE_ADDRESS_REQUIRED", 400);
+  if (latitudePresent !== longitudePresent) throw new PrepaidServiceError("INVALID_LOCATION_PIN", 400);
+  const latitude = latitudePresent ? Number(body.gps_latitude) : null;
+  const longitude = longitudePresent ? Number(body.gps_longitude) : null;
+  if (latitudePresent && (!Number.isFinite(latitude) || !Number.isFinite(longitude)
+      || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180
+      || (latitude === 0 && longitude === 0))) throw new PrepaidServiceError("INVALID_LOCATION_PIN", 400);
+  if (!mapsUrl && !latitudePresent) throw new PrepaidServiceError("SERVICE_LOCATION_REQUIRED", 400);
+  if (mapsUrl) {
+    let parsed;
+    try { parsed = new URL(mapsUrl); } catch (_) { throw new PrepaidServiceError("INVALID_MAPS_URL", 400); }
+    if (parsed.protocol !== "https:" || !new Set(["google.com", "www.google.com", "maps.google.com", "maps.app.goo.gl"]).has(parsed.hostname)) {
+      throw new PrepaidServiceError("INVALID_MAPS_URL", 400);
+    }
+  }
+  return {
+    customer_name: customerName,
+    customer_phone: customerPhone,
+    address_text: addressText,
+    maps_url: mapsUrl || `https://www.google.com/maps?q=${latitude},${longitude}`,
+    gps_latitude: latitude,
+    gps_longitude: longitude,
+    note: clean(body.note, 500),
+  };
+}
+
+function normalizePurchase(body = {}, identity = "customer") {
+  const quote = normalizeQuoteInput(body);
+  const reservation = normalizeReservation(body);
   let requestKey = clean(body.purchase_request_key, 128);
   if (identity === "customer") {
     if (!REQUEST_KEY_RE.test(requestKey)) throw new PrepaidServiceError("INVALID_PURCHASE_REQUEST_KEY", 400);
@@ -133,11 +166,25 @@ function normalizePurchase(body = {}, identity = "customer") {
   }
   return {
     ...quote,
-    customer_name: customerName,
-    customer_phone: customerPhone,
-    note: clean(body.note, 500),
+    ...reservation,
     purchase_request_key: requestKey,
   };
+}
+
+function purchaseFingerprint(normalized, sub, fixedTotalPrice) {
+  return sha256(canonicalJson({
+    customer_sub: sub,
+    customer_name: normalized.customer_name,
+    customer_phone: normalized.customer_phone,
+    address_text: normalized.address_text,
+    maps_url: normalized.maps_url,
+    gps_latitude: normalized.gps_latitude,
+    gps_longitude: normalized.gps_longitude,
+    note: normalized.note,
+    catalog_item_id: normalized.catalog_item_id,
+    groups: normalized.service_package_groups,
+    fixed_total_price: fixedTotalPrice,
+  }));
 }
 
 function entitlementSnapshot(quote) {
@@ -235,12 +282,12 @@ async function withTransaction(pool, fn) {
   }
 }
 
-function createPrepaidOrderService({ pool }) {
+function createPrepaidOrderService({ pool, resolverFactory = createServicePackageResolver }) {
   if (!pool || typeof pool.query !== "function") throw new TypeError("prepaid order service requires pool");
 
   async function quotePurchase(db, body, identity = "customer") {
     const normalized = normalizeQuoteInput(body);
-    const resolver = createServicePackageResolver({ db });
+    const resolver = resolverFactory({ db });
     let quote;
     try {
       quote = await resolver.resolveComposite({
@@ -276,18 +323,10 @@ function createPrepaidOrderService({ pool }) {
     return withTransaction(pool, async (client) => {
       await requireSchema(client);
       await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [normalized.purchase_request_key]);
-      const { quote, snapshot } = await quotePurchase(client, normalized, identity);
-      const total = money(quote.fixedTotal);
-      const fingerprint = sha256(canonicalJson({
-        customer_sub: sub,
-        customer_name: normalized.customer_name,
-        customer_phone: normalized.customer_phone,
-        catalog_item_id: normalized.catalog_item_id,
-        groups: normalized.service_package_groups,
-        fixed_total_price: snapshot.fixed_total_price,
-      }));
       const existing = await client.query(
-        `SELECT order_id, order_code, customer_name, customer_phone, items, subtotal, status,
+        `SELECT order_id, order_code, customer_name, customer_phone, address, note,
+                prepaid_maps_url, prepaid_gps_latitude, prepaid_gps_longitude,
+                service_entitlement_snapshot, items, subtotal, status,
                 created_at, prepaid_entitlement_code, prepaid_redeem_until,
                 prepaid_warranty_days, prepaid_purchase_fingerprint
            FROM public.customer_orders
@@ -296,6 +335,10 @@ function createPrepaidOrderService({ pool }) {
         [normalized.purchase_request_key]
       );
       if (existing.rows?.[0]) {
+        const saved = existing.rows[0];
+        const snapshot = typeof saved.service_entitlement_snapshot === "string"
+          ? JSON.parse(saved.service_entitlement_snapshot) : saved.service_entitlement_snapshot;
+        const fingerprint = purchaseFingerprint(normalized, sub, snapshot?.fixed_total_price);
         if (String(existing.rows[0].prepaid_purchase_fingerprint || "") !== fingerprint) {
           throw new PrepaidServiceError("PURCHASE_REQUEST_KEY_REUSED", 409);
         }
@@ -308,6 +351,10 @@ function createPrepaidOrderService({ pool }) {
         };
       }
 
+      const { quote, snapshot } = await quotePurchase(client, normalized, identity);
+      const total = money(quote.fixedTotal);
+      const fingerprint = purchaseFingerprint(normalized, sub, snapshot.fixed_total_price);
+
       const entitlementCode = generateEntitlementCode();
       const claimToken = sub ? null : randomToken(32);
       const claimHash = claimToken ? sha256(claimToken) : null;
@@ -317,17 +364,21 @@ function createPrepaidOrderService({ pool }) {
           const inserted = await client.query(
             `INSERT INTO public.customer_orders
               (order_code, customer_name, customer_phone, delivery_method, install_option,
-               address, items, subtotal, status, note, order_kind, customer_sub,
+               address, prepaid_maps_url, prepaid_gps_latitude, prepaid_gps_longitude,
+               items, subtotal, status, note, order_kind, customer_sub,
                service_entitlement_snapshot, prepaid_entitlement_code, prepaid_claim_token_hash,
                prepaid_redeem_until, prepaid_warranty_days, prepaid_purchase_request_key,
                prepaid_purchase_fingerprint)
-             VALUES ($1,$2,$3,'pickup','none',NULL,$4::jsonb,$5,'pending_payment',$6,
-                     'service_prepaid',$7,$8::jsonb,$9,$10,$11,$12,$13,$14)
-             RETURNING order_id, order_code, customer_name, customer_phone, items, subtotal,
+             VALUES ($1,$2,$3,'pickup','none',$4,$5,$6,$7,$8::jsonb,$9,'pending_payment',$10,
+                     'service_prepaid',$11,$12::jsonb,$13,$14,$15,$16,$17,$18)
+             RETURNING order_id, order_code, customer_name, customer_phone, address, note,
+                       prepaid_maps_url, prepaid_gps_latitude, prepaid_gps_longitude, items, subtotal,
                        status, created_at, prepaid_entitlement_code, prepaid_redeem_until,
                        prepaid_warranty_days`,
             [
               orderCode, normalized.customer_name, normalized.customer_phone,
+              normalized.address_text, normalized.maps_url || null,
+              normalized.gps_latitude, normalized.gps_longitude,
               JSON.stringify(orderItemsFromQuote(quote)), total, normalized.note || null,
               sub, JSON.stringify(snapshot), entitlementCode, claimHash,
               snapshot.redeem_until, snapshot.warranty_days,
@@ -403,12 +454,42 @@ function createPrepaidOrderService({ pool }) {
     });
   }
 
+  async function updateReservation(orderCode, body = {}) {
+    const code = clean(orderCode, 40);
+    if (!code) throw new PrepaidServiceError("ORDER_CODE_REQUIRED", 400);
+    const contact = normalizeReservation(body);
+    return withTransaction(pool, async (client) => {
+      await requireSchema(client);
+      const found = await client.query(
+        `SELECT order_id, order_kind, status FROM public.customer_orders WHERE order_code=$1 FOR UPDATE`, [code]
+      );
+      const order = found.rows?.[0];
+      if (!order) throw new PrepaidServiceError("ORDER_NOT_FOUND", 404);
+      if (order.order_kind !== "service_prepaid") throw new PrepaidServiceError("NOT_PREPAID_ORDER", 409);
+      if (!new Set(["pending_payment", "payment_failed"]).has(order.status)) {
+        throw new PrepaidServiceError("PREPAID_RESERVATION_LOCKED", 409);
+      }
+      const updated = await client.query(
+        `UPDATE public.customer_orders SET customer_name=$2, customer_phone=$3, address=$4, note=$5,
+            prepaid_maps_url=$6, prepaid_gps_latitude=$7, prepaid_gps_longitude=$8, updated_at=NOW()
+          WHERE order_id=$1
+          RETURNING order_code, customer_name, customer_phone, address, note, prepaid_maps_url,
+                    prepaid_gps_latitude, prepaid_gps_longitude, subtotal, status`,
+        [order.order_id, contact.customer_name, contact.customer_phone, contact.address_text,
+          contact.note || null, contact.maps_url || null, contact.gps_latitude, contact.gps_longitude]
+      );
+      return updated.rows[0];
+    });
+  }
+
   async function listOrders(customerSub) {
     const sub = clean(customerSub, 256);
     if (!sub) throw new PrepaidServiceError("NOT_LOGGED_IN", 401);
     await requireSchema(pool);
     const result = await pool.query(
-      `SELECT order_code, customer_name, customer_phone, subtotal, status, payment_status,
+      `SELECT order_code, customer_name, customer_phone, address, note,
+              prepaid_maps_url, prepaid_gps_latitude, prepaid_gps_longitude,
+              service_entitlement_snapshot, subtotal, status, payment_status,
               created_at, paid_at, prepaid_entitlement_code, prepaid_redeem_until,
               prepaid_warranty_days
          FROM public.customer_orders
@@ -549,6 +630,7 @@ function createPrepaidOrderService({ pool }) {
     quoteOrder,
     createOrder,
     confirmManualPayment,
+    updateReservation,
     listOrders,
     listRights,
     claimRight,
@@ -562,6 +644,7 @@ module.exports = {
   REQUEST_KEY_RE,
   bookingTokenFromScheduledRequestKey,
   createPrepaidOrderService,
+  normalizeReservation,
   entitlementSnapshot,
   generateEntitlementCode,
   sha256,
