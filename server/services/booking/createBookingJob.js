@@ -922,7 +922,15 @@ function createBookingJobService(dependencies = {}) {
       if (hasPackageRequest) {
         const code = String(e?.code || "PACKAGE_BOOKING_FAILED").startsWith("PACKAGE_") ? String(e.code) : "PACKAGE_BOOKING_FAILED";
         const status = Number(e?.statusCode || e?.status || 500);
-        console.error("/admin/book_v2 package error:", code);
+        // Keep the public response deliberately generic, while retaining enough
+        // bounded server-side metadata to diagnose a failed transactional write.
+        // Do not log request bodies, SQL parameters, or customer data here.
+        console.error("/admin/book_v2 package error:", {
+          code,
+          error_code: String(e?.code || "unknown").slice(0, 80),
+          constraint: String(e?.constraint || "none").slice(0, 160),
+          message: String(e?.message || "unknown").slice(0, 240),
+        });
         return res.status(status >= 400 && status < 600 ? status : 500).json({ error: code, code });
       }
       const statusCode = Number(e?.statusCode || e?.status || 500);
