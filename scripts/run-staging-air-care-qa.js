@@ -294,7 +294,10 @@ async function runAcceptance(adminSession) {
     address_text: QA.customerAddress,
     customer_note: QA.marker,
     booking_mode: "scheduled",
-    dispatch_mode: "normal",
+    // A named technician is the existing Admin forced-assignment contract.
+    // The jobs schema deliberately permits scheduled assignments as `forced`
+    // (and urgent broadcasts as `offer`), never `normal`.
+    dispatch_mode: "forced",
     tech_type: "company",
     assign_mode: "single",
     technician_username: QA.technicianUsername,
