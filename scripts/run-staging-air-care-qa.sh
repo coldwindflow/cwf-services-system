@@ -50,7 +50,15 @@ if [[ "$ACTION" == "accept" ]]; then
         tail -n 80 /tmp/cwf-staging-qa-app.log >&2 || true
         exit 1
       fi
+      set +e
       node scripts/run-staging-air-care-qa.js accept
+      qa_status=$?
+      set -e
+      if [ "$qa_status" -ne 0 ]; then
+        echo "[QA_DIAGNOSTIC] bounded loopback application log follows" >&2
+        tail -n 120 /tmp/cwf-staging-qa-app.log >&2 || true
+        exit "$qa_status"
+      fi
     '
 else
   docker_cmd exec \

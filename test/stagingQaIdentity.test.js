@@ -147,6 +147,7 @@ test("repository contains only the secret contract, never an assigned QA credent
   assert.match(operator, /export CWF_JWT_SECRET="\$CWF_STAGING_QA_SECRET"/);
   assert.match(operator, /127\.0\.0\.1:3901/);
   assert.match(operator, /trap .*kill "\$qa_app_pid"/);
+  assert.match(operator, /tail -n 120 \/tmp\/cwf-staging-qa-app\.log/);
   assert.doesNotMatch(operator, /-p\s|--publish/);
   assert.match(acceptance, /dispatch_mode:\s*"forced"/);
   assert.doesNotMatch(acceptance, /dispatch_mode:\s*"normal"/);
