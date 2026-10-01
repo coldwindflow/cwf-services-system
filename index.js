@@ -11031,6 +11031,10 @@ await pool.query(`ALTER TABLE public.partner_applications ADD COLUMN IF NOT EXIS
 await pool.query(`ALTER TABLE public.partner_applications ADD COLUMN IF NOT EXISTS contract_accepted_ip TEXT`);
 await pool.query(`ALTER TABLE public.partner_applications ADD COLUMN IF NOT EXISTS contract_user_agent TEXT`);
 await pool.query(`ALTER TABLE public.partner_applications ADD COLUMN IF NOT EXISTS contract_acceptance_json JSONB NOT NULL DEFAULT '{}'::jsonb`);
+await pool.query(`ALTER TABLE public.partner_applications ADD COLUMN IF NOT EXISTS admin_job_override_enabled BOOLEAN NOT NULL DEFAULT FALSE`);
+await pool.query(`ALTER TABLE public.partner_applications ADD COLUMN IF NOT EXISTS admin_job_override_by TEXT`);
+await pool.query(`ALTER TABLE public.partner_applications ADD COLUMN IF NOT EXISTS admin_job_override_at TIMESTAMPTZ`);
+await pool.query(`ALTER TABLE public.partner_applications ADD COLUMN IF NOT EXISTS admin_job_override_note TEXT`);
 await pool.query(`ALTER TABLE public.technician_profiles ADD COLUMN IF NOT EXISTS partner_status TEXT`);
 await pool.query(`ALTER TABLE public.technician_profiles ADD COLUMN IF NOT EXISTS line_id TEXT`);
 
