@@ -66,12 +66,19 @@ function createStoreServicePackageCatalogRoutes({ service, requireAdminSession, 
     return res.json({ ok: true, ...result });
   }));
 
+  router.patch("/admin/prepaid-orders/:code/reservation", requireAdminSession, handle(async (req, res) => {
+    const reservation = await prepaidService.updateReservation(req.params.code, req.body || {});
+    return res.json({ ok: true, reservation });
+  }));
+
   router.get("/admin/prepaid-orders", requireAdminSession, handle(async (_req, res) => {
     if (!(await prepaidService.schemaReady())) {
       throw new PrepaidServiceError("PREPAID_SCHEMA_NOT_READY", 503);
     }
     const result = await pool.query(
       `SELECT o.order_code, o.customer_name, o.customer_phone, o.customer_sub,
+              o.address, o.note, o.prepaid_maps_url, o.prepaid_gps_latitude,
+              o.prepaid_gps_longitude, o.service_entitlement_snapshot,
               o.subtotal, o.status AS payment_order_status, o.payment_provider,
               o.payment_method, o.payment_status, o.paid_at, o.created_at,
               e.entitlement_code, e.status AS entitlement_status, e.redeem_until,
