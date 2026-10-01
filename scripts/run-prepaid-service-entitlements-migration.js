@@ -67,7 +67,7 @@ async function verifySchema(client) {
      WHERE table_schema='public'
        AND (
          (table_name='customer_orders' AND column_name IN
-           ('order_kind','customer_sub','service_entitlement_snapshot','prepaid_entitlement_code','prepaid_claim_token_hash','prepaid_redeem_until','prepaid_warranty_days','manual_payment_reference','payment_verified_by'))
+           ('order_kind','customer_sub','service_entitlement_snapshot','prepaid_entitlement_code','prepaid_claim_token_hash','prepaid_redeem_until','prepaid_warranty_days','manual_payment_reference','payment_verified_by','prepaid_maps_url','prepaid_gps_latitude','prepaid_gps_longitude'))
          OR
          (table_name='jobs' AND column_name IN ('customer_due','payment_source','prepaid_entitlement_id'))
        )
@@ -78,7 +78,9 @@ async function verifySchema(client) {
     'customer_orders.service_entitlement_snapshot', 'customer_orders.prepaid_entitlement_code',
     'customer_orders.prepaid_claim_token_hash', 'customer_orders.prepaid_redeem_until',
     'customer_orders.prepaid_warranty_days', 'customer_orders.manual_payment_reference',
-    'customer_orders.payment_verified_by', 'jobs.customer_due', 'jobs.payment_source',
+    'customer_orders.payment_verified_by', 'customer_orders.prepaid_maps_url',
+    'customer_orders.prepaid_gps_latitude', 'customer_orders.prepaid_gps_longitude',
+    'jobs.customer_due', 'jobs.payment_source',
     'jobs.prepaid_entitlement_id',
   ];
   for (const key of required) if (!present.has(key)) throw new Error(`${key} missing after migration`);

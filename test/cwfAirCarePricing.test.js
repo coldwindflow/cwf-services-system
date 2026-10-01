@@ -7,10 +7,10 @@ const seed = fs.readFileSync("data-seeds/20260930_cwf_air_care.sql", "utf8");
 const service = fs.readFileSync("server/services/prepaid/prepaidOrderServiceV2.js", "utf8");
 const ui = fs.readFileSync("customer-app/modules/prepaid.js", "utf8");
 
-function loadPrepaidUi() {
+function loadPrepaidUi(btuOptions = []) {
   const root = {
     api: {},
-    services: { bookableBtuOptions: [] },
+    services: { bookableBtuOptions: btuOptions },
     state: { customer: { logged_in: false } },
   };
   const document = {
@@ -116,13 +116,28 @@ test("AIR CARE is uncapped for server-side tier composition beyond q4", () => {
   assert.match(service, /60 \* 24 \* 60 \* 60 \* 1000/);
 });
 
-test("prepaid UI accepts only a server price and exposes the exact quote error code", () => {
+test("test-only second prepaid campaign renders from generic server variant metadata", () => {
+  const root = loadPrepaidUi([{ btu: 9000 }, { btu: 18000 }]);
+  const rows = root.prepaid._test.packageRows({
+    service_bundle_key: "qa-future-prepaid-campaign",
+    item_name: "FUTURE QA PROMOTION",
+    service_package_variants: [
+      { package_key: "future-small", display_name: "SMALL", service: { btu_min: 1, btu_max: 12000 } },
+      { package_key: "future-large", display_name: "LARGE", service: { btu_min: 18000, btu_max: 24000 } },
+    ],
+  });
+  assert.deepEqual(JSON.parse(JSON.stringify(rows.map((row) => [row.package_key, row.btu]))),
+    [["future-small", 9000], ["future-large", 18000]]);
+  assert.doesNotMatch(fs.readFileSync("admin-prepaid-assist.js", "utf8"), /coldwindflow-air-care-/);
+});
+
+test("prepaid UI accepts only a server price and hides internal quote codes from customer copy", () => {
   const root = loadPrepaidUi();
   assert.equal(root.prepaid._test.requireQuote({ quote: { fixed_total_price: "699.00" } }).fixed_total_price, "699.00");
   assert.throws(() => root.prepaid._test.requireQuote({ ok: true }), /INVALID_PREPAID_QUOTE_RESPONSE/);
   assert.equal(
     root.prepaid._test.quoteErrorMessage({ code: "SERVICE_PACKAGE_LEVEL_SELECTION_REQUIRED" }),
-    "ชุดบริการนี้ใช้โปรโมชั่นไม่ได้ กรุณาตรวจจำนวน/BTU (SERVICE_PACKAGE_LEVEL_SELECTION_REQUIRED)"
+    "ไม่สามารถคำนวณราคาได้ กรุณาลองใหม่ หรือติดต่อ LINE @cwfair"
   );
   assert.match(ui, /ราคาที่ระบบยืนยัน/);
 });

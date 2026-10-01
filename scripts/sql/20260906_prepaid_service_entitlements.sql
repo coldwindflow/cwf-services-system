@@ -14,7 +14,10 @@ ALTER TABLE public.customer_orders
   ADD COLUMN IF NOT EXISTS manual_payment_reference TEXT,
   ADD COLUMN IF NOT EXISTS payment_verified_by TEXT,
   ADD COLUMN IF NOT EXISTS prepaid_purchase_request_key TEXT,
-  ADD COLUMN IF NOT EXISTS prepaid_purchase_fingerprint TEXT;
+  ADD COLUMN IF NOT EXISTS prepaid_purchase_fingerprint TEXT,
+  ADD COLUMN IF NOT EXISTS prepaid_maps_url TEXT,
+  ADD COLUMN IF NOT EXISTS prepaid_gps_latitude DOUBLE PRECISION,
+  ADD COLUMN IF NOT EXISTS prepaid_gps_longitude DOUBLE PRECISION;
 
 DO $$
 BEGIN

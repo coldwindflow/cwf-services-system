@@ -43,6 +43,9 @@
           <div><label>ชื่อลูกค้า</label><input id="saleCustomerName" autocomplete="name"></div>
           <div><label>เบอร์โทร</label><input id="saleCustomerPhone" inputmode="tel" autocomplete="tel"></div>
         </div>
+        <label>ที่อยู่สำหรับเข้าบริการ</label><textarea id="saleAddress" placeholder="บ้านเลขที่ อาคาร ห้อง ซอย ถนน และจุดนัดพบ"></textarea>
+        <label>ลิงก์แผนที่</label><input id="saleMapsUrl" type="url" placeholder="https://maps.app.goo.gl/..."></input>
+        <div class="row2"><div><label>ละติจูด (ถ้ามี)</label><input id="saleLatitude" inputmode="decimal"></div><div><label>ลองจิจูด (ถ้ามี)</label><input id="saleLongitude" inputmode="decimal"></div></div>
         <label>โปรโมชั่น</label>
         <select id="saleBundle"><option value="">กำลังโหลด...</option></select>
         <div id="salePolicy" class="muted" style="margin-top:6px"></div>
@@ -82,10 +85,22 @@
         <button id="btnRefreshOrders" class="btn-soft" type="button">รีเฟรช</button>
       </div>
       <div style="margin:10px 0"><input id="ordersSearch" type="search" placeholder="ค้นหา Order / ชื่อ / เบอร์โทร / รหัสสิทธิ์" aria-label="ค้นหารายการ PREPAID" style="width:100%;max-width:520px;padding:10px;border:1px solid #cbd5e1;border-radius:10px"></div><div id="ordersMessage" class="muted"></div>
-      <div class="table-wrap"><table><thead><tr><th>Order</th><th>ลูกค้า</th><th>ยอด</th><th>ชำระ</th><th>สิทธิ์</th><th>หมดสิทธิ์</th><th>งาน</th><th>จัดการ</th></tr></thead><tbody id="ordersBody"></tbody></table></div>
+      <div class="table-wrap"><table><thead><tr><th>Order</th><th>ลูกค้า / ที่อยู่</th><th>โปร / BTU</th><th>ยอด</th><th>ชำระ</th><th>สิทธิ์</th><th>หมดสิทธิ์</th><th>งาน</th><th>จัดการ</th></tr></thead><tbody id="ordersBody"></tbody></table></div>
     </section>
+    <dialog id="reservationDialog" class="card" style="width:min(560px,calc(100% - 24px));border:0">
+      <h2>แก้ไขข้อมูลจอง</h2>
+      <div class="muted" id="editOrderCode"></div>
+      <label>ชื่อลูกค้า</label><input id="editCustomerName">
+      <label>เบอร์โทร</label><input id="editCustomerPhone" inputmode="tel">
+      <label>ที่อยู่</label><textarea id="editAddress"></textarea>
+      <label>ลิงก์แผนที่</label><input id="editMapsUrl" type="url">
+      <div class="row2"><div><label>ละติจูด</label><input id="editLatitude" inputmode="decimal"></div><div><label>ลองจิจูด</label><input id="editLongitude" inputmode="decimal"></div></div>
+      <label>หมายเหตุ</label><textarea id="editNote"></textarea>
+      <div id="editMessage" class="muted"></div>
+      <div class="actions"><button id="btnSaveReservation" class="btn-primary" type="button">บันทึกข้อมูลจอง</button><button id="btnCloseReservation" class="btn-soft" type="button">ปิด</button></div>
+    </dialog>
   </main>
   <script src="/admin-v2-common.js?v=20260622_admin_menu_catalog_entry"></script>
-  <script src="/admin-prepaid-v2.js?v=20260912_admin_prepaid_on_behalf_v1"></script>
+  <script src="/admin-prepaid-v2.js?v=20261002_prepaid_reservation_v1"></script>
 </body>
 </html>

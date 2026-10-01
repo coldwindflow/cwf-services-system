@@ -127,6 +127,7 @@ function airCareRow(packageKey, bundleKey, tiers, btuMin, btuMax, levelKey, modi
     service_package_sell_end_at: "2026-10-06T16:59:59.999Z",
     service_package_maximum_total_quantity: null,
     service_package_selection_mode: bundleKey.endsWith("-premium") ? "exclusive_level" : "multi_variant",
+    service_package_pricing_strategy: bundleKey.endsWith("-premium") ? "per_variant_tier" : "total_quantity_tier_plus_unit_modifiers",
     service_package_id: packageKey,
     package_key: packageKey,
     display_name: packageKey,
@@ -142,8 +143,8 @@ function airCareRow(packageKey, bundleKey, tiers, btuMin, btuMax, levelKey, modi
 const airCareRows = [
   airCareRow("coldwindflow-air-care-standard-small", "coldwindflow-air-care-standard", airCareStandardTiers, null, 12000, "standard"),
   airCareRow("coldwindflow-air-care-standard-large", "coldwindflow-air-care-standard", airCareStandardTiers.map((t) => ({ ...t, service_package_tier_id: `acl-${t.service_package_tier_id}` })), 18000, null, "standard", "100.00"),
-  airCareRow("coldwindflow-air-care-premium-small", "coldwindflow-air-care-premium", airCarePremiumSmallTiers, null, 12000, "premium-small"),
-  airCareRow("coldwindflow-air-care-premium-large", "coldwindflow-air-care-premium", airCarePremiumLargeTiers, 18000, null, "premium-large"),
+  airCareRow("coldwindflow-air-care-premium-small", "coldwindflow-air-care-premium", airCarePremiumSmallTiers, null, 12000, "premium"),
+  airCareRow("coldwindflow-air-care-premium-large", "coldwindflow-air-care-premium", airCarePremiumLargeTiers, 18000, null, "premium"),
 ];
 
 async function airCareQuote(packageKey, btu, quantity) {
@@ -162,6 +163,40 @@ async function airCareQuote(packageKey, btu, quantity) {
     now: () => new Date("2026-09-30T05:00:00.000Z"),
   });
 }
+
+async function airCareMixedQuote(bundleKey, groups) {
+  const row = airCareRows.find((entry) => entry.service_bundle_key === bundleKey);
+  const repository = { findLinkedPackagesByKeys: async (_db, keys) => airCareRows.filter((entry) =>
+    entry.service_bundle_key === bundleKey && keys.includes(entry.package_key)) };
+  return resolveCompositeBooking({
+    body: { catalog_item_id: Number(row.catalog_item_id), service_package_groups: groups },
+    bookingMode: "scheduled", appointmentDatetime: null, purchaseOnly: true,
+    repository, db: {}, now: () => new Date("2026-09-30T05:00:00.000Z"),
+  });
+}
+
+test("AIR CARE PREMIUM mixed BTU retains one service level and sums each variant tier", async () => {
+  const result = await airCareMixedQuote("coldwindflow-air-care-premium", [
+    g("coldwindflow-air-care-premium-small", 12000, 1),
+    g("coldwindflow-air-care-premium-large", 18000, 2),
+  ]);
+  assert.equal(result.fixedTotal, "2498.00");
+  assert.equal(result.items.reduce((sum, item) => sum + Number(item.line_total), 0), 2498);
+  assert.equal(result.payload.service_package_groups.length, 2);
+});
+
+test("exclusive service level still rejects a cross-level mixed selection", async () => {
+  const mixedRows = airCareRows.slice(2).map((row, index) => ({ ...row,
+    service_level_key: index === 0 ? "premium" : "standard" }));
+  const repository = { findLinkedPackagesByKeys: async (_db, keys) => mixedRows.filter((row) => keys.includes(row.package_key)) };
+  await assert.rejects(resolveCompositeBooking({
+    body: { catalog_item_id: 911, service_package_groups: [
+      g("coldwindflow-air-care-premium-small", 12000, 1),
+      g("coldwindflow-air-care-premium-large", 18000, 2),
+    ] }, bookingMode: "scheduled", appointmentDatetime: null, purchaseOnly: true,
+    repository, db: {}, now: () => new Date("2026-09-30T05:00:00.000Z"),
+  }), { code: "SERVICE_PACKAGE_LEVEL_SELECTION_REQUIRED" });
+});
 
 test("AIR CARE server pricing matches locked q1-q6 tier composition", async () => {
   const cases = [

@@ -8,6 +8,8 @@
     quote: null,
     quoteFingerprint: "",
     bookingRequestKey: "",
+    saleRequestKey: "",
+    orders: [],
   };
 
   const $ = (id) => document.getElementById(id);
@@ -76,6 +78,7 @@
   function invalidateQuote() {
     state.quote = null;
     state.quoteFingerprint = "";
+    state.saleRequestKey = "";
     $("btnCreateOrder").disabled = true;
     $("saleQuote").style.display = "none";
     $("saleQuote").innerHTML = "";
@@ -83,7 +86,11 @@
 
   async function loadBundles() {
     const data = await api("/admin/catalog/service-package-bundles");
-    state.bundles = Array.isArray(data?.bundles) ? data.bundles : [];
+    const now = Date.now();
+    state.bundles = (Array.isArray(data?.bundles) ? data.bundles : []).filter((bundle) =>
+      bundle.is_active !== false
+      && (!bundle.sell_start_at || new Date(bundle.sell_start_at).getTime() <= now)
+      && (!bundle.sell_end_at || new Date(bundle.sell_end_at).getTime() >= now));
     const select = $("saleBundle");
     select.innerHTML = '<option value="">เลือกโปรโมชั่น</option>' + state.bundles.map((bundle) => (
       `<option value="${esc(bundle.service_bundle_key)}">${esc(bundle.item_name)}${bundle.is_active ? "" : " (ปิดอยู่)"}</option>`
@@ -161,15 +168,20 @@
   async function createOrder() {
     const customerName = clean($("saleCustomerName").value);
     const customerPhone = clean($("saleCustomerPhone").value);
-    if (!customerName || !customerPhone) throw new Error("กรอกชื่อลูกค้าและเบอร์โทรให้ครบ");
+    const address = clean($("saleAddress").value);
+    if (!customerName || !customerPhone || !address) throw new Error("กรอกชื่อลูกค้า เบอร์โทร และที่อยู่ให้ครบ");
     if (!state.quote || state.quoteFingerprint !== saleFingerprint()) throw new Error("ข้อมูลโปรเปลี่ยน กรุณาคำนวณราคาใหม่");
     const payload = {
       catalog_item_id: Number(state.selectedBundle.item_id),
       service_package_groups: selectedGroups(),
       customer_name: customerName,
       customer_phone: customerPhone,
+      address_text: address,
+      maps_url: clean($("saleMapsUrl").value),
+      gps_latitude: clean($("saleLatitude").value) || null,
+      gps_longitude: clean($("saleLongitude").value) || null,
       note: clean($("saleNote").value),
-      purchase_request_key: requestKey(),
+      purchase_request_key: state.saleRequestKey ||= requestKey(),
     };
     $("btnCreateOrder").disabled = true;
     const data = await api("/admin/prepaid-orders", { method: "POST", body: JSON.stringify(payload) });
@@ -201,6 +213,7 @@
     setMessage("ordersMessage", "กำลังโหลด...");
     const data = await api("/admin/prepaid-orders");
     const orders = Array.isArray(data?.orders) ? data.orders : [];
+    state.orders = orders;
     const term = clean($("ordersSearch")?.value).toLowerCase();
     const visible = term ? orders.filter((row) => [
       row.order_code, row.customer_name, row.customer_phone, row.entitlement_code,
@@ -208,20 +221,23 @@
     $("ordersBody").innerHTML = visible.map((row) => {
       const paid = row.payment_order_status === "paid";
       const canBook = Boolean(row.entitlement_code) && ["active", "unclaimed", "redeeming"].includes(String(row.entitlement_status || "")) && !row.redeemed_job_id;
+      const snapshot = typeof row.service_entitlement_snapshot === "string" ? JSON.parse(row.service_entitlement_snapshot) : row.service_entitlement_snapshot || {};
+      const groups = Array.isArray(snapshot.service_package_groups) ? snapshot.service_package_groups : [];
       return `<tr>
         <td><b>${esc(row.order_code)}</b><div class="muted">${esc(dateText(row.created_at))}</div></td>
-        <td>${esc(row.customer_name)}<div class="muted">${esc(row.customer_phone)}</div></td>
+        <td>${esc(row.customer_name)}<div class="muted">${esc(row.customer_phone)}<br>${esc(row.address || "-")}</div>${row.prepaid_maps_url ? `<a href="${esc(row.prepaid_maps_url)}" target="_blank" rel="noopener">เปิดแผนที่</a>` : ""}</td>
+        <td><b>${esc(snapshot.bundle_key || "-")}</b><div class="muted">${groups.map((g) => `${esc(g.btu)} BTU ×${esc(g.quantity)}`).join("<br>")}</div></td>
         <td><b>${money(row.subtotal)}</b></td>
         <td>${statusBadge(row.payment_order_status)}${row.payment_status ? `<div class="muted">${esc(row.payment_status)}</div>` : ""}</td>
         <td>${row.entitlement_code ? `<b>${esc(row.entitlement_code)}</b><div>${statusBadge(row.entitlement_status)}</div>` : '<span class="muted">ยังไม่ออกสิทธิ์</span>'}</td>
         <td>${esc(dateText(row.redeem_until))}<div class="muted">ประกัน ${esc(row.warranty_days ?? "-")} วัน</div></td>
         <td>${row.redeemed_job_id ? `<b>#${esc(row.redeemed_job_id)}</b>` : "-"}</td>
         <td><div class="actions" style="margin-top:0">
-          ${!paid ? `<button class="btn-gold" type="button" data-confirm-order="${esc(row.order_code)}" data-amount="${esc(row.subtotal)}">ยืนยันรับเงิน</button>` : ""}
+          ${!paid ? `<button class="btn-soft" type="button" data-edit-order="${esc(row.order_code)}">แก้ไขข้อมูลจอง</button><button class="btn-gold" type="button" data-confirm-order="${esc(row.order_code)}" data-amount="${esc(row.subtotal)}">ยืนยันรับเงิน</button>` : ""}
           ${canBook ? `<button class="btn-primary" type="button" data-book-right="${esc(row.entitlement_code)}">ลงงาน</button>` : ""}
         </div></td>
       </tr>`;
-    }).join("") || '<tr><td colspan="8" class="muted">ยังไม่มีรายการ PREPAID</td></tr>';
+    }).join("") || '<tr><td colspan="9" class="muted">ยังไม่มีรายการ PREPAID</td></tr>';
     setMessage("ordersMessage", term ? `พบ ${visible.length} จาก ${orders.length} รายการ` : `ทั้งหมด ${orders.length} รายการ`);
   }
 
@@ -237,12 +253,52 @@
     await loadOrders();
   }
 
+  function editReservation(orderCode) {
+    const order = state.orders.find((row) => row.order_code === orderCode);
+    if (!order || !["pending_payment", "payment_failed"].includes(order.payment_order_status)) return;
+    $("editOrderCode").textContent = orderCode;
+    $("editCustomerName").value = order.customer_name || "";
+    $("editCustomerPhone").value = order.customer_phone || "";
+    $("editAddress").value = order.address || "";
+    $("editMapsUrl").value = order.prepaid_maps_url || "";
+    $("editLatitude").value = order.prepaid_gps_latitude ?? "";
+    $("editLongitude").value = order.prepaid_gps_longitude ?? "";
+    $("editNote").value = order.note || "";
+    setMessage("editMessage", "แก้ไขได้เฉพาะข้อมูลติดต่อและสถานที่ ยอดและรายการบริการคงเดิม");
+    $("reservationDialog").showModal();
+  }
+
+  async function saveReservation() {
+    const code = clean($("editOrderCode").textContent);
+    $("btnSaveReservation").disabled = true;
+    try {
+      await api(`/admin/prepaid-orders/${encodeURIComponent(code)}/reservation`, {
+        method: "PATCH", body: JSON.stringify({
+          customer_name: clean($("editCustomerName").value),
+          customer_phone: clean($("editCustomerPhone").value),
+          address_text: clean($("editAddress").value),
+          maps_url: clean($("editMapsUrl").value),
+          gps_latitude: clean($("editLatitude").value) || null,
+          gps_longitude: clean($("editLongitude").value) || null,
+          note: clean($("editNote").value),
+        }),
+      });
+      $("reservationDialog").close();
+      await loadOrders();
+    } catch (error) {
+      setMessage("editMessage", `บันทึกไม่สำเร็จ: ${error.message}`, "error");
+    } finally { $("btnSaveReservation").disabled = false; }
+  }
+
   async function openBooking(entitlementCode) {
     const data = await api(`/admin/prepaid-entitlements/${encodeURIComponent(entitlementCode)}`);
     const right = data.entitlement;
     if (!right || right.order_status !== "paid") throw new Error("สิทธิ์นี้ยังไม่ได้ยืนยันการชำระ");
     if (right.redeemed_job_id) throw new Error(`สิทธิ์นี้ถูกใช้กับ Job #${right.redeemed_job_id} แล้ว`);
     $("bookingEntitlementCode").value = right.entitlement_code;
+    $("bookingAddress").value = right.address_text || "";
+    $("bookingMapsUrl").value = right.maps_url || "";
+    $("bookingNote").value = right.note || "";
     $("bookingRightSummary").textContent = [
       `ลูกค้า: ${right.customer_name} • ${right.customer_phone}`,
       `สิทธิ์: ${right.entitlement_code} • ${money(right.fixed_total_price)} บาท`,
@@ -294,6 +350,8 @@
   }
 
   function wire() {
+    $("btnSaveReservation").addEventListener("click", saveReservation);
+    $("btnCloseReservation").addEventListener("click", () => $("reservationDialog").close());
     $("saleBundle").addEventListener("change", () => chooseBundle().catch((error) => setMessage("saleMessage", error.message, "error")));
     $("btnQuote").addEventListener("click", () => quoteSale().catch((error) => setMessage("saleMessage", error.message, "error")));
     $("btnCreateOrder").addEventListener("click", () => createOrder().catch((error) => { $("btnCreateOrder").disabled = false; setMessage("saleMessage", error.message, "error"); }));
@@ -303,6 +361,8 @@
     $("btnBookRight").addEventListener("click", () => bookRight().catch((error) => setMessage("bookingMessage", error.message, "error")));
     $("btnCancelBookingPanel").addEventListener("click", () => { $("bookingCard").style.display = "none"; state.bookingRequestKey = ""; });
     $("ordersBody").addEventListener("click", (event) => {
+      const editButton = event.target.closest("[data-edit-order]");
+      if (editButton) { editReservation(editButton.getAttribute("data-edit-order")); return; }
       const confirmButton = event.target.closest("[data-confirm-order]");
       if (confirmButton) {
         confirmPayment(confirmButton.getAttribute("data-confirm-order"), confirmButton.getAttribute("data-amount"))
@@ -319,7 +379,18 @@
 
   async function init() {
     wire();
-    try { await Promise.all([loadBundles(), loadOrders()]); }
+    try {
+      await Promise.all([loadBundles(), loadOrders()]);
+      const code = new URLSearchParams(window.location.search).get("order");
+      const order = state.orders.find((row) => row.order_code === code);
+      if (order?.entitlement_code && order.payment_order_status === "paid" && !order.redeemed_job_id) {
+        await openBooking(order.entitlement_code);
+      } else if (order) {
+        $("ordersSearch").value = code;
+        await loadOrders();
+        $("ordersSearch").scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    }
     catch (error) { setMessage("ordersMessage", error.message || "โหลดข้อมูล PREPAID ไม่สำเร็จ", "error"); }
   }
 
