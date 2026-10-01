@@ -372,5 +372,5 @@ async function resolveCompositeBooking({
 module.exports = {
   CompositePackageError, parseMoney, formatMoney, allocateUnitMoney, composeTiers, normalizeGroups,
   buildComponentSnapshot, resolveCompositeBooking, MAX_COMPOSITE_PACKAGE_QUANTITY,
-  MIN_COMPOSITE_PACKAGE_MINIMUM, bundleMinimumTotalQuantity, totalGroupQuantity,
+  MIN_COMPOSITE_PACKAGE_MINIMUM, bundleMinimumTotalQuantity, totalGroupQuantity, serviceName,
 };
