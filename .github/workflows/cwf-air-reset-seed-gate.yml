@@ -48,6 +48,16 @@ jobs:
           cat /tmp/cwf-prepaid-migration.log >> "$GITHUB_STEP_SUMMARY"
           cat /tmp/cwf-promotion-seed.log >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Provision designated staging QA identity
+        shell: bash
+        env:
+          CWF_STAGING_QA_SECRET: ${{ secrets.CWF_STAGING_QA_SECRET }}
+          EXPECTED_RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -Eeuo pipefail
+          bash scripts/run-staging-air-care-qa.sh staging provision | tee /tmp/cwf-staging-qa-provision.log
+          grep '^\[QA_EVIDENCE\]' /tmp/cwf-staging-qa-provision.log >> "$GITHUB_STEP_SUMMARY"
+
   seed-production:
     name: Verify and seed active promotion on production
     if: >-

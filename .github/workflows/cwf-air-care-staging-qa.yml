@@ -1,0 +1,51 @@
+name: CWF AIR CARE Staging QA
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Staging-only QA operation
+        required: true
+        default: accept
+        type: choice
+        options:
+          - accept
+          - provision
+          - cleanup
+
+permissions:
+  contents: read
+
+env:
+  GIT_CONFIG_NOSYSTEM: "1"
+
+concurrency:
+  group: cwf-air-care-staging-qa
+  cancel-in-progress: false
+
+jobs:
+  staging-qa:
+    name: Staging / ${{ inputs.action }}
+    if: github.ref_name == 'staging/home-server-test'
+    runs-on:
+      - self-hosted
+      - linux
+      - x64
+      - cwf-home
+    timeout-minutes: 30
+    env:
+      CWF_STAGING_QA_SECRET: ${{ secrets.CWF_STAGING_QA_SECRET }}
+      EXPECTED_RELEASE_SHA: ${{ github.sha }}
+    steps:
+      - name: Check out deployed staging revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+
+      - name: Run guarded staging QA operation
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          bash scripts/run-staging-air-care-qa.sh staging "${{ inputs.action }}" | tee /tmp/cwf-air-care-staging-qa.log
+          grep '^\[QA_EVIDENCE\]' /tmp/cwf-air-care-staging-qa.log >> "$GITHUB_STEP_SUMMARY"
