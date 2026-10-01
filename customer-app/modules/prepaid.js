@@ -121,8 +121,11 @@
     const rows = [];
     if (isAirCare) {
       variants.forEach((variant) => {
-        const min = Number(variant.btu_min || 0);
-        const max = Number(variant.btu_max || 0);
+        // Customer catalog DTOs intentionally keep service taxonomy under
+        // `variant.service`; top-level bounds only exist in internal/legacy
+        // shapes. Read the public contract first while preserving compatibility.
+        const min = Number(variant.service?.btu_min ?? variant.btu_min ?? 0);
+        const max = Number(variant.service?.btu_max ?? variant.btu_max ?? 0);
         const isSmall = max > 0 && max <= 12000;
         const isLarge = min >= 18000;
         if (!isSmall && !isLarge) return;
@@ -136,8 +139,8 @@
     } else {
       const btuOptions = Array.isArray(root.services?.bookableBtuOptions) ? root.services.bookableBtuOptions : [];
       variants.forEach((variant) => {
-        const min = Number(variant.btu_min || 0);
-        const max = Number(variant.btu_max || Number.MAX_SAFE_INTEGER);
+        const min = Number(variant.service?.btu_min ?? variant.btu_min ?? 0);
+        const max = Number(variant.service?.btu_max ?? variant.btu_max ?? Number.MAX_SAFE_INTEGER);
         btuOptions.filter((option) => Number(option.btu) >= min && Number(option.btu) <= max).forEach((option) => {
           rows.push({
             package_key: String(variant.package_key),
