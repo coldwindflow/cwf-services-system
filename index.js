@@ -42,6 +42,7 @@ const trackingPrivacy = require("./server/services/public/trackingPrivacy");
 const customerPricingHelpers = require("./server/customerPricing");
 const customerAuth = require("./server/customerAuth");
 const technicianIncomeHelpers = require("./server/technicianIncome");
+const { evaluatePartnerJobEligibility } = require("./server/services/partner/jobEligibility");
 const customerLookupHelpers = require("./server/customerLookup");
 const technicianJobIncomeDisplayHelpers = require("./server/technicianJobIncomeDisplay");
 const technicianReworkHelpers = require("./server/technicianRework");
@@ -2923,15 +2924,14 @@ async function technicianHasRequiredCertifications(username, requiredCodes = [],
      WHERE technician_username=$1 AND certification_code = ANY($2::text[])`,
     [username, codes]
   );
-  const statusMap = new Map((r.rows || []).map(x => [String(x.certification_code), String(x.status || '')]));
-  const missing = codes.filter(code => statusMap.get(code) !== 'approved');
-  const blocked = codes.filter(code => ['suspended', 'revoked'].includes(statusMap.get(code)));
+  const certRows = (r.rows || []).map(x => ({ code: String(x.certification_code), status: String(x.status || '') }));
+  const evaluated = evaluatePartnerJobEligibility({ requiredCodes: codes, certifications: certRows, adminOverride });
   return {
-    ok: blocked.length === 0 && (adminOverride || missing.length === 0),
-    missing,
-    blocked,
-    statuses: Object.fromEntries(statusMap),
-    admin_override: adminOverride,
+    ok: evaluated.eligible,
+    missing: evaluated.missing,
+    blocked: evaluated.blocked,
+    statuses: Object.fromEntries(certRows.map(x => [x.code, x.status])),
+    admin_override: evaluated.admin_override,
     admin_override_by: overrideRow.admin_job_override_by || null,
     admin_override_at: overrideRow.admin_job_override_at || null,
   };
@@ -4035,10 +4035,19 @@ app.post('/admin/partners/eligible-dry-run', requireAdminSession, async (req, re
       const certs = Array.isArray(row.certifications) ? row.certifications : [];
       const missing = requiredCodes.filter(code => !certs.some(c => c.code === code && c.status === 'approved'));
       const preferenceOff = requiredCodes.filter(code => !certs.some(c => c.code === code && c.preference_enabled === true));
-      const blocked = requiredCodes.filter(code => certs.some(c => c.code === code && ['suspended','revoked'].includes(c.status)));
       const adminOverride = row.admin_job_override_enabled === true;
       const zones = Array.isArray(row.service_zones) ? row.service_zones : [];
       const zoneMatch = !zone || zones.some(z => String(z).includes(zone)) || String(row.province || '').includes(zone) || String(row.district || '').includes(zone);
+      const evaluated = evaluatePartnerJobEligibility({
+        requiredCodes,
+        certifications: certs,
+        adminOverride,
+        requirePreferences: true,
+        preferenceOff,
+        paused: row.paused === true,
+        zoneMatch,
+      });
+      const blocked = evaluated.blocked;
       return {
         ...row,
         required_certifications: requiredCodes,
@@ -4053,7 +4062,7 @@ app.post('/admin/partners/eligible-dry-run', requireAdminSession, async (req, re
         missing_certifications: missing,
         blocked_certifications: blocked,
         preferences_off: preferenceOff,
-        eligible: blocked.length === 0 && (adminOverride || (missing.length === 0 && preferenceOff.length === 0 && row.paused !== true && zoneMatch)),
+        eligible: evaluated.eligible,
       };
     });
     return res.json({ ok: true, mode: getCertificationEnforcementMode(), required_certifications: requiredCodes, partners: rows });
