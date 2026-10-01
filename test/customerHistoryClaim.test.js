@@ -845,7 +845,7 @@ test("Customer History search and preview keep 360px and 390px width contracts",
 });
 
 test("Customer App cache version is bumped consistently", () => {
-  const expected = "20260930_cwf_air_care_store_refresh_v2";
+  const expected = "20261001_air_care_purchase_options_v1";
   for (const file of [
     "customer-app/index.html",
     "customer-app/sw.js",
