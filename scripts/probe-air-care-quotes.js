@@ -62,11 +62,28 @@ async function main() {
     evidence("matrix", { matrix: matrix.label, q1_q4_q5_q6: actual.join(",") || "none" });
   }
 
+  try {
+    const mixed = await service.quoteOrder({
+      catalog_item_id: ids.get("coldwindflow-air-care-premium"),
+      service_package_groups: [
+        { package_key: "coldwindflow-air-care-premium-small", btu: 12000, quantity: 1 },
+        { package_key: "coldwindflow-air-care-premium-large", btu: 18000, quantity: 2 },
+      ],
+    }, { identity: "customer" });
+    if (Number(mixed.fixed_total_price) !== 2498) {
+      evidence("failure", { matrix: "premium-mixed", code: "AIR_CARE_PRICE_MISMATCH", expected: 2498, actual: mixed.fixed_total_price });
+      failures += 1;
+    } else evidence("matrix", { matrix: "premium-mixed", small: 1, large: 2, price: 2498 });
+  } catch (error) {
+    evidence("failure", { matrix: "premium-mixed", code: String(error?.code || error?.message || "QUOTE_FAILED") });
+    failures += 1;
+  }
+
   if (failures) {
     evidence("result", { status: "failed", failures });
     process.exitCode = 1;
   } else {
-    evidence("result", { status: "passed", matrices: MATRICES.length, quotes: MATRICES.length * 4 });
+    evidence("result", { status: "passed", matrices: MATRICES.length + 1, quotes: MATRICES.length * 4 + 1 });
   }
 }
 
