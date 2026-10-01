@@ -262,6 +262,13 @@ async function resolveCompositeBooking({
 
   for (const group of groups) validateVariantSelection(byKey.get(group.packageKey), group, identity);
 
+  // Selection policy applies regardless of how each selected variant is priced.
+  // Per-variant tiers can still require one service level across mixed BTU groups.
+  if (promotionSelectionMode(bundle) === "exclusive_level") {
+    const levels = new Set(groups.map((group) => String(byKey.get(group.packageKey)?.service_level_key || "").trim()));
+    if (levels.size !== 1 || levels.has("")) fail("SERVICE_PACKAGE_LEVEL_SELECTION_REQUIRED", 400);
+  }
+
   const aggregate = resolveTotalQuantityTierPlusModifiers({
     bundle,
     groups,

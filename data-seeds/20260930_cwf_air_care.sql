@@ -1,7 +1,6 @@
 -- Issue #382: COLDWINDFLOW AIR CARE manual-payment prepaid campaign.
 -- Customer reserves first; Admin verifies LINE/manual payment before entitlement activation.
--- PREMIUM small/large schedules are exact advertised matrices. Mixed BTU PREMIUM selection is intentionally
--- rejected by exclusive_level because no mixed-BTU price was supplied by the promotion owner.
+-- PREMIUM mixed BTU uses each size's own advertised tier, summed across groups.
 
 WITH desired(bundle_key,item_name,short_description,long_description,highlights,conditions,pricing_strategy,selection_mode) AS (
  VALUES
@@ -15,8 +14,8 @@ WITH desired(bundle_key,item_name,short_description,long_description,highlights,
   'โครงการช่วยค่าล้างแอร์ หลังฝนหนัก–น้ำท่วม โดย COLDWINDFLOW AIR SERVICES',
   'เปิดซื้อสิทธิ์ 30 กันยายน – 6 ตุลาคม 2569 • จ่ายวันนี้ ล็อกราคาพิเศษ เลือกวันล้างภายหลังตามคิวว่าง',
   '["PREMIUM ≤12,000 BTU • 1 เครื่อง 699.-","2 เครื่อง 1,399.-","3 เครื่อง 1,899.-","4 เครื่อง 2,489.-","PREMIUM ≥18,000 BTU • 1 เครื่อง 899.-","2 เครื่อง 1,799.-","3 เครื่อง 2,599.-","4 เครื่อง 3,399.-","สิทธิ์ใช้ได้ 60 วันนับจากวันที่ซื้อ","รับประกันงานล้าง 60 วัน"]'::jsonb,
-  'สำหรับแอร์ติดผนัง • PREMIUM ≤12,000 BTU และ PREMIUM ≥18,000 BTU ใช้ตารางราคาตามขนาด • ไม่รวมขนาด BTU คนละกลุ่มในรายการเดียว • สิทธิ์ ACTIVE หลังแอดมินยืนยันการชำระ',
-  'total_quantity_tier_plus_unit_modifiers','exclusive_level')
+  'สำหรับแอร์ติดผนัง • PREMIUM แต่ละกลุ่ม BTU ใช้ตารางราคาของกลุ่มนั้น แล้วรวมยอด • สิทธิ์ ACTIVE หลังแอดมินยืนยันการชำระ',
+  'per_variant_tier','exclusive_level')
 )
 INSERT INTO public.catalog_items
 (item_name,item_category,base_price,unit_label,job_category,ac_type,is_active,is_customer_visible,
@@ -40,8 +39,8 @@ WITH desired(bundle_key,package_key,display_name,description,wash_variant,btu_mi
  VALUES
  ('coldwindflow-air-care-standard','coldwindflow-air-care-standard-small','STANDARD • ≤12,000 BTU','ราคาฐาน STANDARD','ล้างธรรมดา',NULL::integer,12000::integer,60,0,'standard','STANDARD',0.00::numeric),
  ('coldwindflow-air-care-standard','coldwindflow-air-care-standard-large','STANDARD • ≥18,000 BTU','STANDARD +100 บาท/เครื่อง','ล้างธรรมดา',18000::integer,NULL::integer,60,1,'standard','STANDARD',100.00::numeric),
- ('coldwindflow-air-care-premium','coldwindflow-air-care-premium-small','PREMIUM • ≤12,000 BTU','ตารางราคา PREMIUM ≤12,000 BTU','ล้างพรีเมียม',NULL::integer,12000::integer,80,0,'premium-small','PREMIUM ≤12,000 BTU',0.00::numeric),
- ('coldwindflow-air-care-premium','coldwindflow-air-care-premium-large','PREMIUM • ≥18,000 BTU','ตารางราคา PREMIUM ≥18,000 BTU','ล้างพรีเมียม',18000::integer,NULL::integer,80,1,'premium-large','PREMIUM ≥18,000 BTU',0.00::numeric)
+ ('coldwindflow-air-care-premium','coldwindflow-air-care-premium-small','PREMIUM • ≤12,000 BTU','ตารางราคา PREMIUM ≤12,000 BTU','ล้างพรีเมียม',NULL::integer,12000::integer,80,0,'premium','PREMIUM',0.00::numeric),
+ ('coldwindflow-air-care-premium','coldwindflow-air-care-premium-large','PREMIUM • ≥18,000 BTU','ตารางราคา PREMIUM ≥18,000 BTU','ล้างพรีเมียม',18000::integer,NULL::integer,80,1,'premium','PREMIUM',0.00::numeric)
 )
 INSERT INTO public.service_packages
 (package_key,display_name,description,service_key,service_name,job_type,ac_type,wash_variant,btu_min,btu_max,
@@ -99,8 +98,8 @@ WITH desired(bundle_key,item_name,short_description,long_description,highlights,
   'โครงการช่วยค่าล้างแอร์ หลังฝนหนัก–น้ำท่วม โดย COLDWINDFLOW AIR SERVICES',
   'เปิดซื้อสิทธิ์ 30 กันยายน – 6 ตุลาคม 2569 • จ่ายวันนี้ ล็อกราคาพิเศษ เลือกวันล้างภายหลังตามคิวว่าง',
   '["PREMIUM ≤12,000 BTU • 1 เครื่อง 699.-","2 เครื่อง 1,399.-","3 เครื่อง 1,899.-","4 เครื่อง 2,489.-","PREMIUM ≥18,000 BTU • 1 เครื่อง 899.-","2 เครื่อง 1,799.-","3 เครื่อง 2,599.-","4 เครื่อง 3,399.-","สิทธิ์ใช้ได้ 60 วันนับจากวันที่ซื้อ","รับประกันงานล้าง 60 วัน"]'::jsonb,
-  'สำหรับแอร์ติดผนัง • PREMIUM ≤12,000 BTU และ PREMIUM ≥18,000 BTU ใช้ตารางราคาตามขนาด • ไม่รวมขนาด BTU คนละกลุ่มในรายการเดียว • สิทธิ์ ACTIVE หลังแอดมินยืนยันการชำระ',
-  'total_quantity_tier_plus_unit_modifiers','exclusive_level')
+  'สำหรับแอร์ติดผนัง • PREMIUM แต่ละกลุ่ม BTU ใช้ตารางราคาของกลุ่มนั้น แล้วรวมยอด • สิทธิ์ ACTIVE หลังแอดมินยืนยันการชำระ',
+  'per_variant_tier','exclusive_level')
 )
 UPDATE public.catalog_items c
    SET item_name=d.item_name,
@@ -140,8 +139,8 @@ WITH desired(bundle_key,package_key,display_name,description,wash_variant,btu_mi
  VALUES
  ('coldwindflow-air-care-standard','coldwindflow-air-care-standard-small','STANDARD • ≤12,000 BTU','ราคาฐาน STANDARD','ล้างธรรมดา',NULL::integer,12000::integer,60,0,'standard','STANDARD',0.00::numeric),
  ('coldwindflow-air-care-standard','coldwindflow-air-care-standard-large','STANDARD • ≥18,000 BTU','STANDARD +100 บาท/เครื่อง','ล้างธรรมดา',18000::integer,NULL::integer,60,1,'standard','STANDARD',100.00::numeric),
- ('coldwindflow-air-care-premium','coldwindflow-air-care-premium-small','PREMIUM • ≤12,000 BTU','ตารางราคา PREMIUM ≤12,000 BTU','ล้างพรีเมียม',NULL::integer,12000::integer,80,0,'premium-small','PREMIUM ≤12,000 BTU',0.00::numeric),
- ('coldwindflow-air-care-premium','coldwindflow-air-care-premium-large','PREMIUM • ≥18,000 BTU','ตารางราคา PREMIUM ≥18,000 BTU','ล้างพรีเมียม',18000::integer,NULL::integer,80,1,'premium-large','PREMIUM ≥18,000 BTU',0.00::numeric)
+ ('coldwindflow-air-care-premium','coldwindflow-air-care-premium-small','PREMIUM • ≤12,000 BTU','ตารางราคา PREMIUM ≤12,000 BTU','ล้างพรีเมียม',NULL::integer,12000::integer,80,0,'premium','PREMIUM',0.00::numeric),
+ ('coldwindflow-air-care-premium','coldwindflow-air-care-premium-large','PREMIUM • ≥18,000 BTU','ตารางราคา PREMIUM ≥18,000 BTU','ล้างพรีเมียม',18000::integer,NULL::integer,80,1,'premium','PREMIUM',0.00::numeric)
 )
 UPDATE public.service_packages p
    SET display_name=d.display_name,

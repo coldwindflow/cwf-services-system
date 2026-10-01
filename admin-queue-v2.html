@@ -395,6 +395,12 @@
       </div>
     </section>
 
+    <section class="calendar-card" aria-labelledby="prepaidQueueTitle">
+      <div class="calendar-head"><div><h2 class="calendar-title" id="prepaidQueueTitle">รายการจองสิทธิ์ / รอชำระเงิน</h2><div class="calendar-sub">คำสั่งซื้อ PREPAID ยังไม่ใช่งานในคิว เมื่อรับเงินจริงแล้วจึงยืนยันและลงงานจากสิทธิ์</div></div><button id="prepaidQueueRefresh" class="icon-btn" type="button" aria-label="รีเฟรชรายการจองสิทธิ์">⟳</button></div>
+      <div id="prepaidQueueStatus" class="calendar-sub" role="status">กำลังโหลดรายการจองสิทธิ์...</div>
+      <div id="prepaidQueueList" style="display:grid;gap:10px;margin-top:10px"></div>
+    </section>
+
     <section class="calendar-card">
       <div class="calendar-head">
         <div>
@@ -524,5 +530,6 @@
 
   <script src="admin-v2-common.js?v=20260428_allpages_ui1"></script>
   <script src="admin-queue-v2.js?v=20260920_issue366_axs_pricing_v1"></script>
+  <script src="admin-prepaid-queue.js?v=20261002_prepaid_reservation_v1"></script>
 </body>
 </html>

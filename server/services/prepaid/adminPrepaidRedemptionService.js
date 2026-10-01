@@ -71,7 +71,9 @@ function createAdminPrepaidRedemptionService({ pool, now = () => new Date() }) {
       `SELECT e.entitlement_id, e.entitlement_code, e.status, e.customer_sub,
               e.customer_name, e.customer_phone, e.service_snapshot, e.redeem_until,
               e.warranty_days, e.redeemed_job_id, e.redemption_expires_at,
-              o.order_id, o.order_code, o.status AS order_status, o.paid_at
+              o.order_id, o.order_code, o.status AS order_status, o.paid_at,
+              o.address, o.note, o.prepaid_maps_url, o.prepaid_gps_latitude,
+              o.prepaid_gps_longitude
          FROM public.customer_service_entitlements e
          JOIN public.customer_orders o ON o.order_id=e.order_id
         WHERE e.entitlement_code=$1 OR o.order_code=$1
@@ -96,6 +98,11 @@ function createAdminPrepaidRedemptionService({ pool, now = () => new Date() }) {
         entitlement_status: row.status,
         customer_name: row.customer_name,
         customer_phone: row.customer_phone,
+        address_text: row.address,
+        maps_url: row.prepaid_maps_url,
+        gps_latitude: row.prepaid_gps_latitude,
+        gps_longitude: row.prepaid_gps_longitude,
+        note: row.note,
         fixed_total_price: Number(snapshot.fixed_total_price),
         service_package_groups: snapshot.service_package_groups,
         services: snapshot.services,

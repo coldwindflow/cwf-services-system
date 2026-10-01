@@ -281,6 +281,11 @@
       <h2 style="margin:0">➕ เพิ่มงาน</h2>
     </div>
 
+    <div class="card" style="margin-top:12px">
+      <b>ประเภทการทำรายการ</b>
+      <div class="line" style="gap:16px;flex-wrap:wrap;margin-top:10px"><label><input type="radio" name="jobFlowMode" value="normal" checked> งานบริการปกติ</label><label><input type="radio" name="jobFlowMode" value="promotion"> จองโปรโมชั่นให้ลูกค้า</label></div>
+    </div>
+
     <div class="card section-card">
       <b>แบรนด์งาน</b>
       <div class="grid2" style="margin-top:10px">
@@ -348,6 +353,16 @@
       </div>
 
       <input id="customer_note" placeholder="เช่น จอดรถ/ติดต่อก่อนถึง">
+    </div>
+
+    <div class="card" id="promotionAssistPanel" style="display:none;margin-top:12px">
+      <b>จองโปรโมชั่น PREPAID ให้ลูกค้า</b>
+      <p class="muted2">ใช้ข้อมูลลูกค้าและที่อยู่ด้านบน ระบบจะออกคำสั่งซื้อรอชำระเงินก่อน แล้วจึงลงงานจากสิทธิ์หลังรับเงินจริง</p>
+      <label for="promotionAssistBundle">โปรโมชั่นที่เปิดขาย</label><select id="promotionAssistBundle"><option value="">เลือกโปรโมชั่น</option></select>
+      <div id="promotionAssistVariants"></div>
+      <div id="promotionAssistQuote" class="muted2" style="margin-top:10px"></div>
+      <div class="line" style="gap:8px;flex-wrap:wrap;margin-top:10px"><button id="promotionAssistPrice" type="button" class="secondary">ตรวจราคาจากระบบ</button><button id="promotionAssistCreate" type="button" disabled>จองโปรให้ลูกค้า</button></div>
+      <div id="promotionAssistResult" role="status" style="margin-top:10px"></div>
     </div>
 
     <div class="card section-card">
@@ -713,6 +728,7 @@
 
   <script src="admin-v2-common.js?v=20260428_allpages_ui1"></script>
   <script src="admin-add-v2.js?v=20260921_issue374_single_tech_v1"></script>
+  <script src="admin-prepaid-assist.js?v=20261002_prepaid_reservation_v1"></script>
   <script src="admin-add-ai-intake-prefill.js?v=line-ai-prefill-real-v8"></script>
 </body>
 </html>

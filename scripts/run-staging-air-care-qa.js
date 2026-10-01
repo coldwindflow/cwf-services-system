@@ -176,7 +176,78 @@ async function pricingEvidence(cookie) {
     assert.deepEqual(actual, matrix.expected, `${matrix.label} server prices differ`);
     evidence("server_quote", { matrix: matrix.label, q1_q6: actual.join(",") });
   }
+  const mixed = await request("/public/prepaid-orders/quote", { method: "POST", cookie, body: {
+    catalog_item_id: catalog.get("coldwindflow-air-care-premium"),
+    service_package_groups: [
+      { package_key: "coldwindflow-air-care-premium-small", btu: 12000, quantity: 1 },
+      { package_key: "coldwindflow-air-care-premium-large", btu: 18000, quantity: 2 },
+    ],
+  } });
+  assert.equal(Number(mixed.data?.quote?.fixed_total_price), 2498);
+  evidence("server_quote", { matrix: "premium-mixed", small: 1, large: 2, price: 2498 });
   return catalog;
+}
+
+async function premiumAcceptance(catalog, customer, admin) {
+  const groups = [
+    { package_key: "coldwindflow-air-care-premium-small", btu: 12000, quantity: 1 },
+    { package_key: "coldwindflow-air-care-premium-large", btu: 18000, quantity: 2 },
+  ];
+  const payload = {
+    catalog_item_id: catalog.get("coldwindflow-air-care-premium"), service_package_groups: groups,
+    customer_name: QA.customerName, customer_phone: QA.customerPhone,
+    address_text: "Staging QA Premium location", maps_url: "https://www.google.com/maps?q=13.7563,100.5018",
+    gps_latitude: 13.7563, gps_longitude: 100.5018,
+    note: QA.marker, purchase_request_key: "cwfqa_air_care_premium_mixed_20261002",
+  };
+  const first = await request("/public/prepaid-orders", { method: "POST", cookie: customer, body: payload, expected: [201] });
+  const replay = await request("/public/prepaid-orders", { method: "POST", cookie: customer, body: payload });
+  const order = first.data.order;
+  assert.equal(replay.data?.replayed, true);
+  assert.equal(replay.data?.order?.order_code, order.order_code);
+  assert.equal(Number(order.subtotal), 2498);
+  assert.equal(order.status, "pending_payment");
+  assert.equal(order.address, payload.address_text);
+  assert.equal(Number(order.prepaid_gps_latitude), payload.gps_latitude);
+  const beforePayment = await request("/admin/prepaid-orders", { cookie: admin });
+  const visible = beforePayment.data.orders.find((row) => row.order_code === order.order_code);
+  assert.ok(visible);
+  assert.equal(visible.address, payload.address_text);
+  assert.equal(Number(visible.subtotal), 2498);
+  assert.deepEqual(visible.service_entitlement_snapshot.service_package_groups, groups);
+  evidence("premium_pending", { order: order.order_code, price: 2498, groups: "small1+large2", address: "persisted", pin: "persisted", replay: true });
+
+  const edited = await request(`/admin/prepaid-orders/${encodeURIComponent(order.order_code)}/reservation`, {
+    method: "PATCH", cookie: admin, body: { ...payload, address_text: "Staging QA Premium corrected location" },
+  });
+  assert.equal(edited.data?.reservation?.address, "Staging QA Premium corrected location");
+  assert.equal(Number(edited.data?.reservation?.subtotal), 2498);
+  const verified = await request(`/admin/prepaid-orders/${encodeURIComponent(order.order_code)}/confirm-payment`, {
+    method: "POST", cookie: admin, body: { reference: `${PAYMENT_REFERENCE}-PREMIUM`, confirmed_amount: 2498 },
+  });
+  assert.equal(verified.data?.entitlement?.status, "active");
+  const lockedEdit = await request(`/admin/prepaid-orders/${encodeURIComponent(order.order_code)}/reservation`, {
+    method: "PATCH", cookie: admin, body: { ...payload, address_text: "Forbidden paid edit" }, expected: [409],
+  });
+  assert.equal(lockedEdit.data?.code, "PREPAID_RESERVATION_LOCKED");
+  evidence("premium_payment", { order: order.order_code, payment: "verified", entitlement: "active", paid_edit: "rejected" });
+
+  const entitlement = verified.data.entitlement.entitlement_code;
+  const booked = await request(`/admin/prepaid-entitlements/${encodeURIComponent(entitlement)}/book`, {
+    method: "POST", cookie: admin, body: {
+      customer_name: QA.customerName, customer_phone: QA.customerPhone,
+      appointment_datetime: `${plusDays(12)}T09:00:00+07:00`, address_text: "Staging QA Premium corrected location",
+      maps_url: payload.maps_url, customer_note: QA.marker, booking_mode: "scheduled",
+      dispatch_mode: "forced", tech_type: "company", assign_mode: "single",
+      technician_username: QA.technicianUsername, allow_time_proposal: false,
+      admin_request_key: "cwfqa_air_care_premium_booking_20261002",
+    },
+  });
+  const result = await pool.query(`SELECT payment_source, customer_due, prepaid_entitlement_id
+    FROM public.jobs WHERE job_id=$1`, [Number(booked.data?.job_id)]);
+  assert.equal(result.rows[0].payment_source, "prepaid_entitlement");
+  assert.equal(Number(result.rows[0].customer_due), 0);
+  evidence("premium_job", { order: order.order_code, job: booked.data.job_id, customer_due: 0 });
 }
 
 async function runAcceptance(adminSession) {
@@ -192,11 +263,16 @@ async function runAcceptance(adminSession) {
   evidence("customer_auth", { model: "customer_profiles+customer_identities+signed_cwf_token", secret: "redacted" });
 
   const catalog = await pricingEvidence(firstCookie);
+  await premiumAcceptance(catalog, firstCookie, adminCookie(adminSession));
   const purchaseBody = {
     catalog_item_id: catalog.get("coldwindflow-air-care-standard"),
     service_package_groups: [{ package_key: "coldwindflow-air-care-standard-small", btu: 12000, quantity: 5 }],
     customer_name: QA.customerName,
     customer_phone: QA.customerPhone,
+    address_text: "Staging QA test location only",
+    maps_url: "https://www.google.com/maps?q=13.7563,100.5018",
+    gps_latitude: 13.7563,
+    gps_longitude: 100.5018,
     note: QA.marker,
     purchase_request_key: PURCHASE_KEY,
   };
