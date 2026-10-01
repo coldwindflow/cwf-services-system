@@ -1,6 +1,6 @@
 "use strict";
 
-const { normalizeGroups, parseMoney, formatMoney, allocateUnitMoney } = require("../packages/compositeServicePackage");
+const { normalizeGroups, parseMoney, formatMoney, allocateUnitMoney, serviceName } = require("../packages/compositeServicePackage");
 
 const PACKAGE_ERROR_STATUS = Object.freeze({
   PACKAGE_IDENTITY_REQUIRED: 400,
@@ -233,8 +233,16 @@ function compositeBookingFromSnapshots({ body, snapshots }) {
     durationMin += quantity * Number(snapshot.unit_duration_minutes || 0);
     const groupKey = `${snapshot.package.key}:${btu}`;
     storedGroups.set(groupKey, (storedGroups.get(groupKey) || 0) + quantity);
+    // Rebuild the canonical operational label from the immutable taxonomy.
+    // Marketing package names can contain separators and do not carry the
+    // job/ac/wash criteria required by bookingJobUnits.
+    const itemName = serviceName({
+      job_type: snapshot.taxonomy.job_type,
+      ac_type: snapshot.taxonomy.ac_type,
+      wash_variant: snapshot.taxonomy.wash_variant,
+    }, btu, quantity);
     items.push({
-      item_id: bundleId, item_name: `${snapshot.package.name} • ${btu} BTU • ${quantity} เครื่อง`, qty: quantity,
+      item_id: bundleId, item_name: itemName, qty: quantity,
       unit_price: allocateUnitMoney(price, quantity), line_total: snapshot.fixed_total_price,
       is_service: true, customer_price_source: "service_package",
       packageId: String(row.service_package_id), tierId: String(row.service_package_tier_id), snapshot,

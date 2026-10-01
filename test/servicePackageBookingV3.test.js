@@ -3,6 +3,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { compositeBookingFromSnapshots } = require("../server/services/booking/servicePackageBooking");
+const { parseCanonicalServiceItem } = require("../server/services/booking/bookingJobUnits");
 
 function snapshot({ packageId, packageKey, tierId, btu, fixedTotal, baseShare, modifierLine, modifier, level = "standard" }) {
   return {
@@ -71,6 +72,12 @@ test("schema v3 promotion snapshots replay the frozen mixed-BTU amount", () => {
   assert.equal(replay.fixedTotal, "1059.00");
   assert.equal(replay.durationMin, 90);
   assert.equal(replay.items.length, 2);
+  assert.equal(replay.items[0].item_name, "ล้างแอร์ผนัง • ล้างธรรมดา • 12000 BTU • 1 เครื่อง");
+  assert.equal(replay.items[1].item_name, "ล้างแอร์ผนัง • ล้างธรรมดา • 18000 BTU • 1 เครื่อง");
+  assert.deepEqual(parseCanonicalServiceItem(replay.items[0]), {
+    job_type: "ล้าง", ac_type: "ผนัง", wash_variant: "ล้างธรรมดา",
+    repair_variant: "", btu: 12000, machine_count: 1,
+  });
 });
 
 test("schema v3 replay rejects changed selection or tampered frozen pricing", () => {
