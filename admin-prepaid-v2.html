@@ -99,8 +99,16 @@
       <div id="editMessage" class="muted"></div>
       <div class="actions"><button id="btnSaveReservation" class="btn-primary" type="button">บันทึกข้อมูลจอง</button><button id="btnCloseReservation" class="btn-soft" type="button">ปิด</button></div>
     </dialog>
+    <dialog id="paymentConfirmDialog" class="card" style="width:min(480px,calc(100% - 24px));border:0">
+      <h2>ยืนยันรับชำระเงิน</h2>
+      <p id="paymentConfirmSummary"></p>
+      <label for="paymentConfirmReference">เลขอ้างอิง / หมายเหตุ</label>
+      <input id="paymentConfirmReference" maxlength="200" required autocomplete="off" placeholder="เลขอ้างอิงสลิปหรือการรับเงินจริง">
+      <div id="paymentConfirmMessage" role="alert" class="error"></div>
+      <div class="actions"><button id="btnSubmitPaymentConfirm" class="btn-gold" type="button">ยืนยันรับชำระ</button><button id="btnCancelPaymentConfirm" class="btn-soft" type="button">ยกเลิก</button></div>
+    </dialog>
   </main>
   <script src="/admin-v2-common.js?v=20260622_admin_menu_catalog_entry"></script>
-  <script src="/admin-prepaid-v2.js?v=20261002_prepaid_reservation_v1"></script>
+  <script src="/admin-prepaid-v2.js?v=20261002_prepaid_operations_v2"></script>
 </body>
 </html>

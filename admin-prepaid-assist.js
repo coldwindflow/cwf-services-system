@@ -52,14 +52,22 @@
   }
 
   function renderVariants() {
-    $("promotionAssistVariants").innerHTML = (selected?.variants || []).filter((variant) => variant.is_active !== false).map((variant) => {
+    const variants = (selected?.variants || []).filter((variant) => variant.is_active !== false);
+    const groupedBtu = variants.length === 2 && variants.some((variant) => Number(variant.btu_max) === 12000)
+      && variants.some((variant) => Number(variant.btu_min) >= 18000);
+    $("promotionAssistVariants").innerHTML = variants.map((variant) => {
       const min = Number(variant.btu_min || 0);
       const max = Number(variant.btu_max || 0);
-      const btu = max > 0 && (!min || max <= 12000) ? max : min > 0 ? min : 12000;
-      const range = min && max ? `${min.toLocaleString("th-TH")}–${max.toLocaleString("th-TH")} BTU`
+      const small = groupedBtu && max === 12000;
+      const large = groupedBtu && min >= 18000;
+      const btu = small ? 12000 : large ? 18000 : min > 0 ? min : max > 0 ? max : 12000;
+      const range = small ? "ไม่เกิน 12,000 BTU" : large ? "18,000 BTU ขึ้นไป"
+        : min && max ? `${min.toLocaleString("th-TH")}–${max.toLocaleString("th-TH")} BTU`
         : max ? `ไม่เกิน ${max.toLocaleString("th-TH")} BTU`
           : min ? `${min.toLocaleString("th-TH")} BTU ขึ้นไป` : "ระบุ BTU";
-      return `<div data-promo-variant="${esc(variant.package_key)}" style="border:1px solid #dbe4f0;border-radius:12px;padding:10px;margin-top:8px"><b>${esc(variant.display_name)}</b><div class="muted2">${esc(range)}</div><div class="grid2"><label>BTU จริง<input data-promo-btu type="number" min="1" value="${btu}"></label><label>จำนวนเครื่อง<input data-promo-qty type="number" min="0" max="99" value="0"></label></div></div>`;
+      const btuControl = groupedBtu ? `<input data-promo-btu type="hidden" value="${btu}">`
+        : `<label>BTU จริง<input data-promo-btu type="number" min="1" value="${btu}"></label>`;
+      return `<div data-promo-variant="${esc(variant.package_key)}" style="border:1px solid #dbe4f0;border-radius:12px;padding:10px;margin-top:8px"><b>${esc(variant.display_name)}</b><div class="muted2">${esc(range)}</div><div class="grid2">${btuControl}<label>จำนวนเครื่อง<input data-promo-qty type="number" min="0" max="99" value="0"></label></div></div>`;
     }).join("");
     panel.querySelectorAll("[data-promo-variant] input").forEach((input) => input.addEventListener("input", invalidate));
     invalidate();
@@ -115,19 +123,7 @@
     created = result;
     const code = result.order.order_code;
     const claim = result.claim_token;
-    $("promotionAssistResult").innerHTML = `<div style="padding:12px;border-radius:12px;background:#eff6ff"><b>สร้างรายการ ${esc(code)} — รอชำระเงิน</b><br>ยอดที่ระบบยืนยัน ${money(result.order.subtotal)} บาท<br>${claim ? `<span class="muted2">รหัสรับสิทธิ์สำหรับลูกค้า (แสดงครั้งเดียว): ${esc(claim)}</span><br>` : ""}<button type="button" data-promo-confirm>ยืนยันรับชำระแล้ว</button> <a href="/admin-prepaid-v2.html?order=${encodeURIComponent(code)}">เปิดรายละเอียด / ลงงานภายหลัง</a></div>`;
-  }
-
-  async function confirmPayment() {
-    if (!created?.order) return;
-    const order = created.order;
-    const reference = clean(window.prompt(`รับเงินจริง ${money(order.subtotal)} บาทสำหรับ ${order.order_code} แล้วหรือไม่? กรอกเลขอ้างอิง`, ""));
-    if (!reference || !window.confirm(`ยืนยันรับชำระ ${money(order.subtotal)} บาท`)) return;
-    const result = await api(`/admin/prepaid-orders/${encodeURIComponent(order.order_code)}/confirm-payment`, {
-      method: "POST", body: { reference, confirmed_amount: Number(order.subtotal) },
-    });
-    const entitlement = result.entitlement?.entitlement_code;
-    $("promotionAssistResult").innerHTML = `<div style="padding:12px;border-radius:12px;background:#ecfdf5"><b>ชำระเงินแล้ว — พร้อมใช้สิทธิ์</b><br>Order ${esc(order.order_code)} · สิทธิ์ ${esc(entitlement || "-")}<br><a href="/admin-prepaid-v2.html?order=${encodeURIComponent(order.order_code)}">ลงงานตอนนี้</a> · <span>ให้ลูกค้าเลือกวันภายหลังได้</span></div>`;
+    $("promotionAssistResult").innerHTML = `<div style="padding:12px;border-radius:12px;background:#eff6ff"><b>สร้างรายการ ${esc(code)} — รอชำระเงิน</b><br>ยอดที่ระบบยืนยัน ${money(result.order.subtotal)} บาท<br>${claim ? `<span class="muted2">รหัสรับสิทธิ์สำหรับลูกค้า (แสดงครั้งเดียว): <b>${esc(claim)}</b></span><br><button type="button" data-promo-copy-claim>คัดลอกรหัสรับสิทธิ์</button><br>` : ""}<a href="/admin-review-v2.html?order=${encodeURIComponent(code)}">ไปหน้างานจองเพื่อรับชำระและลงงาน</a></div>`;
   }
 
   document.querySelectorAll('input[name="jobFlowMode"]').forEach((radio) => radio.addEventListener("change", () => {
@@ -148,9 +144,10 @@
     $("promotionAssistCreate").disabled = false;
     $("promotionAssistResult").textContent = `จองไม่สำเร็จ: ${error.message}`;
   }));
-  $("promotionAssistResult").addEventListener("click", (event) => {
-    if (event.target.closest("[data-promo-confirm]")) confirmPayment().catch((error) => {
-      $("promotionAssistResult").textContent = `ยืนยันชำระไม่สำเร็จ: ${error.message}`;
-    });
+  $("promotionAssistResult").addEventListener("click", async (event) => {
+    const button = event.target.closest("[data-promo-copy-claim]");
+    if (!button || !created?.claim_token) return;
+    try { await navigator.clipboard.writeText(created.claim_token); button.textContent = "คัดลอกรหัสแล้ว"; }
+    catch (_) { button.textContent = "คัดลอกไม่ได้ โปรดเลือกรหัสด้านบน"; }
   });
 })();
