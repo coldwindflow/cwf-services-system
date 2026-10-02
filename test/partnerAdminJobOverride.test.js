@@ -2,7 +2,15 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
 const { evaluatePartnerJobEligibility } = require('../server/services/partner/jobEligibility');
+
+test('admin override migration is additive and lets deployctl own the transaction', () => {
+  const sql = fs.readFileSync('migrations/partner_onboarding_phase2f_admin_job_override.sql', 'utf8');
+  assert.match(sql, /ADD COLUMN IF NOT EXISTS admin_job_override_enabled BOOLEAN NOT NULL DEFAULT FALSE/);
+  assert.doesNotMatch(sql, /\b(?:BEGIN|COMMIT|ROLLBACK)\s*;/i);
+  assert.doesNotMatch(sql, /\b(?:DELETE FROM|TRUNCATE|DROP TABLE|DROP COLUMN)\b/i);
+});
 
 test('admin override allows incomplete onboarding eligibility', () => {
   const r = evaluatePartnerJobEligibility({
