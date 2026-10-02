@@ -12,8 +12,10 @@
     .prepaid-ops-metric span{display:block;font-size:12px;color:#475569;font-weight:800}
     .prepaid-ops-metric strong{display:block;margin-top:4px;font-size:24px;color:#0f3f9f}
     .prepaid-ops-tools{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:12px 0}
+    .prepaid-ops-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+    #prepaidQueueRefresh{flex:0 0 auto;width:auto;min-width:76px}
     .prepaid-ops-search{flex:1 1 220px;min-width:0;min-height:44px;padding:10px 12px;border:1px solid #bdcce1;border-radius:12px;font:inherit}
-    .prepaid-ops-filters{display:flex;gap:6px;overflow-x:auto;max-width:100%;padding-bottom:3px}
+    .prepaid-ops-filters{display:flex;flex-wrap:wrap;gap:6px;max-width:100%}
     .prepaid-ops-filters button{white-space:nowrap;border:1px solid #bdcce1;border-radius:999px;background:#fff;color:#17356b;padding:9px 12px;font-weight:800}
     .prepaid-ops-filters button[aria-pressed="true"]{background:#1557c7;color:#fff;border-color:#1557c7}
     .prepaid-ops-card{background:#fff;border:1px solid #dbe4f0;border-radius:16px;padding:14px;box-shadow:0 5px 16px rgba(15,23,42,.04)}
@@ -35,6 +37,7 @@
     .prepaid-ops-dialog .prepaid-ops-actions{justify-content:flex-end}
     @media(max-width:500px){.prepaid-ops-summary{grid-template-columns:1fr 1fr}.prepaid-ops-metric:last-child{grid-column:1/-1}.prepaid-ops-dialog-backdrop{padding:0}.prepaid-ops-dialog{border-radius:20px 20px 0 0;padding-bottom:calc(18px + env(safe-area-inset-bottom))}}
     .topbar{display:flex;align-items:center;justify-content:space-between;gap:10px}
+    @media(max-width:420px){.topbar{display:block}.topbar>div:last-child{margin-top:9px;justify-content:flex-start}.topbar a{white-space:nowrap}}
     .pill{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;background:#e2e8f0;font-weight:800;font-size:12px;color:#0f172a}
     .grid{display:grid;grid-template-columns:1fr;gap:10px;margin-top:12px}
     .card{background:#fff;border:1px solid rgba(15,23,42,0.10);border-radius:16px;padding:12px;box-shadow:var(--shadow)}
@@ -115,7 +118,7 @@
     </div>
 
     <section class="card" aria-labelledby="prepaidQueueTitle" style="margin-top:12px">
-      <div class="row"><div><h2 id="prepaidQueueTitle" style="margin:0">งานที่ต้องจัดการ</h2><p class="muted" style="margin:4px 0 0">คำสั่งซื้อ PREPAID ยังไม่ใช่งานในคิว รับเงินจริงแล้วจึงเปิดสิทธิ์และลงงาน</p></div><button id="prepaidQueueRefresh" class="btn btn-ghost" type="button" aria-label="รีเฟรชงานที่ต้องจัดการ">⟳</button></div>
+      <div class="prepaid-ops-head"><div><h2 id="prepaidQueueTitle" style="margin:0">งานที่ต้องจัดการ</h2><p class="muted" style="margin:4px 0 0">คำสั่งซื้อ PREPAID ยังไม่ใช่งานในคิว รับเงินจริงแล้วจึงเปิดสิทธิ์และลงงาน</p></div><button id="prepaidQueueRefresh" class="btn btn-ghost" type="button" aria-label="รีเฟรชงานที่ต้องจัดการ">รีเฟรช</button></div>
       <div class="prepaid-ops-summary" aria-label="สรุปงานที่ต้องจัดการ"><div class="prepaid-ops-metric"><span>รอตรวจสอบชำระ</span><strong id="prepaidPendingCount">–</strong></div><div class="prepaid-ops-metric"><span>ชำระแล้วรอลงงาน</span><strong id="prepaidReadyCount">–</strong></div><div class="prepaid-ops-metric"><span>งานจองวันนี้</span><strong id="prepaidTodayJobsCount">–</strong></div></div>
       <div class="prepaid-ops-tools"><input id="prepaidQueueSearch" class="prepaid-ops-search" type="search" placeholder="ค้นหา Order, Booking, ชื่อ หรือเบอร์โทร" aria-label="ค้นหางานจอง"><div id="prepaidQueueFilters" class="prepaid-ops-filters" role="group" aria-label="กรองสถานะ"><button type="button" data-prepaid-filter="all" aria-pressed="true">ทั้งหมด</button><button type="button" data-prepaid-filter="pending" aria-pressed="false">รอตรวจสอบชำระ</button><button type="button" data-prepaid-filter="paid" aria-pressed="false">ชำระแล้วรอลงงาน</button><button type="button" data-prepaid-filter="jobs" aria-pressed="false">งานจอง</button></div></div>
       <div id="prepaidQueueStatus" class="muted" role="status">กำลังโหลดรายการจองสิทธิ์...</div>
