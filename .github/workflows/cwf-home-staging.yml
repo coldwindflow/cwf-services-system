@@ -20,6 +20,9 @@ on:
 permissions:
   contents: read
 
+env:
+  GIT_CONFIG_NOSYSTEM: "1"
+
 concurrency:
   group: cwf-home-staging
   cancel-in-progress: false
