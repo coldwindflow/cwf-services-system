@@ -226,7 +226,8 @@ test("product detail review summary shows an honest empty state with no stars an
   const root = loadStore();
   const item = wallWashItem({ item_id: 301, rating_average: null, review_count: 0 });
   const html = await renderDetailFor(root, [item], item.item_id);
-  const reviewsSectionHtml = html.match(/<div class="store-detail-section store-reviews-section"[\s\S]*?<\/div>\s*<div class="store-detail-cta-bar">/)[0];
+  const reviewsSectionHtml = html.split('<div class="store-detail-section store-reviews-section"')[1];
+  assert.ok(reviewsSectionHtml, "the detail page must include the reviews section");
   assert.match(reviewsSectionHtml, /ยังไม่มีรีวิวจากลูกค้าสำหรับบริการนี้/);
   assert.doesNotMatch(reviewsSectionHtml, /<span class="store-rating-count">\(0\)<\/span>/);
   assert.doesNotMatch(reviewsSectionHtml, /store-rating-stars/, "the reviews summary empty state must show text only, not an empty/outline star row");

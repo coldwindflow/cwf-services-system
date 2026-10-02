@@ -127,7 +127,7 @@ test("document title and all bottom navigation labels remain present", () => {
     ["home", "หน้าแรก"],
     ["store", "ร้านค้า"],
     ["booking", "จองบริการ"],
-    ["tracking", "ติดตามงาน"],
+    ["tracking", "บริการของฉัน"],
     ["profile", "บัญชี"],
   ]) {
     assert.match(CUSTOMER_INDEX, new RegExp(`data-route="${route}"[^>]*>[\\s\\S]*?data-nav-label>${label}<\\/span>`));

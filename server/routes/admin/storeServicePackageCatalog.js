@@ -78,7 +78,7 @@ function createStoreServicePackageCatalogRoutes({ service, requireAdminSession, 
     const result = await pool.query(
       `SELECT o.order_code, o.customer_name, o.customer_phone, o.customer_sub,
               o.address, o.note, o.prepaid_maps_url, o.prepaid_gps_latitude,
-              o.prepaid_gps_longitude, o.service_entitlement_snapshot,
+              o.prepaid_gps_longitude, o.service_entitlement_snapshot, o.items,
               o.subtotal, o.status AS payment_order_status, o.payment_provider,
               o.payment_method, o.payment_status, o.paid_at, o.created_at,
               e.entitlement_code, e.status AS entitlement_status, e.redeem_until,

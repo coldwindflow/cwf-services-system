@@ -14190,6 +14190,7 @@ app.get("/admin/jobs_v2", requireAdminSoft, async (req, res) => {
     }
 
     const sqlWhere = where.length ? `WHERE ${where.join(" AND ")}` : "";
+    const countResult = await pool.query(`SELECT COUNT(*)::int AS total FROM public.jobs ${sqlWhere}`, params);
     const r = await pool.query(
       `
       SELECT job_id, booking_code, customer_name, customer_phone, job_type,
@@ -14204,7 +14205,7 @@ app.get("/admin/jobs_v2", requireAdminSoft, async (req, res) => {
       params
     );
     const rows = serializeJobBrands(r.rows);
-    return res.json({ success: true, rows, jobs: rows });
+    return res.json({ success: true, rows, jobs: rows, total: Number(countResult.rows?.[0]?.total || 0) });
   } catch (e) {
     console.error("/admin/jobs_v2 error:", e);
     return res.status(500).json({ error: "โหลดประวัติงานไม่สำเร็จ" });

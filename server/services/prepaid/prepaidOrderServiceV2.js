@@ -487,7 +487,7 @@ function createPrepaidOrderService({ pool, resolverFactory = createServicePackag
     if (!sub) throw new PrepaidServiceError("NOT_LOGGED_IN", 401);
     await requireSchema(pool);
     const result = await pool.query(
-      `SELECT order_code, customer_name, customer_phone, address, note,
+      `SELECT order_code, customer_name, customer_phone, address, note, items,
               prepaid_maps_url, prepaid_gps_latitude, prepaid_gps_longitude,
               service_entitlement_snapshot, subtotal, status, payment_status,
               created_at, paid_at, prepaid_entitlement_code, prepaid_redeem_until,
@@ -513,7 +513,7 @@ function createPrepaidOrderService({ pool, resolverFactory = createServicePackag
       `SELECT e.entitlement_code, e.status, e.customer_name, e.customer_phone,
               e.service_snapshot, e.purchased_amount, e.redeem_until, e.warranty_days,
               e.redeemed_job_id, e.redeemed_at, e.created_at,
-              j.booking_code, j.appointment_datetime, j.finished_at, j.canceled_at,
+              j.booking_code, j.appointment_datetime, j.job_status, j.finished_at, j.canceled_at,
               CASE WHEN j.finished_at IS NULL THEN NULL
                    ELSE j.finished_at + (e.warranty_days * INTERVAL '1 day') END AS warranty_until,
               CASE WHEN j.finished_at IS NULL THEN FALSE
