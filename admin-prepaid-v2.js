@@ -241,16 +241,35 @@
     setMessage("ordersMessage", term ? `พบ ${visible.length} จาก ${orders.length} รายการ` : `ทั้งหมด ${orders.length} รายการ`);
   }
 
-  async function confirmPayment(orderCode, amount) {
-    const reference = clean(window.prompt(`ยืนยันยอด ${money(amount)} บาท\nกรอกเลขอ้างอิงการรับเงิน/สลิป`, ""));
-    if (!reference) return;
-    if (!window.confirm(`ยืนยันว่ารับเงินจริง ${money(amount)} บาท สำหรับ Order ${orderCode} ?`)) return;
-    await api(`/admin/prepaid-orders/${encodeURIComponent(orderCode)}/confirm-payment`, {
-      method: "POST",
-      body: JSON.stringify({ reference, confirmed_amount: Number(amount) }),
-    });
-    setMessage("ordersMessage", `ยืนยันการชำระ ${orderCode} สำเร็จ`, "success");
-    await loadOrders();
+  function confirmPayment(orderCode) {
+    const order = state.orders.find((row) => row.order_code === orderCode);
+    if (!order || !["pending_payment", "payment_failed"].includes(order.payment_order_status)) return;
+    $("paymentConfirmDialog").dataset.orderCode = orderCode;
+    $("paymentConfirmSummary").innerHTML = `Order <b>${esc(orderCode)}</b><br>${esc(order.customer_name)}<br>ยอดตามระบบ <b>${money(order.subtotal)} บาท</b>`;
+    $("paymentConfirmReference").value = "";
+    $("paymentConfirmMessage").textContent = "";
+    $("btnSubmitPaymentConfirm").textContent = `ยืนยันรับชำระ ${money(order.subtotal)} บาท`;
+    $("paymentConfirmDialog").showModal();
+    $("paymentConfirmReference").focus();
+  }
+
+  async function submitPaymentConfirmation() {
+    const orderCode = $("paymentConfirmDialog").dataset.orderCode;
+    const order = state.orders.find((row) => row.order_code === orderCode);
+    const reference = clean($("paymentConfirmReference").value);
+    if (!order || !reference) { $("paymentConfirmMessage").textContent = "กรุณากรอกเลขอ้างอิงหรือหมายเหตุการรับเงินจริง"; return; }
+    const button = $("btnSubmitPaymentConfirm");
+    button.disabled = true;
+    try {
+      await api(`/admin/prepaid-orders/${encodeURIComponent(orderCode)}/confirm-payment`, {
+        method: "POST", body: JSON.stringify({ reference, confirmed_amount: Number(order.subtotal) }),
+      });
+      $("paymentConfirmDialog").close();
+      setMessage("ordersMessage", `ยืนยันการชำระ ${orderCode} สำเร็จ`, "success");
+      await loadOrders();
+    } catch (error) {
+      $("paymentConfirmMessage").textContent = error.message || "ยืนยันการชำระไม่สำเร็จ กรุณาลองใหม่";
+    } finally { button.disabled = false; }
   }
 
   function editReservation(orderCode) {
@@ -350,6 +369,8 @@
   }
 
   function wire() {
+    $("btnSubmitPaymentConfirm").addEventListener("click", submitPaymentConfirmation);
+    $("btnCancelPaymentConfirm").addEventListener("click", () => $("paymentConfirmDialog").close());
     $("btnSaveReservation").addEventListener("click", saveReservation);
     $("btnCloseReservation").addEventListener("click", () => $("reservationDialog").close());
     $("saleBundle").addEventListener("change", () => chooseBundle().catch((error) => setMessage("saleMessage", error.message, "error")));
@@ -365,8 +386,7 @@
       if (editButton) { editReservation(editButton.getAttribute("data-edit-order")); return; }
       const confirmButton = event.target.closest("[data-confirm-order]");
       if (confirmButton) {
-        confirmPayment(confirmButton.getAttribute("data-confirm-order"), confirmButton.getAttribute("data-amount"))
-          .catch((error) => setMessage("ordersMessage", error.message, "error"));
+        confirmPayment(confirmButton.getAttribute("data-confirm-order"));
         return;
       }
       const bookButton = event.target.closest("[data-book-right]");

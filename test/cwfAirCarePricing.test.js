@@ -27,6 +27,7 @@ function loadPrepaidUi(btuOptions = []) {
     Element: function Element() {},
     fetch: async () => { throw new Error("not used"); },
     encodeURIComponent,
+    URL,
     setTimeout,
     clearTimeout,
     Intl,
@@ -140,4 +141,25 @@ test("prepaid UI accepts only a server price and hides internal quote codes from
     "ไม่สามารถคำนวณราคาได้ กรุณาลองใหม่ หรือติดต่อ LINE @cwfair"
   );
   assert.match(ui, /ราคาที่ระบบยืนยัน/);
+});
+
+test("returning customer locations merge matching addresses without losing the saved map pin", () => {
+  const root = loadPrepaidUi();
+  const locations = root.prepaid._test.locationChoices(
+    { address: "123 ถนนตัวอย่าง", maps_url: "" },
+    [{ address: "123  ถนนตัวอย่าง", prepaid_maps_url: "https://maps.app.goo.gl/saved", prepaid_gps_latitude: 13.7, prepaid_gps_longitude: 100.5 }],
+    [{ address_text: "คอนโดอีกแห่ง", maps_url: "https://www.google.com/maps?q=13.8,100.6" }]
+  );
+  assert.equal(locations.length, 2);
+  assert.equal(locations[0].maps_url, "https://maps.app.goo.gl/saved");
+  assert.equal(locations[0].gps_latitude, 13.7);
+  assert.equal(locations[1].address_text, "คอนโดอีกแห่ง");
+});
+
+test("customer map validation matches the server allowlist and excludes arbitrary HTTPS links", () => {
+  const root = loadPrepaidUi();
+  assert.equal(root.prepaid._test.validMapUrl("https://maps.app.goo.gl/saved"), true);
+  assert.equal(root.prepaid._test.validMapUrl("https://www.google.com/maps?q=13.7,100.5"), true);
+  assert.equal(root.prepaid._test.validMapUrl("https://example.com/location"), false);
+  assert.equal(root.prepaid._test.validMapUrl("javascript:alert(1)"), false);
 });

@@ -147,5 +147,5 @@ test("seeded customer catalog attaches AIR CARE variants and a stale Store sessi
   const rendered = root.state.catalog.items.map(root.store._test.renderCard).join("\n");
   assert.match(rendered, /COLDWINDFLOW AIR CARE — STANDARD/);
   assert.match(rendered, /COLDWINDFLOW AIR CARE — PREMIUM/);
-  assert.equal((rendered.match(/จองแพ็กเกจ/g) || []).length, 2);
+  assert.equal((rendered.match(/เลือกแพ็กเกจ/g) || []).length, 2);
 });

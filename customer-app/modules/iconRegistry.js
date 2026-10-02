@@ -34,7 +34,7 @@
     home: Object.freeze({ route: "home", label: "หน้าแรก", icon: "home" }),
     store: Object.freeze({ route: "store", label: "ร้านค้า", icon: "store" }),
     booking: Object.freeze({ route: "booking", label: "จองบริการ", short_label: "จอง", icon: "calendar" }),
-    tracking: Object.freeze({ route: "tracking", label: "ติดตามงาน", short_label: "ติดตาม", icon: "pin" }),
+    tracking: Object.freeze({ route: "tracking", label: "บริการของฉัน", short_label: "บริการ", icon: "pin" }),
     profile: Object.freeze({ route: "profile", label: "บัญชี", icon: "user" }),
   });
 
