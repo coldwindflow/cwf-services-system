@@ -6,4 +6,3 @@ ALTER TABLE public.partner_applications
 
 COMMENT ON COLUMN public.partner_applications.admin_job_override_enabled IS
   'Explicit admin-only override allowing this technician ID to receive real jobs despite incomplete onboarding. Suspended/revoked certification safety blocks still apply.';
-
