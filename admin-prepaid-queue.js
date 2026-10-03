@@ -45,6 +45,8 @@
   }
 
   function promotionTitle(order) {
+    const airCare = /^coldwindflow-air-care-(standard|premium)$/.exec(String(snapshot(order).bundle_key || ""));
+    if (airCare) return `COLDWINDFLOW AIR CARE — ${airCare[1].toUpperCase()}`;
     try {
       const items = typeof order.items === "string" ? JSON.parse(order.items) : order.items;
       if (Array.isArray(items) && items[0]?.item_name) return String(items[0].item_name);

@@ -4147,16 +4147,19 @@ textarea.purchase-input { min-height: 66px; resize: vertical; }
   color: var(--muted);
 }
 
-/* Mobile-first 2-column marketplace grid (Lazada/Shopee-style).
+/* Mobile-first marketplace grid (Lazada/Shopee-style).
    The app shell stays capped at max-width: 480px on every viewport (it's a
    phone-sized column even on desktop), so the grid must not scale its
    column count off viewport-width media queries -- the container never
    actually grows past ~480px, and doing so squeezed cards into unreadable
-   slivers at wide viewports. Stay at 2 columns at every width. */
+   slivers at wide viewports. Very narrow phones need one readable column. */
 .store-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
+}
+@media (max-width: 360px) {
+  .store-grid { grid-template-columns: minmax(0, 1fr); }
 }
 
 .store-card {
