@@ -44,6 +44,7 @@ async function capture(page, name, { checkDocument = true, checkDialog = false }
       documentWidth: document.documentElement.scrollWidth,
       dialog: box ? { left: box.left, right: box.right, top: box.top, bottom: box.bottom } : null,
       buyCount: buy ? dialog.querySelectorAll('[data-prepaid-buy]').length : 0,
+      dialogHeading: dialog?.querySelector(".cwf-prepaid-head h2")?.textContent || null,
       rawError: /\b(?:PREPAID_SCHEMA_NOT_READY|ORDER_NOT_PAYABLE|STORE_SERVICE_PACKAGE_CATALOG_UNAVAILABLE|HTTP_\d{3})\b/.test(document.body.innerText),
     };
     }); break; }
@@ -57,6 +58,7 @@ async function capture(page, name, { checkDocument = true, checkDialog = false }
     assert.ok(metrics.dialog, `${name}: dialog missing`);
     assert.ok(metrics.dialog.left >= -2 && metrics.dialog.right <= metrics.viewport + 2, `${name}: dialog clipped horizontally`);
     assert.equal(metrics.buyCount, 1, `${name}: duplicate purchase CTA`);
+    assert.notEqual(metrics.dialogHeading, "กำลังโหลดโปรโมชั่น", `${name}: stale loading heading`);
   }
   assert.equal(metrics.rawError, false, `${name}: raw internal error visible`);
   const filename = `${name}.png`;
@@ -168,6 +170,12 @@ async function main() {
   assert.equal(await page.locator("[data-prepaid-line]").count(), 1);
   assert.match(await page.locator("[data-prepaid-line-fallback]").getAttribute("href"), /^https:\/\/line\.me\//);
   await capture(page, "04-order-confirmation");
+  const linePopup = page.context().waitForEvent("page", { timeout: 10000 });
+  await page.locator("[data-prepaid-line]").click();
+  const linePage = await linePopup;
+  await linePage.waitForURL(/^https:\/\/line\.me\//, { timeout: 15000 });
+  record("customer-line-handoff", { url: new URL(linePage.url()).origin });
+  await linePage.close();
   await page.locator("[data-prepaid-rights]").click();
   await page.locator('[data-hub-tab="pending"]').waitFor();
   await page.locator(`[data-cancel-order="${cancelledCode}"]`).waitFor();
@@ -185,14 +193,26 @@ async function main() {
   await page.locator("[data-prepaid-total]").filter({ hasText: "2,498" }).waitFor();
   await ensureLocation(page);
   await responsive(page, "07-premium-mixed-checkout", { checkDialog: true });
+  await page.locator("[data-prepaid-add-location]").click();
+  await page.locator("[data-prepaid-address]").fill("CWF STAGING QA ONLY — SECOND LOCATION");
+  await page.locator("[data-prepaid-pin]").click();
+  await page.locator("[data-prepaid-pin-status]").filter({ hasText: "ปักหมุดสำเร็จ" }).waitFor({ timeout: 15000 });
+  await page.locator("[data-prepaid-save-location]").click();
+  await page.locator("[data-prepaid-location-summary]").waitFor({ state: "visible" });
+  const premiumCode = await buy(page);
   await page.locator("[data-prepaid-close]").click();
 
   // Create one genuine UI-originated pending QA order for Admin visual review.
   await openStoreItem(page, "STANDARD");
-  await ensureLocation(page);
+  await page.locator("[data-prepaid-location-options]").waitFor({ state: "visible" });
+  assert.ok((await page.locator('[name="prepaid_saved_location"]').count()) >= 2, "multiple saved locations not offered");
+  await capture(page, "07b-saved-location-selector", { checkDialog: true });
+  await page.locator(".cwf-prepaid-location-option").filter({ hasText: QA.customerAddress }).locator('input[name="prepaid_saved_location"]').check();
+  await page.locator("[data-prepaid-location-summary]").waitFor({ state: "visible" });
+  assert.ok((await page.locator("[data-prepaid-location-summary]").innerText()).includes(QA.customerAddress));
   const paidCode = await buy(page);
   await page.locator("[data-prepaid-close]").click();
-  record("customer-orders", { cancelled: cancelledCode, pending: paidCode });
+  record("customer-orders", { cancelled: cancelledCode, premium: premiumCode, pending: paidCode });
 
   const admin = await browser.newContext({ viewport: { width: 1024, height: 900 } });
   await admin.addCookies([{ name: "cwf_session", value: qa.adminSession, url: BASE, httpOnly: true, sameSite: "Lax" }]);
@@ -221,6 +241,7 @@ async function main() {
   await paidRow.locator(`[data-book-right]`).click();
   await adminPage.locator("#bookingCard").waitFor({ state: "visible" });
   for (const field of ["#bookingAppointment", "#bookingAssignMode", "#bookingAddress", "#bookingMapsUrl"]) assert.equal(await adminPage.locator(field).isVisible(), true, `Scheduling field missing: ${field}`);
+  assert.ok((await adminPage.locator("#bookingRightSummary").innerText()).includes("ลูกค้าชำระเพิ่มเมื่อใช้สิทธิ์: 0 บาท"), "scheduling does not show zero additional payment");
   await capture(adminPage, "11-admin-entitlement-scheduling");
 
   await adminPage.goto(`${BASE}/admin-add-v2.html`, { waitUntil: "domcontentloaded" });
@@ -230,9 +251,12 @@ async function main() {
   await adminPage.locator("#promotionAssistPanel").waitFor({ state: "visible" });
   await adminPage.locator('#promotionAssistBundle option[value="coldwindflow-air-care-standard"]').waitFor({ state: "attached", timeout: 20000 });
   await adminPage.locator("#promotionAssistBundle").selectOption("coldwindflow-air-care-standard");
-  await adminPage.locator("#customer_name").fill(QA.customerName);
   await adminPage.locator("#customer_phone").fill(QA.customerPhone);
-  await adminPage.locator("#address_text").fill(QA.customerAddress);
+  await adminPage.locator("#customer_phone").press("Tab");
+  await adminPage.locator("#btnUseLatestCustomerData").waitFor({ state: "visible", timeout: 20000 });
+  await adminPage.locator("#btnUseLatestCustomerData").click();
+  assert.ok((await adminPage.locator("#address_text").inputValue()).includes(QA.customerAddress), "Admin customer lookup did not reuse saved address");
+  await adminPage.locator("#customer_name").fill(QA.customerName);
   await adminPage.locator('[data-promo-qty]').first().fill("1");
   await adminPage.locator("#promotionAssistPrice").click();
   await adminPage.locator("#promotionAssistQuote").filter({ hasText: "499" }).waitFor({ timeout: 20000 });
