@@ -139,7 +139,6 @@ async function main() {
   await page.locator("[data-hub-content]").getByText("ยกเลิกแล้ว").first().waitFor();
   await capture(page, "06-unpaid-cancelled");
 
-  await page.locator("[data-prepaid-close]").click();
   await openStoreItem(page, "PREMIUM");
   await page.locator('[data-prepaid-plus="1"]').click({ clickCount: 2 });
   await page.locator("[data-prepaid-total]").filter({ hasText: "2,498" }).waitFor();
