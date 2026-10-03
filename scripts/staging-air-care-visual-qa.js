@@ -63,7 +63,7 @@ async function responsive(page, prefix, options = {}) {
 }
 
 async function openStoreItem(page, level) {
-  await page.locator('button[data-route="store"]').click();
+  await page.getByRole("button", { name: "ร้านค้า" }).click();
   await page.getByRole("button", { name: new RegExp(`ดูรายละเอียด COLDWINDFLOW AIR CARE — ${level}`) }).first().click();
   await page.getByRole("heading", { name: `COLDWINDFLOW AIR CARE — ${level}` }).waitFor();
   await page.getByRole("button", { name: "เลือกแพ็กเกจ", exact: true }).click();
@@ -106,7 +106,7 @@ async function main() {
   const page = await customer.newPage();
   await page.goto(`${BASE}/customer-app/`, { waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => window.CWFCustomerAppV2?.state?.customer?.logged_in === true, null, { timeout: 20000 });
-  await page.locator('button[data-route="store"]').click();
+  await page.getByRole("button", { name: "ร้านค้า" }).click();
   await page.getByRole("button", { name: /ดูรายละเอียด COLDWINDFLOW AIR CARE — STANDARD/ }).waitFor();
   await responsive(page, "01-store");
 
