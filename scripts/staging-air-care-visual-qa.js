@@ -23,6 +23,8 @@ let browser;
 let adminAssistedOrder = null;
 const evidence = [];
 const visualDefects = [];
+const ADMIN_ASSIST_NAME = "CWF STAGING QA — AIR CARE ADMIN ASSIST VISUAL";
+const ADMIN_ASSIST_NOTE = "CWF_STAGING_QA_VISUAL_ADMIN_ASSIST";
 
 function record(name, data = {}) {
   const entry = { name, ...data };
@@ -92,6 +94,37 @@ async function buy(page) {
   await button.click();
   await page.locator(".cwf-prepaid-confirm-code").waitFor({ timeout: 20000 });
   return (await page.locator(".cwf-prepaid-confirm-code").textContent()).trim();
+}
+
+async function cleanupAssistedOrder() {
+  assertStagingOnly(CONTEXT);
+  const db = await pool.connect();
+  try {
+    await db.query("BEGIN");
+    const rows = await db.query(
+      `SELECT order_id, order_code, status FROM public.customer_orders
+        WHERE order_kind='service_prepaid' AND customer_sub IS NULL
+          AND customer_name=$1 AND customer_phone=$2 AND note=$3
+        FOR UPDATE`,
+      [ADMIN_ASSIST_NAME, QA.customerPhone, ADMIN_ASSIST_NOTE]
+    );
+    if (rows.rowCount > 1) throw new Error("ADMIN_ASSIST_QA_ORDER_SCOPE_AMBIGUOUS");
+    if (rows.rowCount) {
+      const row = rows.rows[0];
+      if (adminAssistedOrder && row.order_code !== adminAssistedOrder) throw new Error("ADMIN_ASSIST_QA_ORDER_CODE_MISMATCH");
+      assert.ok(["pending_payment", "cancelled"].includes(row.status), "Admin assisted QA order has unexpected status");
+      const rights = await db.query("SELECT COUNT(*)::int AS count FROM public.customer_service_entitlements WHERE order_id=$1", [row.order_id]);
+      assert.equal(Number(rights.rows[0].count), 0, "Admin assisted QA order has entitlement");
+      await db.query("DELETE FROM public.customer_orders WHERE order_id=$1", [row.order_id]);
+    }
+    await db.query("COMMIT");
+    record("admin-assisted-cleanup", { orders: rows.rowCount });
+  } catch (error) {
+    await db.query("ROLLBACK");
+    throw error;
+  } finally {
+    db.release();
+  }
 }
 
 async function main() {
@@ -198,9 +231,37 @@ async function main() {
   await adminPage.locator("#promotionAssistQuote").filter({ hasText: "499" }).waitFor({ timeout: 20000 });
   await capture(adminPage, "13-admin-add-promotion");
 
-  // This Admin assisted order deliberately uses the QA customer identity.
-  // The UI need not submit it here: the pending creation path is already
-  // proven by the Staging acceptance runner, and visual mode tests its form.
+  await adminPage.locator("#customer_name").fill(ADMIN_ASSIST_NAME);
+  await adminPage.locator("#customer_note").fill(ADMIN_ASSIST_NOTE);
+  await adminPage.locator("#promotionAssistCreate").click();
+  const result = adminPage.locator("#promotionAssistResult");
+  const operations = result.getByRole("link", { name: "ไปหน้างานจองเพื่อรับชำระและลงงาน" });
+  await operations.waitFor({ timeout: 20000 });
+  const href = await operations.getAttribute("href");
+  adminAssistedOrder = new URL(href, BASE).searchParams.get("order");
+  assert.match(adminAssistedOrder || "", /^CWF-/);
+  await capture(adminPage, "14-admin-assisted-created");
+  await operations.click();
+  const assistedCard = adminPage.locator(`[data-prepaid-order="${adminAssistedOrder}"]`);
+  await assistedCard.waitFor({ timeout: 20000 });
+  assert.ok((await assistedCard.innerText()).includes(ADMIN_ASSIST_NAME));
+  assert.equal(await assistedCard.locator("[data-prepaid-confirm]").count(), 1);
+  await capture(adminPage, "15-admin-assisted-focused-pending");
+  await assistedCard.locator("[data-prepaid-cancel]").click();
+  await adminPage.getByRole("dialog").waitFor();
+  await adminPage.locator('input[name="reason"]').fill("CWF STAGING QA VISUAL CANCEL");
+  await adminPage.locator("[data-prepaid-ops-submit]").click();
+  await assistedCard.waitFor({ state: "detached", timeout: 20000 });
+  assert.equal(await adminPage.locator(`[data-prepaid-confirm="${adminAssistedOrder}"]`).count(), 0);
+  await capture(adminPage, "16-admin-unpaid-cancelled-queue");
+  await adminPage.goto(`${BASE}/admin-prepaid-v2.html?order=${encodeURIComponent(adminAssistedOrder)}`, { waitUntil: "domcontentloaded" });
+  await adminPage.locator("#showCancelledOrders").check();
+  const cancelledRow = adminPage.locator("#ordersBody tr").filter({ hasText: adminAssistedOrder });
+  await cancelledRow.waitFor({ timeout: 20000 });
+  assert.ok((await cancelledRow.innerText()).includes("ยกเลิกแล้ว"), "Admin cancelled order history missing status");
+  assert.equal(await cancelledRow.locator(`[data-confirm-order="${adminAssistedOrder}"]`).count(), 0, "Cancelled order can still confirm payment");
+  await capture(adminPage, "17-admin-cancelled-history");
+
   record("visual-complete", { result: visualDefects.length ? "FAIL" : "PASS", defects: visualDefects, screenshots: evidence.filter(row => row.screenshot).length });
   assert.deepEqual(visualDefects, [], "visual defects remain");
 }
@@ -211,6 +272,10 @@ async function main() {
   catch (error) { failed = error; console.error(`[VISUAL_QA_FAIL] ${error.stack || error}`); }
   finally {
     try { await browser?.close(); } catch (_) {}
+    try { await cleanupAssistedOrder(); } catch (cleanupError) {
+      console.error(`[VISUAL_QA_ASSISTED_CLEANUP_FAIL] ${cleanupError.stack || cleanupError}`);
+      failed ||= cleanupError;
+    }
     try {
       const deleted = await deleteQaOrders({ pool, ...CONTEXT });
       record("cleanup", { ...deleted });
