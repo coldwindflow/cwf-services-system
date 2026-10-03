@@ -335,7 +335,7 @@ test("Customer App build id is consistent across shell and service worker", () =
   const sw = read("customer-app/sw.js");
   const app = read("customer-app/assets/customer-app.js");
   const manifest = read("customer-app/manifest.webmanifest");
-  const build = "20261003_prepaid_cancel_v1";
+  const build = "20261003_air_care_visual_v1";
 
   assert.match(index, new RegExp(`customer-app\\.css\\?v=${build}`));
   assert.match(index, new RegExp(`modules\\/api\\.js\\?v=${build}`));
@@ -353,7 +353,7 @@ test("Customer App build id is consistent across shell and service worker", () =
 test("store module is loaded in index.html and precached in the service worker app shell", () => {
   const index = read("customer-app/index.html");
   const sw = read("customer-app/sw.js");
-  const build = "20261003_prepaid_cancel_v1";
+  const build = "20261003_air_care_visual_v1";
 
   assert.match(index, new RegExp(`modules/store\\.js\\?v=${build}`));
   assert.match(sw, /`\.\/modules\/store\.js\?v=\$\{BUILD_ID\}`/);
@@ -1559,10 +1559,11 @@ test("store falls back to base_price when there is no active price rule", async 
   assert.doesNotMatch(body.innerHTML, /สอบถามราคา/);
 });
 
-test("store grid stays 2-column at every viewport width since the app shell never widens past its mobile column", () => {
+test("store grid stays at most 2 columns and gives narrow phones a readable single column", () => {
   const css = read("customer-app/assets/customer-app.css");
   const gridBlock = css.slice(css.indexOf(".store-grid {"), css.indexOf(".store-grid {") + 400);
   assert.match(gridBlock, /grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/);
+  assert.match(css, /@media \(max-width: 360px\)\s*\{\s*\.store-grid\s*\{\s*grid-template-columns:\s*minmax\(0,\s*1fr\)/);
   // .app-shell caps at max-width: 480px on every viewport, so escalating
   // .store-grid to 3/4/5 columns via viewport-width media queries squeezed
   // cards into unreadable slivers at desktop widths -- there must be no
