@@ -6,6 +6,8 @@ const vm = require("node:vm");
 const seed = fs.readFileSync("data-seeds/20260930_cwf_air_care.sql", "utf8");
 const service = fs.readFileSync("server/services/prepaid/prepaidOrderServiceV2.js", "utf8");
 const ui = fs.readFileSync("customer-app/modules/prepaid.js", "utf8");
+const adminQueue = fs.readFileSync("admin-prepaid-queue.js", "utf8");
+const adminDetail = fs.readFileSync("admin-prepaid-v2.js", "utf8");
 
 function loadPrepaidUi(btuOptions = []) {
   const root = {
@@ -64,6 +66,13 @@ test("both AIR CARE bundles receive 60-day purchase validity and full customer b
   assert.doesNotMatch(ui, /โปรโมชั่น CWF/);
   assert.doesNotMatch(ui, /สิทธิ์บริการ CWF/);
   assert.doesNotMatch(ui, /จองสิทธิ์ CWF/);
+});
+
+test("AIR CARE checkout and Admin queue show the promotion tier after loading", () => {
+  assert.match(ui, /modalHeading\.textContent = actual\.item_name/);
+  assert.match(ui, /COLDWINDFLOW AIR CARE — \$\{airCare\[1\]\.toUpperCase\(\)\}/);
+  assert.match(adminQueue, /COLDWINDFLOW AIR CARE — \$\{airCare\[1\]\.toUpperCase\(\)\}/);
+  assert.match(adminDetail, /ลูกค้าชำระเพิ่มเมื่อใช้สิทธิ์: 0 บาท/);
 });
 
 

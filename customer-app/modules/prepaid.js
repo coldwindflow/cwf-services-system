@@ -232,6 +232,8 @@
       const item = await root.api.loadCatalogItem(itemId);
       const actual = item?.item || item;
       if (!actual || !Array.isArray(actual.service_package_variants) || !actual.service_package_variants.length) throw new Error("PACKAGE_NOT_AVAILABLE");
+      const modalHeading = modal?.querySelector(".cwf-prepaid-head h2");
+      if (modalHeading) modalHeading.textContent = actual.item_name || "เลือกโปรโมชั่น";
       const rows = packageRows(actual);
       if (!rows.length) throw new Error("PACKAGE_OPTIONS_NOT_AVAILABLE");
       const saved = await Promise.allSettled([
@@ -752,7 +754,9 @@
         const right = rightByCode.get(String(order.prepaid_entitlement_code || ""));
         const snap = parseSnapshot(order.service_entitlement_snapshot) || {};
         const items = parseSnapshot(order.items);
-        const title = Array.isArray(items) && items[0]?.item_name ? items[0].item_name : String(snap.bundle_key || "โปรโมชั่น COLDWINDFLOW").replace(/-/g, " ");
+        const airCare = /^coldwindflow-air-care-(standard|premium)$/.exec(String(snap.bundle_key || ""));
+        const title = airCare ? `COLDWINDFLOW AIR CARE — ${airCare[1].toUpperCase()}`
+          : Array.isArray(items) && items[0]?.item_name ? items[0].item_name : String(snap.bundle_key || "โปรโมชั่น COLDWINDFLOW").replace(/-/g, " ");
         const groups = Array.isArray(snap.service_package_groups) ? snap.service_package_groups : [];
         const wasCancelled = order.status === "cancelled";
         return `<article class="cwf-prepaid-card"><div class="cwf-prepaid-row"><b>${esc(title)}</b><span class="cwf-prepaid-status">${wasCancelled ? "ยกเลิกแล้ว" : right ? "ชำระแล้ว" : "รอตรวจสอบการชำระ"}</span></div><p>เลขคำสั่งซื้อ <b>${esc(order.order_code)}</b> · ${baht(order.subtotal)}</p><p class="cwf-prepaid-muted">${groups.map((group) => `${groupLabel(group, snap)} × ${Number(group.quantity)}`).map(esc).join(" · ")}</p><p class="cwf-prepaid-muted">${esc(order.address || "")}</p>${wasCancelled ? `<p class="cwf-prepaid-muted">เก็บประวัติการยกเลิกไว้ตรวจสอบ</p>` : `<button class="cwf-prepaid-secondary" type="button" data-copy-order="${esc(order.order_code)}">คัดลอกเลขคำสั่งซื้อ</button><button class="cwf-prepaid-primary" type="button" data-hub-line="${esc(order.order_code)}">ติดต่อ LINE เพื่อชำระเงิน</button><a href="${esc(LINE_URL)}" target="_blank" rel="noopener">เปิด LINE @cwfair โดยตรง</a><button class="cwf-prepaid-secondary" type="button" data-cancel-order="${esc(order.order_code)}">ยกเลิกออเดอร์</button>`}</article>`;

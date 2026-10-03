@@ -351,6 +351,7 @@
       `ลูกค้า: ${right.customer_name} • ${right.customer_phone}`,
       `สิทธิ์: ${right.entitlement_code} • ${money(right.fixed_total_price)} บาท`,
       `สถานะ: ${right.entitlement_status} • หมดสิทธิ์: ${dateText(right.redeem_until)}`,
+      "ลูกค้าชำระเพิ่มเมื่อใช้สิทธิ์: 0 บาท",
       `รับประกันหลังปิดงาน: ${right.warranty_days} วัน`,
       `บริการ: ${(right.service_package_groups || []).map((g) => `${g.package_key} / ${g.btu} BTU × ${g.quantity}`).join(" | ")}`,
     ].join("\n");
