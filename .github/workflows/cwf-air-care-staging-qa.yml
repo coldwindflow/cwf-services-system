@@ -65,7 +65,7 @@ jobs:
           sudo -n /usr/bin/docker exec \
             -e CWF_ENVIRONMENT=staging \
             -e CWF_STAGING_QA_CONTAINER=cwf-staging-app \
-            -e CWF_STAGING_QA_SECRET \
+            -e CWF_STAGING_QA_SECRET="$CWF_STAGING_QA_SECRET" \
             cwf-staging-app sh -ceu '
               mkdir -p /tmp/cwf-air-care-visual-evidence
               npm install --prefix /tmp/cwf-air-care-visual-tools --no-save --no-audit --no-fund playwright-core@1.55.0 >/tmp/cwf-visual-npm.log 2>&1
