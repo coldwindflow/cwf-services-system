@@ -152,6 +152,13 @@ function createCustomerPrepaidRoutes(options = {}) {
     return res.json({ ok: true, items });
   }));
 
+  router.post("/public/prepaid-orders/:code/cancel", requireCustomerJwt, handle(async (req, res) => {
+    const customerSub = clean(req.customer?.sub);
+    if (!customerSub) return res.status(401).json({ error: "NOT_LOGGED_IN", code: "NOT_LOGGED_IN" });
+    const order = await service.cancelOrder(req.params.code, { customerSub, reason: req.body?.reason });
+    return res.json({ ok: true, order });
+  }));
+
   router.get("/public/service-rights", requireCustomerJwt, handle(async (req, res) => {
     const customerSub = clean(req.customer?.sub);
     if (!customerSub) return res.status(401).json({ error: "NOT_LOGGED_IN", code: "NOT_LOGGED_IN" });
