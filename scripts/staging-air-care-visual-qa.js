@@ -33,7 +33,9 @@ function record(name, data = {}) {
 }
 
 async function capture(page, name, { checkDocument = true, checkDialog = false } = {}) {
-  const metrics = await page.evaluate(() => {
+  let metrics;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try { metrics = await page.evaluate(() => {
     const dialog = document.querySelector('[role="dialog"]');
     const box = dialog?.getBoundingClientRect();
     const buy = dialog?.querySelector('[data-prepaid-buy]');
@@ -44,7 +46,12 @@ async function capture(page, name, { checkDocument = true, checkDialog = false }
       buyCount: buy ? dialog.querySelectorAll('[data-prepaid-buy]').length : 0,
       rawError: /\b(?:PREPAID_SCHEMA_NOT_READY|ORDER_NOT_PAYABLE|STORE_SERVICE_PACKAGE_CATALOG_UNAVAILABLE|HTTP_\d{3})\b/.test(document.body.innerText),
     };
-  });
+    }); break; }
+    catch (error) {
+      if (!String(error.message).includes("Execution context was destroyed") || attempt === 2) throw error;
+      await page.waitForLoadState("domcontentloaded");
+    }
+  }
   if (checkDocument) assert.ok(metrics.documentWidth <= metrics.viewport + 2, `${name}: horizontal overflow ${metrics.documentWidth}/${metrics.viewport}`);
   if (checkDialog) {
     assert.ok(metrics.dialog, `${name}: dialog missing`);
