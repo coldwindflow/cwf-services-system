@@ -73,7 +73,8 @@ function createStoreServicePackageCatalogRoutes({ service, requireAdminSession, 
 
   router.post("/admin/prepaid-orders/:code/cancel", requireAdminSession, handle(async (req, res) => {
     const cancelledBy = String(
-      req.admin?.username || req.admin?.email || req.session?.username || req.user?.username || "admin"
+      req.actor?.username || req.actor?.email || req.admin?.username || req.admin?.email
+      || req.session?.username || req.user?.username || "admin"
     ).trim().slice(0, 120);
     const order = await prepaidService.cancelOrder(req.params.code, { cancelledBy, reason: req.body?.reason });
     return res.json({ ok: true, order });
