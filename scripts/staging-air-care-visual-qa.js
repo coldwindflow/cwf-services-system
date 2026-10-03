@@ -22,6 +22,7 @@ const WIDTHS = [320, 360, 390, 412, 768];
 let browser;
 let adminAssistedOrder = null;
 const evidence = [];
+const visualDefects = [];
 
 function record(name, data = {}) {
   const entry = { name, ...data };
@@ -160,7 +161,9 @@ async function main() {
   const card = adminPage.locator(`[data-prepaid-order="${paidCode}"]`);
   await card.waitFor({ timeout: 20000 });
   const pendingText = await card.innerText();
-  for (const part of [QA.customerName, QA.customerPhone, QA.customerAddress, "STANDARD", "499", "รอตรวจสอบการชำระเงิน"]) assert.ok(pendingText.includes(part), `Admin pending card missing ${part}`);
+  record("admin-pending-card-text", { text: pendingText });
+  for (const part of [QA.customerName, QA.customerPhone, QA.customerAddress, "499", "รอตรวจสอบการชำระเงิน"]) assert.ok(pendingText.includes(part), `Admin pending card missing ${part}`);
+  if (!pendingText.includes("STANDARD")) visualDefects.push("Admin pending card lacks STANDARD promotion name");
   assert.equal(await card.locator("[data-prepaid-confirm]").count(), 1);
   await capture(adminPage, "08-admin-booking-pending");
   adminPage.on("dialog", dialog => { throw new Error(`Native dialog not allowed: ${dialog.type()}`); });
@@ -198,7 +201,8 @@ async function main() {
   // This Admin assisted order deliberately uses the QA customer identity.
   // The UI need not submit it here: the pending creation path is already
   // proven by the Staging acceptance runner, and visual mode tests its form.
-  record("visual-complete", { result: "PASS", screenshots: evidence.filter(row => row.screenshot).length });
+  record("visual-complete", { result: visualDefects.length ? "FAIL" : "PASS", defects: visualDefects, screenshots: evidence.filter(row => row.screenshot).length });
+  assert.deepEqual(visualDefects, [], "visual defects remain");
 }
 
 (async () => {
