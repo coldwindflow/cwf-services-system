@@ -288,9 +288,9 @@ async function main() {
   assert.equal(await adminPage.locator(`[data-prepaid-confirm="${adminAssistedOrder}"]`).count(), 0);
   await capture(adminPage, "16-admin-unpaid-cancelled-queue");
   await adminPage.goto(`${BASE}/admin-prepaid-v2.html?order=${encodeURIComponent(adminAssistedOrder)}`, { waitUntil: "domcontentloaded" });
-  await adminPage.locator("#showCancelledOrders").check();
   const cancelledRow = adminPage.locator("#ordersBody tr").filter({ hasText: adminAssistedOrder });
   await cancelledRow.waitFor({ timeout: 20000 });
+  assert.equal(await adminPage.locator("#showCancelledOrders").isChecked(), true, "cancelled order focus did not open history");
   assert.ok((await cancelledRow.innerText()).includes("ยกเลิกแล้ว"), "Admin cancelled order history missing status");
   assert.equal(await cancelledRow.locator(`[data-confirm-order="${adminAssistedOrder}"]`).count(), 0, "Cancelled order can still confirm payment");
   await capture(adminPage, "17-admin-cancelled-history");
