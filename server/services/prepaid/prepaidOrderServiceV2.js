@@ -336,6 +336,7 @@ function createPrepaidOrderService({ pool, resolverFactory = createServicePackag
       );
       if (existing.rows?.[0]) {
         const saved = existing.rows[0];
+        if (saved.status === "cancelled") throw new PrepaidServiceError("ORDER_CANCELLED", 409);
         const snapshot = typeof saved.service_entitlement_snapshot === "string"
           ? JSON.parse(saved.service_entitlement_snapshot) : saved.service_entitlement_snapshot;
         const fingerprint = purchaseFingerprint(normalized, sub, snapshot?.fixed_total_price);
@@ -482,6 +483,55 @@ function createPrepaidOrderService({ pool, resolverFactory = createServicePackag
     });
   }
 
+  async function cancelOrder(orderCode, { customerSub = null, cancelledBy = "admin", reason = "" } = {}) {
+    const code = clean(orderCode, 40);
+    const sub = customerSub == null ? null : clean(customerSub, 256);
+    if (!code) throw new PrepaidServiceError("ORDER_CODE_REQUIRED", 400);
+    if (customerSub != null && !sub) throw new PrepaidServiceError("NOT_LOGGED_IN", 401);
+    const actor = sub ? `customer:${sub}` : `admin:${clean(cancelledBy, 120) || "admin"}`;
+    const note = clean(reason, 500);
+    if (!sub && note.length < 3) throw new PrepaidServiceError("CANCEL_REASON_REQUIRED", 400);
+    return withTransaction(pool, async (client) => {
+      await requireSchema(client);
+      const found = await client.query(
+        `SELECT order_id, order_code, order_kind, customer_sub, status, payment_status, paid_at,
+                payment_charge_id, manual_payment_reference, prepaid_cancelled_at
+           FROM public.customer_orders
+          WHERE order_code=$1 AND order_kind='service_prepaid'
+            AND ($2::text IS NULL OR customer_sub=$2)
+          FOR UPDATE`, [code, sub]
+      );
+      const order = found.rows?.[0];
+      // The same 404 covers absent orders and orders belonging to another customer.
+      if (!order) throw new PrepaidServiceError("ORDER_NOT_FOUND", 404);
+      if (order.status === "cancelled") return { order_code: code, status: "cancelled", replayed: true };
+      if (!["pending_payment", "payment_failed"].includes(order.status)
+          || order.paid_at || order.payment_charge_id || order.manual_payment_reference
+          || String(order.payment_status || "").startsWith("processing:")
+          || order.payment_status === "verified") {
+        throw new PrepaidServiceError("ORDER_CANCELLATION_REQUIRES_ADMIN_REVIEW", 409);
+      }
+      const entitlement = await client.query(
+        `SELECT entitlement_id FROM public.customer_service_entitlements WHERE order_id=$1 LIMIT 1`,
+        [order.order_id]
+      );
+      if (entitlement.rows?.length) throw new PrepaidServiceError("ORDER_HAS_ENTITLEMENT", 409);
+      const changed = await client.query(
+        `UPDATE public.customer_orders
+            SET status='cancelled', prepaid_cancelled_at=NOW(), prepaid_cancelled_by=$2,
+                prepaid_cancel_reason=$3, updated_at=NOW()
+          WHERE order_id=$1 AND status IN ('pending_payment','payment_failed')
+          RETURNING order_code, status, prepaid_cancelled_at`,
+        [order.order_id, actor, note || null]
+      );
+      if (!changed.rows?.[0]) throw new PrepaidServiceError("ORDER_CANCELLATION_CONFLICT", 409);
+      return { ...changed.rows[0], replayed: false };
+    }).catch((error) => {
+      if (isSchemaError(error)) throw new PrepaidServiceError("PREPAID_SCHEMA_NOT_READY", 503);
+      throw error;
+    });
+  }
+
   async function listOrders(customerSub) {
     const sub = clean(customerSub, 256);
     if (!sub) throw new PrepaidServiceError("NOT_LOGGED_IN", 401);
@@ -490,7 +540,8 @@ function createPrepaidOrderService({ pool, resolverFactory = createServicePackag
       `SELECT order_code, customer_name, customer_phone, address, note, items,
               prepaid_maps_url, prepaid_gps_latitude, prepaid_gps_longitude,
               service_entitlement_snapshot, subtotal, status, payment_status,
-              created_at, paid_at, prepaid_entitlement_code, prepaid_redeem_until,
+              created_at, paid_at, prepaid_cancelled_at, prepaid_cancel_reason,
+              prepaid_entitlement_code, prepaid_redeem_until,
               prepaid_warranty_days
          FROM public.customer_orders
         WHERE order_kind='service_prepaid' AND customer_sub=$1
@@ -631,6 +682,7 @@ function createPrepaidOrderService({ pool, resolverFactory = createServicePackag
     createOrder,
     confirmManualPayment,
     updateReservation,
+    cancelOrder,
     listOrders,
     listRights,
     claimRight,

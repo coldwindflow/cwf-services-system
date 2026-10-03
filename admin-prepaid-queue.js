@@ -203,14 +203,26 @@
     });
   }
 
+  function cancelOrder(order) {
+    openModal("ยกเลิกออเดอร์ที่ยังไม่ชำระ", `<p>Order <b>${esc(order.order_code)}</b><br>${esc(order.customer_name)} · ${esc(promotionTitle(order))}</p><p>รายการนี้จะออกจากคิวรอชำระ แต่ยังเก็บประวัติไว้ตรวจสอบ และไม่ใช่การคืนเงิน</p><label>เหตุผลที่ยกเลิก<input name="reason" maxlength="500" required minlength="3" placeholder="เช่น ลูกค้าไม่ต้องการแพ็กเกจนี้แล้ว"></label>`, "ยืนยันยกเลิกออเดอร์", async (form) => {
+      const reason = clean(form.get("reason"));
+      if (reason.length < 3) throw new Error("CANCEL_REASON_REQUIRED");
+      await api(`/admin/prepaid-orders/${encodeURIComponent(order.order_code)}/cancel`, {
+        method: "POST", body: { reason },
+      });
+      await load();
+    });
+  }
+
   list.addEventListener("click", (event) => {
-    const button = event.target.closest("[data-prepaid-confirm],[data-prepaid-edit]");
+    const button = event.target.closest("[data-prepaid-confirm],[data-prepaid-edit],[data-prepaid-cancel]");
     if (!button) return;
-    const code = button.dataset.prepaidConfirm || button.dataset.prepaidEdit;
+    const code = button.dataset.prepaidConfirm || button.dataset.prepaidEdit || button.dataset.prepaidCancel;
     const order = orders.find((row) => row.order_code === code);
     if (!order) return;
     if (button.dataset.prepaidConfirm) confirmPayment(order);
-    else editReservation(order);
+    else if (button.dataset.prepaidEdit) editReservation(order);
+    else cancelOrder(order);
   });
   filters.addEventListener("click", (event) => {
     const button = event.target.closest("[data-prepaid-filter]");
