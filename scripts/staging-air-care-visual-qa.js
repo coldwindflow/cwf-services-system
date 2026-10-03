@@ -233,10 +233,12 @@ async function main() {
 
   await adminPage.locator("#customer_name").fill(ADMIN_ASSIST_NAME);
   await adminPage.locator("#customer_note").fill(ADMIN_ASSIST_NOTE);
+  await adminPage.locator("#maps_url").fill("https://maps.google.com/?q=13.7563,100.5018");
   await adminPage.locator("#promotionAssistCreate").click();
   const result = adminPage.locator("#promotionAssistResult");
   const operations = result.getByRole("link", { name: "ไปหน้างานจองเพื่อรับชำระและลงงาน" });
-  await operations.waitFor({ timeout: 20000 });
+  try { await operations.waitFor({ timeout: 20000 }); }
+  catch (error) { throw new Error(`Admin-assisted create UI result: ${await result.innerText()}`, { cause: error }); }
   const href = await operations.getAttribute("href");
   adminAssistedOrder = new URL(href, BASE).searchParams.get("order");
   assert.match(adminAssistedOrder || "", /^CWF-/);
