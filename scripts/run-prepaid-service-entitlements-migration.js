@@ -67,7 +67,7 @@ async function verifySchema(client) {
      WHERE table_schema='public'
        AND (
          (table_name='customer_orders' AND column_name IN
-           ('order_kind','customer_sub','service_entitlement_snapshot','prepaid_entitlement_code','prepaid_claim_token_hash','prepaid_redeem_until','prepaid_warranty_days','manual_payment_reference','payment_verified_by','prepaid_maps_url','prepaid_gps_latitude','prepaid_gps_longitude'))
+           ('order_kind','customer_sub','service_entitlement_snapshot','prepaid_entitlement_code','prepaid_claim_token_hash','prepaid_redeem_until','prepaid_warranty_days','manual_payment_reference','payment_verified_by','prepaid_maps_url','prepaid_gps_latitude','prepaid_gps_longitude','prepaid_cancelled_at','prepaid_cancelled_by','prepaid_cancel_reason'))
          OR
          (table_name='jobs' AND column_name IN ('customer_due','payment_source','prepaid_entitlement_id'))
        )
@@ -80,6 +80,8 @@ async function verifySchema(client) {
     'customer_orders.prepaid_warranty_days', 'customer_orders.manual_payment_reference',
     'customer_orders.payment_verified_by', 'customer_orders.prepaid_maps_url',
     'customer_orders.prepaid_gps_latitude', 'customer_orders.prepaid_gps_longitude',
+    'customer_orders.prepaid_cancelled_at', 'customer_orders.prepaid_cancelled_by',
+    'customer_orders.prepaid_cancel_reason',
     'jobs.customer_due', 'jobs.payment_source',
     'jobs.prepaid_entitlement_id',
   ];

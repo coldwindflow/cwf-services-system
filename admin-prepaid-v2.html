@@ -85,6 +85,7 @@
         <button id="btnRefreshOrders" class="btn-soft" type="button">รีเฟรช</button>
       </div>
       <div style="margin:10px 0"><input id="ordersSearch" type="search" placeholder="ค้นหา Order / ชื่อ / เบอร์โทร / รหัสสิทธิ์" aria-label="ค้นหารายการ PREPAID" style="width:100%;max-width:520px;padding:10px;border:1px solid #cbd5e1;border-radius:10px"></div><div id="ordersMessage" class="muted"></div>
+      <label style="display:flex;align-items:center;gap:8px;margin:4px 0 10px"><input id="showCancelledOrders" type="checkbox"> แสดงออเดอร์ที่ยกเลิกแล้ว (ประวัติ)</label>
       <div class="table-wrap"><table><thead><tr><th>Order</th><th>ลูกค้า / ที่อยู่</th><th>โปร / BTU</th><th>ยอด</th><th>ชำระ</th><th>สิทธิ์</th><th>หมดสิทธิ์</th><th>งาน</th><th>จัดการ</th></tr></thead><tbody id="ordersBody"></tbody></table></div>
     </section>
     <dialog id="reservationDialog" class="card" style="width:min(560px,calc(100% - 24px));border:0">
@@ -107,8 +108,17 @@
       <div id="paymentConfirmMessage" role="alert" class="error"></div>
       <div class="actions"><button id="btnSubmitPaymentConfirm" class="btn-gold" type="button">ยืนยันรับชำระ</button><button id="btnCancelPaymentConfirm" class="btn-soft" type="button">ยกเลิก</button></div>
     </dialog>
+    <dialog id="cancelOrderDialog" class="card" style="width:min(480px,calc(100% - 24px));border:0">
+      <h2>ยกเลิกออเดอร์ที่ยังไม่ชำระ</h2>
+      <p id="cancelOrderSummary"></p>
+      <p class="muted">ออเดอร์จะออกจากคิวรอชำระ แต่ประวัติยังอยู่ การดำเนินการนี้ไม่ใช่การคืนเงิน</p>
+      <label for="cancelOrderReason">เหตุผลที่ยกเลิก</label>
+      <input id="cancelOrderReason" maxlength="500" minlength="3" required placeholder="เช่น ลูกค้าไม่ต้องการแพ็กเกจนี้แล้ว">
+      <div id="cancelOrderMessage" role="alert" class="error"></div>
+      <div class="actions"><button id="btnSubmitCancelOrder" class="btn-soft" type="button">ยืนยันยกเลิกออเดอร์</button><button id="btnCloseCancelOrder" class="btn-soft" type="button">กลับ</button></div>
+    </dialog>
   </main>
   <script src="/admin-v2-common.js?v=20260622_admin_menu_catalog_entry"></script>
-  <script src="/admin-prepaid-v2.js?v=20261002_prepaid_operations_v2"></script>
+  <script src="/admin-prepaid-v2.js?v=20261003_prepaid_cancel_v1"></script>
 </body>
 </html>
