@@ -50,7 +50,7 @@ async function capture(page, name, { checkDocument = true, checkDialog = false }
   }
   assert.equal(metrics.rawError, false, `${name}: raw internal error visible`);
   const filename = `${name}.png`;
-  await page.screenshot({ path: path.join(OUT, filename), fullPage: true });
+  await page.screenshot({ path: path.join(OUT, filename), fullPage: true, animations: "disabled", timeout: 90000 });
   record(name, { screenshot: filename, ...metrics });
 }
 
