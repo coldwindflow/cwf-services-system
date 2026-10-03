@@ -188,7 +188,7 @@ async function main() {
   await capture(adminPage, "12-admin-add-normal");
   await adminPage.locator('input[name="jobFlowMode"][value="promotion"]').check();
   await adminPage.locator("#promotionAssistPanel").waitFor({ state: "visible" });
-  await adminPage.locator("#promotionAssistBundle option").filter({ hasText: "STANDARD" }).waitFor({ timeout: 20000 });
+  await adminPage.locator('#promotionAssistBundle option[value="coldwindflow-air-care-standard"]').waitFor({ state: "attached", timeout: 20000 });
   await adminPage.locator("#promotionAssistBundle").selectOption("coldwindflow-air-care-standard");
   await adminPage.locator("#customer_name").fill(QA.customerName);
   await adminPage.locator("#customer_phone").fill(QA.customerPhone);
