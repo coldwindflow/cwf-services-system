@@ -53,6 +53,23 @@ jobs:
           bash scripts/apply-prepaid-service-entitlements-home.sh staging | tee /tmp/cwf-staging-prepaid-migration.log
           cat /tmp/cwf-staging-prepaid-migration.log >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Inspect Partner retirement safety (read-only)
+        if: github.event_name == 'push'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          sudo -n /usr/bin/docker exec cwf-staging-app node -e '
+            const pool = require("./db");
+            (async () => {
+              const tables = await pool.query("SELECT table_schema, table_name, column_name FROM information_schema.columns WHERE table_name ILIKE $1 ORDER BY table_schema, table_name, ordinal_position", ["%migrat%"]);
+              const overrides = await pool.query("SELECT count(*)::int AS touched FROM public.partner_applications WHERE admin_job_override_enabled OR admin_job_override_by IS NOT NULL OR admin_job_override_at IS NOT NULL OR admin_job_override_note IS NOT NULL");
+              const events = await pool.query("SELECT count(*)::int AS override_events FROM public.partner_onboarding_events WHERE event_type LIKE $1", ["admin_job_override_%"]);
+              console.log("[PARTNER_RETIRE_INSPECT] migration_columns=" + JSON.stringify(tables.rows));
+              console.log("[PARTNER_RETIRE_INSPECT] touched_applications=" + overrides.rows[0].touched + " override_events=" + events.rows[0].override_events);
+            })().catch(error => { console.error("[PARTNER_RETIRE_INSPECT] " + error.message); process.exitCode = 1; }).finally(() => pool.end());
+          '
+
       - name: Auto deploy merged commit
         if: github.event_name == 'push'
         shell: bash
