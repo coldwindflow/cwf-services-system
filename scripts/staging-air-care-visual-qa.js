@@ -57,6 +57,7 @@ async function capture(page, name, { checkDocument = true, checkDialog = false }
 async function responsive(page, prefix, options = {}) {
   for (const width of WIDTHS) {
     await page.setViewportSize({ width, height: width === 768 ? 900 : 800 });
+    if (prefix === "01-store") await page.getByRole("button", { name: /ดูรายละเอียด COLDWINDFLOW AIR CARE — STANDARD/ }).first().waitFor({ state: "visible" });
     await capture(page, `${prefix}-${width}`, options);
   }
   await page.setViewportSize({ width: 390, height: 800 });
@@ -133,8 +134,9 @@ async function main() {
   await page.locator(`[data-cancel-order="${cancelledCode}"]`).click();
   await page.locator("[data-prepaid-cancel-confirmation]").waitFor();
   await page.locator("[data-cancel-confirm]").click();
+  await page.locator(`[data-cancel-order="${cancelledCode}"]`).waitFor({ state: "detached", timeout: 20000 });
   await page.locator('[data-hub-tab="history"]').click();
-  await page.getByText("ยกเลิกแล้ว").first().waitFor();
+  await page.locator("[data-hub-content]").getByText("ยกเลิกแล้ว").first().waitFor();
   await capture(page, "06-unpaid-cancelled");
 
   await page.locator("[data-prepaid-close]").click();
