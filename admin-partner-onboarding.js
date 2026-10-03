@@ -260,21 +260,6 @@
     const interviewPassed = interview?.result === 'passed';
     return `
       <h3 style="margin:0 0 8px">Checklist อนุมัติพาร์ทเนอร์</h3>
-      <div class="miniCard" style="margin-bottom:12px">
-        <b>Admin Override รับงานจริง</b>
-        ${activeDetail?.application?.admin_job_override_enabled ? '<span class="badge approved">ACTIVE</span>' : '<span class="badge warn">OFF</span>'}
-        <div class="muted" style="margin-top:6px">
-          ${activeDetail?.application?.admin_job_override_enabled
-            ? `อนุมัติโดย ${esc(activeDetail.application.admin_job_override_by || '-')} • ${fmtDate(activeDetail.application.admin_job_override_at)}`
-            : 'ใช้เมื่อ Admin ต้องการอนุมัติ ID ช่างให้รับงานได้ แม้ onboarding บางข้อยังไม่ครบ'}
-        </div>
-        ${activeDetail?.application?.admin_job_override_note ? `<div style="margin-top:6px">${esc(activeDetail.application.admin_job_override_note)}</div>` : ''}
-        <div class="actions" style="margin-top:10px">
-          ${activeDetail?.application?.admin_job_override_enabled
-            ? '<button class="ghost" id="btnRevokeJobOverride" type="button">ยกเลิกสิทธิ์ Override</button>'
-            : '<button class="primary" id="btnEnableJobOverride" type="button">อนุมัติ ID ช่างให้รับงานได้</button>'}
-        </div>
-      </div>
       <div class="reviewChecklist">
         ${checklistItem('เอกสารหลักอัปโหลดครบ', docsUploaded, 'บัตรประชาชน / รูปโปรไฟล์ / สมุดบัญชี')}
         ${checklistItem('เอกสารหลักผ่านตรวจ', docsApproved, 'ถ้าไม่ผ่าน ให้ระบุเหตุผลและขออัปโหลดใหม่')}
@@ -419,21 +404,6 @@
     await loadExtra(activeId);
   }
 
-  async function setJobOverride(enabled){
-    if (!activeId) return;
-    const promptText = enabled
-      ? 'ระบุเหตุผลที่ Admin อนุมัติ ID ช่างให้รับงานได้ แม้ onboarding ยังไม่ครบ'
-      : 'ระบุเหตุผลที่ยกเลิกสิทธิ์ Override (ถ้ามี)';
-    const note = window.prompt(promptText, enabled ? 'Admin ตรวจสอบแล้ว อนุมัติให้รับงานจริงได้' : '') ?? '';
-    if (enabled && note.trim().length < 3) throw new Error('กรุณาระบุเหตุผลการอนุมัติ Override');
-    await api(`/admin/partners/applications/${activeId}/job-override`, {
-      method:'PUT',
-      body:JSON.stringify({ enabled, note:note.trim() })
-    });
-    await openDetail(activeId);
-    await loadList();
-  }
-
   async function createTrial(){
     const certification_code = $('trialCertification').value;
     await api(`/admin/partners/applications/${activeId}/trial-jobs`, {
@@ -517,10 +487,6 @@
   });
   $('certifications').addEventListener('change', e=>{
     if (e.target.matches('[data-cert-status]')) updateCertification(e.target.closest('[data-cert-code]')).catch(err=>alert(err.message));
-  });
-  $('onboardingSummary').addEventListener('click', e=>{
-    if (e.target.closest('#btnEnableJobOverride')) setJobOverride(true).catch(err=>alert(err.message));
-    if (e.target.closest('#btnRevokeJobOverride')) setJobOverride(false).catch(err=>alert(err.message));
   });
   $('btnCreateTrial').addEventListener('click', () => createTrial().catch(err=>alert(err.message)));
   $('btnDryRun').addEventListener('click', () => runEligibleDryRun().catch(err=>alert(err.message)));

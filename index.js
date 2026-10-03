@@ -42,7 +42,6 @@ const trackingPrivacy = require("./server/services/public/trackingPrivacy");
 const customerPricingHelpers = require("./server/customerPricing");
 const customerAuth = require("./server/customerAuth");
 const technicianIncomeHelpers = require("./server/technicianIncome");
-const { evaluatePartnerJobEligibility } = require("./server/services/partner/jobEligibility");
 const customerLookupHelpers = require("./server/customerLookup");
 const technicianJobIncomeDisplayHelpers = require("./server/technicianJobIncomeDisplay");
 const technicianReworkHelpers = require("./server/technicianRework");
@@ -2851,10 +2850,6 @@ function partnerApplicationPublicShape(row, docs = [], events = []) {
     notes: row.notes,
     status: row.status,
     admin_note: row.admin_note,
-    admin_job_override_enabled: !!row.admin_job_override_enabled,
-    admin_job_override_by: row.admin_job_override_by || null,
-    admin_job_override_at: row.admin_job_override_at || null,
-    admin_job_override_note: row.admin_job_override_note || null,
     submitted_at: row.submitted_at,
     reviewed_at: row.reviewed_at,
     created_at: row.created_at,
@@ -2907,34 +2902,17 @@ function getRequiredCertificationCodesForJob(payload = {}) {
 
 async function technicianHasRequiredCertifications(username, requiredCodes = [], opts = {}) {
   const codes = (requiredCodes || []).filter(Boolean);
-  const overrideR = await pool.query(
-    `SELECT admin_job_override_enabled, admin_job_override_by, admin_job_override_at
-     FROM public.partner_applications
-     WHERE technician_username=$1
-     ORDER BY created_at DESC
-     LIMIT 1`,
-    [username]
-  );
-  const overrideRow = overrideR.rows[0] || {};
-  const adminOverride = overrideRow.admin_job_override_enabled === true;
-  if (!codes.length) return { ok: true, missing: [], blocked: [], admin_override: adminOverride };
+  if (!codes.length) return { ok: true, missing: [], blocked: [] };
   const r = await pool.query(
     `SELECT certification_code, status
      FROM public.technician_certifications
      WHERE technician_username=$1 AND certification_code = ANY($2::text[])`,
     [username, codes]
   );
-  const certRows = (r.rows || []).map(x => ({ code: String(x.certification_code), status: String(x.status || '') }));
-  const evaluated = evaluatePartnerJobEligibility({ requiredCodes: codes, certifications: certRows, adminOverride });
-  return {
-    ok: evaluated.eligible,
-    missing: evaluated.missing,
-    blocked: evaluated.blocked,
-    statuses: Object.fromEntries(certRows.map(x => [x.code, x.status])),
-    admin_override: evaluated.admin_override,
-    admin_override_by: overrideRow.admin_job_override_by || null,
-    admin_override_at: overrideRow.admin_job_override_at || null,
-  };
+  const statusMap = new Map((r.rows || []).map(x => [String(x.certification_code), String(x.status || '')]));
+  const missing = codes.filter(code => statusMap.get(code) !== 'approved');
+  const blocked = codes.filter(code => ['suspended', 'revoked'].includes(statusMap.get(code)));
+  return { ok: missing.length === 0 && blocked.length === 0, missing, blocked, statuses: Object.fromEntries(statusMap) };
 }
 
 function explainCertificationBlockReason({ mode, username, required = [], missing = [], blocked = [] } = {}) {
@@ -3902,89 +3880,6 @@ app.put('/admin/partners/applications/:id/certifications/:certification_code/sta
   }
 });
 
-app.get('/admin/partners/applications/:id/job-override', requireAdminSession, async (req, res) => {
-  try {
-    const appRow = await getPartnerApplicationById(req.params.id);
-    if (!appRow) return res.status(404).json({ error: 'ไม่พบใบสมัคร' });
-    return res.json({
-      ok: true,
-      override: {
-        enabled: appRow.admin_job_override_enabled === true,
-        approved_by: appRow.admin_job_override_by || null,
-        approved_at: appRow.admin_job_override_at || null,
-        note: appRow.admin_job_override_note || null,
-      },
-    });
-  } catch (e) {
-    console.error('GET partner job override error:', e);
-    return res.status(500).json({ error: 'โหลดสถานะ Admin Override ไม่สำเร็จ' });
-  }
-});
-
-app.put('/admin/partners/applications/:id/job-override', requireAdminSession, async (req, res) => {
-  const appId = Number(req.params.id);
-  if (!Number.isFinite(appId) || appId <= 0) return res.status(400).json({ error: 'id ไม่ถูกต้อง' });
-  const enabled = req.body?.enabled === true;
-  const note = String(req.body?.note || '').trim();
-  if (enabled && note.length < 3) return res.status(400).json({ error: 'กรุณาระบุเหตุผลการอนุมัติ Override' });
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    const locked = await client.query(`SELECT * FROM public.partner_applications WHERE id=$1 FOR UPDATE`, [appId]);
-    const appRow = locked.rows[0];
-    if (!appRow) {
-      await client.query('ROLLBACK');
-      return res.status(404).json({ error: 'ไม่พบใบสมัคร' });
-    }
-    if (!appRow.technician_username) {
-      await client.query('ROLLBACK');
-      return res.status(409).json({ error: 'ใบสมัครนี้ยังไม่มี ID ช่าง' });
-    }
-    const previous = appRow.admin_job_override_enabled === true;
-    const actor = req.actor?.username || req.auth?.username || null;
-    if (previous === enabled) {
-      await client.query('COMMIT');
-      return res.json({ ok: true, changed: false, override: { enabled: previous, approved_by: appRow.admin_job_override_by || null, approved_at: appRow.admin_job_override_at || null, note: appRow.admin_job_override_note || null } });
-    }
-    const saved = await client.query(
-      `UPDATE public.partner_applications
-       SET admin_job_override_enabled=$2,
-           admin_job_override_by=CASE WHEN $2 THEN $3 ELSE NULL END,
-           admin_job_override_at=CASE WHEN $2 THEN NOW() ELSE NULL END,
-           admin_job_override_note=$4,
-           updated_at=NOW()
-       WHERE id=$1
-       RETURNING *`,
-      [appId, enabled, actor, note || null]
-    );
-    await logPartnerOnboardingEvent(client, {
-      application_id: appId,
-      actor_type: 'admin',
-      actor_username: actor,
-      event_type: enabled ? 'admin_job_override_enabled' : 'admin_job_override_revoked',
-      from_status: previous ? 'enabled' : 'disabled',
-      to_status: enabled ? 'enabled' : 'disabled',
-      note: note || (enabled ? 'Admin approved technician ID for real jobs' : 'Admin revoked technician job override'),
-      metadata: { technician_username: appRow.technician_username, previous, enabled },
-    });
-    await client.query('COMMIT');
-    await auditLog(req, {
-      action: enabled ? 'PARTNER_JOB_OVERRIDE_ENABLED' : 'PARTNER_JOB_OVERRIDE_REVOKED',
-      target_username: appRow.technician_username,
-      target_role: 'technician',
-      meta: { application_id: appId, previous, enabled, note: note || null },
-    });
-    const row = saved.rows[0];
-    return res.json({ ok: true, changed: true, override: { enabled: row.admin_job_override_enabled === true, approved_by: row.admin_job_override_by || null, approved_at: row.admin_job_override_at || null, note: row.admin_job_override_note || null } });
-  } catch (e) {
-    await client.query('ROLLBACK');
-    console.error('PUT partner job override error:', e);
-    return res.status(500).json({ error: 'อัปเดต Admin Override ไม่สำเร็จ' });
-  } finally {
-    client.release();
-  }
-});
-
 app.post('/admin/partners/certification-dry-run', requireAdminSession, async (req, res) => {
   try {
     const technicianUsername = String(req.body?.technician_username || '').trim();
@@ -4011,8 +3906,6 @@ app.post('/admin/partners/eligible-dry-run', requireAdminSession, async (req, re
     const r = await pool.query(
       `SELECT a.id, a.application_code, a.full_name, a.phone, a.technician_username, a.province, a.district,
               a.service_zones, a.max_jobs_per_day, a.max_units_per_day,
-              COALESCE(a.admin_job_override_enabled,FALSE) AS admin_job_override_enabled,
-              a.admin_job_override_by, a.admin_job_override_at,
               COALESCE(av.paused, TRUE) AS paused,
               COALESCE(av.working_days, '[]'::jsonb) AS working_days,
               COALESCE(av.time_windows, '[]'::jsonb) AS time_windows,
@@ -4035,19 +3928,8 @@ app.post('/admin/partners/eligible-dry-run', requireAdminSession, async (req, re
       const certs = Array.isArray(row.certifications) ? row.certifications : [];
       const missing = requiredCodes.filter(code => !certs.some(c => c.code === code && c.status === 'approved'));
       const preferenceOff = requiredCodes.filter(code => !certs.some(c => c.code === code && c.preference_enabled === true));
-      const adminOverride = row.admin_job_override_enabled === true;
       const zones = Array.isArray(row.service_zones) ? row.service_zones : [];
       const zoneMatch = !zone || zones.some(z => String(z).includes(zone)) || String(row.province || '').includes(zone) || String(row.district || '').includes(zone);
-      const evaluated = evaluatePartnerJobEligibility({
-        requiredCodes,
-        certifications: certs,
-        adminOverride,
-        requirePreferences: true,
-        preferenceOff,
-        paused: row.paused === true,
-        zoneMatch,
-      });
-      const blocked = evaluated.blocked;
       return {
         ...row,
         required_certifications: requiredCodes,
@@ -4056,13 +3938,10 @@ app.post('/admin/partners/eligible-dry-run', requireAdminSession, async (req, re
           preference_on: preferenceOff.length === 0,
           availability_on: row.paused !== true,
           zone_match: zoneMatch,
-          admin_override: adminOverride,
-          safety_not_suspended_or_revoked: blocked.length === 0,
         },
         missing_certifications: missing,
-        blocked_certifications: blocked,
         preferences_off: preferenceOff,
-        eligible: evaluated.eligible,
+        eligible: missing.length === 0 && preferenceOff.length === 0 && row.paused !== true && zoneMatch,
       };
     });
     return res.json({ ok: true, mode: getCertificationEnforcementMode(), required_certifications: requiredCodes, partners: rows });
@@ -11031,10 +10910,6 @@ await pool.query(`ALTER TABLE public.partner_applications ADD COLUMN IF NOT EXIS
 await pool.query(`ALTER TABLE public.partner_applications ADD COLUMN IF NOT EXISTS contract_accepted_ip TEXT`);
 await pool.query(`ALTER TABLE public.partner_applications ADD COLUMN IF NOT EXISTS contract_user_agent TEXT`);
 await pool.query(`ALTER TABLE public.partner_applications ADD COLUMN IF NOT EXISTS contract_acceptance_json JSONB NOT NULL DEFAULT '{}'::jsonb`);
-await pool.query(`ALTER TABLE public.partner_applications ADD COLUMN IF NOT EXISTS admin_job_override_enabled BOOLEAN NOT NULL DEFAULT FALSE`);
-await pool.query(`ALTER TABLE public.partner_applications ADD COLUMN IF NOT EXISTS admin_job_override_by TEXT`);
-await pool.query(`ALTER TABLE public.partner_applications ADD COLUMN IF NOT EXISTS admin_job_override_at TIMESTAMPTZ`);
-await pool.query(`ALTER TABLE public.partner_applications ADD COLUMN IF NOT EXISTS admin_job_override_note TEXT`);
 await pool.query(`ALTER TABLE public.technician_profiles ADD COLUMN IF NOT EXISTS partner_status TEXT`);
 await pool.query(`ALTER TABLE public.technician_profiles ADD COLUMN IF NOT EXISTS line_id TEXT`);
 

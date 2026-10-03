@@ -46,19 +46,13 @@ test("deploy catalog approves only forward expand migrations by exact SHA", () =
   const promotionHash = canonicalHash(`migrations/${promotionName}`);
   const brandName = "20260920_job_brand_foundation.sql";
   const brandHash = canonicalHash(`migrations/${brandName}`);
-  const partnerName = "partner_onboarding_phase2f_admin_job_override.sql";
-  const partnerHash = canonicalHash(`migrations/${partnerName}`);
-  const partnerSql = fs.readFileSync(`migrations/${partnerName}`, "utf8");
   const entries = approvals.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   assert.deepEqual(entries, [
     `${hash}\t${migrationName}\texpand`,
     `${minimumHash}\t${minimumName}\texpand`,
     `${promotionHash}\t${promotionName}\texpand`,
     `${brandHash}\t${brandName}\texpand`,
-    `${partnerHash}\t${partnerName}\texpand`,
   ]);
-  assert.match(partnerSql, /ADD COLUMN IF NOT EXISTS admin_job_override_enabled BOOLEAN NOT NULL DEFAULT FALSE/);
-  assert.doesNotMatch(partnerSql, /\b(?:DELETE FROM|TRUNCATE|DROP TABLE|DROP COLUMN)\b/i);
   for (const entry of entries) assert.match(entry, /\texpand$/);
   const rootRollbackFiles = fs.readdirSync("migrations", { withFileTypes: true })
     .filter((entry) => entry.isFile() && /\.rollback\.sql$/i.test(entry.name));
