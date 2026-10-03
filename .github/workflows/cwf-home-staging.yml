@@ -53,19 +53,6 @@ jobs:
           bash scripts/apply-prepaid-service-entitlements-home.sh staging | tee /tmp/cwf-staging-prepaid-migration.log
           cat /tmp/cwf-staging-prepaid-migration.log >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Retire unused Partner override migration from Staging only
-        if: github.event_name == 'push'
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          sudo -n /usr/bin/docker cp \
-            scripts/retire-staging-partner-job-override.js \
-            cwf-staging-app:/app/scripts/retire-staging-partner-job-override.js
-          sudo -n /usr/bin/docker exec \
-            -e CWF_ENVIRONMENT=staging \
-            -e CWF_STAGING_QA_CONTAINER=cwf-staging-app \
-            cwf-staging-app node scripts/retire-staging-partner-job-override.js
-
       - name: Auto deploy merged commit
         if: github.event_name == 'push'
         shell: bash
