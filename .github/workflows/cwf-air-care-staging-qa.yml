@@ -26,7 +26,7 @@ concurrency:
 jobs:
   staging-qa:
     name: Staging / ${{ inputs.action }}
-    if: github.ref_name == 'staging/home-server-test'
+    if: github.ref_name == 'staging/home-server-test' || github.ref_name == 'qa/air-care-staging-visual-277dc5b'
     runs-on:
       - self-hosted
       - linux
@@ -44,8 +44,52 @@ jobs:
           fetch-depth: 1
 
       - name: Run guarded staging QA operation
+        if: github.ref_name == 'staging/home-server-test'
         shell: bash
         run: |
           set -Eeuo pipefail
           bash scripts/run-staging-air-care-qa.sh staging "${{ inputs.action }}" | tee /tmp/cwf-air-care-staging-qa.log
           grep '^\[QA_EVIDENCE\]' /tmp/cwf-air-care-staging-qa.log >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Capture authenticated Staging UI using designated QA identities
+        if: github.ref_name == 'qa/air-care-staging-visual-277dc5b' && inputs.action == 'accept'
+        shell: bash
+        env:
+          EXPECTED_RELEASE_SHA: 277dc5b69758bbb9a83fe058d9f497e00dff1153
+        run: |
+          set -Eeuo pipefail
+          status="$(sudo -n /usr/local/sbin/cwf-deployctl staging status)"
+          grep -Fq "$EXPECTED_RELEASE_SHA" <<< "$status"
+          sudo -n /usr/bin/docker cp scripts/staging-air-care-visual-qa.js cwf-staging-app:/app/scripts/staging-air-care-visual-qa.js
+          set +e
+          sudo -n /usr/bin/docker exec \
+            -e CWF_ENVIRONMENT=staging \
+            -e CWF_STAGING_QA_CONTAINER=cwf-staging-app \
+            -e CWF_STAGING_QA_SECRET \
+            cwf-staging-app sh -ceu '
+              mkdir -p /tmp/cwf-air-care-visual-evidence
+              npm install --prefix /tmp/cwf-air-care-visual-tools --no-save --no-audit --no-fund playwright-core@1.55.0 >/tmp/cwf-visual-npm.log 2>&1
+              export PORT=3901 CWF_JWT_SECRET="$CWF_STAGING_QA_SECRET"
+              node index.js >/tmp/cwf-staging-visual-app.log 2>&1 &
+              app_pid=$!
+              trap '\''kill "$app_pid" >/dev/null 2>&1 || true; wait "$app_pid" >/dev/null 2>&1 || true'\'' EXIT INT TERM
+              for attempt in $(seq 1 45); do
+                if node -e "fetch('\''http://127.0.0.1:3901/catalog/items?customer=1'\'').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"; then break; fi
+                sleep 1
+              done
+              node scripts/staging-air-care-visual-qa.js
+            '
+          visual_status=$?
+          set -e
+          sudo -n /usr/bin/docker cp cwf-staging-app:/tmp/cwf-air-care-visual-evidence "$RUNNER_TEMP/cwf-air-care-visual-evidence"
+          sudo -n /usr/bin/docker exec cwf-staging-app rm -f /app/scripts/staging-air-care-visual-qa.js
+          exit "$visual_status"
+
+      - name: Upload authenticated Staging UI evidence
+        if: always() && github.ref_name == 'qa/air-care-staging-visual-277dc5b' && inputs.action == 'accept'
+        uses: actions/upload-artifact@v4
+        with:
+          name: cwf-air-care-staging-visual-277dc5b
+          path: ${{ runner.temp }}/cwf-air-care-visual-evidence
+          if-no-files-found: warn
+          retention-days: 3
