@@ -58,7 +58,15 @@ test("store falls back to the LINE hand-off when payment is unconfigured or the 
 test("payment step styles exist and the Customer App payment build id is bumped", () => {
   assert.match(cssSrc, /\.pay-method-btn/);
   assert.match(cssSrc, /\.pay-qr-img/);
-  assert.match(read("customer-app/index.html"), /modules\/store\.js\?v=20261002_prepaid_reservation_v1/);
-  assert.match(read("customer-app/sw.js"), /BUILD_ID = "20261002_prepaid_reservation_v1"/);
+  assert.match(read("customer-app/index.html"), /modules\/store\.js\?v=20261003_air_care_visual_v1/);
+  assert.match(read("customer-app/sw.js"), /BUILD_ID = "20261003_air_care_visual_v1"/);
   assert.match(storeSrc, /payment-security 20260705 loaded/);
+});
+
+test("image-less store cards use a compact branded detail fallback", () => {
+  assert.match(cssSrc, /\.store-card-gallery > \.store-card-image-placeholder/);
+  assert.match(cssSrc, /\.store-related-card-image-wrap > \.store-card-image-placeholder/);
+  assert.match(cssSrc, /content: "CWF SERVICE"/);
+  assert.match(cssSrc, /\.store-detail-gallery:has\(> \.store-card-image-placeholder\)/);
+  assert.match(cssSrc, /aspect-ratio: 16 \/ 9/);
 });

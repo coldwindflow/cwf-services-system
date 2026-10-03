@@ -891,8 +891,8 @@
 
   function renderBookingActions(item, id, detail = false) {
     const attribute = detail ? "data-store-detail" : "data-store";
-    const value = detail ? "1" : root.utils.escapeHtml(id);
-    const scheduled = `<button class="primary-btn" type="button" ${attribute}-book="${value}">${isServicePackageBundle(item) ? "จองแพ็กเกจ" : "จองคิว"}</button>`;
+    const value = root.utils.escapeHtml(id);
+    const scheduled = `<button class="primary-btn" type="button" ${attribute}-book="${value}">${isServicePackageBundle(item) ? "เลือกแพ็กเกจ" : "จองคิว"}</button>`;
     if (!allowsUrgentBooking(item)) return scheduled;
     const enabled = urgentBookingAvailable();
     return `${scheduled}<button class="secondary-btn" type="button" ${attribute}-urgent="${value}"${enabled ? "" : " disabled"}>${enabled ? "จองด่วน" : "คิวด่วนปิดชั่วคราว"}</button>`;
@@ -1938,7 +1938,6 @@
       <div class="store-detail-section store-reviews-section" data-store-reviews-section>
         ${renderReviewsSectionBody(item)}
       </div>
-      <div class="store-detail-cta-bar">${ctaButton}</div>
     `;
   }
 

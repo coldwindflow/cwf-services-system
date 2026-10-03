@@ -1953,6 +1953,7 @@
         </section>
       `;
       root.ui?.bindPageHeader?.(container);
+      root.prepaid?.renderServiceHub?.(container);
       container.querySelector("[data-action='track-read']").addEventListener("click", () => lookup(container));
       container.querySelector("#tracking-code").addEventListener("input", (event) => {
         const value = String(event.target.value || "").trimStart().toUpperCase();

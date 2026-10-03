@@ -226,6 +226,10 @@ async function premiumAcceptance(catalog, customer, admin) {
     method: "POST", cookie: admin, body: { reference: `${PAYMENT_REFERENCE}-PREMIUM`, confirmed_amount: 2498 },
   });
   assert.equal(verified.data?.entitlement?.status, "active");
+  const paidCancel = await request(`/public/prepaid-orders/${encodeURIComponent(order.order_code)}/cancel`, {
+    method: "POST", cookie: customer, body: {}, expected: [409],
+  });
+  assert.equal(paidCancel.data?.code, "ORDER_CANCELLATION_REQUIRES_ADMIN_REVIEW");
   const lockedEdit = await request(`/admin/prepaid-orders/${encodeURIComponent(order.order_code)}/reservation`, {
     method: "PATCH", cookie: admin, body: { ...payload, address_text: "Forbidden paid edit" }, expected: [409],
   });
@@ -250,6 +254,124 @@ async function premiumAcceptance(catalog, customer, admin) {
   evidence("premium_job", { order: order.order_code, job: booked.data.job_id, customer_due: 0 });
 }
 
+async function cancellationAcceptance(catalog, customer, admin) {
+  const payload = {
+    catalog_item_id: catalog.get("coldwindflow-air-care-standard"),
+    service_package_groups: [{ package_key: "coldwindflow-air-care-standard-small", btu: 12000, quantity: 1 }],
+    customer_name: QA.customerName, customer_phone: QA.customerPhone,
+    address_text: "Staging QA cancelled location", maps_url: "https://www.google.com/maps?q=13.7563,100.5018",
+    gps_latitude: 13.7563, gps_longitude: 100.5018, note: QA.marker,
+    purchase_request_key: "cwfqa_air_care_customer_cancel_20261003",
+  };
+  const first = await request("/public/prepaid-orders", { method: "POST", cookie: customer, body: payload, expected: [201] });
+  const customerCode = String(first.data?.order?.order_code || "");
+  assert.match(customerCode, /^CWF/);
+  const cancelled = await request(`/public/prepaid-orders/${encodeURIComponent(customerCode)}/cancel`, {
+    method: "POST", cookie: customer, body: { reason: "Staging QA customer no longer needs package" },
+  });
+  assert.equal(cancelled.data?.order?.status, "cancelled");
+  assert.equal(cancelled.data?.order?.replayed, false);
+  const cancelledAgain = await request(`/public/prepaid-orders/${encodeURIComponent(customerCode)}/cancel`, {
+    method: "POST", cookie: customer, body: {},
+  });
+  assert.equal(cancelledAgain.data?.order?.replayed, true);
+  const reusedKey = await request("/public/prepaid-orders", { method: "POST", cookie: customer, body: payload, expected: [409] });
+  assert.equal(reusedKey.data?.code, "ORDER_CANCELLED");
+
+  const adminPayload = { ...payload, purchase_request_key: "cwfqa_air_care_admin_cancel_20261003" };
+  const second = await request("/public/prepaid-orders", { method: "POST", cookie: customer, body: adminPayload, expected: [201] });
+  const adminCode = String(second.data?.order?.order_code || "");
+  assert.match(adminCode, /^CWF/);
+  const adminCancelled = await request(`/admin/prepaid-orders/${encodeURIComponent(adminCode)}/cancel`, {
+    method: "POST", cookie: admin, body: { reason: "Staging QA customer declined package" },
+  });
+  assert.equal(adminCancelled.data?.order?.status, "cancelled");
+  const paymentRejected = await request(`/admin/prepaid-orders/${encodeURIComponent(adminCode)}/confirm-payment`, {
+    method: "POST", cookie: admin, body: { reference: "STAGING-QA-NOT-PAID", confirmed_amount: Number(second.data.order.subtotal) },
+    expected: [409],
+  });
+  assert.equal(paymentRejected.data?.code, "ORDER_NOT_PAYABLE");
+
+  const customerList = await request("/public/prepaid-orders", { cookie: customer });
+  const adminList = await request("/admin/prepaid-orders", { cookie: admin });
+  for (const code of [customerCode, adminCode]) {
+    assert.equal(customerList.data?.items?.find((row) => row.order_code === code)?.status, "cancelled");
+    assert.equal(adminList.data?.orders?.find((row) => row.order_code === code)?.payment_order_status, "cancelled");
+  }
+  const audit = await pool.query(
+    `SELECT order_code, status, prepaid_cancelled_at, prepaid_cancelled_by, prepaid_cancel_reason
+       FROM public.customer_orders WHERE order_code=ANY($1::text[])`, [[customerCode, adminCode]]
+  );
+  assert.equal(audit.rows.length, 2);
+  for (const row of audit.rows) {
+    assert.equal(row.status, "cancelled");
+    assert.ok(row.prepaid_cancelled_at);
+    assert.ok(row.prepaid_cancel_reason);
+    assert.ok(String(row.prepaid_cancelled_by).startsWith(row.order_code === customerCode ? "customer:" : "admin:"));
+  }
+  evidence("unpaid_cancellation", { customer: "cancelled", admin: "cancelled", history: "retained", late_payment: "rejected", paid_cancel: "rejected" });
+}
+
+async function cancellationPaymentRaceAcceptance(catalog, customer, admin) {
+  const created = await request("/public/prepaid-orders", {
+    method: "POST", cookie: customer, expected: [201], body: {
+      catalog_item_id: catalog.get("coldwindflow-air-care-standard"),
+      service_package_groups: [{ package_key: "coldwindflow-air-care-standard-small", btu: 12000, quantity: 1 }],
+      customer_name: QA.customerName, customer_phone: QA.customerPhone,
+      address_text: "Staging QA cancellation race location",
+      maps_url: "https://www.google.com/maps?q=13.7563,100.5018",
+      gps_latitude: 13.7563, gps_longitude: 100.5018,
+      note: QA.marker, purchase_request_key: "cwfqa_air_care_cancel_payment_race_20261003",
+    },
+  });
+  const code = String(created.data?.order?.order_code || "");
+  assert.match(code, /^CWF/);
+  const amount = Number(created.data.order.subtotal);
+  const path = encodeURIComponent(code);
+  const [cancel, payment] = await Promise.all([
+    request(`/public/prepaid-orders/${path}/cancel`, {
+      method: "POST", cookie: customer, body: { reason: "Staging QA concurrent cancellation" }, expected: [200, 409],
+    }),
+    request(`/admin/prepaid-orders/${path}/confirm-payment`, {
+      method: "POST", cookie: admin,
+      body: { reference: "CWF-QA-STAGING-RACE-20261003", confirmed_amount: amount }, expected: [200, 409],
+    }),
+  ]);
+  assert.deepEqual([cancel.status, payment.status].sort(), [200, 409], "exactly one race transition must win");
+  const state = await pool.query(
+    `SELECT o.status, o.payment_status, o.prepaid_cancelled_at, o.paid_at,
+            COUNT(e.entitlement_id)::int AS entitlement_count
+       FROM public.customer_orders o
+       LEFT JOIN public.customer_service_entitlements e ON e.order_id=o.order_id
+      WHERE o.order_code=$1
+      GROUP BY o.order_id`, [code]
+  );
+  assert.equal(state.rows.length, 1);
+  const row = state.rows[0];
+  if (cancel.status === 200) {
+    assert.equal(row.status, "cancelled");
+    assert.ok(row.prepaid_cancelled_at);
+    assert.equal(row.paid_at, null);
+    assert.equal(row.entitlement_count, 0);
+    assert.equal(payment.data?.code, "ORDER_NOT_PAYABLE");
+    const replay = await request(`/public/prepaid-orders/${path}/cancel`, { method: "POST", cookie: customer, body: {} });
+    assert.equal(replay.data?.order?.replayed, true);
+  } else {
+    assert.equal(row.status, "paid");
+    assert.equal(row.payment_status, "verified");
+    assert.ok(row.paid_at);
+    assert.equal(row.prepaid_cancelled_at, null);
+    assert.equal(row.entitlement_count, 1);
+    assert.equal(cancel.data?.code, "ORDER_CANCELLATION_REQUIRES_ADMIN_REVIEW");
+    const replay = await request(`/admin/prepaid-orders/${path}/confirm-payment`, {
+      method: "POST", cookie: admin,
+      body: { reference: "CWF-QA-STAGING-RACE-20261003", confirmed_amount: amount },
+    });
+    assert.equal(replay.data?.replayed, true);
+  }
+  evidence("cancel_payment_race", { winner: cancel.status === 200 ? "cancel" : "payment", loser: "rejected", entitlement_count: row.entitlement_count, replay: "idempotent" });
+}
+
 async function runAcceptance(adminSession) {
   await cleanup(adminSession);
   await catalogEvidence();
@@ -264,6 +386,8 @@ async function runAcceptance(adminSession) {
 
   const catalog = await pricingEvidence(firstCookie);
   await premiumAcceptance(catalog, firstCookie, adminCookie(adminSession));
+  await cancellationAcceptance(catalog, firstCookie, adminCookie(adminSession));
+  await cancellationPaymentRaceAcceptance(catalog, firstCookie, adminCookie(adminSession));
   const purchaseBody = {
     catalog_item_id: catalog.get("coldwindflow-air-care-standard"),
     service_package_groups: [{ package_key: "coldwindflow-air-care-standard-small", btu: 12000, quantity: 5 }],

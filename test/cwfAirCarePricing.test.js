@@ -6,6 +6,8 @@ const vm = require("node:vm");
 const seed = fs.readFileSync("data-seeds/20260930_cwf_air_care.sql", "utf8");
 const service = fs.readFileSync("server/services/prepaid/prepaidOrderServiceV2.js", "utf8");
 const ui = fs.readFileSync("customer-app/modules/prepaid.js", "utf8");
+const adminQueue = fs.readFileSync("admin-prepaid-queue.js", "utf8");
+const adminDetail = fs.readFileSync("admin-prepaid-v2.js", "utf8");
 
 function loadPrepaidUi(btuOptions = []) {
   const root = {
@@ -27,6 +29,7 @@ function loadPrepaidUi(btuOptions = []) {
     Element: function Element() {},
     fetch: async () => { throw new Error("not used"); },
     encodeURIComponent,
+    URL,
     setTimeout,
     clearTimeout,
     Intl,
@@ -63,6 +66,13 @@ test("both AIR CARE bundles receive 60-day purchase validity and full customer b
   assert.doesNotMatch(ui, /โปรโมชั่น CWF/);
   assert.doesNotMatch(ui, /สิทธิ์บริการ CWF/);
   assert.doesNotMatch(ui, /จองสิทธิ์ CWF/);
+});
+
+test("AIR CARE checkout and Admin queue show the promotion tier after loading", () => {
+  assert.match(ui, /modalHeading\.textContent = actual\.item_name/);
+  assert.match(ui, /COLDWINDFLOW AIR CARE — \$\{airCare\[1\]\.toUpperCase\(\)\}/);
+  assert.match(adminQueue, /COLDWINDFLOW AIR CARE — \$\{airCare\[1\]\.toUpperCase\(\)\}/);
+  assert.match(adminDetail, /ลูกค้าชำระเพิ่มเมื่อใช้สิทธิ์: 0 บาท/);
 });
 
 
@@ -140,4 +150,25 @@ test("prepaid UI accepts only a server price and hides internal quote codes from
     "ไม่สามารถคำนวณราคาได้ กรุณาลองใหม่ หรือติดต่อ LINE @cwfair"
   );
   assert.match(ui, /ราคาที่ระบบยืนยัน/);
+});
+
+test("returning customer locations merge matching addresses without losing the saved map pin", () => {
+  const root = loadPrepaidUi();
+  const locations = root.prepaid._test.locationChoices(
+    { address: "123 ถนนตัวอย่าง", maps_url: "" },
+    [{ address: "123  ถนนตัวอย่าง", prepaid_maps_url: "https://maps.app.goo.gl/saved", prepaid_gps_latitude: 13.7, prepaid_gps_longitude: 100.5 }],
+    [{ address_text: "คอนโดอีกแห่ง", maps_url: "https://www.google.com/maps?q=13.8,100.6" }]
+  );
+  assert.equal(locations.length, 2);
+  assert.equal(locations[0].maps_url, "https://maps.app.goo.gl/saved");
+  assert.equal(locations[0].gps_latitude, 13.7);
+  assert.equal(locations[1].address_text, "คอนโดอีกแห่ง");
+});
+
+test("customer map validation matches the server allowlist and excludes arbitrary HTTPS links", () => {
+  const root = loadPrepaidUi();
+  assert.equal(root.prepaid._test.validMapUrl("https://maps.app.goo.gl/saved"), true);
+  assert.equal(root.prepaid._test.validMapUrl("https://www.google.com/maps?q=13.7,100.5"), true);
+  assert.equal(root.prepaid._test.validMapUrl("https://example.com/location"), false);
+  assert.equal(root.prepaid._test.validMapUrl("javascript:alert(1)"), false);
 });

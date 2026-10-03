@@ -7,6 +7,7 @@ const {
   PrepaidServiceError,
   createPrepaidOrderService,
 } = require("../../services/prepaid/prepaidOrderServiceV2");
+const { notifyPrepaidOrder } = require("../../services/prepaid/prepaidLineNotification");
 
 function clean(value) {
   return String(value == null ? "" : value).trim();
@@ -128,6 +129,13 @@ function createCustomerPrepaidRoutes(options = {}) {
     const customerSub = clean(req.customer?.sub);
     if (!customerSub) return res.status(401).json({ error: "NOT_LOGGED_IN", code: "NOT_LOGGED_IN" });
     const created = await service.createOrder(req.body || {}, { customerSub, identity: "customer" });
+    try {
+      await notifyPrepaidOrder({ pool, env, orderCode: created.order.order_code, customerSub });
+    } catch (error) {
+      // The order is already committed. A LINE outage or optional schema rollout
+      // must never make the customer think the purchase failed and retry payment.
+      console.warn("PREPAID_LINE_NOTIFICATION_FAILED", error.code || error.message);
+    }
     return res.status(created.replayed ? 200 : 201).json({
       ok: true,
       replayed: Boolean(created.replayed),
@@ -142,6 +150,13 @@ function createCustomerPrepaidRoutes(options = {}) {
     if (!customerSub) return res.status(401).json({ error: "NOT_LOGGED_IN", code: "NOT_LOGGED_IN" });
     const items = await service.listOrders(customerSub);
     return res.json({ ok: true, items });
+  }));
+
+  router.post("/public/prepaid-orders/:code/cancel", requireCustomerJwt, handle(async (req, res) => {
+    const customerSub = clean(req.customer?.sub);
+    if (!customerSub) return res.status(401).json({ error: "NOT_LOGGED_IN", code: "NOT_LOGGED_IN" });
+    const order = await service.cancelOrder(req.params.code, { customerSub, reason: req.body?.reason });
+    return res.json({ ok: true, order });
   }));
 
   router.get("/public/service-rights", requireCustomerJwt, handle(async (req, res) => {

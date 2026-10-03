@@ -71,6 +71,15 @@ function createStoreServicePackageCatalogRoutes({ service, requireAdminSession, 
     return res.json({ ok: true, reservation });
   }));
 
+  router.post("/admin/prepaid-orders/:code/cancel", requireAdminSession, handle(async (req, res) => {
+    const cancelledBy = String(
+      req.actor?.username || req.actor?.email || req.admin?.username || req.admin?.email
+      || req.session?.username || req.user?.username || "admin"
+    ).trim().slice(0, 120);
+    const order = await prepaidService.cancelOrder(req.params.code, { cancelledBy, reason: req.body?.reason });
+    return res.json({ ok: true, order });
+  }));
+
   router.get("/admin/prepaid-orders", requireAdminSession, handle(async (_req, res) => {
     if (!(await prepaidService.schemaReady())) {
       throw new PrepaidServiceError("PREPAID_SCHEMA_NOT_READY", 503);
@@ -78,9 +87,10 @@ function createStoreServicePackageCatalogRoutes({ service, requireAdminSession, 
     const result = await pool.query(
       `SELECT o.order_code, o.customer_name, o.customer_phone, o.customer_sub,
               o.address, o.note, o.prepaid_maps_url, o.prepaid_gps_latitude,
-              o.prepaid_gps_longitude, o.service_entitlement_snapshot,
+              o.prepaid_gps_longitude, o.service_entitlement_snapshot, o.items,
               o.subtotal, o.status AS payment_order_status, o.payment_provider,
               o.payment_method, o.payment_status, o.paid_at, o.created_at,
+              o.prepaid_cancelled_at, o.prepaid_cancelled_by, o.prepaid_cancel_reason,
               e.entitlement_code, e.status AS entitlement_status, e.redeem_until,
               e.warranty_days, e.redeemed_job_id, e.redeemed_at
          FROM public.customer_orders o

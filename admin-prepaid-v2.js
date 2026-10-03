@@ -204,9 +204,10 @@
 
   function statusBadge(value) {
     const status = clean(value) || "-";
+    const label = status === "cancelled" ? "ยกเลิกแล้ว" : status;
     const cls = status === "paid" || status === "active" || status === "unclaimed" || status === "redeeming" ? "paid"
       : status === "redeemed" ? "redeemed" : "pending";
-    return `<span class="badge ${cls}">${esc(status)}</span>`;
+    return `<span class="badge ${cls}">${esc(label)}</span>`;
   }
 
   async function loadOrders() {
@@ -215,11 +216,12 @@
     const orders = Array.isArray(data?.orders) ? data.orders : [];
     state.orders = orders;
     const term = clean($("ordersSearch")?.value).toLowerCase();
-    const visible = term ? orders.filter((row) => [
+    const activeOrders = $("showCancelledOrders")?.checked ? orders : orders.filter((row) => row.payment_order_status !== "cancelled");
+    const visible = term ? activeOrders.filter((row) => [
       row.order_code, row.customer_name, row.customer_phone, row.entitlement_code,
-    ].some((value) => clean(value).toLowerCase().includes(term))) : orders;
+    ].some((value) => clean(value).toLowerCase().includes(term))) : activeOrders;
     $("ordersBody").innerHTML = visible.map((row) => {
-      const paid = row.payment_order_status === "paid";
+      const pending = ["pending_payment", "payment_failed"].includes(row.payment_order_status);
       const canBook = Boolean(row.entitlement_code) && ["active", "unclaimed", "redeeming"].includes(String(row.entitlement_status || "")) && !row.redeemed_job_id;
       const snapshot = typeof row.service_entitlement_snapshot === "string" ? JSON.parse(row.service_entitlement_snapshot) : row.service_entitlement_snapshot || {};
       const groups = Array.isArray(snapshot.service_package_groups) ? snapshot.service_package_groups : [];
@@ -233,24 +235,70 @@
         <td>${esc(dateText(row.redeem_until))}<div class="muted">ประกัน ${esc(row.warranty_days ?? "-")} วัน</div></td>
         <td>${row.redeemed_job_id ? `<b>#${esc(row.redeemed_job_id)}</b>` : "-"}</td>
         <td><div class="actions" style="margin-top:0">
-          ${!paid ? `<button class="btn-soft" type="button" data-edit-order="${esc(row.order_code)}">แก้ไขข้อมูลจอง</button><button class="btn-gold" type="button" data-confirm-order="${esc(row.order_code)}" data-amount="${esc(row.subtotal)}">ยืนยันรับเงิน</button>` : ""}
+          ${pending ? `<button class="btn-soft" type="button" data-edit-order="${esc(row.order_code)}">แก้ไขข้อมูลจอง</button><button class="btn-gold" type="button" data-confirm-order="${esc(row.order_code)}" data-amount="${esc(row.subtotal)}">ยืนยันรับเงิน</button><button class="btn-soft" type="button" data-cancel-order="${esc(row.order_code)}">ยกเลิกออเดอร์</button>` : ""}
           ${canBook ? `<button class="btn-primary" type="button" data-book-right="${esc(row.entitlement_code)}">ลงงาน</button>` : ""}
         </div></td>
       </tr>`;
     }).join("") || '<tr><td colspan="9" class="muted">ยังไม่มีรายการ PREPAID</td></tr>';
-    setMessage("ordersMessage", term ? `พบ ${visible.length} จาก ${orders.length} รายการ` : `ทั้งหมด ${orders.length} รายการ`);
+    setMessage("ordersMessage", term ? `พบ ${visible.length} จาก ${activeOrders.length} รายการ` : `แสดง ${activeOrders.length} รายการ${orders.length > activeOrders.length ? ` · ยกเลิกแล้ว ${orders.length - activeOrders.length} รายการ` : ""}`);
   }
 
-  async function confirmPayment(orderCode, amount) {
-    const reference = clean(window.prompt(`ยืนยันยอด ${money(amount)} บาท\nกรอกเลขอ้างอิงการรับเงิน/สลิป`, ""));
-    if (!reference) return;
-    if (!window.confirm(`ยืนยันว่ารับเงินจริง ${money(amount)} บาท สำหรับ Order ${orderCode} ?`)) return;
-    await api(`/admin/prepaid-orders/${encodeURIComponent(orderCode)}/confirm-payment`, {
-      method: "POST",
-      body: JSON.stringify({ reference, confirmed_amount: Number(amount) }),
-    });
-    setMessage("ordersMessage", `ยืนยันการชำระ ${orderCode} สำเร็จ`, "success");
-    await loadOrders();
+  function confirmPayment(orderCode) {
+    const order = state.orders.find((row) => row.order_code === orderCode);
+    if (!order || !["pending_payment", "payment_failed"].includes(order.payment_order_status)) return;
+    $("paymentConfirmDialog").dataset.orderCode = orderCode;
+    $("paymentConfirmSummary").innerHTML = `Order <b>${esc(orderCode)}</b><br>${esc(order.customer_name)}<br>ยอดตามระบบ <b>${money(order.subtotal)} บาท</b>`;
+    $("paymentConfirmReference").value = "";
+    $("paymentConfirmMessage").textContent = "";
+    $("btnSubmitPaymentConfirm").textContent = `ยืนยันรับชำระ ${money(order.subtotal)} บาท`;
+    $("paymentConfirmDialog").showModal();
+    $("paymentConfirmReference").focus();
+  }
+
+  async function submitPaymentConfirmation() {
+    const orderCode = $("paymentConfirmDialog").dataset.orderCode;
+    const order = state.orders.find((row) => row.order_code === orderCode);
+    const reference = clean($("paymentConfirmReference").value);
+    if (!order || !reference) { $("paymentConfirmMessage").textContent = "กรุณากรอกเลขอ้างอิงหรือหมายเหตุการรับเงินจริง"; return; }
+    const button = $("btnSubmitPaymentConfirm");
+    button.disabled = true;
+    try {
+      await api(`/admin/prepaid-orders/${encodeURIComponent(orderCode)}/confirm-payment`, {
+        method: "POST", body: JSON.stringify({ reference, confirmed_amount: Number(order.subtotal) }),
+      });
+      $("paymentConfirmDialog").close();
+      setMessage("ordersMessage", `ยืนยันการชำระ ${orderCode} สำเร็จ`, "success");
+      await loadOrders();
+    } catch (error) {
+      $("paymentConfirmMessage").textContent = error.message || "ยืนยันการชำระไม่สำเร็จ กรุณาลองใหม่";
+    } finally { button.disabled = false; }
+  }
+
+  function showCancelOrder(orderCode) {
+    const order = state.orders.find((row) => row.order_code === orderCode);
+    if (!order || !["pending_payment", "payment_failed"].includes(order.payment_order_status)) return;
+    $("cancelOrderDialog").dataset.orderCode = orderCode;
+    $("cancelOrderSummary").innerHTML = `Order <b>${esc(orderCode)}</b><br>${esc(order.customer_name)} · ${money(order.subtotal)} บาท`;
+    $("cancelOrderReason").value = "";
+    $("cancelOrderMessage").textContent = "";
+    $("cancelOrderDialog").showModal();
+    $("cancelOrderReason").focus();
+  }
+
+  async function submitCancelOrder() {
+    const code = $("cancelOrderDialog").dataset.orderCode;
+    const reason = clean($("cancelOrderReason").value);
+    if (reason.length < 3) { $("cancelOrderMessage").textContent = "กรุณาระบุเหตุผลอย่างน้อย 3 ตัวอักษร"; return; }
+    const button = $("btnSubmitCancelOrder");
+    button.disabled = true;
+    try {
+      await api(`/admin/prepaid-orders/${encodeURIComponent(code)}/cancel`, { method: "POST", body: JSON.stringify({ reason }) });
+      $("cancelOrderDialog").close();
+      await loadOrders();
+      setMessage("ordersMessage", `ยกเลิก ${code} แล้ว (เก็บประวัติไว้)`, "success");
+    } catch (error) {
+      $("cancelOrderMessage").textContent = error.message || "ยกเลิกไม่สำเร็จ กรุณาตรวจสอบสถานะออเดอร์";
+    } finally { button.disabled = false; }
   }
 
   function editReservation(orderCode) {
@@ -303,6 +351,7 @@
       `ลูกค้า: ${right.customer_name} • ${right.customer_phone}`,
       `สิทธิ์: ${right.entitlement_code} • ${money(right.fixed_total_price)} บาท`,
       `สถานะ: ${right.entitlement_status} • หมดสิทธิ์: ${dateText(right.redeem_until)}`,
+      "ลูกค้าชำระเพิ่มเมื่อใช้สิทธิ์: 0 บาท",
       `รับประกันหลังปิดงาน: ${right.warranty_days} วัน`,
       `บริการ: ${(right.service_package_groups || []).map((g) => `${g.package_key} / ${g.btu} BTU × ${g.quantity}`).join(" | ")}`,
     ].join("\n");
@@ -350,6 +399,10 @@
   }
 
   function wire() {
+    $("btnSubmitPaymentConfirm").addEventListener("click", submitPaymentConfirmation);
+    $("btnCancelPaymentConfirm").addEventListener("click", () => $("paymentConfirmDialog").close());
+    $("btnSubmitCancelOrder").addEventListener("click", submitCancelOrder);
+    $("btnCloseCancelOrder").addEventListener("click", () => $("cancelOrderDialog").close());
     $("btnSaveReservation").addEventListener("click", saveReservation);
     $("btnCloseReservation").addEventListener("click", () => $("reservationDialog").close());
     $("saleBundle").addEventListener("change", () => chooseBundle().catch((error) => setMessage("saleMessage", error.message, "error")));
@@ -357,16 +410,18 @@
     $("btnCreateOrder").addEventListener("click", () => createOrder().catch((error) => { $("btnCreateOrder").disabled = false; setMessage("saleMessage", error.message, "error"); }));
     $("btnRefreshOrders").addEventListener("click", () => loadOrders().catch((error) => setMessage("ordersMessage", error.message, "error")));
     $("ordersSearch")?.addEventListener("input", () => loadOrders().catch((error) => setMessage("ordersMessage", error.message, "error")));
+    $("showCancelledOrders")?.addEventListener("change", () => loadOrders().catch((error) => setMessage("ordersMessage", error.message, "error")));
     $("bookingAssignMode").addEventListener("change", () => { $("singleTechBox").style.display = $("bookingAssignMode").value === "single" ? "block" : "none"; });
     $("btnBookRight").addEventListener("click", () => bookRight().catch((error) => setMessage("bookingMessage", error.message, "error")));
     $("btnCancelBookingPanel").addEventListener("click", () => { $("bookingCard").style.display = "none"; state.bookingRequestKey = ""; });
     $("ordersBody").addEventListener("click", (event) => {
+      const cancelButton = event.target.closest("[data-cancel-order]");
+      if (cancelButton) { showCancelOrder(cancelButton.getAttribute("data-cancel-order")); return; }
       const editButton = event.target.closest("[data-edit-order]");
       if (editButton) { editReservation(editButton.getAttribute("data-edit-order")); return; }
       const confirmButton = event.target.closest("[data-confirm-order]");
       if (confirmButton) {
-        confirmPayment(confirmButton.getAttribute("data-confirm-order"), confirmButton.getAttribute("data-amount"))
-          .catch((error) => setMessage("ordersMessage", error.message, "error"));
+        confirmPayment(confirmButton.getAttribute("data-confirm-order"));
         return;
       }
       const bookButton = event.target.closest("[data-book-right]");
@@ -386,6 +441,7 @@
       if (order?.entitlement_code && order.payment_order_status === "paid" && !order.redeemed_job_id) {
         await openBooking(order.entitlement_code);
       } else if (order) {
+        if (order.payment_order_status === "cancelled") $("showCancelledOrders").checked = true;
         $("ordersSearch").value = code;
         await loadOrders();
         $("ordersSearch").scrollIntoView({ behavior: "smooth", block: "start" });

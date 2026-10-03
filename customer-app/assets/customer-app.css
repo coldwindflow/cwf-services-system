@@ -4147,16 +4147,19 @@ textarea.purchase-input { min-height: 66px; resize: vertical; }
   color: var(--muted);
 }
 
-/* Mobile-first 2-column marketplace grid (Lazada/Shopee-style).
+/* Mobile-first marketplace grid (Lazada/Shopee-style).
    The app shell stays capped at max-width: 480px on every viewport (it's a
    phone-sized column even on desktop), so the grid must not scale its
    column count off viewport-width media queries -- the container never
    actually grows past ~480px, and doing so squeezed cards into unreadable
-   slivers at wide viewports. Stay at 2 columns at every width. */
+   slivers at wide viewports. Very narrow phones need one readable column. */
 .store-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
+}
+@media (max-width: 360px) {
+  .store-grid { grid-template-columns: minmax(0, 1fr); }
 }
 
 .store-card {
@@ -4268,6 +4271,35 @@ textarea.purchase-input { min-height: 66px; resize: vertical; }
   font-size: 12px;
   color: var(--muted);
 }
+.store-card-gallery > .store-card-image-placeholder,
+.store-detail-gallery > .store-card-image-placeholder,
+.store-related-card-image-wrap > .store-card-image-placeholder {
+  flex-direction: column;
+  gap: 5px;
+  color: transparent;
+  font-size: 0;
+  background: radial-gradient(circle at 75% 18%, rgba(255, 214, 64, .35), transparent 32%),
+    linear-gradient(145deg, #09244d, #1659b4 62%, #287be5);
+}
+.store-card-gallery > .store-card-image-placeholder::before,
+.store-detail-gallery > .store-card-image-placeholder::before,
+.store-related-card-image-wrap > .store-card-image-placeholder::before {
+  content: "✦";
+  color: #ffcf32;
+  font-size: clamp(34px, 11vw, 58px);
+  line-height: 1;
+}
+.store-card-gallery > .store-card-image-placeholder::after,
+.store-detail-gallery > .store-card-image-placeholder::after,
+.store-related-card-image-wrap > .store-card-image-placeholder::after {
+  content: "CWF SERVICE";
+  color: #fff;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: .16em;
+}
+.store-related-card-image-wrap > .store-card-image-placeholder::before { font-size: 32px; }
+.store-related-card-image-wrap > .store-card-image-placeholder::after { font-size: 8px; }
 
 .store-featured-ribbon {
   position: absolute;
@@ -4468,6 +4500,11 @@ textarea.purchase-input { min-height: 66px; resize: vertical; }
   overflow: hidden;
   background: var(--soft-blue, #eef2f7);
   margin-bottom: 12px;
+}
+.store-detail-gallery:has(> .store-card-image-placeholder) {
+  aspect-ratio: 16 / 9;
+  min-height: 180px;
+  max-height: 280px;
 }
 .store-detail-slides {
   display: flex;
