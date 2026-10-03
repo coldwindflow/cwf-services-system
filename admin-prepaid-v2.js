@@ -449,6 +449,7 @@
       if (order?.entitlement_code && order.payment_order_status === "paid" && !order.redeemed_job_id) {
         await openBooking(order.entitlement_code);
       } else if (order) {
+        if (order.payment_order_status === "cancelled") $("showCancelledOrders").checked = true;
         $("ordersSearch").value = code;
         await loadOrders();
         $("ordersSearch").scrollIntoView({ behavior: "smooth", block: "start" });

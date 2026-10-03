@@ -94,6 +94,7 @@ test("routes, customer hub, admin queue and migration include safe cancellation 
   const sql = fs.readFileSync("scripts/sql/20260906_prepaid_service_entitlements.sql", "utf8");
   assert.match(customerRoute, /\/public\/prepaid-orders\/:code\/cancel", requireCustomerJwt/);
   assert.match(adminRoute, /\/admin\/prepaid-orders\/:code\/cancel", requireAdminSession/);
+  assert.match(adminRoute, /req\.actor\?\.username/);
   assert.match(ui, /data-cancel-order/);
   assert.match(queue, /data-prepaid-cancel/);
   assert.match(sql, /ADD COLUMN IF NOT EXISTS prepaid_cancelled_at TIMESTAMPTZ/);
