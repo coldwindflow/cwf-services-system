@@ -68,9 +68,11 @@
           <div><label>รูปแบบจัดช่าง</label><select id="bookingAssignMode"><option value="auto">ระบบเลือกช่างบริษัท</option><option value="single">ระบุ Username ช่าง</option></select></div>
         </div>
         <div id="singleTechBox" style="display:none"><label>Username ช่าง</label><input id="bookingTechnician" placeholder="เช่น arm"></div>
-        <label>ที่อยู่หน้างาน</label><textarea id="bookingAddress" placeholder="บ้าน/คอนโด/เลขห้อง/ชั้น/ถนน/เขต"></textarea>
-        <label>Google Maps / พิกัด (ถ้ามี)</label><input id="bookingMapsUrl" placeholder="https://maps.google.com/..."></input>
-        <label>หมายเหตุหน้างาน</label><textarea id="bookingNote" placeholder="รายละเอียดติดต่อ นิติบุคคล จุดจอดรถ ฯลฯ"></textarea>
+        <p class="muted">ข้อมูลหน้างานจากออเดอร์ที่ชำระแล้วจะถูกส่งให้งานช่างอัตโนมัติ หากต้องเปลี่ยนสถานที่ กรุณาตรวจสอบกับลูกค้าและดำเนินการผ่านการจัดการงาน ไม่แก้ไขออเดอร์ย้อนหลัง</p>
+        <label>ที่อยู่หน้างานจากออเดอร์</label><textarea id="bookingAddress" readonly></textarea>
+        <label>Google Maps จากออเดอร์</label><input id="bookingMapsUrl" readonly>
+        <a id="bookingMapLink" target="_blank" rel="noopener" hidden>เปิดแผนที่สถานที่ให้บริการ</a>
+        <label>หมายเหตุหน้างานจากออเดอร์</label><textarea id="bookingNote" readonly></textarea>
         <div class="actions">
           <button id="btnBookRight" class="btn-gold" type="button">ลงงานจากสิทธิ์นี้</button>
           <button id="btnCancelBookingPanel" class="btn-soft" type="button">ปิด</button>
@@ -109,6 +111,6 @@
     </dialog>
   </main>
   <script src="/admin-v2-common.js?v=20260622_admin_menu_catalog_entry"></script>
-  <script src="/admin-prepaid-v2.js?v=20261002_prepaid_operations_v2"></script>
+  <script src="/admin-prepaid-v2.js?v=20261005_air_care_location_v1"></script>
 </body>
 </html>
