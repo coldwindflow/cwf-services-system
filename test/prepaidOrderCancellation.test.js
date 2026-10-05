@@ -9,7 +9,7 @@ function fixture(overrides = {}) {
   const order = {
     order_id: 42, order_code: "CWF-CANCEL-42", order_kind: "service_prepaid",
     customer_sub: "owner-sub", status: "pending_payment", payment_status: null,
-    paid_at: null, payment_charge_id: null, manual_payment_reference: null,
+    paid_at: null, payment_charge_id: null, manual_payment_reference: null, subtotal: 499,
     prepaid_cancelled_at: null, ...overrides,
   };
   let hasEntitlement = false;
@@ -84,6 +84,24 @@ test("admin cancellation records actor and removes the order from payable status
   assert.equal(result.status, "cancelled");
   assert.equal(flow.order.prepaid_cancelled_by, "admin:operator");
   assert.equal(flow.order.prepaid_cancel_reason, "ลูกค้าไม่รับแพ็กเกจ");
+});
+
+test("payment verification cannot revive a cancelled Order", async () => {
+  const flow = fixture();
+  await flow.service.cancelOrder("CWF-CANCEL-42", { cancelledBy: "operator", reason: "ลูกค้ายกเลิก" });
+  await assert.rejects(flow.service.confirmManualPayment("CWF-CANCEL-42", {
+    reference: "bank-slip-123", confirmed_amount: 499,
+  }), { code: "ORDER_NOT_PAYABLE" });
+  assert.equal(flow.order.status, "cancelled");
+});
+
+test("active Admin queue excludes cancelled Orders while audit list retains them", () => {
+  const queue = fs.readFileSync("admin-prepaid-queue.js", "utf8");
+  const service = fs.readFileSync("server/services/prepaid/prepaidOrderServiceV2.js", "utf8");
+  assert.match(queue, /order\.payment_order_status === "cancelled"\) return false/);
+  assert.match(queue, /data-prepaid-cancel/);
+  assert.match(service, /WHERE order_kind='service_prepaid' AND customer_sub=\$1/);
+  assert.doesNotMatch(service.match(/async function listOrders[\s\S]*?async function listRights/)?.[0] || "", /status\s*<>\s*'cancelled'/i);
 });
 
 test("routes, customer hub, admin queue and migration include safe cancellation wiring", () => {
