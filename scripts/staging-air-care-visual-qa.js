@@ -20,6 +20,11 @@ const CONTEXT = {
 const BASE = "http://127.0.0.1:3901";
 const OUT = "/tmp/cwf-air-care-visual-evidence";
 const WIDTHS = [320, 360, 390, 412, 768];
+const LOCATION_CAPTURE_NAMES = new Set([
+  "08-admin-booking-pending", "10-admin-paid-active", "11-admin-entitlement-scheduling",
+  "11b-admin-job-created", "11c-technician-job-location",
+  "16-admin-unpaid-cancelled-queue", "17-admin-cancelled-history",
+]);
 let browser;
 let adminAssistedOrder = null;
 let bookedQaJobId = null;
@@ -110,6 +115,10 @@ async function capture(page, name, { checkDocument = true, checkDialog = false }
     assert.notEqual(metrics.dialogHeading, "กำลังโหลดโปรโมชั่น", `${name}: stale loading heading`);
   }
   assert.equal(metrics.rawError, false, `${name}: raw internal error visible`);
+  if (!LOCATION_CAPTURE_NAMES.has(name)) {
+    record(name, { ...metrics, screenshot_skipped: "prior storefront visual acceptance retained" });
+    return;
+  }
   const filename = `${name}.png`;
   await page.screenshot({ path: path.join(OUT, filename), fullPage: !name.startsWith("01-store-"), animations: "disabled", timeout: 90000 });
   record(name, { screenshot: filename, ...metrics });
