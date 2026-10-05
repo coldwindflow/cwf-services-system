@@ -81,6 +81,9 @@ jobs:
             '
           visual_status=$?
           set -e
+          if [ "$visual_status" -ne 0 ]; then
+            sudo -n /usr/bin/docker exec cwf-staging-app sh -c 'tail -n 80 /tmp/cwf-staging-visual-app.log' || true
+          fi
           sudo -n /usr/bin/docker cp cwf-staging-app:/tmp/cwf-air-care-visual-evidence "$RUNNER_TEMP/cwf-air-care-visual-evidence"
           sudo -n /usr/bin/docker exec cwf-staging-app rm -f /app/scripts/staging-air-care-visual-qa.js
           exit "$visual_status"
