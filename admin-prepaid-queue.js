@@ -87,6 +87,8 @@
       <div class="prepaid-ops-actions">
       ${pending ? `<button type="button" class="prepaid-ops-payment" data-prepaid-confirm="${esc(order.order_code)}">ยืนยันรับชำระแล้ว</button><a class="prepaid-ops-secondary" href="tel:${esc(order.customer_phone)}">โทร</a>${map ? `<a class="prepaid-ops-secondary" href="${esc(map)}" target="_blank" rel="noopener">เปิดแผนที่</a>` : ""}<button type="button" class="prepaid-ops-secondary" data-prepaid-edit="${esc(order.order_code)}">แก้ไขข้อมูล</button><button type="button" class="prepaid-ops-secondary" data-prepaid-cancel="${esc(order.order_code)}">ยกเลิกออเดอร์</button>` : ""}
       ${readyOrder(order) ? `<a class="prepaid-ops-primary" href="${esc(orderLink)}">ลงงานจากสิทธิ์</a>` : ""}
+      ${order.payment_order_status === "paid" && !order.redeemed_job_id ? '<span class="prepaid-ops-secondary">ชำระแล้ว: ต้องตรวจสอบคืนเงิน/สิทธิ์ก่อน ไม่สามารถลบออเดอร์</span>' : ""}
+      ${order.redeemed_job_id ? `<a class="prepaid-ops-secondary" href="/admin-job-view-v2.html?job_id=${encodeURIComponent(order.redeemed_job_id)}">จัดการงาน / เลื่อนนัด</a>` : ""}
       <a class="prepaid-ops-secondary" href="${esc(orderLink)}">ดูรายละเอียด</a></div></article>`;
   }
 
@@ -98,6 +100,7 @@
     const query = clean(search.value).toLocaleLowerCase();
     filters.querySelectorAll("[data-prepaid-filter]").forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.prepaidFilter === filter)));
     const visibleOrders = orders.filter((order) => {
+      if (order.payment_order_status === "cancelled") return false;
       if (filter === "jobs") return false;
       if (filter === "pending" && !pendingOrder(order)) return false;
       if (filter === "paid" && !readyOrder(order)) return false;

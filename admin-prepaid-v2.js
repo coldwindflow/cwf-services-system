@@ -19,6 +19,12 @@
   }[ch]));
   const money = (value) => Number(value || 0).toLocaleString("th-TH", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
   const requestKey = () => `adminui_${(globalThis.crypto?.randomUUID?.() || `${Date.now()}_${Math.random().toString(36).slice(2)}`).replace(/-/g, "_")}`;
+  const safeMapUrl = (value) => {
+    try {
+      const url = new URL(value);
+      return url.protocol === "https:" && ["google.com", "www.google.com", "maps.google.com", "maps.app.goo.gl"].includes(url.hostname) ? url.href : "";
+    } catch (_) { return ""; }
+  };
 
   async function api(path, options = {}) {
     if (typeof apiFetch === "function") return apiFetch(path, options);
@@ -237,6 +243,8 @@
         <td><div class="actions" style="margin-top:0">
           ${pending ? `<button class="btn-soft" type="button" data-edit-order="${esc(row.order_code)}">แก้ไขข้อมูลจอง</button><button class="btn-gold" type="button" data-confirm-order="${esc(row.order_code)}" data-amount="${esc(row.subtotal)}">ยืนยันรับเงิน</button><button class="btn-soft" type="button" data-cancel-order="${esc(row.order_code)}">ยกเลิกออเดอร์</button>` : ""}
           ${canBook ? `<button class="btn-primary" type="button" data-book-right="${esc(row.entitlement_code)}">ลงงาน</button>` : ""}
+          ${row.payment_order_status === "paid" && !row.redeemed_job_id ? '<span class="muted">ชำระแล้ว: หากลูกค้าขอยกเลิก ต้องตรวจสอบการคืนเงินและสิทธิ์ก่อน ไม่สามารถลบออเดอร์</span>' : ""}
+          ${row.redeemed_job_id ? `<a class="btn-soft" href="/admin-job-view-v2.html?job_id=${encodeURIComponent(row.redeemed_job_id)}">จัดการงาน / เลื่อนนัด</a><span class="muted">การยกเลิกงานไม่ใช่การคืนเงินออเดอร์</span>` : ""}
         </div></td>
       </tr>`;
     }).join("") || '<tr><td colspan="9" class="muted">ยังไม่มีรายการ PREPAID</td></tr>';
@@ -346,6 +354,11 @@
     $("bookingEntitlementCode").value = right.entitlement_code;
     $("bookingAddress").value = right.address_text || "";
     $("bookingMapsUrl").value = right.maps_url || "";
+    const mapLink = $("bookingMapLink");
+    const safeMap = safeMapUrl(right.maps_url);
+    mapLink.hidden = !safeMap;
+    if (safeMap) mapLink.href = safeMap;
+    else mapLink.removeAttribute("href");
     $("bookingNote").value = right.note || "";
     $("bookingRightSummary").textContent = [
       `ลูกค้า: ${right.customer_name} • ${right.customer_phone}`,
@@ -357,23 +370,19 @@
     ].join("\n");
     state.bookingRequestKey = requestKey();
     $("bookingCard").style.display = "block";
-    setMessage("bookingMessage", "เลือกวัน/เวลาและกรอกที่อยู่ จากนั้นลงงานได้ทันที");
+    setMessage("bookingMessage", "ที่อยู่ แผนที่ หมุด GPS และหมายเหตุจะส่งจากออเดอร์โดยอัตโนมัติ เลือกเพียงวันเวลาและช่าง");
     $("bookingCard").scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   async function bookRight() {
     const code = clean($("bookingEntitlementCode").value);
     const appointment = bangkokIso($("bookingAppointment").value);
-    const address = clean($("bookingAddress").value);
-    if (!code || !appointment || !address) throw new Error("กรอกวันเวลาและที่อยู่ให้ครบ");
+    if (!code || !appointment) throw new Error("กรอกวันเวลาให้ครบ");
     const assignMode = $("bookingAssignMode").value;
     const technician = clean($("bookingTechnician").value);
     if (assignMode === "single" && !technician) throw new Error("โหมดระบุช่าง ต้องกรอก Username ช่าง");
     const payload = {
       appointment_datetime: appointment,
-      address_text: address,
-      maps_url: clean($("bookingMapsUrl").value),
-      customer_note: clean($("bookingNote").value),
       booking_mode: "scheduled",
       dispatch_mode: assignMode === "single" ? "forced" : "normal",
       assign_mode: assignMode,
