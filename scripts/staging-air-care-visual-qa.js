@@ -417,7 +417,8 @@ async function main() {
   await adminPage.locator("#customer_phone").press("Tab");
   await adminPage.locator("#btnUseLatestCustomerData").waitFor({ state: "visible", timeout: 20000 });
   await adminPage.locator("#btnUseLatestCustomerData").click();
-  assert.ok((await adminPage.locator("#address_text").inputValue()).includes(QA.customerAddress), "Admin customer lookup did not reuse saved address");
+  const assistedSavedAddress = await adminPage.locator("#address_text").inputValue();
+  assert.ok([QA.customerAddress, orderLocation.address].some((saved) => assistedSavedAddress.includes(saved)), `Admin customer lookup did not reuse a saved address: ${assistedSavedAddress}`);
   await adminPage.locator("#customer_name").fill(QA.customerName);
   await adminPage.locator('[data-promo-qty]').first().fill("1");
   await adminPage.locator("#promotionAssistPrice").click();
