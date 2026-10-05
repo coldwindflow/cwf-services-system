@@ -344,6 +344,18 @@ async function main() {
 
   const technician = await browser.newContext({ viewport: { width: 390, height: 800 } });
   await technician.addCookies([{ name: "cwf_session", value: technicianSession, url: BASE, httpOnly: true, sameSite: "Lax" }]);
+  const techColumns = new Set((await pool.query(
+    "SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='jobs'"
+  )).rows.map((row) => row.column_name));
+  const techProjection = `job_id booking_code booking_token job_source dispatch_mode brand_key
+    customer_name customer_phone job_type appointment_datetime job_status job_price paid_at paid_by payment_status address_text
+    gps_latitude gps_longitude air_type air_quantity technician_team technician_username created_at maps_url job_zone
+    travel_started_at started_at finished_at canceled_at cancel_reason return_reason returned_at returned_by checkin_at
+    technician_note technician_note_at final_signature_path final_signature_status final_signature_at
+    pre_cleaning_checklist post_cleaning_checklist photo_acknowledgement_required photo_acknowledgement_accepted missing_photo_categories
+    close_payment_method close_payment_status close_cash_amount close_payment_note close_cash_confirmed close_signature_type
+    close_signature_by close_signature_at checkin_latitude checkin_longitude`;
+  record("technician-schema", { missing: techProjection.trim().split(/\s+/).filter((column) => !techColumns.has(column)) });
   const technicianApi = await technician.request.get(`${BASE}/jobs/tech/${encodeURIComponent(QA.technicianUsername)}?history_limit=40&history_offset=0`, { headers: { accept: "application/json" } });
   if (technicianApi.status() !== 200) {
     throw new Error(`Technician Job API rejected QA session: HTTP ${technicianApi.status()} ${await technicianApi.text()}`);
