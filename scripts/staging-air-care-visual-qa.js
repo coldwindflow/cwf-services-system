@@ -344,6 +344,10 @@ async function main() {
 
   const technician = await browser.newContext({ viewport: { width: 390, height: 800 } });
   await technician.addCookies([{ name: "cwf_session", value: technicianSession, url: BASE, httpOnly: true, sameSite: "Lax" }]);
+  await technician.addInitScript(({ username }) => {
+    localStorage.setItem("username", username);
+    localStorage.setItem("role", "technician");
+  }, { username: QA.technicianUsername });
   const techColumns = new Set((await pool.query(
     "SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='jobs'"
   )).rows.map((row) => row.column_name));
