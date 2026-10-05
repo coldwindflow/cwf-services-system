@@ -382,12 +382,13 @@ async function main() {
     if (response.status() >= 400) technicianFailedRoutes.push({ path: new URL(response.url()).pathname, status: response.status() });
   });
   await technicianPage.goto(`${BASE}/tech.html`, { waitUntil: "domcontentloaded" });
-  const technicianCard = technicianPage.locator(`.job-card[data-jobkey="${bookedQaJobId}"]`);
+  const technicianCard = technicianPage.locator(`.job-card[data-jobid="${bookedQaJobId}"]`).first();
   try { await technicianCard.waitFor({ timeout: 15000 }); }
   catch (error) {
     record("technician-ui-diagnostic", {
       url: technicianPage.url(),
       card_count: await technicianPage.locator(".job-card").count(),
+      card_keys: await technicianPage.locator(".job-card").evaluateAll((cards) => cards.map((card) => ({ key: card.getAttribute("data-jobkey"), id: card.getAttribute("data-jobid") }))),
       active_text: (await technicianPage.locator("#active-list").innerText().catch(() => "")).slice(0, 300),
       upcoming_text: (await technicianPage.locator("#active-upcoming-list").innerText().catch(() => "")).slice(0, 300),
       page_errors: technicianPageErrors.slice(0, 8),
