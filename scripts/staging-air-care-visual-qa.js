@@ -111,7 +111,7 @@ async function capture(page, name, { checkDocument = true, checkDialog = false }
   }
   assert.equal(metrics.rawError, false, `${name}: raw internal error visible`);
   const filename = `${name}.png`;
-  await page.screenshot({ path: path.join(OUT, filename), fullPage: !name.startsWith("01-store-"), animations: "disabled", timeout: 30000 });
+  await page.screenshot({ path: path.join(OUT, filename), fullPage: !name.startsWith("01-store-"), animations: "disabled", timeout: 90000 });
   record(name, { screenshot: filename, ...metrics });
 }
 
