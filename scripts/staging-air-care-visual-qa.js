@@ -382,6 +382,7 @@ async function main() {
     if (response.status() >= 400) technicianFailedRoutes.push({ path: new URL(response.url()).pathname, status: response.status() });
   });
   await technicianPage.goto(`${BASE}/tech.html`, { waitUntil: "domcontentloaded" });
+  await technicianPage.locator("#tab-active").click();
   await technicianPage.locator("#tab-active-upcoming").click();
   const technicianCard = technicianPage.locator(`.job-card[data-jobid="${bookedQaJobId}"]`).first();
   try { await technicianCard.waitFor({ timeout: 15000 }); }
