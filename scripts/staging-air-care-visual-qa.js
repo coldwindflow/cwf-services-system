@@ -258,9 +258,9 @@ async function main() {
   await page.locator("[data-prepaid-location-options]").waitFor({ state: "visible" });
   assert.ok((await page.locator('[name="prepaid_saved_location"]').count()) >= 2, "multiple saved locations not offered");
   await capture(page, "07b-saved-location-selector", { checkDialog: true });
-  await page.locator(".cwf-prepaid-location-option").filter({ hasText: QA.customerAddress }).locator('input[name="prepaid_saved_location"]').check();
+  await page.locator(".cwf-prepaid-location-option").filter({ hasText: "SECOND LOCATION" }).locator('input[name="prepaid_saved_location"]').check();
   await page.locator("[data-prepaid-location-summary]").waitFor({ state: "visible" });
-  assert.ok((await page.locator("[data-prepaid-location-summary]").innerText()).includes(QA.customerAddress));
+  assert.ok((await page.locator("[data-prepaid-location-summary]").innerText()).includes("SECOND LOCATION"));
   const paidCode = await buy(page);
   await page.locator("[data-prepaid-close]").click();
   record("customer-orders", { cancelled: cancelledCode, premium: premiumCode, pending: paidCode });
@@ -273,7 +273,7 @@ async function main() {
   await card.waitFor({ timeout: 20000 });
   const pendingText = await card.innerText();
   record("admin-pending-card-text", { text: pendingText });
-  for (const part of [QA.customerName, QA.customerPhone, QA.customerAddress, "499", "รอตรวจสอบการชำระเงิน"]) assert.ok(pendingText.includes(part), `Admin pending card missing ${part}`);
+  for (const part of [QA.customerName, QA.customerPhone, "SECOND LOCATION", "499", "รอตรวจสอบการชำระเงิน"]) assert.ok(pendingText.includes(part), `Admin pending card missing ${part}`);
   if (!pendingText.includes("STANDARD")) visualDefects.push("Admin pending card lacks STANDARD promotion name");
   assert.equal(await card.locator("[data-prepaid-confirm]").count(), 1);
   await capture(adminPage, "08-admin-booking-pending");
@@ -298,6 +298,8 @@ async function main() {
        FROM public.customer_orders WHERE order_code=$1`, [paidCode]
   )).rows[0];
   assert.ok(orderLocation, "QA paid Order missing");
+  assert.notEqual(orderLocation.prepaid_gps_latitude, null, "QA selected location lost its latitude before payment");
+  assert.notEqual(orderLocation.prepaid_gps_longitude, null, "QA selected location lost its longitude before payment");
   assert.equal(await adminPage.locator("#bookingAddress").inputValue(), orderLocation.address);
   assert.equal(await adminPage.locator("#bookingMapsUrl").inputValue(), orderLocation.prepaid_maps_url);
   assert.equal(await adminPage.locator("#bookingNote").inputValue(), orderLocation.note || "");
