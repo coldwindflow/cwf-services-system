@@ -373,10 +373,28 @@ async function main() {
   ]) assert.equal(technicianJob[field], expected, `Technician API ${field} mismatch`);
   assert.equal(Number(technicianJob.gps_latitude), Number(orderLocation.prepaid_gps_latitude));
   assert.equal(Number(technicianJob.gps_longitude), Number(orderLocation.prepaid_gps_longitude));
+  record("technician-payload", { job_id: technicianJob.job_id, job_status: technicianJob.job_status, appointment_datetime: technicianJob.appointment_datetime });
   const technicianPage = await technician.newPage();
+  const technicianPageErrors = [];
+  const technicianFailedRoutes = [];
+  technicianPage.on("pageerror", (error) => technicianPageErrors.push(String(error.message || error).slice(0, 180)));
+  technicianPage.on("response", (response) => {
+    if (response.status() >= 400) technicianFailedRoutes.push({ path: new URL(response.url()).pathname, status: response.status() });
+  });
   await technicianPage.goto(`${BASE}/tech.html`, { waitUntil: "domcontentloaded" });
   const technicianCard = technicianPage.locator(`.job-card[data-jobkey="${bookedQaJobId}"]`);
-  await technicianCard.waitFor({ timeout: 30000 });
+  try { await technicianCard.waitFor({ timeout: 15000 }); }
+  catch (error) {
+    record("technician-ui-diagnostic", {
+      url: technicianPage.url(),
+      card_count: await technicianPage.locator(".job-card").count(),
+      active_text: (await technicianPage.locator("#active-list").innerText().catch(() => "")).slice(0, 300),
+      upcoming_text: (await technicianPage.locator("#active-upcoming-list").innerText().catch(() => "")).slice(0, 300),
+      page_errors: technicianPageErrors.slice(0, 8),
+      failed_routes: technicianFailedRoutes.slice(0, 12),
+    });
+    throw error;
+  }
   const technicianText = await technicianCard.innerText();
   for (const value of [orderLocation.customer_name, orderLocation.customer_phone, orderLocation.address]) {
     assert.ok(technicianText.includes(value), `Technician card missing ${value}`);
