@@ -55,7 +55,7 @@ jobs:
         if: github.ref_name == 'qa/air-care-staging-visual-277dc5b' && inputs.action == 'accept'
         shell: bash
         env:
-          EXPECTED_RELEASE_SHA: bea24bf8ba973067643ffd65c64eadbfcc6355d8
+          EXPECTED_RELEASE_SHA: 472f0fd3957a8fe182e2d44e5872b5f736d18967
         run: |
           set -Eeuo pipefail
           status="$(sudo -n /usr/local/sbin/cwf-deployctl staging status)"
