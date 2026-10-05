@@ -329,7 +329,7 @@ async function main() {
   assert.equal(job.maps_url, orderLocation.prepaid_maps_url);
   assert.equal(Number(job.gps_latitude), Number(orderLocation.prepaid_gps_latitude));
   assert.equal(Number(job.gps_longitude), Number(orderLocation.prepaid_gps_longitude));
-  assert.equal(job.customer_note, orderLocation.note);
+  assert.equal(job.customer_note || "", orderLocation.note || "");
   assert.equal(job.technician_username, QA.technicianUsername);
   await capture(adminPage, "11b-admin-job-created");
 
