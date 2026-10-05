@@ -344,7 +344,7 @@ async function main() {
 
   const technician = await browser.newContext({ viewport: { width: 390, height: 800 } });
   await technician.addCookies([{ name: "cwf_session", value: technicianSession, url: BASE, httpOnly: true, sameSite: "Lax" }]);
-  const technicianApi = await technician.request.get(`${BASE}/jobs/tech/me`, { headers: { accept: "application/json" } });
+  const technicianApi = await technician.request.get(`${BASE}/jobs/tech/${encodeURIComponent(QA.technicianUsername)}?history_limit=40&history_offset=0`, { headers: { accept: "application/json" } });
   assert.equal(technicianApi.status(), 200, "Technician Job API rejected QA session");
   const technicianJobs = await technicianApi.json();
   const technicianJob = technicianJobs.find((row) => Number(row.job_id) === bookedQaJobId);
