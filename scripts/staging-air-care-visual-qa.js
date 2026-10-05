@@ -4,6 +4,7 @@
 // Runs only inside the deployed Staging app container against its private QA
 // loopback process. The branch carrying this file is never merged to release.
 const assert = require("node:assert/strict");
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 const pool = require("../db");
@@ -21,6 +22,9 @@ const OUT = "/tmp/cwf-air-care-visual-evidence";
 const WIDTHS = [320, 360, 390, 412, 768];
 let browser;
 let adminAssistedOrder = null;
+let bookedQaJobId = null;
+let technicianSession = null;
+let qaAdminSession = null;
 const evidence = [];
 const visualDefects = [];
 const ADMIN_ASSIST_NAME = "CWF STAGING QA — AIR CARE ADMIN ASSIST VISUAL";
@@ -30,6 +34,51 @@ function record(name, data = {}) {
   const entry = { name, ...data };
   evidence.push(entry);
   console.log(`[VISUAL_QA] ${JSON.stringify(entry)}`);
+}
+
+function plusDays(days) {
+  const bangkok = new Date(Date.now() + (7 * 60 * 60 * 1000));
+  bangkok.setUTCDate(bangkok.getUTCDate() + days);
+  return bangkok.toISOString().slice(0, 10);
+}
+
+async function provisionTechnicianSession() {
+  assertStagingOnly(CONTEXT);
+  technicianSession = crypto.createHmac("sha256", CONTEXT.secret)
+    .update("cwf/staging/qa/air-care/technician-session/location-v1")
+    .digest("base64url");
+  await pool.query("DELETE FROM public.auth_sessions WHERE username=$1", [QA.technicianUsername]);
+  await pool.query(
+    "INSERT INTO public.auth_sessions (session_token, username, role, expires_at) VALUES ($1,$2,'technician',NOW() + INTERVAL '4 hours')",
+    [technicianSession, QA.technicianUsername]
+  );
+}
+
+async function cleanupBookedQaJob() {
+  assertStagingOnly(CONTEXT);
+  if (!bookedQaJobId) return;
+  const result = await pool.query(
+    `SELECT j.job_id, j.booking_code, j.canceled_at
+       FROM public.jobs j
+       JOIN public.customer_service_entitlements e ON e.entitlement_id=j.prepaid_entitlement_id
+       JOIN public.customer_orders o ON o.order_id=e.order_id
+      WHERE j.job_id=$1 AND o.customer_sub=$2`,
+    [bookedQaJobId, QA.customerSub]
+  );
+  assert.equal(result.rows.length, 1, "QA Job identity is ambiguous; refusing cleanup");
+  const job = result.rows[0];
+  const headers = { cookie: `cwf_session=${encodeURIComponent(qaAdminSession)}`, "content-type": "application/json" };
+  if (!job.canceled_at) {
+    const cancelled = await fetch(`${BASE}/jobs/${job.job_id}/admin-cancel`, {
+      method: "POST", headers, body: JSON.stringify({ reason: QA.marker }),
+    });
+    assert.equal(cancelled.status, 200, "QA Job cancellation failed");
+  }
+  const deleted = await fetch(`${BASE}/jobs/${job.job_id}/admin-delete`, {
+    method: "DELETE", headers, body: JSON.stringify({ confirm_code: job.booking_code || "DELETE" }),
+  });
+  assert.equal(deleted.status, 200, "QA Job cleanup failed");
+  record("qa-job-cleanup", { job: job.job_id, removed: true });
 }
 
 async function capture(page, name, { checkDocument = true, checkDialog = false } = {}) {
@@ -142,6 +191,8 @@ async function main() {
   assert.equal(baseProviderConfig(process.env).jwtSecret, CONTEXT.secret, "QA app JWT secret mismatch");
   fs.mkdirSync(OUT, { recursive: true });
   const qa = await provisionQaIdentity({ pool, ...CONTEXT });
+  qaAdminSession = qa.adminSession;
+  await provisionTechnicianSession();
   await deleteQaOrders({ pool, ...CONTEXT });
   browser = await chromium.launch({ executablePath: "/usr/bin/chromium", headless: true, args: ["--no-sandbox", "--disable-dev-shm-usage"] });
   const customer = await browser.newContext({ viewport: { width: 390, height: 800 }, geolocation: { latitude: 13.7563, longitude: 100.5018 }, permissions: ["geolocation"], acceptDownloads: false });
@@ -241,8 +292,69 @@ async function main() {
   await paidRow.locator(`[data-book-right]`).click();
   await adminPage.locator("#bookingCard").waitFor({ state: "visible" });
   for (const field of ["#bookingAppointment", "#bookingAssignMode", "#bookingAddress", "#bookingMapsUrl"]) assert.equal(await adminPage.locator(field).isVisible(), true, `Scheduling field missing: ${field}`);
+  const orderLocation = (await pool.query(
+    `SELECT customer_name, customer_phone, address, note, prepaid_maps_url,
+            prepaid_gps_latitude, prepaid_gps_longitude
+       FROM public.customer_orders WHERE order_code=$1`, [paidCode]
+  )).rows[0];
+  assert.ok(orderLocation, "QA paid Order missing");
+  assert.equal(await adminPage.locator("#bookingAddress").inputValue(), orderLocation.address);
+  assert.equal(await adminPage.locator("#bookingMapsUrl").inputValue(), orderLocation.prepaid_maps_url);
+  assert.equal(await adminPage.locator("#bookingNote").inputValue(), orderLocation.note || "");
+  assert.equal(await adminPage.locator("#bookingAddress").getAttribute("readonly"), "");
+  assert.equal(await adminPage.locator("#bookingMapLink").isVisible(), true);
+  assert.equal(await adminPage.locator("#bookingMapLink").getAttribute("href"), orderLocation.prepaid_maps_url);
   assert.ok((await adminPage.locator("#bookingRightSummary").innerText()).includes("ลูกค้าชำระเพิ่มเมื่อใช้สิทธิ์: 0 บาท"), "scheduling does not show zero additional payment");
   await capture(adminPage, "11-admin-entitlement-scheduling");
+
+  await adminPage.locator("#bookingAppointment").fill(`${plusDays(10)}T09:00`);
+  await adminPage.locator("#bookingAssignMode").selectOption("single");
+  await adminPage.locator("#bookingTechnician").fill(QA.technicianUsername);
+  await adminPage.locator("#btnBookRight").click();
+  await adminPage.locator("#bookingMessage").filter({ hasText: "ลงงานสำเร็จ" }).waitFor({ timeout: 30000 });
+  const jobMatch = (await adminPage.locator("#bookingMessage").innerText()).match(/Job #([0-9]+)/);
+  assert.ok(jobMatch, "Admin booking did not return a Job ID");
+  bookedQaJobId = Number(jobMatch[1]);
+  const job = (await pool.query(
+    `SELECT job_id, booking_code, customer_name, customer_phone, address_text,
+            maps_url, gps_latitude, gps_longitude, customer_note, technician_username
+       FROM public.jobs WHERE job_id=$1`, [bookedQaJobId]
+  )).rows[0];
+  assert.ok(job, "Admin-created Job was not persisted");
+  assert.equal(job.customer_name, orderLocation.customer_name);
+  assert.equal(job.customer_phone, orderLocation.customer_phone);
+  assert.equal(job.address_text, orderLocation.address);
+  assert.equal(job.maps_url, orderLocation.prepaid_maps_url);
+  assert.equal(Number(job.gps_latitude), Number(orderLocation.prepaid_gps_latitude));
+  assert.equal(Number(job.gps_longitude), Number(orderLocation.prepaid_gps_longitude));
+  assert.equal(job.customer_note, orderLocation.note);
+  assert.equal(job.technician_username, QA.technicianUsername);
+  await capture(adminPage, "11b-admin-job-created");
+
+  const technician = await browser.newContext({ viewport: { width: 390, height: 800 } });
+  await technician.addCookies([{ name: "cwf_session", value: technicianSession, url: BASE, httpOnly: true, sameSite: "Lax" }]);
+  const technicianApi = await technician.request.get(`${BASE}/jobs/tech/me`, { headers: { accept: "application/json" } });
+  assert.equal(technicianApi.status(), 200, "Technician Job API rejected QA session");
+  const technicianJobs = await technicianApi.json();
+  const technicianJob = technicianJobs.find((row) => Number(row.job_id) === bookedQaJobId);
+  assert.ok(technicianJob, "Technician Job API omitted the Admin-created Job");
+  for (const [field, expected] of [
+    ["customer_name", orderLocation.customer_name], ["customer_phone", orderLocation.customer_phone],
+    ["address_text", orderLocation.address], ["maps_url", orderLocation.prepaid_maps_url],
+  ]) assert.equal(technicianJob[field], expected, `Technician API ${field} mismatch`);
+  assert.equal(Number(technicianJob.gps_latitude), Number(orderLocation.prepaid_gps_latitude));
+  assert.equal(Number(technicianJob.gps_longitude), Number(orderLocation.prepaid_gps_longitude));
+  const technicianPage = await technician.newPage();
+  await technicianPage.goto(`${BASE}/tech.html`, { waitUntil: "domcontentloaded" });
+  const technicianCard = technicianPage.locator(`.job-card[data-jobkey="${bookedQaJobId}"]`);
+  await technicianCard.waitFor({ timeout: 30000 });
+  const technicianText = await technicianCard.innerText();
+  for (const value of [orderLocation.customer_name, orderLocation.customer_phone, orderLocation.address]) {
+    assert.ok(technicianText.includes(value), `Technician card missing ${value}`);
+  }
+  assert.equal(await technicianCard.locator('[data-role="job-map"]').isEnabled(), true);
+  await capture(technicianPage, "11c-technician-job-location");
+  record("location-chain", { order: paidCode, job: bookedQaJobId, technician: QA.technicianUsername, result: "PASS" });
 
   await adminPage.goto(`${BASE}/admin-add-v2.html`, { waitUntil: "domcontentloaded" });
   await adminPage.locator('input[name="jobFlowMode"][value="normal"]').waitFor();
@@ -305,6 +417,12 @@ async function main() {
   catch (error) { failed = error; console.error(`[VISUAL_QA_FAIL] ${error.stack || error}`); }
   finally {
     try { await browser?.close(); } catch (_) {}
+    try { await cleanupBookedQaJob(); } catch (cleanupError) {
+      console.error(`[VISUAL_QA_JOB_CLEANUP_FAIL] ${cleanupError.stack || cleanupError}`);
+      failed ||= cleanupError;
+    }
+    try { if (technicianSession) await pool.query("DELETE FROM public.auth_sessions WHERE session_token=$1 AND username=$2", [technicianSession, QA.technicianUsername]); }
+    catch (cleanupError) { failed ||= cleanupError; }
     try { await cleanupAssistedOrder(); } catch (cleanupError) {
       console.error(`[VISUAL_QA_ASSISTED_CLEANUP_FAIL] ${cleanupError.stack || cleanupError}`);
       failed ||= cleanupError;
