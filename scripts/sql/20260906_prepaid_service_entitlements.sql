@@ -21,7 +21,10 @@ ALTER TABLE public.customer_orders
   ADD COLUMN IF NOT EXISTS prepaid_line_notification_status TEXT,
   ADD COLUMN IF NOT EXISTS prepaid_line_notification_attempted_at TIMESTAMPTZ,
   ADD COLUMN IF NOT EXISTS prepaid_line_notification_retry_key UUID,
-  ADD COLUMN IF NOT EXISTS prepaid_line_notification_error TEXT;
+  ADD COLUMN IF NOT EXISTS prepaid_line_notification_error TEXT,
+  ADD COLUMN IF NOT EXISTS prepaid_cancelled_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS prepaid_cancelled_by TEXT,
+  ADD COLUMN IF NOT EXISTS prepaid_cancel_reason TEXT;
 
 DO $$
 BEGIN

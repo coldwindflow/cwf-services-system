@@ -498,6 +498,29 @@
     return copied;
   }
 
+  function askCancelOrder(button, orderCode, reload) {
+    const card = button.closest(".cwf-prepaid-card");
+    if (!card || card.querySelector("[data-prepaid-cancel-confirmation]")) return;
+    const prompt = document.createElement("div");
+    prompt.className = "cwf-prepaid-summary";
+    prompt.setAttribute("data-prepaid-cancel-confirmation", "");
+    prompt.innerHTML = `<b>ยกเลิกออเดอร์นี้?</b><p class="cwf-prepaid-muted">ทำได้เฉพาะรายการที่ยังไม่ชำระเงิน ประวัติการยกเลิกจะยังอยู่</p><button class="cwf-prepaid-secondary" type="button" data-cancel-back>กลับ</button><button class="cwf-prepaid-secondary" type="button" data-cancel-confirm>ยืนยันยกเลิกออเดอร์</button><div role="alert" data-cancel-error></div>`;
+    button.insertAdjacentElement("afterend", prompt);
+    prompt.querySelector("[data-cancel-back]").addEventListener("click", () => prompt.remove());
+    prompt.querySelector("[data-cancel-confirm]").addEventListener("click", async (event) => {
+      event.currentTarget.disabled = true;
+      try {
+        await request(`/public/prepaid-orders/${encodeURIComponent(orderCode)}/cancel`, { method: "POST", body: {} });
+        await reload();
+      } catch (error) {
+        prompt.querySelector("[data-cancel-error]").textContent = error.status === 409
+          ? "ยกเลิกอัตโนมัติไม่ได้ อาจมีการชำระเงินหรือสิทธิ์แล้ว กรุณาติดต่อ LINE @cwfair"
+          : "ยกเลิกไม่สำเร็จ กรุณาลองใหม่";
+        event.currentTarget.disabled = false;
+      }
+    });
+  }
+
   function renderReservation(order, itemName, groups = []) {
     const body = modal?.querySelector("[data-prepaid-body]");
     if (!body) return;
@@ -512,6 +535,7 @@
       <p class="cwf-prepaid-muted">ติดต่อ LINE @cwfair เพื่อชำระเงิน แอดมินจะตรวจสอบยอดและเปิดสิทธิ์ให้ จากนั้นจึงเลือกวันเข้าบริการได้</p>
       <button class="cwf-prepaid-secondary" type="button" data-prepaid-copy>คัดลอกเลขคำสั่งซื้อ</button>
       <button class="cwf-prepaid-primary" type="button" data-prepaid-line>ติดต่อ LINE เพื่อชำระเงิน</button>
+      <button class="cwf-prepaid-secondary" type="button" data-prepaid-cancel-order>ยกเลิกออเดอร์</button>
       <div class="cwf-prepaid-muted" role="status" data-prepaid-copy-status></div>
       <a href="${esc(LINE_URL)}" target="_blank" rel="noopener" data-prepaid-line-fallback>เปิด LINE @cwfair โดยตรง</a>
       <button class="cwf-prepaid-secondary" data-prepaid-rights>ดูบริการของฉัน</button></div>`;
@@ -530,6 +554,8 @@
       else window.open(LINE_URL, "_blank", "noopener");
     });
     body.querySelector("[data-prepaid-rights]")?.addEventListener("click", () => { closeModal(); root.utils.routeTo("tracking"); });
+    body.querySelector("[data-prepaid-cancel-order]")?.addEventListener("click", (event) =>
+      askCancelOrder(event.currentTarget, order.order_code, openRights));
   }
 
   function parseSnapshot(value) {
@@ -572,7 +598,7 @@
         const pending = order.status === "pending_payment" || order.status === "payment_failed";
         const snapshot = parseSnapshot(order.service_entitlement_snapshot) || {};
         const groups = Array.isArray(snapshot.service_package_groups) ? snapshot.service_package_groups : [];
-        return `<div class="cwf-prepaid-card"><div class="cwf-prepaid-row"><b>${esc(snapshot.bundle_key || "จองสิทธิ์ COLDWINDFLOW")}</b><span class="cwf-prepaid-status">${pending ? "รอตรวจสอบการชำระเงิน" : esc(order.status)}</span></div><div class="cwf-prepaid-muted">รายการ ${esc(order.order_code)} · ${baht(order.subtotal)}</div><div class="cwf-prepaid-muted">${groups.map((g) => `${esc(g.btu)} BTU ×${esc(g.quantity)}`).join(" · ")}</div><div class="cwf-prepaid-muted">${esc(order.address || "")} · ${new Date(order.created_at).toLocaleString("th-TH")}</div>${pending ? `<button class="cwf-prepaid-secondary" data-copy-order="${esc(order.order_code)}">คัดลอกเลขคำสั่งซื้อ</button><a class="cwf-prepaid-primary" style="display:block;text-align:center;box-sizing:border-box;text-decoration:none" href="${esc(LINE_URL)}" target="_blank" rel="noopener">ติดต่อ LINE @cwfair</a>` : ""}</div>`;
+        return `<div class="cwf-prepaid-card"><div class="cwf-prepaid-row"><b>${esc(snapshot.bundle_key || "จองสิทธิ์ COLDWINDFLOW")}</b><span class="cwf-prepaid-status">${pending ? "รอตรวจสอบการชำระเงิน" : order.status === "cancelled" ? "ยกเลิกแล้ว" : esc(order.status)}</span></div><div class="cwf-prepaid-muted">รายการ ${esc(order.order_code)} · ${baht(order.subtotal)}</div><div class="cwf-prepaid-muted">${groups.map((g) => `${esc(g.btu)} BTU ×${esc(g.quantity)}`).join(" · ")}</div><div class="cwf-prepaid-muted">${esc(order.address || "")} · ${new Date(order.created_at).toLocaleString("th-TH")}</div>${pending ? `<button class="cwf-prepaid-secondary" data-copy-order="${esc(order.order_code)}">คัดลอกเลขคำสั่งซื้อ</button><a class="cwf-prepaid-primary" style="display:block;text-align:center;box-sizing:border-box;text-decoration:none" href="${esc(LINE_URL)}" target="_blank" rel="noopener">ติดต่อ LINE @cwfair</a><button class="cwf-prepaid-secondary" type="button" data-cancel-order="${esc(order.order_code)}">ยกเลิกออเดอร์</button>` : ""}</div>`;
       });
       rights.filter((right) => !orders.some((order) => String(order.prepaid_entitlement_code || "") === String(right.entitlement_code || ""))).forEach((right) => {
         cards.push(`<div class="cwf-prepaid-card"><b>สิทธิ์บริการ COLDWINDFLOW</b><div class="cwf-prepaid-muted">${esc(right.entitlement_code)} · ${baht(right.purchased_amount)}</div></div>`);
@@ -582,6 +608,8 @@
         button.textContent = await copyOrderCode(button.dataset.copyOrder) ? "คัดลอกเลขคำสั่งซื้อแล้ว" : "กรุณาคัดลอกเลขคำสั่งซื้อด้านบน";
       }));
       body.querySelectorAll("[data-use-right]").forEach((button) => button.addEventListener("click", () => useRight(button.dataset.useRight)));
+      body.querySelectorAll("[data-cancel-order]").forEach((button) => button.addEventListener("click", () =>
+        askCancelOrder(button, button.dataset.cancelOrder, openRights)));
     } catch (error) {
       console.warn("PREPAID_RIGHTS_LOAD_FAILED", error.code || error.message);
       body.innerHTML = `<div class="cwf-prepaid-error">โหลดรายการไม่สำเร็จ กรุณาลองใหม่</div>`;
@@ -707,6 +735,7 @@
       const rights = Array.isArray(results[1].value?.items) ? results[1].value.items : [];
       const jobs = results[2].status === "fulfilled" && Array.isArray(results[2].value?.items) ? results[2].value.items : [];
       const pending = orders.filter((order) => ["pending_payment", "payment_failed"].includes(order.status));
+      const cancelled = orders.filter((order) => order.status === "cancelled");
       const active = rights.filter((right) => ["active", "redeeming"].includes(right.status) && !right.booking_code);
       const scheduledRights = rights.filter((right) => !!right.booking_code && !right.finished_at && !right.canceled_at);
       const historyRights = rights.filter((right) => !!right.booking_code && (right.finished_at || right.canceled_at));
@@ -715,7 +744,7 @@
       const history = jobs.filter((job) => !booked.has(String(job.booking_code)) && !scheduledJobs.includes(job));
       const tabs = [
         ["pending", `รอชำระเงิน ${pending.length}`], ["active", `สิทธิ์พร้อมใช้ ${active.length}`],
-        ["scheduled", `นัดหมาย/งานบริการ ${scheduledRights.length + scheduledJobs.length}`], ["history", `ประวัติ ${historyRights.length + history.length}`],
+        ["scheduled", `นัดหมาย/งานบริการ ${scheduledRights.length + scheduledJobs.length}`], ["history", `ประวัติ ${cancelled.length + historyRights.length + history.length}`],
       ];
       const rightByCode = new Map(rights.map((right) => [String(right.entitlement_code), right]));
       const orderByRight = new Map(orders.map((order) => [String(order.prepaid_entitlement_code), order]));
@@ -725,7 +754,8 @@
         const items = parseSnapshot(order.items);
         const title = Array.isArray(items) && items[0]?.item_name ? items[0].item_name : String(snap.bundle_key || "โปรโมชั่น COLDWINDFLOW").replace(/-/g, " ");
         const groups = Array.isArray(snap.service_package_groups) ? snap.service_package_groups : [];
-        return `<article class="cwf-prepaid-card"><div class="cwf-prepaid-row"><b>${esc(title)}</b><span class="cwf-prepaid-status">${right ? "ชำระแล้ว" : "รอตรวจสอบการชำระ"}</span></div><p>เลขคำสั่งซื้อ <b>${esc(order.order_code)}</b> · ${baht(order.subtotal)}</p><p class="cwf-prepaid-muted">${groups.map((group) => `${groupLabel(group, snap)} × ${Number(group.quantity)}`).map(esc).join(" · ")}</p><p class="cwf-prepaid-muted">${esc(order.address || "")}</p><button class="cwf-prepaid-secondary" type="button" data-copy-order="${esc(order.order_code)}">คัดลอกเลขคำสั่งซื้อ</button><button class="cwf-prepaid-primary" type="button" data-hub-line="${esc(order.order_code)}">ติดต่อ LINE เพื่อชำระเงิน</button><a href="${esc(LINE_URL)}" target="_blank" rel="noopener">เปิด LINE @cwfair โดยตรง</a></article>`;
+        const wasCancelled = order.status === "cancelled";
+        return `<article class="cwf-prepaid-card"><div class="cwf-prepaid-row"><b>${esc(title)}</b><span class="cwf-prepaid-status">${wasCancelled ? "ยกเลิกแล้ว" : right ? "ชำระแล้ว" : "รอตรวจสอบการชำระ"}</span></div><p>เลขคำสั่งซื้อ <b>${esc(order.order_code)}</b> · ${baht(order.subtotal)}</p><p class="cwf-prepaid-muted">${groups.map((group) => `${groupLabel(group, snap)} × ${Number(group.quantity)}`).map(esc).join(" · ")}</p><p class="cwf-prepaid-muted">${esc(order.address || "")}</p>${wasCancelled ? `<p class="cwf-prepaid-muted">เก็บประวัติการยกเลิกไว้ตรวจสอบ</p>` : `<button class="cwf-prepaid-secondary" type="button" data-copy-order="${esc(order.order_code)}">คัดลอกเลขคำสั่งซื้อ</button><button class="cwf-prepaid-primary" type="button" data-hub-line="${esc(order.order_code)}">ติดต่อ LINE เพื่อชำระเงิน</button><a href="${esc(LINE_URL)}" target="_blank" rel="noopener">เปิด LINE @cwfair โดยตรง</a><button class="cwf-prepaid-secondary" type="button" data-cancel-order="${esc(order.order_code)}">ยกเลิกออเดอร์</button>`}</article>`;
       };
       const rightCard = (right) => {
         const order = orderByRight.get(String(right.entitlement_code));
@@ -735,7 +765,7 @@
       const pages = {
         pending: pending.map(orderCard).join(""), active: active.map(rightCard).join(""),
         scheduled: scheduledRights.map(rightCard).join("") + scheduledJobs.map(jobCard).join(""),
-        history: historyRights.map(rightCard).join("") + history.map(jobCard).join(""),
+        history: cancelled.map(orderCard).join("") + historyRights.map(rightCard).join("") + history.map(jobCard).join(""),
       };
       let selected = "pending";
       mount.innerHTML = `<div class="cwf-prepaid-row"><h2>บริการของฉัน</h2><button class="cwf-prepaid-secondary" type="button" data-hub-refresh>รีเฟรช</button></div><div class="cwf-prepaid-hub-tabs" role="tablist">${tabs.map(([key, label]) => `<button type="button" role="tab" data-hub-tab="${key}" aria-selected="${key === selected}">${esc(label)}</button>`).join("")}</div><div data-hub-content></div>`;
@@ -753,6 +783,8 @@
         if (event.target.closest("[data-hub-refresh]")) { loadHub(); return; }
         const copy = event.target.closest("[data-copy-order]");
         if (copy) { copy.textContent = await copyOrderCode(copy.dataset.copyOrder) ? "คัดลอกแล้ว" : "กรุณาคัดลอกรหัสด้านบน"; return; }
+        const cancel = event.target.closest("[data-cancel-order]");
+        if (cancel) { askCancelOrder(cancel, cancel.dataset.cancelOrder, loadHub); return; }
         const line = event.target.closest("[data-hub-line]");
         if (line) {
           const order = orders.find((item) => item.order_code === line.dataset.hubLine);

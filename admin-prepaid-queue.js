@@ -83,8 +83,10 @@
       <div style="margin-top:6px;font-weight:800">ราคาที่ระบบยืนยัน ${money(order.subtotal)} บาท</div>
       <div style="color:#64748b;font-size:12px">ชำระ: ${esc(order.payment_status || order.payment_order_status)} · สิทธิ์: ${esc(order.entitlement_status || "ยังไม่ออกสิทธิ์")}${order.note ? ` · หมายเหตุ: ${esc(order.note)}` : ""}</div>
       <div class="prepaid-ops-actions">
-      ${pending ? `<button type="button" class="prepaid-ops-payment" data-prepaid-confirm="${esc(order.order_code)}">ยืนยันรับชำระแล้ว</button><a class="prepaid-ops-secondary" href="tel:${esc(order.customer_phone)}">โทร</a>${map ? `<a class="prepaid-ops-secondary" href="${esc(map)}" target="_blank" rel="noopener">เปิดแผนที่</a>` : ""}<button type="button" class="prepaid-ops-secondary" data-prepaid-edit="${esc(order.order_code)}">แก้ไขข้อมูล</button>` : ""}
+      ${pending ? `<button type="button" class="prepaid-ops-payment" data-prepaid-confirm="${esc(order.order_code)}">ยืนยันรับชำระแล้ว</button><a class="prepaid-ops-secondary" href="tel:${esc(order.customer_phone)}">โทร</a>${map ? `<a class="prepaid-ops-secondary" href="${esc(map)}" target="_blank" rel="noopener">เปิดแผนที่</a>` : ""}<button type="button" class="prepaid-ops-secondary" data-prepaid-edit="${esc(order.order_code)}">แก้ไขข้อมูล</button><button type="button" class="prepaid-ops-secondary" data-prepaid-cancel="${esc(order.order_code)}">ยกเลิกออเดอร์</button>` : ""}
       ${readyOrder(order) ? `<a class="prepaid-ops-primary" href="${esc(orderLink)}">ลงงานจากสิทธิ์</a>` : ""}
+      ${order.payment_order_status === "paid" && !order.redeemed_job_id ? '<span class="prepaid-ops-secondary">ชำระแล้ว: ต้องตรวจสอบคืนเงิน/สิทธิ์ก่อน ไม่สามารถลบออเดอร์</span>' : ""}
+      ${order.redeemed_job_id ? `<a class="prepaid-ops-secondary" href="/admin-job-view-v2.html?job_id=${encodeURIComponent(order.redeemed_job_id)}">จัดการงาน / เลื่อนนัด</a>` : ""}
       <a class="prepaid-ops-secondary" href="${esc(orderLink)}">ดูรายละเอียด</a></div></article>`;
   }
 
@@ -96,6 +98,7 @@
     const query = clean(search.value).toLocaleLowerCase();
     filters.querySelectorAll("[data-prepaid-filter]").forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.prepaidFilter === filter)));
     const visibleOrders = orders.filter((order) => {
+      if (order.payment_order_status === "cancelled") return false;
       if (filter === "jobs") return false;
       if (filter === "pending" && !pendingOrder(order)) return false;
       if (filter === "paid" && !readyOrder(order)) return false;
@@ -200,14 +203,26 @@
     });
   }
 
+  function cancelOrder(order) {
+    openModal("ยกเลิกออเดอร์ที่ยังไม่ชำระ", `<p>Order <b>${esc(order.order_code)}</b><br>${esc(order.customer_name)} · ${esc(promotionTitle(order))}</p><p>รายการนี้จะออกจากคิวรอชำระ แต่ยังเก็บประวัติไว้ตรวจสอบ และไม่ใช่การคืนเงิน</p><label>เหตุผลที่ยกเลิก<input name="reason" maxlength="500" required minlength="3" placeholder="เช่น ลูกค้าไม่ต้องการแพ็กเกจนี้แล้ว"></label>`, "ยืนยันยกเลิกออเดอร์", async (form) => {
+      const reason = clean(form.get("reason"));
+      if (reason.length < 3) throw new Error("CANCEL_REASON_REQUIRED");
+      await api(`/admin/prepaid-orders/${encodeURIComponent(order.order_code)}/cancel`, {
+        method: "POST", body: { reason },
+      });
+      await load();
+    });
+  }
+
   list.addEventListener("click", (event) => {
-    const button = event.target.closest("[data-prepaid-confirm],[data-prepaid-edit]");
+    const button = event.target.closest("[data-prepaid-confirm],[data-prepaid-edit],[data-prepaid-cancel]");
     if (!button) return;
-    const code = button.dataset.prepaidConfirm || button.dataset.prepaidEdit;
+    const code = button.dataset.prepaidConfirm || button.dataset.prepaidEdit || button.dataset.prepaidCancel;
     const order = orders.find((row) => row.order_code === code);
     if (!order) return;
     if (button.dataset.prepaidConfirm) confirmPayment(order);
-    else editReservation(order);
+    else if (button.dataset.prepaidEdit) editReservation(order);
+    else cancelOrder(order);
   });
   filters.addEventListener("click", (event) => {
     const button = event.target.closest("[data-prepaid-filter]");

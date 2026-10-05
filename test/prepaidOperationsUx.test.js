@@ -19,6 +19,7 @@ test("normal booking page contains the prepaid operations inbox and direct payme
   assert.match(code, /\/admin\/prepaid-orders/);
   assert.match(code, /\/admin\/jobs_v2/);
   assert.match(code, /data-prepaid-confirm/);
+  assert.match(code, /data-prepaid-cancel/);
   assert.match(code, /\/confirm-payment/);
   assert.match(code, /ลงงานจากสิทธิ์/);
   assert.match(code, /data-prepaid-ops-form/);
@@ -30,7 +31,10 @@ test("prepaid detail uses a payment dialog rather than native browser prompts", 
   const code = read("admin-prepaid-v2.js");
   assert.match(page, /id="paymentConfirmDialog"/);
   assert.match(page, /id="paymentConfirmReference"/);
+  assert.match(page, /id="cancelOrderDialog"/);
+  assert.match(page, /id="showCancelledOrders"/);
   assert.match(code, /submitPaymentConfirmation/);
+  assert.match(code, /submitCancelOrder/);
   assert.doesNotMatch(code, /window\.(prompt|confirm)\(/);
 });
 
@@ -54,6 +58,7 @@ test("customer prepaid flow has one manual payment path and a persistent service
   assert.match(prepaid, /\/public\/prepaid-orders/);
   assert.match(prepaid, /\/public\/service-rights/);
   assert.match(prepaid, /\/public\/register/);
+  assert.match(prepaid, /\/public\/prepaid-orders\/\$\{encodeURIComponent\(orderCode\)\}\/cancel/);
   assert.match(prepaid, /ยังไม่มีการตัดเงินในขั้นตอนนี้/);
   assert.doesNotMatch(prepaid, /payOrder\(|cdn\.omise\.co|data-card-submit|method: "promptpay"/);
   assert.doesNotMatch(prepaid, /data-cwf-rights-pill[^\n]*appendChild/);

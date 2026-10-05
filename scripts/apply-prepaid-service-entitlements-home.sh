@@ -37,7 +37,8 @@ verify_schema() {
         'prepaid_purchase_fingerprint','prepaid_maps_url','prepaid_gps_latitude',
         'prepaid_gps_longitude','prepaid_line_notification_status',
         'prepaid_line_notification_attempted_at','prepaid_line_notification_retry_key',
-        'prepaid_line_notification_error'
+        'prepaid_line_notification_error','prepaid_cancelled_at',
+        'prepaid_cancelled_by','prepaid_cancel_reason'
       )
   ")"
   job_columns="$(db_query "
@@ -56,7 +57,7 @@ verify_schema() {
       )
   ")"
   [[ "$entitlements" == "1" ]] || die "customer_service_entitlements table missing"
-  [[ "$order_columns" == "18" ]] || die "prepaid customer_orders columns incomplete: $order_columns/18"
+  [[ "$order_columns" == "21" ]] || die "prepaid customer_orders columns incomplete: $order_columns/21"
   [[ "$job_columns" == "3" ]] || die "prepaid jobs columns incomplete: $job_columns/3"
   [[ "$triggers" == "4" ]] || die "prepaid lifecycle triggers incomplete: $triggers/4"
 }

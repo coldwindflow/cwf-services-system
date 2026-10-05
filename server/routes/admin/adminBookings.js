@@ -88,6 +88,13 @@ function registerAdminBookingRoutes(app, options = {}) {
           ...incoming,
           customer_name: String(preparation.customer_name || "").trim(),
           customer_phone: String(preparation.customer_phone || "").trim(),
+          // Paid order contact and location are the immutable booking source.
+          // A stale or crafted Admin form must not replace them at redemption.
+          address_text: preparation.address_text,
+          maps_url: preparation.maps_url,
+          gps_latitude: preparation.gps_latitude,
+          gps_longitude: preparation.gps_longitude,
+          customer_note: preparation.customer_note,
           booking_mode: "scheduled",
           service_package_groups: preparation.service_package_groups,
           prepaid_redemption_token: preparation.prepaid_redemption_token,
