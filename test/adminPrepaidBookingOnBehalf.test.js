@@ -215,6 +215,11 @@ test("Admin PREPAID UI exposes sale, payment, booking and promotion editing", ()
   assert.match(js, /\/admin\/prepaid-entitlements\/\$\{encodeURIComponent\(code\)\}\/book/);
   assert.match(js, /admin_request_key/);
   assert.match(js, /fixed_total_price/);
+  assert.match(html, /id="bookingAddress" readonly/);
+  assert.match(html, /id="bookingMapsUrl" readonly/);
+  assert.match(html, /id="bookingMapLink"/);
+  assert.match(js, /bookingMapLink/);
+  assert.doesNotMatch(js.match(/async function bookRight\([\s\S]*?\n  function/)?.[0] || "", /address_text:\s*address/);
 });
 
 
