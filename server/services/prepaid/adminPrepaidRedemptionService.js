@@ -143,6 +143,11 @@ function createAdminPrepaidRedemptionService({ pool, now = () => new Date() }) {
       }
 
       const snapshot = parseSnapshot(row.service_snapshot);
+      const addressText = clean(row.address, 1000);
+      const mapsUrl = clean(row.prepaid_maps_url, 1000);
+      if (!addressText || !mapsUrl) {
+        throw new AdminPrepaidRedemptionError("PREPAID_SERVICE_LOCATION_MISSING", 409);
+      }
       const previousCustomerSub = clean(row.customer_sub, 256) || null;
       const previousStatus = String(row.status) === "unclaimed" ? "unclaimed" : "active";
       const temporaryOwner = previousCustomerSub == null;
@@ -175,6 +180,11 @@ function createAdminPrepaidRedemptionService({ pool, now = () => new Date() }) {
         order_code: row.order_code,
         customer_name: row.customer_name,
         customer_phone: row.customer_phone,
+        address_text: addressText,
+        maps_url: mapsUrl,
+        gps_latitude: row.prepaid_gps_latitude,
+        gps_longitude: row.prepaid_gps_longitude,
+        customer_note: clean(row.note, 500),
         scheduled_request_key: key,
         prepaid_redemption_token: redemptionToken,
         redemption_expires_at: expiresAt.toISOString(),
