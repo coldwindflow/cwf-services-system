@@ -100,6 +100,27 @@ async function buildSchema(adminless) {
     `ALTER TABLE public.job_items ADD COLUMN IF NOT EXISTS customer_price_source TEXT`,
   ];
   for (const s of ensure) { try { await db.query(s); } catch (_) {} }
+
+  // Columns that /admin/book_v2 writes but that live in migration files rather
+  // than boot-time ALTERs, so neither the extractor above nor schema-core.sql
+  // creates them. Apply the real migrations instead of restating their columns
+  // here, which is how these fixtures fell behind the application in the first
+  // place. Without them the book_v2 case below skipped itself rather than
+  // proving anything.
+  for (const migration of [
+    "20260809_store_service_package_bundles.sql",
+    "20260920_job_brand_foundation.sql",
+  ]) {
+    let sql = "";
+    try { sql = fs.readFileSync(path.join(REPO_ROOT, "migrations", migration), "utf8"); } catch (_) { continue; }
+    // Statement at a time: a single statement that does not apply to this
+    // partial schema must not abort the rest of the file. Safe to split on
+    // semicolons because neither migration contains a DO $$ ... $$ block.
+    for (const statement of sql.split(/;\s*$/m)) {
+      if (!statement.replace(/--[^\n]*/g, "").trim()) continue;
+      try { await db.query(statement); } catch (_) { /* not applicable here */ }
+    }
+  }
   await db.end();
 }
 
@@ -215,6 +236,15 @@ test.before(async () => {
       PORT: String(PORT),
       CWF_JWT_SECRET: "jobloc-it-secret",
       NODE_ENV: "test", CWF_E2E_TEST_MODE: "1",
+      // CWF_E2E_TEST_MODE only takes effect once the preload is actually
+      // loaded. db.js forces TLS for Render, the disposable local cluster
+      // serves none, and without this every request through the spawned app
+      // failed as "The server does not support SSL connections" — a 500 on each
+      // admin route rather than the location behaviour under test. Quoted
+      // because a checkout path may contain spaces, and with forward slashes
+      // because NODE_OPTIONS treats a backslash inside quotes as an escape.
+      // Same wiring as test/e2e/run-booking-e2e.js.
+      NODE_OPTIONS: `--require="${path.join(__dirname, "e2e", "local-postgres-preload.js").replace(/\\/g, "/")}"`,
       OPENAI_API_KEY: "", ANTHROPIC_API_KEY: "",
       CLOUDINARY_URL: "", CLOUDINARY_CLOUD_NAME: "",
       // Force all third-party outbound (e.g. short-link resolution) to fail
