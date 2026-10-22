@@ -1,8 +1,23 @@
 #!/usr/bin/env node
 "use strict";
 
+// Seed verification for the AIR CARE price matrix.
+//
+// This asks two different questions, and conflating them is what made the gate
+// wrong. Price correctness is a property of the seeded tiers and the pricing
+// engine; it does not change when the campaign stops selling. Purchase
+// eligibility is a property of the sale window and today's date. Checking
+// prices with the current clock meant the whole gate began failing the moment
+// the window closed, reporting seventeen "failures" against seed data that was
+// in fact perfectly correct.
+//
+// So: verify prices at an instant inside the seeded window, and separately
+// verify that the eligibility rule is being enforced correctly right now. The
+// sale window itself is never widened here, and nothing on the Customer or
+// Admin path is bypassed — this script only reads.
 const pool = require("../db");
 const { createPrepaidOrderService } = require("../server/services/prepaid/prepaidOrderServiceV2");
+const { createServicePackageResolver } = require("../server/services/packages/servicePackageResolver");
 
 const PHASE = String(process.argv[2] || "manual").replace(/[^a-z0-9_-]/gi, "").slice(0, 32) || "manual";
 const MATRICES = Object.freeze([
@@ -17,21 +32,55 @@ function evidence(name, fields = {}) {
   console.log(`[AIR_CARE_QUOTE_EVIDENCE] phase=${PHASE} ${name}${values ? ` ${values}` : ""}`);
 }
 
-async function catalogIds() {
+const BUNDLES = ["coldwindflow-air-care-standard", "coldwindflow-air-care-premium"];
+
+async function catalogRows() {
   const result = await pool.query(
-    `SELECT item_id, service_bundle_key
+    `SELECT item_id, service_bundle_key,
+            service_package_sell_start_at AS sell_start,
+            service_package_sell_end_at   AS sell_end
        FROM public.catalog_items
       WHERE service_bundle_key=ANY($1::text[])
         AND is_active=TRUE AND is_customer_visible=TRUE`,
-    [["coldwindflow-air-care-standard", "coldwindflow-air-care-premium"]]
+    [BUNDLES]
   );
-  return new Map(result.rows.map((row) => [String(row.service_bundle_key), Number(row.item_id)]));
+  return result.rows;
+}
+
+// An instant the seeded campaign was actually on sale. Read from the seeded
+// rows rather than written down here, so this never needs editing when the
+// campaign dates move and can never silently drift outside the window.
+function instantInsideWindow(rows) {
+  const starts = rows.map((r) => r.sell_start).filter(Boolean).map((d) => new Date(d).getTime());
+  const ends = rows.map((r) => r.sell_end).filter(Boolean).map((d) => new Date(d).getTime());
+  if (!starts.length || !ends.length) return null;
+  const start = Math.max(...starts);
+  const end = Math.min(...ends);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return null;
+  return new Date(Math.floor((start + end) / 2));
 }
 
 async function main() {
-  const ids = await catalogIds();
-  const service = createPrepaidOrderService({ pool });
+  const rows = await catalogRows();
+  const ids = new Map(rows.map((row) => [String(row.service_bundle_key), Number(row.item_id)]));
   let failures = 0;
+
+  const priceAt = instantInsideWindow(rows);
+  if (!priceAt) {
+    evidence("failure", { check: "sale_window", code: "AIR_CARE_SALE_WINDOW_NOT_SEEDED" });
+    evidence("result", { status: "failed", failures: 1 });
+    process.exitCode = 1;
+    return;
+  }
+  evidence("pricing_clock", { at: priceAt.toISOString(), source: "seeded_sale_window_midpoint" });
+
+  // Prices are verified at that instant. Everything else — the tiers, the
+  // modifiers, the composition rules above q4 — is exactly what production
+  // uses; only the clock handed to the resolver differs.
+  const service = createPrepaidOrderService({
+    pool,
+    resolverFactory: ({ db }) => createServicePackageResolver({ db, now: () => priceAt }),
+  });
 
   for (const matrix of MATRICES) {
     const itemId = ids.get(matrix.bundle);
@@ -79,11 +128,53 @@ async function main() {
     failures += 1;
   }
 
+  // Second, independent question: is the sale window being enforced right now,
+  // on the clock the customer actually gets? This passes whether the campaign
+  // is open or closed — what it refuses to accept is the wrong answer. Selling
+  // after the window closed, or refusing while it is open, fails the gate.
+  const liveService = createPrepaidOrderService({ pool });
+  const now = new Date();
+  const open = rows.every((row) =>
+    (!row.sell_start || now >= new Date(row.sell_start))
+    && (!row.sell_end || now <= new Date(row.sell_end)));
+  const sample = MATRICES[0];
+  let sold = false;
+  let rejection = "";
+  try {
+    await liveService.quoteOrder({
+      catalog_item_id: ids.get(sample.bundle),
+      service_package_groups: [{ package_key: sample.packageKey, btu: sample.btu, quantity: 1 }],
+    }, { identity: "customer" });
+    sold = true;
+  } catch (error) {
+    rejection = String(error?.code || error?.message || "UNKNOWN").replace(/\s+/g, "_").slice(0, 160);
+  }
+  if (open && !sold) {
+    evidence("failure", { check: "purchase_eligibility", expected: "sellable", code: rejection });
+    failures += 1;
+  } else if (!open && sold) {
+    evidence("failure", { check: "purchase_eligibility", expected: "rejected_after_sale_window", code: "AIR_CARE_SOLD_OUTSIDE_WINDOW" });
+    failures += 1;
+  } else {
+    evidence("purchase_eligibility", {
+      window: open ? "open" : "closed",
+      live_quote: sold ? "sellable" : "rejected",
+      code: rejection || "none",
+      verdict: "enforced_correctly",
+    });
+  }
+
   if (failures) {
     evidence("result", { status: "failed", failures });
     process.exitCode = 1;
   } else {
-    evidence("result", { status: "passed", matrices: MATRICES.length + 1, quotes: MATRICES.length * 4 + 1 });
+    evidence("result", {
+      status: "passed",
+      matrices: MATRICES.length + 1,
+      quotes: MATRICES.length * 4 + 1,
+      priced_at: priceAt.toISOString(),
+      sale_window: open ? "open" : "closed",
+    });
   }
 }
 
