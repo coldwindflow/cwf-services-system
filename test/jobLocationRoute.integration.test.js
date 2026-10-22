@@ -118,7 +118,14 @@ async function buildSchema(adminless) {
     // semicolons because neither migration contains a DO $$ ... $$ block.
     for (const statement of sql.split(/;\s*$/m)) {
       if (!statement.replace(/--[^\n]*/g, "").trim()) continue;
-      try { await db.query(statement); } catch (_) { /* not applicable here */ }
+      try { await db.query(statement); }
+      catch (_) {
+        // A chunk carrying more than one statement runs inside an implicit
+        // transaction, so one inapplicable statement leaves the connection in
+        // an aborted transaction and every later statement fails with it.
+        // Clear that state before continuing.
+        try { await db.query("ROLLBACK"); } catch (__) {}
+      }
     }
   }
   await db.end();
