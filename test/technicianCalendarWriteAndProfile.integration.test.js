@@ -15,13 +15,19 @@ const { upsertTechnicianProfile } = require("../server/services/technicianProfil
 
 // These tests exercise the REAL production route module / helper against a real
 // local Postgres instance (not a regex/source assertion, not a fake in-memory pool).
-const PG_CONFIG = {
+const PG_ADMIN = {
   host: process.env.PGHOST || "127.0.0.1",
   port: Number(process.env.PGPORT || 5432),
   user: process.env.PGUSER || "postgres",
   password: process.env.PGPASSWORD || "postgres",
   database: process.env.PGDATABASE || "cwf_test",
 };
+// node --test runs test files in parallel. This suite used to share whatever
+// PGDATABASE pointed at, alongside other suites that drop, truncate and
+// recreate the same public tables, so it failed in a full run while passing on
+// its own. Own the database instead, like the other integration suites do.
+const DB_NAME = `cwf_techcal_it_${process.pid}`;
+const PG_CONFIG = { ...PG_ADMIN, database: DB_NAME };
 
 let pool;
 let server;
@@ -29,6 +35,18 @@ let baseUrl;
 let dbUnavailableReason = "";
 
 test.before(async () => {
+  const admin = new Pool(PG_ADMIN);
+  try {
+    await admin.query("SELECT 1");
+    await admin.query(`DROP DATABASE IF EXISTS ${DB_NAME}`);
+    await admin.query(`CREATE DATABASE ${DB_NAME}`);
+  } catch (e) {
+    dbUnavailableReason = e.message || "Postgres test database is unavailable";
+    await admin.end().catch(() => {});
+    return;
+  } finally {
+    await admin.end().catch(() => {});
+  }
   pool = new Pool(PG_CONFIG);
   try {
     await pool.query("SELECT 1");
@@ -121,6 +139,11 @@ test.before(async () => {
 test.after(async () => {
   if (server) await new Promise((resolve) => server.close(resolve));
   if (pool) await pool.end();
+  // Drop the database this run created so repeated runs stay clean.
+  const admin = new Pool(PG_ADMIN);
+  try { await admin.query(`DROP DATABASE IF EXISTS ${DB_NAME} WITH (FORCE)`); }
+  catch (_) { /* nothing to clean up */ }
+  finally { await admin.end().catch(() => {}); }
 });
 
 test.beforeEach(async (t) => {
