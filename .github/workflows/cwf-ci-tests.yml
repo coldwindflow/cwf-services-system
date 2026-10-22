@@ -130,17 +130,20 @@ jobs:
   # the exact migration that ships to Staging and Production. It is deliberately
   # scoped to that one suite so it stays fast and so a pre-existing fixture gap in
   # an unrelated database suite cannot block an AIR CARE release.
-  prepaid-lifecycle:
-    name: prepaid lifecycle (PostgreSQL)
+  database:
+    name: npm test (PostgreSQL)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     services:
       postgres:
         image: postgres:16
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: postgres
+          # The database-backed suites default to "cwf_test" when nothing in the
+          # environment names one, so creating it here is what lets this job run
+          # without the workflow carrying any connection settings of its own.
+          POSTGRES_DB: cwf_test
         ports:
           - 5432:5432
         options: >-
@@ -161,23 +164,33 @@ jobs:
       - name: Install exactly the pinned dependencies
         run: npm ci --no-audit --no-fund
 
-      - name: Run the prepaid lifecycle against a disposable PostgreSQL
-        # No connection environment is set on purpose. The suite's built-in
-        # defaults (127.0.0.1:5432, user/password/database postgres) already
-        # describe the ephemeral service container above, so this workflow still
-        # holds no database credentials and still cannot address a real host.
+      - name: Run the whole suite against a disposable PostgreSQL
+        # No connection environment is set on purpose. The suites' built-in
+        # defaults (127.0.0.1:5432, user and password postgres, database
+        # cwf_test) already describe the ephemeral service container above, so
+        # this workflow still holds no database credentials and still cannot
+        # address a real host.
         #
-        # The TAP reporter is pinned because this step greps its summary; the
-        # default reporter's output format is not a stable contract.
-        #
-        # A self-skip is correct when no database is reachable, but here one is
-        # guaranteed. A skip would mean the suite never actually ran, turning this
-        # gate into a green light that proves nothing, so treat it as a failure.
+        # The TAP reporter is pinned because the next step greps its summary;
+        # the default reporter's output format is not a stable contract.
         run: |
           set -euo pipefail
+          node --test --test-reporter=tap test/*.test.js | tee /tmp/cwf-db-suite.log
+
+      - name: Fail if the prepaid lifecycle silently skipped
+        # The run above is green whether a database-backed case asserted or
+        # skipped itself, and a skip here would mean the AIR CARE lifecycle was
+        # never exercised at all — a green light proving nothing. A database is
+        # guaranteed in this job, so treat that specific suite skipping as a
+        # failure. The remaining expected skips are the two opt-in suites that
+        # want their own CWF_ISSUE*_TEST_DATABASE_URL, which this workflow must
+        # not carry: naming one would break the Issue 320 isolation contract
+        # asserted in test/repositoryShippableArtifacts.test.js.
+        run: |
+          set -euo pipefail
+          grep -E '^# (tests|pass|fail|skipped)' /tmp/cwf-db-suite.log
           node --test --test-reporter=tap test/prepaidLifecycleDatabase.test.js \
             | tee /tmp/cwf-prepaid-lifecycle.log
-          grep -E '^# (tests|pass|fail|skipped)' /tmp/cwf-prepaid-lifecycle.log
           if grep -qE '^# skipped [1-9]' /tmp/cwf-prepaid-lifecycle.log; then
             echo "::error::prepaid lifecycle suite skipped despite an available database"
             exit 1
