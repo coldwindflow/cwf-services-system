@@ -81,9 +81,45 @@ CREATE TABLE public.jobs (
   total_price NUMERIC(12,2),
   payment_status TEXT,
   paid_at TIMESTAMPTZ,
+  paid_by TEXT,
   canceled_at TIMESTAMPTZ,
   finished_at TIMESTAMPTZ,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  -- The rest of what the three technician projections in index.js select. They
+  -- are listed so the real query can run here unmodified; a column the
+  -- projection adds later will fail loudly rather than go untested.
+  brand_key TEXT,
+  dispatch_mode TEXT,
+  job_price NUMERIC(12,2),
+  job_zone TEXT,
+  technician_team TEXT,
+  technician_username TEXT,
+  cancel_reason TEXT,
+  return_reason TEXT,
+  returned_at TIMESTAMPTZ,
+  returned_by TEXT,
+  travel_started_at TIMESTAMPTZ,
+  started_at TIMESTAMPTZ,
+  checkin_at TIMESTAMPTZ,
+  checkin_latitude DOUBLE PRECISION,
+  checkin_longitude DOUBLE PRECISION,
+  technician_note TEXT,
+  final_signature_path TEXT,
+  final_signature_status TEXT,
+  final_signature_at TIMESTAMPTZ,
+  pre_cleaning_checklist JSONB,
+  post_cleaning_checklist JSONB,
+  photo_acknowledgement_required BOOLEAN,
+  photo_acknowledgement_accepted BOOLEAN,
+  missing_photo_categories TEXT[],
+  close_payment_method TEXT,
+  close_payment_status TEXT,
+  close_cash_amount NUMERIC(12,2),
+  close_payment_note TEXT,
+  close_cash_confirmed BOOLEAN,
+  close_signature_type TEXT,
+  close_signature_by TEXT,
+  close_signature_at TIMESTAMPTZ
 );
 `;
 
@@ -361,6 +397,97 @@ test("a finished Job never hands the right back", async (t) => {
   );
   const ent = await db.query("SELECT status FROM public.customer_service_entitlements");
   assert.equal(ent.rows[0].status, "redeemed", "a completed service must stay consumed");
+});
+
+// The three technician projections in index.js are the only thing standing
+// between a correctly written Job row and a technician who cannot find the
+// customer. Rather than restate the column list here — which is how fixtures rot
+// — pull the real SELECT out of index.js and run it against the real row.
+function technicianProjections() {
+  const source = fs.readFileSync(path.join(REPO_ROOT, "index.js"), "utf8");
+  const region = source.slice(
+    source.indexOf("async function _loadTechnicianVisibleJobsByIds"),
+    source.indexOf("// =======================================\n// 🛠️ ADMIN: EDIT JOB")
+  );
+  const found = [...region.matchAll(/SELECT\s+(j\.job_id,[\s\S]*?)\s+FROM public\.jobs j/g)]
+    // One branch computes `${historyWhere} AS is_history` from a JS variable.
+    // Standing in a literal keeps the rest of the real column list executable.
+    .map((m) => m[1].replace(/\$\{[^}]*\}/g, "TRUE"));
+  assert.equal(found.length, 3, "expected the by-ids loader and both /jobs/tech branches");
+  return found;
+}
+
+test("the technician's own query returns the full job packet from the paid Order", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  const right = await seedPaidRight();
+  await arm(right.entitlement_id, "btok_tech");
+  await bookFromRight({
+    entitlementId: right.entitlement_id, token: "btok_tech", bookingCode: "CWF-JOB-TECH",
+  });
+  const jobId = (await db.query(
+    "SELECT job_id FROM public.jobs WHERE booking_code='CWF-JOB-TECH'"
+  )).rows[0].job_id;
+
+  for (const [index, columns] of technicianProjections().entries()) {
+    const { rows } = await db.query(
+      `SELECT ${columns} FROM public.jobs j WHERE j.job_id=$1`, [jobId]
+    );
+    assert.equal(rows.length, 1, `projection ${index} must return the job`);
+    const job = rows[0];
+    const where = `technician projection ${index}`;
+
+    // Reach the customer.
+    assert.equal(job.customer_name, "คุณสมชาย ใจดี", where);
+    assert.equal(job.customer_phone, "0812345678", where);
+    // Travel to them.
+    assert.equal(job.address_text, ADDRESS, where);
+    assert.ok(String(job.address_text).includes("ห้อง 7B"), `${where}: unit detail lost`);
+    assert.equal(job.maps_url, MAPS_URL, where);
+    assert.equal(Number(job.gps_latitude), LAT, where);
+    assert.equal(Number(job.gps_longitude), LNG, where);
+    // Know what to expect on arrival.
+    assert.equal(job.customer_note, NOTE, where);
+    assert.equal(job.job_type, "COLDWINDFLOW AIR CARE STANDARD", where);
+    // And never ask a prepaid customer for money again.
+    assert.equal(job.payment_status, "paid", where);
+    assert.equal(Number(job.customer_due), 0, where);
+    assert.equal(job.payment_source, "prepaid_entitlement", where);
+    assert.ok(job.paid_at, `${where}: prepaid job must carry the real payment time`);
+  }
+});
+
+test("the job packet survives a reconnect, as it must across a reload", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  const right = await seedPaidRight();
+  await arm(right.entitlement_id, "btok_reload");
+  await bookFromRight({
+    entitlementId: right.entitlement_id, token: "btok_reload", bookingCode: "CWF-JOB-RELOAD",
+  });
+
+  // A new connection sees only what was actually committed, which is what a
+  // reopened app, a second device or the technician's next poll really gets.
+  const fresh = await connect({ ...ADMIN, database: DB_NAME });
+  try {
+    const columns = technicianProjections()[0];
+    const { rows } = await fresh.query(
+      `SELECT ${columns} FROM public.jobs j WHERE j.booking_code='CWF-JOB-RELOAD'`
+    );
+    assert.equal(rows.length, 1, "the job must still be there after reconnecting");
+    assert.equal(rows[0].address_text, ADDRESS);
+    assert.equal(rows[0].maps_url, MAPS_URL);
+    assert.equal(rows[0].customer_note, NOTE);
+    assert.equal(rows[0].customer_phone, "0812345678");
+    assert.equal(Number(rows[0].customer_due), 0);
+    assert.equal(rows[0].payment_status, "paid");
+
+    const ent = await fresh.query(
+      `SELECT status, redeemed_job_id FROM public.customer_service_entitlements`
+    );
+    assert.equal(ent.rows[0].status, "redeemed", "the right stays consumed after a reload");
+    assert.ok(ent.rows[0].redeemed_job_id, "and stays bound to its job");
+  } finally {
+    await fresh.end();
+  }
 });
 
 test("an unpaid order issues no right, so nothing can be redeemed", async (t) => {
