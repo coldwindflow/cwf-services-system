@@ -1,7 +1,7 @@
 
 
 // CWF Technician App: payout no-pay status display fix
-window.__CWF_TECH_APP_VERSION__ = "20260920_issue366_axs_pricing_v1";
+window.__CWF_TECH_APP_VERSION__ = "20261022_prepaid_tech_job_context_v1";
 try { console.info('[CWF_TECH_APP_VERSION]', window.__CWF_TECH_APP_VERSION__); } catch (_) {}
 
 function renderJobBrandBadge(job) {
@@ -1244,7 +1244,7 @@ function setPushUi(state, text) {
 
 async function ensureServiceWorkerForPush() {
   if (!('serviceWorker' in navigator)) throw new Error('เครื่องนี้ไม่รองรับ Service Worker');
-  const reg = await navigator.serviceWorker.register('/sw.js?v=20260920_issue366_axs_pricing_v1', { updateViaCache: 'none' });
+  const reg = await navigator.serviceWorker.register('/sw.js?v=20261022_prepaid_tech_job_context_v1', { updateViaCache: 'none' });
   try { await navigator.serviceWorker.ready; } catch (_) {}
   return reg;
 }
@@ -5103,6 +5103,12 @@ function buildJobCard(job, historyMode = false) {
   const rawPhone = String(job.customer_phone || "").trim();
   const telPhone = rawPhone.replace(/[^0-9+]/g, "");
 
+  // ✅ หมายเหตุหน้างานจากลูกค้า (ติดมากับออเดอร์ที่ชำระแล้ว) — คนละอันกับ technician_note
+  const customerNote = String(job.customer_note || "").trim();
+  // ✅ งาน PREPAID จ่ายครบตั้งแต่ซื้อสิทธิ์ ห้ามเก็บเงินซ้ำหน้างาน
+  const isPrepaidJob = String(job.payment_source || "").trim().toLowerCase().startsWith("prepaid");
+  const prepaidDueText = _techMoneyAmountText(job.customer_due ?? 0, "0 บาท");
+
   // ✅ สรุปสถานะเช็คอิน
   const checkinText = checkedIn
     ? `✅ เช็คอินแล้ว (${new Date(job.checkin_at).toLocaleString("th-TH")})`
@@ -5142,6 +5148,8 @@ function buildJobCard(job, historyMode = false) {
     <p><b>ประเภท:</b> ${escape(job.job_type || "-")}</p>
     <p><b>นัด:</b> ${appt}</p>
     <p><b>ที่อยู่:</b> ${addr}</p>
+    ${customerNote ? `<div class="pill" style="margin-top:10px;background:#fffbeb;border-color:rgba(217,119,6,0.22);color:#0f172a;display:block;border-radius:16px;line-height:1.55;word-break:break-word;"><b>📝 หมายเหตุหน้างาน:</b> ${escape(customerNote)}</div>` : ``}
+    ${isPrepaidJob ? `<div class="pill" style="margin-top:10px;background:#ecfdf5;border-color:rgba(5,150,105,0.22);color:#0f172a;display:block;border-radius:16px;line-height:1.55;"><b>✅ ชำระล่วงหน้าแล้ว (PREPAID)</b><br><span>ลูกค้าจ่ายครบตอนซื้อสิทธิ์ ต้องเก็บเพิ่มหน้างาน <b>${escape(prepaidDueText)}</b></span></div>` : ``}
     ${revisitFlow && revisitReason ? `<div class="pill" style="margin-top:10px;background:#fff7ed;border-color:rgba(234,88,12,0.18);color:#0f172a;display:block;border-radius:16px;line-height:1.55;"><b>เหตุผลจากแอดมิน:</b> ${escapeHTML(revisitReason)}</div>` : ``}
     ${revisitFlow ? renderRevisitSection(job, keyBase, jobKeyJs, canEdit, isWorking, historyMode) : ``}
 
