@@ -163,3 +163,56 @@ test("customer map validation matches the server allowlist and excludes arbitrar
   assert.equal(root.prepaid._test.validMapUrl("https://example.com/location"), false);
   assert.equal(root.prepaid._test.validMapUrl("javascript:alert(1)"), false);
 });
+
+// ---------------------------------------------------------------------------
+// Seed gate: price correctness and purchase eligibility are separate questions.
+//
+// The gate used to quote with the current clock, so when the campaign's sale
+// window closed every one of the seventeen price checks started failing and the
+// whole release gate went red against seed data that was entirely correct. The
+// verifier now prices at an instant inside the seeded window, and checks
+// separately that the window is being enforced on the live clock.
+// ---------------------------------------------------------------------------
+const probe = fs.readFileSync("scripts/probe-air-care-quotes.js", "utf8");
+
+test("seed verifier prices inside the seeded sale window instead of at today", () => {
+  // The pricing clock is injected only into the verifier's own resolver.
+  assert.match(probe, /resolverFactory:\s*\(\{\s*db\s*\}\)\s*=>\s*createServicePackageResolver\(\{\s*db,\s*now:\s*\(\)\s*=>\s*priceAt\s*\}\)/);
+  // And it is derived from the seeded rows, never written down, so it cannot
+  // drift outside the window when the campaign dates move.
+  assert.match(probe, /service_package_sell_start_at AS sell_start/);
+  assert.match(probe, /service_package_sell_end_at\s+AS sell_end/);
+  assert.match(probe, /function instantInsideWindow/);
+  assert.doesNotMatch(probe, /new Date\(["']20\d\d-/, "the verifier must not hardcode a campaign date");
+});
+
+test("seed verifier still fails a real price regression", () => {
+  // The mismatch branch must survive: pinning the clock must not turn the gate
+  // into something that passes regardless of what the tiers say.
+  assert.match(probe, /AIR_CARE_PRICE_MISMATCH/);
+  assert.match(probe, /failures \+= 1/);
+  assert.match(probe, /process\.exitCode = 1/);
+});
+
+test("seed verifier asserts the sale window is enforced on the live clock", () => {
+  // Both directions are failures: selling after the window closed, and
+  // refusing while it is open.
+  assert.match(probe, /AIR_CARE_SOLD_OUTSIDE_WINDOW/);
+  assert.match(probe, /expected: "sellable"/);
+  assert.match(probe, /purchase_eligibility/);
+  // The live check must use a service with no injected clock.
+  assert.match(probe, /const liveService = createPrepaidOrderService\(\{ pool \}\)/);
+});
+
+test("seed verifier never widens a sale window or bypasses eligibility", () => {
+  // It is a read-only probe: no write to the campaign rows, and no flag that
+  // would let a customer or admin path skip the window check. Checked against
+  // executable lines only, so the explanatory comments may still use the words.
+  const executable = probe
+    .split("\n")
+    .filter((line) => !line.trim().startsWith("//"))
+    .join("\n");
+  assert.doesNotMatch(executable, /\b(UPDATE|INSERT|DELETE|ALTER|DROP)\b/i);
+  assert.doesNotMatch(executable, /sell_end_at\s*=[^=]/);
+  assert.doesNotMatch(executable, /skipSaleWindow|ignoreWindow|bypass/i);
+});
