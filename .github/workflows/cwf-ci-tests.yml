@@ -118,3 +118,71 @@ jobs:
           path: /tmp/cwf-failing-tests.log
           if-no-files-found: warn
           retention-days: 1
+
+  # The job above never starts a database, so every database-backed assertion in
+  # the suite self-skips there. That left the AIR CARE prepaid lifecycle — the
+  # part that lives in PostgreSQL triggers rather than in JavaScript — with no
+  # automated gate at all: whether a paid Order's location reaches the Job, whether
+  # a prepaid Job settles at zero, and whether cancelling a Job gives the paid
+  # right back were only ever checked by hand against Staging.
+  #
+  # This job runs those assertions against a throwaway PostgreSQL container using
+  # the exact migration that ships to Staging and Production. It is deliberately
+  # scoped to that one suite so it stays fast and so a pre-existing fixture gap in
+  # an unrelated database suite cannot block an AIR CARE release.
+  prepaid-lifecycle:
+    name: prepaid lifecycle (PostgreSQL)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Check out the commit under test
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install exactly the pinned dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Run the prepaid lifecycle against a disposable PostgreSQL
+        # No connection environment is set on purpose. The suite's built-in
+        # defaults (127.0.0.1:5432, user/password/database postgres) already
+        # describe the ephemeral service container above, so this workflow still
+        # holds no database credentials and still cannot address a real host.
+        #
+        # The TAP reporter is pinned because this step greps its summary; the
+        # default reporter's output format is not a stable contract.
+        #
+        # A self-skip is correct when no database is reachable, but here one is
+        # guaranteed. A skip would mean the suite never actually ran, turning this
+        # gate into a green light that proves nothing, so treat it as a failure.
+        run: |
+          set -euo pipefail
+          node --test --test-reporter=tap test/prepaidLifecycleDatabase.test.js \
+            | tee /tmp/cwf-prepaid-lifecycle.log
+          grep -E '^# (tests|pass|fail|skipped)' /tmp/cwf-prepaid-lifecycle.log
+          if grep -qE '^# skipped [1-9]' /tmp/cwf-prepaid-lifecycle.log; then
+            echo "::error::prepaid lifecycle suite skipped despite an available database"
+            exit 1
+          fi
+          if ! grep -qE '^# pass [1-9]' /tmp/cwf-prepaid-lifecycle.log; then
+            echo "::error::prepaid lifecycle suite asserted nothing"
+            exit 1
+          fi
