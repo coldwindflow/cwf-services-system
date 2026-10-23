@@ -182,6 +182,7 @@ function dispatchFixture(overrides = {}) {
     accept_status: "ready",
     accept_status_expires_at: "2099-01-01T00:00:00.000Z",
     matrix_json: { ok: true },
+    admin_job_override_enabled: false,
   }];
   const db = {
     async query(sql) {
@@ -199,6 +200,7 @@ function dispatchFixture(overrides = {}) {
       }
       if (/technician_workdays_v2/.test(sql)) return { rows: overrides.workdays || [] };
       if (/technician_special_slots_v2/.test(sql)) return { rows: overrides.special || [] };
+      if (/FROM public\.technician_certifications/.test(sql)) return { rows: overrides.blockedCertifications || [] };
       throw new Error(`unexpected query: ${sql}`);
     },
   };
@@ -259,6 +261,27 @@ test("canonical urgent eligibility applies ready/partner SQL, strict zone, all-l
   assert.deepEqual((await capacityFull.service.findEligibleTechnicians(job, { db: capacityFull.db, criteriaList })).available, []);
   const collision = dispatchFixture({ free: false });
   assert.deepEqual((await collision.service.findEligibleTechnicians(job, { db: collision.db, criteriaList })).available, []);
+});
+
+test("partner admin override reaches real urgent dispatch while operational safety gates still block", async () => {
+  const job = { appointment_datetime: "2026-07-27T10:00:00+07:00", duration_min: 60, address_text: "Bangkok" };
+  const criteriaList = [{ job: "wash", ac: "wall", wash: "normal" }];
+  const overriddenRow = {
+    username: "override-partner", employment_type: "partner", home_service_zone_code: "OTHER",
+    secondary_service_zone_code: null, allow_out_of_zone: false, work_start: "09:00", work_end: "18:00",
+    weekly_off_days: "", accept_status: "paused", accept_status_expires_at: null, matrix_json: {},
+    admin_job_override_enabled: true,
+  };
+  const allowed = dispatchFixture({ rows: [overriddenRow] });
+  assert.deepEqual((await allowed.service.findEligibleTechnicians(job, { db: allowed.db, criteriaList })).available, ["override-partner"]);
+  const suspended = dispatchFixture({ rows: [overriddenRow], blockedCertifications: [
+    { technician_username: "override-partner", certification_code: "clean_wall_normal", status: "suspended" },
+  ] });
+  assert.deepEqual((await suspended.service.findEligibleTechnicians(job, { db: suspended.db, criteriaList })).available, []);
+  const collision = dispatchFixture({ rows: [overriddenRow], free: false });
+  assert.deepEqual((await collision.service.findEligibleTechnicians(job, { db: collision.db, criteriaList })).available, []);
+  const dayOff = dispatchFixture({ rows: [overriddenRow], workdays: [{ technician_username: "override-partner", is_off: true }] });
+  assert.deepEqual((await dayOff.service.findEligibleTechnicians(job, { db: dayOff.db, criteriaList })).available, []);
 });
 
 test("canonical dispatch preserves partner, company-compatible, all, and invalid scopes", async () => {

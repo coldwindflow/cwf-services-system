@@ -205,10 +205,18 @@ function createUrgentDispatchService(dependencies = {}) {
               COALESCE(p.weekly_off_days,'') AS weekly_off_days,
               COALESCE(p.accept_status,'paused') AS accept_status,
               p.accept_status_expires_at,
-              m.matrix_json
+              m.matrix_json,
+              COALESCE(pa.admin_job_override_enabled,FALSE) AS admin_job_override_enabled
          FROM public.users u
          JOIN public.technician_profiles p ON p.username=u.username
          LEFT JOIN public.technician_service_matrix m ON m.username=u.username
+         LEFT JOIN LATERAL (
+           SELECT a.admin_job_override_enabled
+             FROM public.partner_applications a
+            WHERE a.technician_username=u.username
+            ORDER BY a.created_at DESC
+            LIMIT 1
+         ) pa ON TRUE
         WHERE u.role='technician'
           AND (
                 $1::text = 'all'
@@ -253,6 +261,20 @@ function createUrgentDispatchService(dependencies = {}) {
         )
         : { rows: [] },
     ]);
+    const blockedCertifications = usernames.length
+      ? await db.query(
+        `SELECT technician_username, certification_code, status
+           FROM public.technician_certifications
+          WHERE technician_username=ANY($1::text[])
+            AND status IN ('suspended','revoked')`,
+        [usernames]
+      )
+      : { rows: [] };
+    const blockedCertificationMap = new Map();
+    for (const cert of blockedCertifications.rows || []) {
+      if (!blockedCertificationMap.has(cert.technician_username)) blockedCertificationMap.set(cert.technician_username, []);
+      blockedCertificationMap.get(cert.technician_username).push(cert.certification_code);
+    }
     const calendarMap = new Map((calendars.rows || []).map((row) => [row.technician_username, row]));
     const capacityMap = await availabilityEngine.loadUrgentCapacityMap(
       db,
@@ -304,6 +326,8 @@ function createUrgentDispatchService(dependencies = {}) {
         job.job_id || null,
         db,
       );
+      const adminOverride = row.admin_job_override_enabled === true;
+      const blockedCerts = blockedCertificationMap.get(row.username) || [];
       const checks = {
         account_profile_active: String(row.account_role || "technician") === "technician"
           && Boolean(row.profile_username || row.username),
@@ -327,16 +351,19 @@ function createUrgentDispatchService(dependencies = {}) {
           && appointment.minute + windowBlockDuration <= window.end
         ),
         collision_travel: collisionPass,
+        admin_override: adminOverride,
+        certification_safety: blockedCerts.length === 0,
       };
       const failedGates = [];
       if (!checks.account_profile_active) failedGates.push("account_profile_inactive");
-      if (!checks.ready || !checks.ready_expiry) failedGates.push("ready_expired");
-      if (!checks.service_matrix) failedGates.push("matrix_mismatch");
+      if (!adminOverride && (!checks.ready || !checks.ready_expiry)) failedGates.push("ready_expired");
+      if (!adminOverride && !checks.service_matrix) failedGates.push("matrix_mismatch");
+      if (!checks.certification_safety) failedGates.push("certification_suspended_or_revoked");
       if (!checks.calendar_exists) failedGates.push("calendar_missing");
       else if (!checks.calendar_working) failedGates.push("calendar_not_working");
       if (checks.calendar_exists && !checks.urgent_enabled_for_day) failedGates.push("urgent_disabled_for_day");
       if (!checks.capacity) failedGates.push("capacity_full");
-      if (!checks.zone) failedGates.push("zone_mismatch");
+      if (!adminOverride && !checks.zone) failedGates.push("zone_mismatch");
       if (!checks.day_override) failedGates.push("explicit_day_off");
       if (!checks.weekly_off) failedGates.push("weekly_off");
       if (!checks.work_window) failedGates.push("outside_work_window");
