@@ -446,7 +446,8 @@ test("repair confirmation token is bound to payout, technician, and expected amo
 test("completed deposit does not restart after refund or claim, while balance remains auditable", async () => {
   const db = partnerDb();
   for (let i = 0; i < 10; i++) db.ledger.push({ ledger_id: i + 1, technician_username: "TECH", payout_id: "old_" + i, transaction_type: "collect", amount: 500 });
-  db.ledger.push({ ledger_id: 11, technician_username: "TECH", payout_id: null, transaction_type: "claim_deduct", amount: 700 });
+  db.ledger.push({ ledger_id: 11, technician_username: "TECH", payout_id: null, transaction_type: "claim_deduct", amount: 500 });
+  db.ledger.push({ ledger_id: 12, technician_username: "TECH", payout_id: null, transaction_type: "refund", amount: 200 });
   assert.equal(await svc.getDepositCollected(db, "TECH"), 4300);
   assert.equal(await svc.hasCompletedDepositTarget(db, "TECH", 5000), true);
   const projected = await svc.getProjectedDepositDeductionForPayout(db, { payout_id: "new_1", technician_username: "TECH", gross_amount: 2000 });
@@ -455,7 +456,7 @@ test("completed deposit does not restart after refund or claim, while balance re
   const applied = await svc.materializeDepositCollectForPayout(db, { payout_id: "new_1", technician_username: "TECH", gross_amount: 2000 });
   assert.equal(applied.inserted, false);
   assert.equal(applied.deposit_deduction_amount, 0);
-  assert.equal(db.ledger.length, 11);
+  assert.equal(db.ledger.length, 12);
 });
 
 test("incomplete deposit continues instalments after a claim", async () => {
@@ -466,4 +467,26 @@ test("incomplete deposit continues instalments after a claim", async () => {
   const result = await svc.materializeDepositCollectForPayout(db, { payout_id: "new", technician_username: "TECH", gross_amount: 1000 });
   assert.equal(result.deposit_deduction_amount, 500);
   assert.equal(result.inserted, true);
+});
+
+
+test("explicitly disabled deposit collection never deducts even if ledger balance is below target", async () => {
+  const db = partnerDb();
+  db.accounts.set("TECH", { technician_username: "TECH", target_amount: 5000, is_required: false });
+  const projected = await svc.getProjectedDepositDeductionForPayout(db, { payout_id: "nov_25", technician_username: "TECH", gross_amount: 3000 });
+  assert.equal(projected.deposit_deduction_amount, 0);
+  const applied = await svc.materializeDepositCollectForPayout(db, { payout_id: "nov_25", technician_username: "TECH", gross_amount: 3000 });
+  assert.equal(applied.deposit_deduction_amount, 0);
+  assert.equal(applied.inserted, false);
+  assert.equal(db.ledger.length, 0);
+});
+
+test("completed deposit preserves existing historical collect without inserting another", async () => {
+  const db = partnerDb();
+  for (let i = 0; i < 10; i++) db.ledger.push({ ledger_id: i + 1, technician_username: "TECH", payout_id: "old_" + i, transaction_type: "collect", amount: 500 });
+  db.ledger.push({ ledger_id: 11, technician_username: "TECH", payout_id: "old_9", transaction_type: "claim_deduct", amount: 100 });
+  const replay = await svc.materializeDepositCollectForPayout(db, { payout_id: "old_9", technician_username: "TECH", gross_amount: 2000 });
+  assert.equal(replay.inserted, false);
+  assert.equal(replay.deposit_deduction_amount, 500);
+  assert.equal(db.ledger.length, 11);
 });
