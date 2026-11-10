@@ -121,6 +121,23 @@ async function getDepositCollected(client, username) {
   return money(q.rows?.[0]?.collected || 0);
 }
 
+// Completion is based on contributions, not the refundable balance. A later
+// refund or claim must not silently re-enrol a technician in instalments.
+async function hasCompletedDepositTarget(client, username, targetAmount) {
+  const tech = String(username || "").trim();
+  if (!tech || money(targetAmount) <= 0) return false;
+  const q = await client.query(
+    `SELECT COALESCE(SUM(CASE
+         WHEN transaction_type='collect' THEN amount
+         WHEN transaction_type='manual_adjust' THEN amount
+         ELSE 0 END),0)::numeric AS contributed_total
+       FROM public.technician_deposit_ledger
+      WHERE technician_username=$1`,
+    [tech]
+  );
+  return money(q.rows?.[0]?.contributed_total || 0) >= money(targetAmount);
+}
+
 async function getExistingCollectForPayout(client, payoutId, username, { forUpdate = false } = {}) {
   const pid = String(payoutId || "").trim();
   const tech = String(username || "").trim();
@@ -215,6 +232,7 @@ async function getProjectedDepositDeductionForPayout(client, {
   const account = await getDepositAccount(client, tech);
   const collected = await getDepositCollected(client, tech);
   const profile = await getTechnicianProfile(client, tech);
+  const completed = await hasCompletedDepositTarget(client, tech, account.target_amount);
   const paidHistory = String(period_status || "").trim() === "paid" || (!existing.exists && payment.paymentAlreadyRecorded);
   const calc = paidHistory
     ? calculateDepositDeduction({
@@ -230,7 +248,7 @@ async function getProjectedDepositDeductionForPayout(client, {
     : calculateDepositDeduction({
         existingCollectExists: existing.exists,
         existingCollectAmount: existing.amount,
-        isRequired: account.is_required,
+        isRequired: account.is_required && !completed,
         isPartner: isPartnerEmploymentType(profile?.employment_type || ""),
         targetAmount: account.target_amount,
         collectedTotal: collected,
@@ -289,10 +307,11 @@ async function materializeDepositCollectForPayout(client, {
   const account = await getDepositAccount(client, tech);
   const collected = await getDepositCollected(client, tech);
   const profile = await getTechnicianProfile(client, tech);
+  const completed = await hasCompletedDepositTarget(client, tech, account.target_amount);
   const calc = calculateDepositDeduction({
     existingCollectExists: existing.exists,
     existingCollectAmount: existing.amount,
-    isRequired: account.is_required,
+    isRequired: account.is_required && !completed,
     isPartner: isPartnerEmploymentType(profile?.employment_type || ""),
     targetAmount: account.target_amount,
     collectedTotal: collected,
@@ -348,6 +367,7 @@ module.exports = {
   calculateDepositDeduction,
   getDepositAccount,
   getDepositCollected,
+  hasCompletedDepositTarget,
   getExistingCollectForPayout,
   getTechnicianPayoutPaymentState,
   getProjectedDepositDeductionForPayout,
