@@ -84,7 +84,7 @@ class FakeClient {
     if (s.includes("AS contributed_total") && s.includes("public.technician_deposit_ledger")) {
       const tech = String(params[0]);
       const contributed = this.ledger.filter((r) => r.technician_username === tech)
-        .reduce((sum, r) => sum + (r.transaction_type === "collect" || r.transaction_type === "manual_adjust" ? Number(r.amount || 0) : 0), 0);
+        .reduce((sum, r) => sum + (r.transaction_type === "collect" || (r.transaction_type === "manual_adjust" && Number(r.amount || 0) > 0) ? Number(r.amount || 0) : 0), 0);
       return { rows: [{ contributed_total: contributed }] };
     }
     if (s.startsWith("SELECT ledger_id, amount, created_at, created_by, meta_json FROM public.technician_deposit_ledger")) {
@@ -489,4 +489,28 @@ test("completed deposit preserves existing historical collect without inserting 
   assert.equal(replay.inserted, false);
   assert.equal(replay.deposit_deduction_amount, 500);
   assert.equal(db.ledger.length, 11);
+});
+
+
+test("negative manual adjustment cannot restart collection after 5000 lifetime contributions", async () => {
+  const db = partnerDb();
+  for (let i = 0; i < 10; i++) db.ledger.push({ ledger_id: i + 1, technician_username: "TECH", payout_id: "oct_" + i, transaction_type: "collect", amount: 500 });
+  db.ledger.push({ ledger_id: 11, technician_username: "TECH", transaction_type: "manual_adjust", amount: -500 });
+  assert.equal(await svc.hasCompletedDepositTarget(db, "TECH", 5000), true);
+  const preview = await svc.getProjectedDepositDeductionForPayout(db, { payout_id: "nov", technician_username: "TECH", gross_amount: 3000 });
+  assert.equal(preview.deposit_deduction_amount, 0);
+  const result = await svc.materializeDepositCollectForPayout(db, { payout_id: "nov", technician_username: "TECH", gross_amount: 3000 });
+  assert.equal(result.deposit_deduction_amount, 0);
+  assert.equal(db.ledger.length, 11);
+});
+
+test("4900 lifetime contributions plus claim caps next collection at 100, not 500", async () => {
+  const db = partnerDb();
+  db.ledger.push({ ledger_id: 1, technician_username: "TECH", payout_id: "oct", transaction_type: "collect", amount: 4900 });
+  db.ledger.push({ ledger_id: 2, technician_username: "TECH", transaction_type: "claim_deduct", amount: 500 });
+  const preview = await svc.getProjectedDepositDeductionForPayout(db, { payout_id: "nov", technician_username: "TECH", gross_amount: 3000 });
+  assert.equal(preview.deposit_deduction_amount, 100);
+  const result = await svc.materializeDepositCollectForPayout(db, { payout_id: "nov", technician_username: "TECH", gross_amount: 3000 });
+  assert.equal(result.deposit_deduction_amount, 100);
+  assert.equal(await svc.hasCompletedDepositTarget(db, "TECH", 5000), true);
 });
