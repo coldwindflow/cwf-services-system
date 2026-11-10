@@ -81,6 +81,12 @@ class FakeClient {
       }
       return { rows: [{ collected: total }] };
     }
+    if (s.includes("AS contributed_total") && s.includes("public.technician_deposit_ledger")) {
+      const tech = String(params[0]);
+      const contributed = this.ledger.filter((r) => r.technician_username === tech)
+        .reduce((sum, r) => sum + (r.transaction_type === "collect" || (r.transaction_type === "manual_adjust" && Number(r.amount || 0) > 0) ? Number(r.amount || 0) : 0), 0);
+      return { rows: [{ contributed_total: contributed }] };
+    }
     if (s.startsWith("SELECT ledger_id, amount, created_at, created_by, meta_json FROM public.technician_deposit_ledger")) {
       const [payout_id, technician_username] = params.map(String);
       const rows = this.ledger
@@ -434,4 +440,77 @@ test("repair confirmation token is bound to payout, technician, and expected amo
     repairScript.buildConfirmationToken("payout_2026-07_10", "0661479791", 0),
     "payout_2026-07_10:0661479791:500"
   );
+});
+
+
+test("completed deposit does not restart after refund or claim, while balance remains auditable", async () => {
+  const db = partnerDb();
+  for (let i = 0; i < 10; i++) db.ledger.push({ ledger_id: i + 1, technician_username: "TECH", payout_id: "old_" + i, transaction_type: "collect", amount: 500 });
+  db.ledger.push({ ledger_id: 11, technician_username: "TECH", payout_id: null, transaction_type: "claim_deduct", amount: 500 });
+  db.ledger.push({ ledger_id: 12, technician_username: "TECH", payout_id: null, transaction_type: "refund", amount: 200 });
+  assert.equal(await svc.getDepositCollected(db, "TECH"), 4300);
+  assert.equal(await svc.hasCompletedDepositTarget(db, "TECH", 5000), true);
+  const projected = await svc.getProjectedDepositDeductionForPayout(db, { payout_id: "new_1", technician_username: "TECH", gross_amount: 2000 });
+  assert.equal(projected.deposit_deduction_amount, 0);
+  assert.equal(projected.deposit_collected_total, 4300);
+  const applied = await svc.materializeDepositCollectForPayout(db, { payout_id: "new_1", technician_username: "TECH", gross_amount: 2000 });
+  assert.equal(applied.inserted, false);
+  assert.equal(applied.deposit_deduction_amount, 0);
+  assert.equal(db.ledger.length, 12);
+});
+
+test("incomplete deposit continues instalments after a claim", async () => {
+  const db = partnerDb();
+  db.ledger.push({ ledger_id: 1, technician_username: "TECH", payout_id: "old", transaction_type: "collect", amount: 1000 });
+  db.ledger.push({ ledger_id: 2, technician_username: "TECH", payout_id: null, transaction_type: "claim_deduct", amount: 300 });
+  assert.equal(await svc.hasCompletedDepositTarget(db, "TECH", 5000), false);
+  const result = await svc.materializeDepositCollectForPayout(db, { payout_id: "new", technician_username: "TECH", gross_amount: 1000 });
+  assert.equal(result.deposit_deduction_amount, 500);
+  assert.equal(result.inserted, true);
+});
+
+
+test("explicitly disabled deposit collection never deducts even if ledger balance is below target", async () => {
+  const db = partnerDb();
+  db.accounts.set("TECH", { technician_username: "TECH", target_amount: 5000, is_required: false });
+  const projected = await svc.getProjectedDepositDeductionForPayout(db, { payout_id: "nov_25", technician_username: "TECH", gross_amount: 3000 });
+  assert.equal(projected.deposit_deduction_amount, 0);
+  const applied = await svc.materializeDepositCollectForPayout(db, { payout_id: "nov_25", technician_username: "TECH", gross_amount: 3000 });
+  assert.equal(applied.deposit_deduction_amount, 0);
+  assert.equal(applied.inserted, false);
+  assert.equal(db.ledger.length, 0);
+});
+
+test("completed deposit preserves existing historical collect without inserting another", async () => {
+  const db = partnerDb();
+  for (let i = 0; i < 10; i++) db.ledger.push({ ledger_id: i + 1, technician_username: "TECH", payout_id: "old_" + i, transaction_type: "collect", amount: 500 });
+  db.ledger.push({ ledger_id: 11, technician_username: "TECH", payout_id: "old_9", transaction_type: "claim_deduct", amount: 100 });
+  const replay = await svc.materializeDepositCollectForPayout(db, { payout_id: "old_9", technician_username: "TECH", gross_amount: 2000 });
+  assert.equal(replay.inserted, false);
+  assert.equal(replay.deposit_deduction_amount, 500);
+  assert.equal(db.ledger.length, 11);
+});
+
+
+test("negative manual adjustment cannot restart collection after 5000 lifetime contributions", async () => {
+  const db = partnerDb();
+  for (let i = 0; i < 10; i++) db.ledger.push({ ledger_id: i + 1, technician_username: "TECH", payout_id: "oct_" + i, transaction_type: "collect", amount: 500 });
+  db.ledger.push({ ledger_id: 11, technician_username: "TECH", transaction_type: "manual_adjust", amount: -500 });
+  assert.equal(await svc.hasCompletedDepositTarget(db, "TECH", 5000), true);
+  const preview = await svc.getProjectedDepositDeductionForPayout(db, { payout_id: "nov", technician_username: "TECH", gross_amount: 3000 });
+  assert.equal(preview.deposit_deduction_amount, 0);
+  const result = await svc.materializeDepositCollectForPayout(db, { payout_id: "nov", technician_username: "TECH", gross_amount: 3000 });
+  assert.equal(result.deposit_deduction_amount, 0);
+  assert.equal(db.ledger.length, 11);
+});
+
+test("4900 lifetime contributions plus claim caps next collection at 100, not 500", async () => {
+  const db = partnerDb();
+  db.ledger.push({ ledger_id: 1, technician_username: "TECH", payout_id: "oct", transaction_type: "collect", amount: 4900 });
+  db.ledger.push({ ledger_id: 2, technician_username: "TECH", transaction_type: "claim_deduct", amount: 500 });
+  const preview = await svc.getProjectedDepositDeductionForPayout(db, { payout_id: "nov", technician_username: "TECH", gross_amount: 3000 });
+  assert.equal(preview.deposit_deduction_amount, 100);
+  const result = await svc.materializeDepositCollectForPayout(db, { payout_id: "nov", technician_username: "TECH", gross_amount: 3000 });
+  assert.equal(result.deposit_deduction_amount, 100);
+  assert.equal(await svc.hasCompletedDepositTarget(db, "TECH", 5000), true);
 });
