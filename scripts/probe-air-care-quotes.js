@@ -21,10 +21,10 @@ const { createServicePackageResolver } = require("../server/services/packages/se
 
 const PHASE = String(process.argv[2] || "manual").replace(/[^a-z0-9_-]/gi, "").slice(0, 32) || "manual";
 const MATRICES = Object.freeze([
-  { label: "standard-small", bundle: "coldwindflow-air-care-standard", packageKey: "coldwindflow-air-care-standard-small", btu: 12000, prices: { 1: 499, 4: 1699, 5: 2198, 6: 2598 } },
-  { label: "standard-large", bundle: "coldwindflow-air-care-standard", packageKey: "coldwindflow-air-care-standard-large", btu: 18000, prices: { 1: 599, 4: 2099, 5: 2698, 6: 3198 } },
-  { label: "premium-small", bundle: "coldwindflow-air-care-premium", packageKey: "coldwindflow-air-care-premium-small", btu: 12000, prices: { 1: 699, 4: 2489, 5: 3188, 6: 3798 } },
-  { label: "premium-large", bundle: "coldwindflow-air-care-premium", packageKey: "coldwindflow-air-care-premium-large", btu: 18000, prices: { 1: 899, 4: 3399, 5: 4298, 6: 5197 } },
+  { label: "standard-small", bundle: "coldwindflow-air-care-standard", packageKey: "coldwindflow-air-care-standard-small", btu: 12000, prices: { 1: 499, 2: 899, 3: 1299, 4: 1699, 5: 2198, 6: 2598 } },
+  { label: "standard-large", bundle: "coldwindflow-air-care-standard", packageKey: "coldwindflow-air-care-standard-large", btu: 18000, prices: { 1: 599, 2: 1099, 3: 1599, 4: 2099, 5: 2698, 6: 3198 } },
+  { label: "premium-small", bundle: "coldwindflow-air-care-premium", packageKey: "coldwindflow-air-care-premium-small", btu: 12000, prices: { 1: 699, 2: 1399, 3: 1899, 4: 2489, 5: 3188, 6: 3798 } },
+  { label: "premium-large", bundle: "coldwindflow-air-care-premium", packageKey: "coldwindflow-air-care-premium-large", btu: 18000, prices: { 1: 899, 2: 1799, 3: 2599, 4: 3399, 5: 4298, 6: 5197 } },
 ]);
 
 function evidence(name, fields = {}) {
@@ -79,6 +79,9 @@ async function main() {
   // uses; only the clock handed to the resolver differs.
   const service = createPrepaidOrderService({
     pool,
+    // Snapshot expiry must use the same historical clock as pricing. Otherwise
+    // a valid seed starts failing again when its redemption cutoff passes.
+    now: () => priceAt,
     resolverFactory: ({ db }) => createServicePackageResolver({ db, now: () => priceAt }),
   });
 
@@ -90,7 +93,7 @@ async function main() {
       continue;
     }
     const actual = [];
-    for (const quantity of [1, 4, 5, 6]) {
+    for (const quantity of [1, 2, 3, 4, 5, 6]) {
       try {
         const quote = await service.quoteOrder({
           catalog_item_id: itemId,
@@ -108,7 +111,7 @@ async function main() {
         failures += 1;
       }
     }
-    evidence("matrix", { matrix: matrix.label, q1_q4_q5_q6: actual.join(",") || "none" });
+    evidence("matrix", { matrix: matrix.label, q1_q2_q3_q4_q5_q6: actual.join(",") || "none" });
   }
 
   try {
@@ -134,34 +137,44 @@ async function main() {
   // after the window closed, or refusing while it is open, fails the gate.
   const liveService = createPrepaidOrderService({ pool });
   const now = new Date();
-  const open = rows.every((row) =>
-    (!row.sell_start || now >= new Date(row.sell_start))
-    && (!row.sell_end || now <= new Date(row.sell_end)));
-  const sample = MATRICES[0];
-  let sold = false;
-  let rejection = "";
-  try {
-    await liveService.quoteOrder({
-      catalog_item_id: ids.get(sample.bundle),
-      service_package_groups: [{ package_key: sample.packageKey, btu: sample.btu, quantity: 1 }],
-    }, { identity: "customer" });
-    sold = true;
-  } catch (error) {
-    rejection = String(error?.code || error?.message || "UNKNOWN").replace(/\s+/g, "_").slice(0, 160);
-  }
-  if (open && !sold) {
-    evidence("failure", { check: "purchase_eligibility", expected: "sellable", code: rejection });
-    failures += 1;
-  } else if (!open && sold) {
-    evidence("failure", { check: "purchase_eligibility", expected: "rejected_after_sale_window", code: "AIR_CARE_SOLD_OUTSIDE_WINDOW" });
-    failures += 1;
-  } else {
-    evidence("purchase_eligibility", {
-      window: open ? "open" : "closed",
-      live_quote: sold ? "sellable" : "rejected",
-      code: rejection || "none",
-      verdict: "enforced_correctly",
-    });
+  const windows = new Set();
+  for (const sample of MATRICES) {
+    const row = rows.find((entry) => entry.service_bundle_key === sample.bundle);
+    if (!row) continue; // Missing parents already failed the pricing checks.
+    const open = (!row.sell_start || now >= new Date(row.sell_start))
+      && (!row.sell_end || now <= new Date(row.sell_end));
+    windows.add(open ? "open" : "closed");
+    for (const identity of ["customer", "admin"]) {
+      let sold = false;
+      let rejection = "";
+      try {
+        await liveService.quoteOrder({
+          catalog_item_id: ids.get(sample.bundle),
+          service_package_groups: [{ package_key: sample.packageKey, btu: sample.btu, quantity: 1 }],
+        }, { identity });
+        sold = true;
+      } catch (error) {
+        rejection = String(error?.code || error?.message || "UNKNOWN").replace(/\s+/g, "_").slice(0, 160);
+      }
+      const context = { check: "purchase_eligibility", matrix: sample.label, identity };
+      if (open && !sold) {
+        evidence("failure", { ...context, expected: "sellable", code: rejection });
+        failures += 1;
+      } else if (!open && sold) {
+        evidence("failure", { ...context, expected: "rejected_after_sale_window", code: "AIR_CARE_SOLD_OUTSIDE_WINDOW" });
+        failures += 1;
+      } else if (!open && rejection !== "SERVICE_PACKAGE_NOT_AVAILABLE") {
+        // A schema/connection/runtime failure is not evidence of enforcement.
+        evidence("failure", { ...context, expected: "SERVICE_PACKAGE_NOT_AVAILABLE", code: rejection });
+        failures += 1;
+      } else {
+        evidence("purchase_eligibility", {
+          matrix: sample.label, identity, window: open ? "open" : "closed",
+          live_quote: sold ? "sellable" : "rejected", code: rejection || "none",
+          verdict: "enforced_correctly",
+        });
+      }
+    }
   }
 
   if (failures) {
@@ -171,9 +184,9 @@ async function main() {
     evidence("result", {
       status: "passed",
       matrices: MATRICES.length + 1,
-      quotes: MATRICES.length * 4 + 1,
+      quotes: MATRICES.length * 6 + 1,
       priced_at: priceAt.toISOString(),
-      sale_window: open ? "open" : "closed",
+      sale_window: [...windows].join(","),
     });
   }
 }
