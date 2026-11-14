@@ -58,14 +58,32 @@ CREATE TABLE IF NOT EXISTS public.catalog_items (
 );
 -- 20260809 also adds idempotency columns to jobs; a bare key is enough here
 -- because this suite never books a job, it only exercises catalog + resolver.
-CREATE TABLE IF NOT EXISTS public.jobs (job_id BIGSERIAL PRIMARY KEY);`;
+CREATE TABLE IF NOT EXISTS public.jobs (job_id BIGSERIAL PRIMARY KEY);
+-- The resolver counts existing service lines while validating a package
+-- selection, so it reads job_items even though nothing here books a job. A
+-- bare table keeps that read answerable; without it every case in this file
+-- failed with relation "public.job_items" does not exist.
+CREATE TABLE IF NOT EXISTS public.job_items (
+  job_item_id BIGSERIAL PRIMARY KEY,
+  job_id BIGINT,
+  item_name TEXT,
+  quantity INT,
+  unit_price NUMERIC(12,2)
+);`;
 
 async function ensureSchema(pool) {
   if (!BOOTSTRAP) return;
   await pool.query(CATALOG_ITEMS_BASE);
   await pool.query(migration("20260807_service_packages.sql"));
   // 20260809 uses bare ADD CONSTRAINT, so tolerate a second run on a warm database.
-  for (const statement of [migration("20260809_store_service_package_bundles.sql"), FORWARD]) {
+  // 20260905 carries the promotion-engine policy columns the catalog service now
+  // writes (service_level_key and the parent policy fields); without it the
+  // round-trip case fails on a column the application has long since depended on.
+  for (const statement of [
+    migration("20260809_store_service_package_bundles.sql"),
+    migration("20260905_promotion_engine_policy_fields.sql"),
+    FORWARD,
+  ]) {
     try { await pool.query(statement); }
     catch (error) { if (error.code !== "42710" && error.code !== "42P07") throw error; }
   }

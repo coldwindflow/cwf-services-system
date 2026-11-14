@@ -88,6 +88,21 @@ test("migration advisory lock and SQL execute in the same psql session", () => {
   assert.doesNotMatch(script, /trap .*pg_advisory_unlock/);
 });
 
+test("migration gate verifies the jobs columns the redemption guard writes", () => {
+  const script = fs.readFileSync("scripts/apply-prepaid-service-entitlements-home.sh", "utf8");
+  const migration = fs.readFileSync("scripts/sql/20260906_prepaid_service_entitlements.sql", "utf8");
+  // guard_prepaid_job_redemption() assigns these, but the migration does not
+  // create them, so only this gate can catch a database that is missing one.
+  assert.match(migration, /NEW\.customer_sub\s*:=/);
+  assert.match(migration, /NEW\.paid_at\s*:=/);
+  const jobsAlter = migration.match(/ALTER TABLE public\.jobs\s+ADD COLUMN[\s\S]*?;/);
+  assert.ok(jobsAlter, "migration must still own the prepaid jobs columns");
+  assert.doesNotMatch(jobsAlter[0], /\bcustomer_sub\b/);
+  assert.doesNotMatch(jobsAlter[0], /\bpaid_at\b/);
+  assert.match(script, /column_name IN \('customer_sub','paid_at'\)/);
+  assert.match(script, /guard_columns" == "2"/);
+});
+
 test("customer redemption carries both one-time token and stable scheduled request key", () => {
   const prepaidUi = fs.readFileSync("customer-app/modules/prepaid.js", "utf8");
   const scheduledUi = fs.readFileSync("customer-app/modules/bookingScheduled.js", "utf8");

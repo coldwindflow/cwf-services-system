@@ -1,5 +1,5 @@
 /* CWF root service worker: Tech App shell/cache refresh */
-const CWF_TECH_BUILD_ID = "20260920_issue366_axs_pricing_v1";
+const CWF_TECH_BUILD_ID = "20261022_prepaid_tech_job_context_v1";
 const CWF_ACCOUNTING_CACHE_BUMP = "20260703_accounting_payout_adjustment_v1";
 const CWF_LEGACY_CUSTOMER_RETIREMENT_BUMP = "20260713_retire_legacy_customer_ui_v1";
 const CACHE_PREFIX = "cwf-root-tech-app-";

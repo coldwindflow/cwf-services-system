@@ -10,6 +10,60 @@ const catalogRoutes = require("../server/routes/catalog/items");
 const url = process.env.CWF_ISSUE267_TEST_DATABASE_URL;
 const integration = url ? test : test.skip;
 
+// Against a BARE throwaway database, add CWF_ISSUE267_TEST_BOOTSTRAP=1 and this
+// suite provisions the minimum schema it touches, the same way
+// servicePackageMinimumQuantityPostgres.test.js does. Opt-in and additive, so
+// pointing at an already-provisioned database is unaffected.
+const BOOTSTRAP = process.env.CWF_ISSUE267_TEST_BOOTSTRAP === "1";
+const fs = require("node:fs");
+const path = require("node:path");
+const ROOT = path.join(__dirname, "..");
+const migration = (file) => fs.readFileSync(path.join(ROOT, "migrations", file), "utf8");
+
+// Only the catalog_items columns this flow reads or writes.
+const CATALOG_ITEMS_BASE = `
+CREATE TABLE IF NOT EXISTS public.catalog_items (
+  item_id BIGSERIAL PRIMARY KEY,
+  item_name TEXT NOT NULL,
+  item_category TEXT NOT NULL DEFAULT 'service',
+  base_price NUMERIC(12,2) NOT NULL DEFAULT 0,
+  unit_label TEXT,
+  job_category TEXT,
+  ac_type TEXT,
+  is_active BOOLEAN NOT NULL DEFAULT FALSE,
+  is_customer_visible BOOLEAN NOT NULL DEFAULT FALSE,
+  short_description TEXT,
+  long_description TEXT,
+  highlights JSONB NOT NULL DEFAULT '[]'::jsonb,
+  service_conditions TEXT,
+  booking_mode TEXT NOT NULL DEFAULT 'contact_admin',
+  is_featured BOOLEAN NOT NULL DEFAULT FALSE,
+  is_autoplay_enabled BOOLEAN NOT NULL DEFAULT TRUE
+);
+CREATE TABLE IF NOT EXISTS public.jobs (job_id BIGSERIAL PRIMARY KEY);
+CREATE TABLE IF NOT EXISTS public.job_items (
+  job_item_id BIGSERIAL PRIMARY KEY,
+  job_id BIGINT,
+  item_name TEXT,
+  quantity INT,
+  unit_price NUMERIC(12,2)
+);`;
+
+async function ensureSchema(pool) {
+  if (!BOOTSTRAP) return;
+  await pool.query(CATALOG_ITEMS_BASE);
+  await pool.query(migration("20260807_service_packages.sql"));
+  // 20260809 uses bare ADD CONSTRAINT, so tolerate a second run on a warm database.
+  for (const statement of [
+    migration("20260809_store_service_package_bundles.sql"),
+    migration("20260905_promotion_engine_policy_fields.sql"),
+    migration("20260820_service_package_minimum_total_quantity.sql"),
+  ]) {
+    try { await pool.query(statement); }
+    catch (error) { if (error.code !== "42710" && error.code !== "42P07") throw error; }
+  }
+}
+
 function variant(name, min, max, prices) {
   return {
     display_name: name, service_key: "wash-wall-premium", service_name: "Premium wash",
@@ -23,6 +77,7 @@ function variant(name, min, max, prices) {
 integration("isolated PostgreSQL atomically persists one parent, two variants, eight exact tiers, and composite snapshots", async () => {
   const pool = new Pool({ connectionString: url, ssl: false });
   try {
+    await ensureSchema(pool);
     await pool.query("TRUNCATE service_package_tiers, service_packages, catalog_items RESTART IDENTITY CASCADE");
     const service = createStoreServicePackageCatalogService({ pool });
     const created = await service.create({
@@ -54,7 +109,12 @@ integration("isolated PostgreSQL atomically persists one parent, two variants, e
     assert.deepEqual(counts.rows[0], { parents: 1, variants: 2, tiers: 8 });
     const publicRowResult = await pool.query("SELECT * FROM catalog_items WHERE service_bundle_key=$1", [created.service_bundle_key]);
     assert.equal(publicRowResult.rows[0].booking_mode, "contact_admin");
-    await catalogRoutes.attachCatalogServicePackages(pool, publicRowResult.rows, { customer: true });
+    await catalogRoutes.attachCatalogServicePackages(pool, publicRowResult.rows, {
+      // Pin the sell window to a day inside this bundle's fixed 2026-08-08..10
+      // range, matching the resolver clock pinned below, so the case does not
+      // expire once that window passes in real time.
+      customer: true, at: new Date("2026-08-09T00:00:00Z"),
+    });
     const publicDto = catalogRoutes.serializeCatalogDetailRow(publicRowResult.rows[0]);
     assert.equal(publicDto.booking_mode, "service_package");
     assert.equal(publicDto.service_package_variants.length, 2);
@@ -95,7 +155,10 @@ integration("isolated PostgreSQL atomically persists one parent, two variants, e
     assert.ok(generic.variants[0].tiers.every((tier) => typeof tier.fixed_total_price === "string"));
     const genericRow = (await pool.query("SELECT * FROM catalog_items WHERE service_bundle_key=$1", [generic.service_bundle_key])).rows[0];
     genericRow.images = [{ image_id: "TEST-image", image_url: "https://example.invalid/test-cassette.webp", is_primary: true }];
-    await catalogRoutes.attachCatalogServicePackages(pool, [genericRow], { customer: true });
+    // Same pinned instant: this campaign's window is 2026-08-01..2026-08-31.
+    await catalogRoutes.attachCatalogServicePackages(pool, [genericRow], {
+      customer: true, at: new Date("2026-08-09T00:00:00Z"),
+    });
     const genericDto = catalogRoutes.serializeCatalogDetailRow(genericRow);
     assert.equal(genericDto.service_package_variants[0].service.ac_type, "สี่ทิศทาง");
     assert.equal(genericDto.images.length, 1);

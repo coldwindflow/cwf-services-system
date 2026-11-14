@@ -16,6 +16,7 @@ let pool;
 let adminPool;
 let testDatabaseName = "";
 let dbUnavailableReason = "";
+const clientClosures = [];
 
 test.before(async () => {
   testDatabaseName = `cwf_urgent_${process.pid}_${Date.now()}`.toLowerCase();
@@ -31,6 +32,9 @@ test.before(async () => {
   }
 
   pool = new Pool({ ...PG_CONFIG, database: testDatabaseName });
+  pool.on("connect", (client) => {
+    clientClosures.push(new Promise((resolve) => client.once("end", resolve)));
+  });
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS public.jobs (
@@ -85,6 +89,9 @@ test.before(async () => {
 
 test.after(async () => {
   if (pool) await pool.end();
+  // pg-pool can drain its client list before every socket has emitted end.
+  // FORCE-dropping now can terminate a closing client and emit a late error.
+  await Promise.all(clientClosures);
   if (adminPool && testDatabaseName) {
     await adminPool.query(`DROP DATABASE IF EXISTS ${testDatabaseName} WITH (FORCE)`).catch(() => {});
     await adminPool.end().catch(() => {});

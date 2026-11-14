@@ -1,6 +1,6 @@
 (function(){
   'use strict';
-  var VERSION = '20260920_issue366_axs_pricing_v1';
+  var VERSION = '20261022_prepaid_tech_job_context_v1';
   try { window.__CWF_PWA_BUILD__ = VERSION; } catch (_) {}
   function register(){
     if (!('serviceWorker' in navigator)) return;

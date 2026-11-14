@@ -25,7 +25,7 @@ db_query() {
 }
 
 verify_schema() {
-  local entitlements order_columns job_columns triggers
+  local entitlements order_columns job_columns guard_columns triggers
   entitlements="$(db_query "SELECT CASE WHEN to_regclass('public.customer_service_entitlements') IS NULL THEN 0 ELSE 1 END")"
   order_columns="$(db_query "
     SELECT count(*) FROM information_schema.columns
@@ -46,6 +46,17 @@ verify_schema() {
     WHERE table_schema='public' AND table_name='jobs'
       AND column_name IN ('customer_due','payment_source','prepaid_entitlement_id')
   ")"
+  # guard_prepaid_job_redemption() assigns NEW.customer_sub and NEW.paid_at, but
+  # this migration does not create either column: jobs.customer_sub arrives with
+  # 20260623_catalog_store_hot_sale_reviews.sql and jobs.paid_at predates the
+  # tracked migrations entirely. On a database missing either one the migration
+  # still applies cleanly and every later AIR CARE booking fails inside the
+  # trigger with `record "new" has no field ...`. Fail the gate here instead.
+  guard_columns="$(db_query "
+    SELECT count(*) FROM information_schema.columns
+    WHERE table_schema='public' AND table_name='jobs'
+      AND column_name IN ('customer_sub','paid_at')
+  ")"
   triggers="$(db_query "
     SELECT count(*) FROM pg_trigger
     WHERE NOT tgisinternal AND tgrelid IN ('public.customer_orders'::regclass,'public.jobs'::regclass)
@@ -59,6 +70,7 @@ verify_schema() {
   [[ "$entitlements" == "1" ]] || die "customer_service_entitlements table missing"
   [[ "$order_columns" == "21" ]] || die "prepaid customer_orders columns incomplete: $order_columns/21"
   [[ "$job_columns" == "3" ]] || die "prepaid jobs columns incomplete: $job_columns/3"
+  [[ "$guard_columns" == "2" ]] || die "jobs.customer_sub/jobs.paid_at required by the redemption guard are missing: $guard_columns/2"
   [[ "$triggers" == "4" ]] || die "prepaid lifecycle triggers incomplete: $triggers/4"
 }
 
