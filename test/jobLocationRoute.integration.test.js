@@ -87,6 +87,9 @@ async function buildSchema(adminless) {
   // core schema / regex-extracted ALTERs may not add (production self-heals these
   // at boot via template-string ALTERs the extractor skips).
   const ensure = [
+    // The catalog quote gate reads this migration-owned column inside the
+    // booking transaction. Missing it aborts the transaction before INSERT.
+    `ALTER TABLE public.catalog_items ADD COLUMN IF NOT EXISTS price_rule_id BIGINT`,
     `ALTER TABLE public.job_team_members ADD COLUMN IF NOT EXISTS is_primary BOOLEAN DEFAULT FALSE`,
     `ALTER TABLE public.job_team_members ADD COLUMN IF NOT EXISTS added_at TIMESTAMPTZ DEFAULT NOW()`,
     `ALTER TABLE public.job_assignments ADD COLUMN IF NOT EXISTS status TEXT`,
@@ -100,6 +103,34 @@ async function buildSchema(adminless) {
     `ALTER TABLE public.job_items ADD COLUMN IF NOT EXISTS customer_price_source TEXT`,
   ];
   for (const s of ensure) { try { await db.query(s); } catch (_) {} }
+
+  // Columns that /admin/book_v2 writes but that live in migration files rather
+  // than boot-time ALTERs, so neither the extractor above nor schema-core.sql
+  // creates them. Apply the real migrations instead of restating their columns
+  // here, which is how these fixtures fell behind the application in the first
+  // place. Without them the book_v2 case below skipped itself rather than
+  // proving anything.
+  for (const migration of [
+    "20260809_store_service_package_bundles.sql",
+    "20260920_job_brand_foundation.sql",
+  ]) {
+    let sql = "";
+    try { sql = fs.readFileSync(path.join(REPO_ROOT, "migrations", migration), "utf8"); } catch (_) { continue; }
+    // Statement at a time: a single statement that does not apply to this
+    // partial schema must not abort the rest of the file. Safe to split on
+    // semicolons because neither migration contains a DO $$ ... $$ block.
+    for (const statement of sql.split(/;\s*$/m)) {
+      if (!statement.replace(/--[^\n]*/g, "").trim()) continue;
+      try { await db.query(statement); }
+      catch (_) {
+        // A chunk carrying more than one statement runs inside an implicit
+        // transaction, so one inapplicable statement leaves the connection in
+        // an aborted transaction and every later statement fails with it.
+        // Clear that state before continuing.
+        try { await db.query("ROLLBACK"); } catch (__) {}
+      }
+    }
+  }
   await db.end();
 }
 
@@ -215,6 +246,15 @@ test.before(async () => {
       PORT: String(PORT),
       CWF_JWT_SECRET: "jobloc-it-secret",
       NODE_ENV: "test", CWF_E2E_TEST_MODE: "1",
+      // CWF_E2E_TEST_MODE only takes effect once the preload is actually
+      // loaded. db.js forces TLS for Render, the disposable local cluster
+      // serves none, and without this every request through the spawned app
+      // failed as "The server does not support SSL connections" — a 500 on each
+      // admin route rather than the location behaviour under test. Quoted
+      // because a checkout path may contain spaces, and with forward slashes
+      // because NODE_OPTIONS treats a backslash inside quotes as an escape.
+      // Same wiring as test/e2e/run-booking-e2e.js.
+      NODE_OPTIONS: `--require="${path.join(__dirname, "e2e", "local-postgres-preload.js").replace(/\\/g, "/")}"`,
       OPENAI_API_KEY: "", ANTHROPIC_API_KEY: "",
       CLOUDINARY_URL: "", CLOUDINARY_CLOUD_NAME: "",
       // Force all third-party outbound (e.g. short-link resolution) to fail
@@ -529,10 +569,8 @@ test("R4-B3: /admin/book_v2 rejects partial/invalid explicit GPS with 400 (backe
 test("R4-B3b: /admin/book_v2 accepts a valid explicit pair and never persists 0,0 for missing GPS", async (t) => {
   if (dbUnavailable) { t.skip(dbUnavailable); return; }
   const withGps = await postBook({ customer_phone: "0800000010", gps_latitude: "13.744000", gps_longitude: "100.534000" });
-  if (!(withGps.status >= 200 && withGps.status < 300) || !withGps.json.job_id) {
-    t.skip(`book_v2 success path not exercisable in this schema (status ${withGps.status}: ${withGps.json.error || "no job_id"})`);
-    return;
-  }
+  assert.ok(withGps.status >= 200 && withGps.status < 300 && withGps.json.job_id,
+    `book_v2 must persist a valid booking (status ${withGps.status}: ${withGps.json.error || "no job_id"})`);
   const rowA = await withDb((db) => db.query("SELECT * FROM public.jobs WHERE job_id=$1", [withGps.json.job_id]).then((r) => r.rows[0]));
   assert.ok(Math.abs(Number(rowA.gps_latitude) - 13.744) < 1e-6, "explicit GPS persisted");
 

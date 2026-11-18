@@ -518,7 +518,10 @@ async function attachCatalogImages(pool, rows, imagesReady) {
   return rows;
 }
 
-async function attachCatalogServicePackages(pool, rows, { customer = false } = {}) {
+// `at` is the instant the customer sell window is judged against. It defaults to
+// now, which is the only thing callers in production pass, and exists so a test
+// can pin the window the same way servicePackageRepository already allows.
+async function attachCatalogServicePackages(pool, rows, { customer = false, at = new Date() } = {}) {
   rows.forEach((row) => { row.service_package_variants = []; });
   if (!rows.length) return rows;
   const ready = await pool.query(`
@@ -546,7 +549,7 @@ async function attachCatalogServicePackages(pool, rows, { customer = false } = {
        FROM public.catalog_items WHERE item_id=ANY($1::bigint[])`, [ids]
   );
   const parentById = new Map(parents.rows.map((row) => [String(row.item_id), row]));
-  const variants = await servicePackageRepository.listLinkedPackagesForCatalogItems(pool, ids, { customer });
+  const variants = await servicePackageRepository.listLinkedPackagesForCatalogItems(pool, ids, { customer, at });
   const byItem = new Map();
   variants.forEach((variant) => {
     const key = String(variant.catalog_item_id);

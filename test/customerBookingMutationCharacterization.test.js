@@ -28,6 +28,29 @@ const { createServicePackageResolver } = require("../server/services/packages/se
 
 const REPO_ROOT = path.resolve(__dirname, "..");
 
+// This suite books fixed appointments in August 2026 and already pins its own
+// clock through makeDependencies() (getNowBangkokParts and jobTiming both report
+// 2026-07-01). urgentPublicAdapter, however, reads jobTiming directly instead of
+// taking it from the injected dependencies, so the urgent assertions were still
+// measured against the real system clock and began failing with
+// APPOINTMENT_IN_PAST once real time passed the fixed dates — invisibly, because
+// CI runs no database and these cases self-skip there.
+//
+// Pin the module clock to the morning of 2026-08-01: just before the earliest
+// fixed appointment, and inside the 2026-08-01..2026-08-31 sell window that the
+// package fixtures declare. This changes no assertion and no application
+// behaviour; it only stops the fixtures from expiring. Same technique as
+// test/e2e/local-postgres-preload.js.
+const jobTimingModule = require("../server/services/jobTiming");
+const FROZEN_BANGKOK_NOW = Object.freeze({
+  ymd: "2026-08-01",
+  dateStr: "2026-08-01",
+  Y: "2026", M: "08", D: "01",
+  hour: 8, minute: 0, hh: 8, mm: 0,
+  iso: "2026-08-01T08:00:00+07:00",
+});
+jobTimingModule.getBangkokNow = () => ({ ...FROZEN_BANGKOK_NOW });
+
 function read(relativePath) {
   return fs.readFileSync(path.join(REPO_ROOT, relativePath), "utf8");
 }
@@ -243,6 +266,10 @@ test.before(async () => {
       ,catalog_item_id BIGINT
       ,admin_request_key TEXT
       ,admin_request_fingerprint TEXT
+      -- Added by migrations/20260809_store_service_package_bundles.sql and read
+      -- by persistedBookingReplay. Typed as production types it so the replay
+      -- lookup is characterized against the same comparison semantics.
+      ,booking_request_fingerprint CHAR(64)
     )
   `);
   const columnsBeforeBrandMigration = (await pool.query(
@@ -339,7 +366,19 @@ test.before(async () => {
     booking_ac_type TEXT, booking_btu INT, booking_wash_variant TEXT,
     price_rule_id BIGINT, is_active BOOLEAN, is_customer_visible BOOLEAN,
     service_bundle_key TEXT, service_package_sell_start_at TIMESTAMPTZ,
-    service_package_sell_end_at TIMESTAMPTZ, service_package_redeem_until TIMESTAMPTZ
+    service_package_sell_end_at TIMESTAMPTZ, service_package_redeem_until TIMESTAMPTZ,
+    -- Selected by servicePackageRepository. Declared with the same types and
+    -- defaults as migrations/20260820_service_package_minimum_total_quantity.sql
+    -- and migrations/20260905_promotion_engine_policy_fields.sql, so a package
+    -- lookup here behaves as it does once those migrations are applied. Without
+    -- them the repository reports SERVICE_PACKAGE_SCHEMA_NOT_READY and every
+    -- package booking in this file fails as PACKAGE_UNAVAILABLE.
+    service_package_minimum_total_quantity INTEGER,
+    service_package_pricing_strategy TEXT NOT NULL DEFAULT 'per_variant_tier',
+    service_package_selection_mode TEXT NOT NULL DEFAULT 'multi_variant',
+    service_package_maximum_total_quantity SMALLINT,
+    service_package_payment_mode TEXT NOT NULL DEFAULT 'book_now',
+    service_package_warranty_days SMALLINT
   )`);
   await pool.query(`CREATE TABLE public.service_packages (
     service_package_id BIGSERIAL PRIMARY KEY, package_key TEXT UNIQUE, display_name TEXT,
@@ -520,7 +559,13 @@ function makeDependencies(overrides = {}) {
     },
     publicCustomerAvailabilityDeps: () => ({}),
     findBestCustomerPromotion: async () => ({ promo: null, discount: 0 }),
-    createServicePackageResolver: (db) => createServicePackageResolver({ db }),
+    // The resolver defaults to the real clock, so the package fixtures' own
+    // 2026-08 sell windows fall out of range as soon as that month passes and
+    // every package booking here returns PACKAGE_UNAVAILABLE. Hand it the same
+    // frozen instant the rest of this suite is written against.
+    createServicePackageResolver: (db) => createServicePackageResolver({
+      db, now: () => new Date(FROZEN_BANGKOK_NOW.iso),
+    }),
     availabilityEngine: {
       buildCriteriaList: (payload) => [{ job: "wash", ac: payload.ac_type || "wall", wash: payload.wash_variant || "normal" }],
       validateCriteriaList: () => true,
@@ -1308,7 +1353,10 @@ dbTest("real PostgreSQL: Admin brands persist, validate, assign, and share colli
 
   const legacyDefault = await invoke(service.handleAdminBookV2, body("09:00"));
   const explicitCwf = await invoke(service.handleAdminBookV2, body("11:00", { brand: "cwf" }));
-  const axs = await invoke(service.handleAdminBookV2, body("13:00", { brand: "axs" }), { cwfJobBrandAdmin: true });
+  // AXS pricing only quotes the two locked BTU groups (<=12,000 or >=18,000),
+  // so an AXS line must carry one. The CWF rows above are deliberately left
+  // without a BTU: this case is about which brand each job persists under.
+  const axs = await invoke(service.handleAdminBookV2, body("13:00", { brand: "axs", btu: 12000 }), { cwfJobBrandAdmin: true });
   assert.equal(legacyDefault.statusCode, 200);
   assert.equal(explicitCwf.statusCode, 200);
   assert.equal(axs.statusCode, 200);
@@ -1357,11 +1405,11 @@ dbTest("real PostgreSQL: Admin brands persist, validate, assign, and share colli
     [{ brand_key: "cwf" }]
   );
 
-  const axsAgainstCwf = await invoke(service.handleAdminBookV2, body("09:30", { brand: "axs" }), { cwfJobBrandAdmin: true });
+  const axsAgainstCwf = await invoke(service.handleAdminBookV2, body("09:30", { brand: "axs", btu: 12000 }), { cwfJobBrandAdmin: true });
   assert.equal(axsAgainstCwf.statusCode, 409);
 
   await pool.query(`TRUNCATE public.job_promotions, public.job_offers, public.job_assignments, public.job_team_members, public.job_items, public.jobs RESTART IDENTITY CASCADE`);
-  const axsFirst = await invoke(service.handleAdminBookV2, body("09:00", { brand: "axs" }), { cwfJobBrandAdmin: true });
+  const axsFirst = await invoke(service.handleAdminBookV2, body("09:00", { brand: "axs", btu: 12000 }), { cwfJobBrandAdmin: true });
   const cwfAgainstAxs = await invoke(service.handleAdminBookV2, body("09:30", { brand: "cwf" }));
   assert.equal(axsFirst.statusCode, 200);
   assert.equal(cwfAgainstAxs.statusCode, 409);

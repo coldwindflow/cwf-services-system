@@ -23,8 +23,8 @@ test("AIR CARE seed repairs pre-existing Production rows and verifies server quo
   assert.match(seed, /unit_price_modifier=d\.modifier/);
   assert.match(operator, /quote_probe preseed/);
   assert.match(operator, /quote_probe postseed/);
-  assert.match(operator, /quotes=17 quantities=q1,q4,q5,q6,premium-mixed/);
+  assert.match(operator, /quotes=25 quantities=q1,q2,q3,q4,q5,q6,premium-mixed/);
   assert.match(probe, /createPrepaidOrderService/);
-  assert.match(probe, /for \(const quantity of \[1, 4, 5, 6\]\)/);
+  assert.match(probe, /for \(const quantity of \[1, 2, 3, 4, 5, 6\]\)/);
   assert.match(probe, /AIR_CARE_QUOTE_EVIDENCE/);
 });
