@@ -65,9 +65,9 @@ jobs:
               title: 'Promote main to CWF home staging',
               head: headBranch,
               base: baseBranch,
-              draft: false,
+              draft: true,
               body: [
-                'Automated release promotion PR.',
+                'Draft promotion proposal only. Review the complete diff and authorize the exact staging SHA and automatic migration/seed operations before merging.',
                 '',
                 'Merge this PR to deploy the merged code to `test-app.cwf-air.com` through the self-hosted runner.',
                 '',
@@ -80,6 +80,7 @@ jobs:
     name: Open staging to production promotion
     if: >-
       github.event_name == 'workflow_run' &&
+      github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.head_branch == 'staging/home-server-test'
     runs-on: ubuntu-latest
@@ -122,14 +123,14 @@ jobs:
             const { data: pr } = await github.rest.pulls.create({
               owner,
               repo,
-              title: 'Promote verified staging to CWF home production',
+              title: 'Review staging candidate for CWF home production',
               head: headBranch,
               base: baseBranch,
-              draft: false,
+              draft: true,
               body: [
-                'Automated Production promotion PR created only after `CWF Home Staging` completed successfully.',
+                'Draft proposal after deployment workflow success; this is not evidence of acceptance, migration/seed success, backup readiness or owner approval.',
                 '',
-                'Before merge, verify `https://test-app.cwf-air.com` and any required migration/data gates.',
+                'Before merge, verify exact-SHA staging acceptance, migration/data gates, backup/recovery evidence and separate explicit owner production approval.',
                 '',
                 'Merging this PR is the Production release event. The existing `CWF Home Production` workflow must then perform backup, deploy, health check, and automatic rollback on failure.',
               ].join('\n'),

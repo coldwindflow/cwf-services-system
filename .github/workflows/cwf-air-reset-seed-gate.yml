@@ -22,6 +22,7 @@ jobs:
   seed-staging:
     name: Verify and seed active promotion on staging
     if: >-
+      github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.head_branch == 'staging/home-server-test'
     runs-on:
@@ -61,6 +62,7 @@ jobs:
   seed-production:
     name: Verify and seed active promotion on production
     if: >-
+      github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.head_branch == 'production/home-server'
     runs-on:
