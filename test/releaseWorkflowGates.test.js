@@ -17,6 +17,28 @@ function condition(file, job) {
   });
 }
 
+for (const job of ["main-to-staging", "staging-to-production"]) {
+  test(`${job}: automation creates only a draft proposal and never merges`, async () => {
+    const source = fs.readFileSync(".github/workflows/cwf-home-release-promotion.yml", "utf8");
+    const section = source.split(`  ${job}:`)[1];
+    const script = section.match(/          script: \|\r?\n((?:            [^\n]*\n|\r?\n)+)/)[1]
+      .split("\n").map((line) => line.replace(/^            /, "")).join("\n");
+    const proposals = [];
+    const github = { rest: {
+      repos: { compareCommitsWithBasehead: async () => ({ data: { ahead_by: 1 } }) },
+      pulls: { list: async () => ({ data: [] }), create: async (args) => {
+        proposals.push(args); return { data: { number: 999 } };
+      } },
+    } };
+    await vm.runInNewContext(`(async () => { ${script} })()`, {
+      github, context: { repo: { owner: "fixture", repo: "fixture" } }, core: { notice() {} },
+    });
+    assert.equal(proposals.length, 1);
+    assert.equal(proposals[0].draft, true);
+    assert.match(proposals[0].body, /authoriz|approval/);
+  });
+}
+
 for (const [file, job, branch] of [
   ["cwf-air-reset-seed-gate.yml", "seed-staging", "staging/home-server-test"],
   ["cwf-air-reset-seed-gate.yml", "seed-production", "production/home-server"],
