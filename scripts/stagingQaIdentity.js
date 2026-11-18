@@ -22,11 +22,13 @@ function qaError(code, message = code) {
   return error;
 }
 
-function assertStagingOnly({ environment, containerName, secret }) {
+function assertStagingOnly({ environment, containerName, secret, fixture = false, database }) {
   if (String(environment || "") !== "staging") {
     throw qaError("STAGING_QA_ENVIRONMENT_REJECTED");
   }
-  if (String(containerName || "") !== "cwf-staging-app") {
+  const isolatedFixture = fixture === true && containerName === "cwf-staging-aircare-qa-app"
+    && database === "cwf_aircare_qa";
+  if (String(containerName || "") !== "cwf-staging-app" && !isolatedFixture) {
     throw qaError("STAGING_QA_CONTAINER_REJECTED");
   }
   if (typeof secret !== "string" || secret.length < 32) {
@@ -104,8 +106,8 @@ async function assertIdentityCollisionFree(db) {
   }
 }
 
-async function provisionQaIdentity({ pool, environment, containerName, secret }) {
-  assertStagingOnly({ environment, containerName, secret });
+async function provisionQaIdentity({ pool, environment, containerName, secret, fixture, database }) {
+  assertStagingOnly({ environment, containerName, secret, fixture, database });
   const adminSession = deriveAdminSessionToken(secret);
   const result = await withTransaction(pool, async (db) => {
     await db.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [QA.marker]);
@@ -215,8 +217,8 @@ async function findQaTransactionalRows(pool) {
   return result.rows || [];
 }
 
-async function deleteQaOrders({ pool, environment, containerName, secret }) {
-  assertStagingOnly({ environment, containerName, secret });
+async function deleteQaOrders({ pool, environment, containerName, secret, fixture, database }) {
+  assertStagingOnly({ environment, containerName, secret, fixture, database });
   return withTransaction(pool, async (db) => {
     await db.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [QA.marker]);
     const jobs = await db.query(
