@@ -87,6 +87,9 @@ async function buildSchema(adminless) {
   // core schema / regex-extracted ALTERs may not add (production self-heals these
   // at boot via template-string ALTERs the extractor skips).
   const ensure = [
+    // The catalog quote gate reads this migration-owned column inside the
+    // booking transaction. Missing it aborts the transaction before INSERT.
+    `ALTER TABLE public.catalog_items ADD COLUMN IF NOT EXISTS price_rule_id BIGINT`,
     `ALTER TABLE public.job_team_members ADD COLUMN IF NOT EXISTS is_primary BOOLEAN DEFAULT FALSE`,
     `ALTER TABLE public.job_team_members ADD COLUMN IF NOT EXISTS added_at TIMESTAMPTZ DEFAULT NOW()`,
     `ALTER TABLE public.job_assignments ADD COLUMN IF NOT EXISTS status TEXT`,
@@ -566,10 +569,8 @@ test("R4-B3: /admin/book_v2 rejects partial/invalid explicit GPS with 400 (backe
 test("R4-B3b: /admin/book_v2 accepts a valid explicit pair and never persists 0,0 for missing GPS", async (t) => {
   if (dbUnavailable) { t.skip(dbUnavailable); return; }
   const withGps = await postBook({ customer_phone: "0800000010", gps_latitude: "13.744000", gps_longitude: "100.534000" });
-  if (!(withGps.status >= 200 && withGps.status < 300) || !withGps.json.job_id) {
-    t.skip(`book_v2 success path not exercisable in this schema (status ${withGps.status}: ${withGps.json.error || "no job_id"})`);
-    return;
-  }
+  assert.ok(withGps.status >= 200 && withGps.status < 300 && withGps.json.job_id,
+    `book_v2 must persist a valid booking (status ${withGps.status}: ${withGps.json.error || "no job_id"})`);
   const rowA = await withDb((db) => db.query("SELECT * FROM public.jobs WHERE job_id=$1", [withGps.json.job_id]).then((r) => r.rows[0]));
   assert.ok(Math.abs(Number(rowA.gps_latitude) - 13.744) < 1e-6, "explicit GPS persisted");
 

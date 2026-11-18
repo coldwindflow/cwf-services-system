@@ -187,12 +187,12 @@ function purchaseFingerprint(normalized, sub, fixedTotalPrice) {
   }));
 }
 
-function entitlementSnapshot(quote) {
+function entitlementSnapshot(quote, at = new Date()) {
   if (!quote || quote.paymentMode !== "prepaid_full") {
     throw new PrepaidServiceError("PACKAGE_PREPAID_PURCHASE_NOT_ALLOWED", 409);
   }
   const redeemUntil = quote.redeemUntil ? new Date(quote.redeemUntil) : null;
-  if (!redeemUntil || !Number.isFinite(redeemUntil.getTime()) || redeemUntil <= new Date()) {
+  if (!redeemUntil || !Number.isFinite(redeemUntil.getTime()) || redeemUntil <= at) {
     throw new PrepaidServiceError("PACKAGE_REDEEM_WINDOW_EXCEEDED", 409);
   }
   const warrantyDays = Number(quote.warrantyDays);
@@ -282,7 +282,7 @@ async function withTransaction(pool, fn) {
   }
 }
 
-function createPrepaidOrderService({ pool, resolverFactory = createServicePackageResolver }) {
+function createPrepaidOrderService({ pool, resolverFactory = createServicePackageResolver, now = () => new Date() }) {
   if (!pool || typeof pool.query !== "function") throw new TypeError("prepaid order service requires pool");
 
   async function quotePurchase(db, body, identity = "customer") {
@@ -301,11 +301,12 @@ function createPrepaidOrderService({ pool, resolverFactory = createServicePackag
       if (error?.statusCode) throw error;
       throw new PrepaidServiceError(error?.code || "PACKAGE_PREPAID_PURCHASE_NOT_ALLOWED", 409);
     }
-    const snapshot = entitlementSnapshot(quote);
+    const at = now();
+    const snapshot = entitlementSnapshot(quote, at);
     // CWF AIR CARE is valid for 60 days from the actual reservation purchase,
     // not from a fixed campaign-wide redemption date.
     if (String(quote.bundleKey || "").startsWith("coldwindflow-air-care-")) {
-      snapshot.redeem_until = new Date(Date.now() + (60 * 24 * 60 * 60 * 1000)).toISOString();
+      snapshot.redeem_until = new Date(at.getTime() + (60 * 24 * 60 * 60 * 1000)).toISOString();
     }
     return { normalized, quote, snapshot };
   }

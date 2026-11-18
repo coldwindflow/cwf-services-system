@@ -6,9 +6,10 @@ on:
       action:
         description: Staging-only QA operation
         required: true
-        default: accept
+        default: fixture-accept
         type: choice
         options:
+          - fixture-accept
           - accept
           - provision
           - cleanup
@@ -20,7 +21,7 @@ env:
   GIT_CONFIG_NOSYSTEM: "1"
 
 concurrency:
-  group: cwf-air-care-staging-qa
+  group: cwf-home-staging
   cancel-in-progress: false
 
 jobs:
@@ -47,5 +48,9 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          bash scripts/run-staging-air-care-qa.sh staging "${{ inputs.action }}" | tee /tmp/cwf-air-care-staging-qa.log
+          if [[ "${{ inputs.action }}" == "fixture-accept" ]]; then
+            bash scripts/run-staging-air-care-fixture.sh staging | tee /tmp/cwf-air-care-staging-qa.log
+          else
+            bash scripts/run-staging-air-care-qa.sh staging "${{ inputs.action }}" | tee /tmp/cwf-air-care-staging-qa.log
+          fi
           grep '^\[QA_EVIDENCE\]' /tmp/cwf-air-care-staging-qa.log >> "$GITHUB_STEP_SUMMARY"

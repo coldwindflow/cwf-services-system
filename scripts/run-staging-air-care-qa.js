@@ -19,6 +19,8 @@ const CONTEXT = Object.freeze({
   environment: process.env.CWF_ENVIRONMENT,
   containerName: process.env.CWF_STAGING_QA_CONTAINER,
   secret: process.env.CWF_STAGING_QA_SECRET,
+  fixture: process.env.CWF_STAGING_QA_FIXTURE === "1",
+  database: process.env.DB_NAME,
 });
 const BASE_URL = `http://127.0.0.1:${Number(process.env.PORT || 3000)}`;
 const PURCHASE_KEY = "cwfqa_air_care_standard_small_q5_20261001";

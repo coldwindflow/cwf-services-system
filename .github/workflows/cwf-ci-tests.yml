@@ -127,9 +127,8 @@ jobs:
   # right back were only ever checked by hand against Staging.
   #
   # This job runs those assertions against a throwaway PostgreSQL container using
-  # the exact migration that ships to Staging and Production. It is deliberately
-  # scoped to that one suite so it stays fast and so a pre-existing fixture gap in
-  # an unrelated database suite cannot block an AIR CARE release.
+  # the exact migration that ships to Staging and Production. The whole suite
+  # runs here; the additional lifecycle invocation below rejects silent skips.
   database:
     name: npm test (PostgreSQL)
     runs-on: ubuntu-latest
