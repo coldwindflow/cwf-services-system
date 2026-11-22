@@ -120,6 +120,10 @@
       return requestJson("/public/service-packages", { cache: "no-store" });
     },
 
+    async loadServiceRights() {
+      return requestJson("/public/service-rights", { cache: "no-store" });
+    },
+
     async previewServicePackage(packageKey, tierKey) {
       return requestJson("/public/service-packages/preview", {
         method: "POST",

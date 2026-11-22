@@ -236,13 +236,16 @@
       catalog_item_id: catalogItemId,
       catalog_booking_quote: item.catalog_quote || null,
       catalog_booking_pricing: item.pricing || null,
-      ...(scope === "scheduled" ? { scheduled_request_key: "" } : {}),
+      ...(scope === "scheduled" ? { scheduled_request_key: "", prepaid_redemption_token: "", prepaid_entitlement_code: "",
+        service_package_key: "", service_package_tier_key: "", service_package_btu: "", service_package_preview: null,
+        service_package_groups: [], service_package_bundle_preview: null } : {}),
       ...(scope === "urgent" ? { urgent_request_key: "", service_package_groups: [], service_package_bundle_preview: null } : {}),
     });
     root.state.selectedService = { id: item.id || item.title || "", route: scope };
     if (scope === "scheduled") {
       root.state.setScheduledWizard({ step: 1, error: "" });
       root.state.setScheduledPreview("pricing", { status: "idle", data: null, error: "" });
+      root.state.setScheduledPreview("package", { status: "idle", data: null, error: "", verified: false });
       root.state.setScheduledPreview("availability", { status: "idle", data: null, error: "", query_key: "", loaded_at: "" });
       root.state.setScheduledPreview("calendar", { status: "idle", data: null, error: "", query_key: "", loaded_at: "" });
       root.state.setScheduledSubmit({ status: "idle", error: "", result: null });

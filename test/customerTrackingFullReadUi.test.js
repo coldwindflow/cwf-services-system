@@ -1195,7 +1195,7 @@ test("tracking UI exposes loading, not-found, rate-limit and offline states", ()
 });
 
 test("tracking assets share the full-read cache build id", () => {
-  const build = "20261003_prepaid_cancel_v1";
+  const build = "20261122_booking_recovery_v1";
   for (const file of [
     "customer-app/index.html",
     "customer-app/sw.js",

@@ -40,7 +40,8 @@ test("visual unification keeps scheduled booking data hooks and submit API contr
   assert.match(scheduled, /root\.api\.previewPricing/);
   assert.match(scheduled, /root\.api\.loadAvailabilityCalendar/);
   assert.match(scheduled, /root\.api\.loadAvailability/);
-  assert.match(scheduled, /root\.api\.submitScheduledBooking\(buildSubmitPayload\(\)\)/);
+  assert.match(scheduled, /const submitted = pending \|\| \{ \.\.\.buildSubmitPayload\(\)/);
+  assert.match(scheduled, /root\.api\.submitScheduledBooking\(submitted\)/);
 });
 
 test("visual unification keeps urgent, tracking, and profile hooks intact", () => {

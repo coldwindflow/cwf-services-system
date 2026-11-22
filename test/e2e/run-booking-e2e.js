@@ -36,6 +36,9 @@ const PG = {
   password: process.env.E2E_PG_PASSWORD || "postgres",
 };
 const DB_NAME = `cwf_e2e_${Date.now()}`;
+const BOOKING_CLOCK = process.env.E2E_PREPAID_ONLY === "1"
+  ? `${new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok" }).format(new Date())}T07:30:00+07:00`
+  : "2026-07-28T07:30:00+07:00";
 const PORT_A = Number(process.env.E2E_PORT_A || 4620); // booking enabled
 const PORT_B = Number(process.env.E2E_PORT_B || 4621); // booking disabled (kill switch)
 const BASE_A = `http://127.0.0.1:${PORT_A}`;
@@ -50,7 +53,7 @@ const children = [];
 function log(msg) { process.stdout.write(`${msg}\n`); }
 
 function ymdBangkok(offsetDays = 0) {
-  const now = new Date(Date.now() + offsetDays * 86400000);
+  const now = new Date(Date.parse(BOOKING_CLOCK) + offsetDays * 86400000);
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok" }).format(now);
 }
 
@@ -203,7 +206,7 @@ function bootApp(port, extraEnv = {}) {
       // Both API-only and browser scenarios use the same isolated local
       // PostgreSQL cluster, which intentionally has TLS disabled.
       NODE_OPTIONS: `--require=${path.join(__dirname, "local-postgres-preload.js")}`,
-      CWF_E2E_NOW_BANGKOK: "2026-07-28T07:30:00+07:00",
+      CWF_E2E_NOW_BANGKOK: BOOKING_CLOCK,
       // Customer urgent must ignore this legacy ENV and use the persisted CMS switch.
       ENABLE_CUSTOMER_URGENT_BOOKING: "false",
       ...extraEnv,
@@ -341,6 +344,13 @@ async function goToBookingWizard(page, appUrl) {
 }
 
 async function pickDateAndSlot(page, ymd, { slotIndex = 0 } = {}) {
+  // Exercise the calendar's real month navigation; fixtures can cross a month.
+  for (let i = 0; i < 4; i++) {
+    const month = await page.evaluate(() => window.CWFCustomerAppV2.state.draft.scheduled.calendar_month);
+    if (month === ymd.slice(0, 7)) break;
+    await tap(page.locator(`[data-calendar-month="${month < ymd.slice(0, 7) ? 1 : -1}"]`));
+    await page.waitForTimeout(200);
+  }
   const day = page.locator(`[data-calendar-date="${ymd}"]`);
   await tap(day, { timeout: 25000 });
   const slot = page.locator("[data-real-slot-key]").nth(slotIndex);
@@ -366,6 +376,10 @@ async function completeScheduledWizard(page, appUrl, ymd, opts = {}) {
   await chooseWashWallService(page);
   await nextStep(page); // -> step 2
   await page.waitForSelector('[data-scheduled-field="customer_name"]', { timeout: 20000 });
+  await page.waitForFunction(() => {
+    const p = window.CWFCustomerAppV2.state.scheduledPreview;
+    return p.calendar.status === "success" && p.availability.status !== "loading";
+  });
   await fillContactStep(page, opts.contact || {});
   const slotKey = await pickDateAndSlot(page, ymd, opts);
   await chooseTimeProposal(page, "false");
@@ -1137,8 +1151,9 @@ async function main() {
   ].filter(Boolean);
   const executablePath = chromiumCandidates.find((p) => { try { fs.accessSync(p); return true; } catch (_) { return false; } });
   const browser = await chromium.launch(executablePath ? { executablePath } : {});
-  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
-  await ctx.addInitScript(({ fixedNow }) => {
+  async function customerContext(width = 390) {
+  const context = await browser.newContext({ viewport: { width, height: 844 } });
+  await context.addInitScript(({ fixedNow }) => {
     const NativeDate = Date;
     class IncidentDate extends NativeDate {
       constructor(...args) {
@@ -1148,7 +1163,18 @@ async function main() {
     }
     Object.setPrototypeOf(IncidentDate, NativeDate);
     globalThis.Date = IncidentDate;
-  }, { fixedNow: Date.parse("2026-07-28T07:30:00+07:00") });
+  }, { fixedNow: Date.parse(BOOKING_CLOCK) });
+  return context;
+  }
+  const ctx = await customerContext();
+  if (process.env.E2E_PREPAID_ONLY === "1") {
+    await record("P3 paid Customer App reload, mobile booking and Admin/Technician persistence", async () => {
+      await require("./prepaid-browser-scenarios")({ pool, browser, base: BASE_A, adminSession,
+        tomorrow, customerContext, fillContactStep, pickDateAndSlot, nextStep, submitAndWaitSuccess });
+    });
+    await browser.close();
+    return;
+  }
   const page = await ctx.newPage();
   lastPages.add(page);
   ctx.on("page", (p) => { lastPages.add(p); p.on("close", () => lastPages.delete(p)); });
@@ -1244,12 +1270,14 @@ async function main() {
     }
     const finalCount = await jobCountWhere("appointment_datetime::date=$1", [reloadDay]);
     assert(finalCount === 1, `reload/resubmit must never create a second job (got ${finalCount})`);
+    assert(await p2.locator(".booking-result-card").count() === 1, "lost-response retry must recover the booking confirmation, not merely avoid duplicates");
     await p2.close();
   });
+  if (process.env.E2E_RECOVERY_ONLY === "1") { await browser.close(); return; }
 
   // 4) Two browsers race for the last capacity -> exactly one wins.
   await record("S4 concurrent booking of the last slot: exactly one succeeds", async () => {
-    const ctxB = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const ctxB = await customerContext(360);
     const pA = await ctx.newPage();
     const pB = await ctxB.newPage();
     await completeScheduledWizard(pA, APP_URL_A, raceDay);
@@ -1265,7 +1293,7 @@ async function main() {
     // The loser must see the "slot taken" message.
     const loser = ra.status === "fulfilled" ? pB : pA;
     const text = await loser.textContent("body");
-    assert(/เต็ม|เลือกช่วงเวลาใหม่|เลือกเวลาอื่น/.test(text || ""), "loser did not see slot-full feedback");
+    assert((text || "").includes("ช่วงเวลานี้เพิ่งมีผู้จอง กรุณาเลือกเวลาใหม่"), "loser did not see slot-full feedback");
     await pA.close(); await pB.close(); await ctxB.close();
   });
 
@@ -1281,7 +1309,7 @@ async function main() {
     const jobs = await jobCountWhere("appointment_datetime::date=$1", [staleDay]);
     assert(jobs === 1, `expected 1 job on stale day, got ${jobs}`);
     const text = await p.textContent("body");
-    assert(/เต็ม|เลือกช่วงเวลาใหม่|เลือกเวลาอื่น/.test(text || ""), "no stale-slot feedback shown");
+    assert((text || "").includes("ช่วงเวลานี้เพิ่งมีผู้จอง กรุณาเลือกเวลาใหม่"), "no stale-slot feedback shown");
     await p.close();
   });
 
@@ -1459,19 +1487,18 @@ async function main() {
   });
 
   // 11) Customer tracking after booking + privacy split (token vs code).
-  await record("S11 tracking works after booking; booking_code lookups are PII-redacted", async () => {
+  await record("S11 tracking works after booking; booking_code grants read-only capabilities", async () => {
     // token lookup -> full detail
     const full = await (await fetch(`${BASE_A}/public/track?q=${encodeURIComponent(bookingToken1)}`)).json();
     assert(full.access_level === "token", "token lookup should be full access");
     assert(full.customer_phone === "0812345678", "full access should return the real phone");
-    // code lookup -> masked
+    // Current code contract grants customer-facing reads, never write/document credentials.
     const red = await (await fetch(`${BASE_A}/public/track?q=${encodeURIComponent(bookingCode1)}`)).json();
-    assert(red.access_level === "code", "code lookup should be limited access");
+    assert(red.access_level === "selection", "code lookup should yield a scoped selection");
     // The allowlist drops these by construction, so they are absent (undefined)
     // rather than explicitly null — either way they must not carry a value.
     assert(red.booking_token == null, "code lookup must not echo the token");
-    assert(String(red.customer_phone || "").includes("5678") && !String(red.customer_phone).includes("0812345678"), "phone must be masked");
-    assert(red.gps_latitude == null && red.maps_url == null, "GPS/maps must be hidden");
+    assert(red.can_view_full_tracking === true && red.can_use_token_actions === false, "code capability boundary missing");
     assert(red.receipt_url == null, "receipt link must be hidden for code lookups");
     // In-browser: tracking page renders for the customer.
     const p = await ctx.newPage();
@@ -1619,21 +1646,20 @@ async function main() {
 
   // S16) A booking_code grants the customer-facing read model, never a private
   // credential, internal identifier, document capability, or write capability.
-  await record("S16 booking_code returns full read details without privileged fields", async () => {
+  await record("S16 booking_code returns scoped service details without customer PII or document credentials", async () => {
     const red = await (await fetch(`${BASE_A}/public/track?q=${encodeURIComponent(bookingCode1)}`,
       { headers: { "x-forwarded-for": "198.51.100.7" } })).json();
-    assert(red.access_level === "code", "expected booking-code read access");
+    assert(red.access_level === "selection", "expected scoped booking-code selection");
     assert(red.can_view_full_tracking === true, "code lookup must allow customer-facing details");
     assert(red.can_use_token_actions === false, "code lookup must deny privileged actions");
     assert(red.capabilities?.can_view_full_tracking === true, "nested read capability must be explicit");
     assert(red.capabilities?.can_view_documents === false, "code lookup must deny documents");
-    assert(red.capabilities?.can_submit_review === false, "code lookup must deny review writes");
+    assert(red.capabilities?.can_submit_review === true && typeof red.selection_ref === "string", "completed job review must use the signed, job-bound selection");
 
     // Positive contract: full customer-facing fields are present even when a
     // particular seeded job has null/empty optional values.
     for (const key of [
-      "customer_name", "customer_phone", "address_text", "maps_url", "job_type",
-      "job_status", "appointment_datetime", "job_price", "payment_status",
+      "job_type", "job_status", "appointment_datetime",
       "service_items", "photos", "units", "technician", "technician_team",
     ]) {
       assert(Object.prototype.hasOwnProperty.call(red, key), `code lookup missing read field: ${key}`);
@@ -1644,6 +1670,7 @@ async function main() {
     assert(Array.isArray(red.technician_team), "technician_team must be an array");
 
     const forbidden = [
+      "customer_name", "customer_phone", "address_text", "maps_url", "gps_latitude", "gps_longitude",
       "booking_token", "job_id", "receipt_url", "quote_url", "eslip_url",
       "document_key", "auth_token", "session", "session_id", "privileged_url",
       "payment_secret", "webhook_data", "private_key", "admin_note",
@@ -1878,7 +1905,7 @@ async function main() {
   // through the real tracking UI: a booking_code lookup shows a phone-entry
   // form, a wrong phone is rejected, the right phone succeeds — and a tokened
   // job opened by code must NOT offer the legacy form (no downgrade).
-  await record("S21 legacy customer reviews via the tracking UI (phone form); tokened job shows no legacy form", async () => {
+  await record("S21 legacy customer reviews via the tracking UI signed selection", async () => {
     const spare = await pool.query(
       `SELECT job_id, booking_code FROM public.jobs
         WHERE booking_token IS NOT NULL AND booking_code IS NOT NULL AND booking_code <> $1
@@ -1896,26 +1923,19 @@ async function main() {
     const p = await ctx.newPage();
     const openLookup = async () => {
       await p.goto(`${APP_URL_A}#tracking`, { waitUntil: "domcontentloaded" });
-      await p.locator("#tracking-code").fill(legacyCode);
+      await p.locator("#tracking-code").fill(legacyPhone);
       await tap(p.locator('[data-action="track-read"]'));
       // The review form lives in the "aftercare" tab panel — activate it first.
       await p.waitForSelector('[data-tracking-view="aftercare"]', { timeout: 15000 });
       await tap(p.locator('[data-tracking-view="aftercare"]').first());
-      await p.waitForSelector('[data-review-form] input[name="customer_phone"]', { timeout: 15000 });
+      await p.waitForSelector('[data-review-form] button[type="submit"]', { timeout: 15000 });
     };
     await openLookup();
-    // Wrong phone -> rejected, nothing written.
-    await p.locator('[data-review-form] input[name="customer_phone"]').fill("0800000000");
-    await tap(p.locator('[data-review-form] button[type="submit"]'));
-    await p.waitForTimeout(2500);
-    let rating = await pool.query(`SELECT customer_rating FROM public.jobs WHERE job_id=$1`, [legacyId]);
-    assert(rating.rows[0].customer_rating === null, "legacy review with wrong phone must not persist");
-    // Correct phone -> success.
-    if (!(await p.locator('[data-review-form] input[name="customer_phone"]').count())) await openLookup();
-    await p.locator('[data-review-form] input[name="customer_phone"]').fill(legacyPhone);
+    // Current UI obtains a job-bound selection_ref through the body-only phone
+    // lookup. Wrong-phone legacy POST rejection remains exercised by S17.
     await tap(p.locator('[data-review-form] button[type="submit"]'));
     await p.waitForTimeout(3000);
-    rating = await pool.query(`SELECT customer_rating FROM public.jobs WHERE job_id=$1`, [legacyId]);
+    const rating = await pool.query(`SELECT customer_rating FROM public.jobs WHERE job_id=$1`, [legacyId]);
     assert(Number(rating.rows[0].customer_rating) >= 1, "legacy review with the correct phone must persist");
     await p.close();
 

@@ -86,6 +86,7 @@
       service_package_bundle_preview: preview,
       services,
       prepaid_redemption_token: String(r.prepaid_redemption_token),
+      prepaid_entitlement_code: String(r.entitlement_code || ""),
       scheduled_request_key: String(r.scheduled_request_key || ""),
       selectedSlot: null,
       date: today,

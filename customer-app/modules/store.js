@@ -192,7 +192,7 @@
       redeem_until: item.service_package_redeem_until, payload: { services: quote.services }, server_verified: true };
     const common = { catalog_item_id: Number(item.item_id), service_package_key: "", service_package_tier_key: "", service_package_btu: "",
       service_package_groups: result.groups, service_package_bundle_preview: preview,
-      services: quote.services, selectedSlot: null };
+      services: quote.services, selectedSlot: null, prepaid_redemption_token: "", prepaid_entitlement_code: "" };
     root.state.updateDraft(scope, scope === "urgent" ? { ...common, urgent_request_key: "" } : { ...common, scheduled_request_key: "" });
     if (scope === "scheduled") {
       root.state.setScheduledPreview("package", { status: "success", data: preview, error: "", verified: true });
