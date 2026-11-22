@@ -56,7 +56,7 @@
       .cwf-prepaid-summary{border:1px solid #bfdbfe;background:#eff6ff;border-radius:12px;padding:12px;margin-top:10px;line-height:1.55;overflow-wrap:anywhere}
       .cwf-prepaid-location-option{display:flex;align-items:flex-start;gap:9px;border:1px solid #dbe4f0;border-radius:11px;padding:10px;margin-top:8px;line-height:1.4}
       .cwf-prepaid-location-option input{margin-top:4px}.cwf-prepaid-location-option span{min-width:0;overflow-wrap:anywhere}
-      .cwf-prepaid-hub{margin:14px 0}.cwf-prepaid-hub-tabs{display:flex;gap:6px;overflow-x:auto;padding-bottom:5px}.cwf-prepaid-hub-tabs button{white-space:nowrap;border:1px solid #cbd5e1;background:#fff;color:#17356b;border-radius:999px;padding:9px 11px;font-weight:800}.cwf-prepaid-hub-tabs button[aria-selected="true"]{background:#1457c9;color:#fff;border-color:#1457c9}
+      .cwf-prepaid-hub{margin:14px 0}.cwf-prepaid-hub-tabs{display:flex;gap:6px;overflow-x:auto;padding-bottom:5px}.cwf-prepaid-hub-tabs button{flex:0 0 auto;min-height:44px;white-space:nowrap;border:1px solid #cbd5e1;background:#fff;color:#17356b;border-radius:999px;padding:9px 11px;font-weight:800}.cwf-prepaid-hub-tabs button[aria-selected="true"]{background:#1457c9;color:#fff;border-color:#1457c9}
       @media(min-width:720px){.cwf-prepaid-backdrop{align-items:center;padding:24px}.cwf-prepaid-sheet{border-radius:24px;max-height:88vh}}
     `;
     document.head.appendChild(style);
@@ -663,6 +663,8 @@
     if (!root.api?.submitScheduledBooking || root.api.submitScheduledBooking.__prepaidWrapped) return;
     const original = root.api.submitScheduledBooking.bind(root.api);
     const wrapped = (payload) => {
+      const pending = root.state.draft?.scheduled?.scheduled_pending_payload;
+      if (pending && pending.scheduled_request_key === payload?.scheduled_request_key) return original(payload);
       const token = String(root.state.draft?.scheduled?.prepaid_redemption_token || "").trim();
       return original(token ? { ...(payload || {}), prepaid_redemption_token: token } : payload);
     };

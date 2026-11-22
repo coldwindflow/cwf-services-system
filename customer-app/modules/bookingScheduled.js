@@ -440,7 +440,9 @@
 
   function clearPackageSelection() {
     root.state.updateDraft("scheduled", { service_package_key: "", service_package_tier_key: "", service_package_btu: "", service_package_preview: null,
-      service_package_groups: [], service_package_bundle_preview: null, scheduled_request_key: "" });
+      service_package_groups: [], service_package_bundle_preview: null, scheduled_request_key: "",
+      prepaid_redemption_token: "", prepaid_entitlement_code: "", catalog_item_id: null,
+      catalog_booking_quote: null, catalog_booking_pricing: null });
     root.state.setScheduledPreview("package", { status: "idle", data: null, error: "", verified: false });
     clearPriceCalendarSlots();
   }
@@ -462,7 +464,9 @@
     const restoredDate = String(draft().date || "");
     const restoredMonth = String(draft().calendar_month || "");
     const restoredSlot = draft().selectedSlot || null;
-    root.state.updateDraft("scheduled", { service_package_key: String(packageKey || ""), service_package_tier_key: String(tierKey || ""), service_package_btu: String(opts.restoredBtu || ""), service_package_preview: null, services: [], selectedSlot: null, scheduled_request_key: opts.restore ? restoredRequestKey : "" });
+    root.state.updateDraft("scheduled", { service_package_key: String(packageKey || ""), service_package_tier_key: String(tierKey || ""), service_package_btu: String(opts.restoredBtu || ""), service_package_preview: null, services: [], selectedSlot: null, scheduled_request_key: opts.restore ? restoredRequestKey : "",
+      service_package_groups: [], service_package_bundle_preview: null, prepaid_redemption_token: "", prepaid_entitlement_code: "",
+      catalog_item_id: null, catalog_booking_quote: null, catalog_booking_pricing: null });
     clearPriceCalendarSlots();
     root.state.setScheduledPreview("package", { status: "loading", data: null, error: "", verified: false });
     paint(container);
@@ -1222,8 +1226,9 @@
     const serviceError = validateServiceStep();
     const pricingError = validatePricingStep();
     const slotError = validateSlotStep();
-    const payload = buildSubmitPayload();
-    if (contactError || serviceError || pricingError || slotError || !payload.appointment_datetime) {
+    const pending = draft().scheduled_pending_payload;
+    const payload = pending || buildSubmitPayload();
+    if (!pending && (contactError || serviceError || pricingError || slotError || !payload.appointment_datetime)) {
       const error = contactError || serviceError || pricingError || slotError || "ข้อมูลจองไม่ครบ";
       root.state.setScheduledSubmit({ status: "error", error, result: null });
       root.state.setScheduledWizard({ step: serviceError ? 1 : 2, error });
@@ -1235,14 +1240,22 @@
     root.state.setScheduledSubmit({ status: "checking_slot", error: "", result: null, disabled_line_url: "" });
     paint(container);
     try {
-      const slotIsCurrent = await revalidateSelectedSlot();
-      if (lifecycleEpoch !== scheduledLifecycleEpoch || slotIsCurrent === false) return;
+      if (!pending) {
+        const slotIsCurrent = await revalidateSelectedSlot();
+        if (lifecycleEpoch !== scheduledLifecycleEpoch || slotIsCurrent === false) return;
+      }
       root.state.setScheduledSubmit({ status: "submitting", error: "", result: null });
+      const submitted = pending || { ...buildSubmitPayload(),
+        ...(draft().prepaid_redemption_token ? { prepaid_redemption_token: draft().prepaid_redemption_token } : {}) };
+      // Persist the exact confirmed request before sending it. If the response
+      // is lost, replay it before checking its now-occupied slot.
+      root.state.updateDraft("scheduled", { scheduled_pending_payload: submitted });
       paint(container);
-      const result = await root.api.submitScheduledBooking(buildSubmitPayload());
+      const result = await root.api.submitScheduledBooking(submitted);
       if (lifecycleEpoch !== scheduledLifecycleEpoch) return;
       if (!result?.success || (!result.booking_code && !result.token)) throw new Error("ระบบไม่ได้ส่งรหัสติดตามกลับมา");
       ticketCopyState = { status: "idle", error: "" };
+      root.state.updateDraft("scheduled", { scheduled_pending_payload: null });
       root.state.setScheduledSubmit({ status: "success", error: "", result });
       try {
         window.sessionStorage.removeItem("cwf_customer_app_v2_scheduled_v5");
@@ -1252,6 +1265,9 @@
       scrollToWizardTop(container);
     } catch (error) {
       if (lifecycleEpoch !== scheduledLifecycleEpoch) return;
+      if ([400, 404, 409].includes(Number(error.status))) {
+        root.state.updateDraft("scheduled", { scheduled_pending_payload: null });
+      }
       if (hasPackageSelection() && (Number(error.status) === 404 || String(error?.data?.code || "").includes("SERVICE_PACKAGE"))) {
         root.state.setScheduledPreview("package", { status: "error", data: null, error: "แพ็กเกจนี้ไม่พร้อมให้จอง กรุณาเลือกใหม่", verified: false });
         root.state.updateDraft("scheduled", { selectedSlot: null });
@@ -1288,7 +1304,7 @@
   }
 
   function renderActions() {
-    if (root.state.scheduledSubmit.status === "success") return "";
+    if (root.state.scheduledSubmit.status === "success" || draft().scheduled_pending_payload) return "";
     const current = step();
     if (current === 3) {
       return `<div class="wizard-action-bar"><button type="button" class="secondary-btn btn-tap" data-action="wizard-back">ย้อนกลับ</button></div>`;
@@ -1308,6 +1324,11 @@
     const success = root.state.scheduledSubmit.status === "success";
     const content = success
       ? renderSuccess()
+      : draft().scheduled_pending_payload ? `<section class="card booking-wizard-card"><h2>ตรวจสอบผลการจองเดิม</h2>
+        <p>คำขอยืนยันถูกส่งแล้ว ระบบจะตรวจสอบรายการเดิมโดยไม่สร้างการจองซ้ำ</p>
+        ${root.state.scheduledSubmit.error ? root.utils.stateBox("error", root.state.scheduledSubmit.error) : ""}
+        <button type="button" class="primary-btn btn-tap" data-action="submit-scheduled"
+          ${["checking_slot", "submitting"].includes(root.state.scheduledSubmit.status) ? "disabled" : ""}>ตรวจสอบการจอง</button></section>`
       : current === 1 ? renderStepServices()
         : current === 2 ? renderStepContactLocation()
           : renderStepReview();
@@ -1512,28 +1533,87 @@
   // in-memory pricing/calendar/slot preview is gone because only the draft + step are persisted.
   // Recover the dependency chain in order pricing -> calendar -> selected-day availability, without
   // firing competing requests and without bouncing the customer back to Step 1.
+  // CWF 20261121: reload must revalidate the bundle against the server. A paid
+  // right uses its purchased snapshot, even after sales close. Never restart
+  // redemption here: rotating the request key could break a lost-response retry.
+  async function recoverCompositePackage(container) {
+    const original = draft();
+    const epoch = scheduledLifecycleEpoch;
+    const selectionKey = (value) => JSON.stringify([value.catalog_item_id, value.service_package_groups,
+      value.prepaid_redemption_token, value.prepaid_entitlement_code, value.scheduled_request_key]);
+    const expectedKey = selectionKey(original);
+    root.state.setScheduledPreview("package", { status: "loading", data: null, error: "", verified: false });
+    paint(container);
+    try {
+      let preview;
+      if (original.prepaid_redemption_token) {
+        const data = await root.api.loadServiceRights();
+        const right = (data.items || []).find((item) => item.entitlement_code === original.prepaid_entitlement_code);
+        const snapshot = right?.service_snapshot;
+        if (!right || !["active", "redeeming", "redeemed"].includes(right.status) || snapshot?.schema_version !== 1) {
+          throw new Error("ไม่พบสิทธิ์ที่พร้อมใช้ กรุณาเปิดสิทธิ์อีกครั้งจากบริการของฉัน");
+        }
+        preview = { package_name: "สิทธิ์ PREPAID", prepaid: true, groups: snapshot.service_package_groups,
+          fixed_total_price: Number(snapshot.fixed_total_price), duration_min: Number(snapshot.duration_min),
+          redeem_until: right.redeem_until, payload: { services: snapshot.services }, server_verified: true };
+      } else {
+        const [quote, detail] = await Promise.all([
+          root.api.quoteCatalogBooking({ catalog_item_id: Number(original.catalog_item_id),
+            service_package_groups: original.service_package_groups, booking_mode: "scheduled" }),
+          root.api.loadCatalogItem(original.catalog_item_id),
+        ]);
+        const item = detail?.item || detail;
+        preview = { groups: quote.groups, components: quote.components, fixed_total_price: Number(quote.fixed_total_price),
+          package_name: item?.item_name, duration_min: Number(quote.duration_minutes), redeem_until: item?.service_package_redeem_until,
+          payload: { services: quote.services }, server_verified: true };
+      }
+      if (!Number.isFinite(preview.fixed_total_price) || !(preview.duration_min > 0)
+          || !preview.groups?.length || !preview.payload.services?.length) throw new Error("แพ็กเกจยังไม่พร้อม กรุณาเลือกใหม่");
+      if (epoch !== scheduledLifecycleEpoch || selectionKey(draft()) !== expectedKey) return false;
+      root.state.updateDraft("scheduled", { service_package_bundle_preview: preview,
+        service_package_groups: preview.groups, services: preview.payload.services });
+      root.state.setScheduledPreview("package", { status: "success", data: preview, error: "", verified: true });
+      return true;
+    } catch (error) {
+      if (epoch === scheduledLifecycleEpoch && selectionKey(draft()) === expectedKey) {
+        const message = original.prepaid_redemption_token
+          ? "ยังตรวจสอบสิทธิ์ไม่ได้ กรุณาเข้าสู่ระบบและเปิดสิทธิ์อีกครั้งจากบริการของฉัน"
+          : root.customerCopy.bookingError(error);
+        root.state.setScheduledPreview("package", { status: "error", data: null, error: message, verified: false });
+        root.state.setScheduledWizard({ error: message });
+        paint(container);
+      }
+      return false;
+    }
+  }
+
   async function recoverScheduledDependencies(container) {
     if (recoveryInFlight) return;
-    if (step() < 2) return;
-    if (hasPackageSelection() && !hasCompositeSelection() && root.state.scheduledPreview.package?.verified !== true) {
-      const restoredBtu = draft().service_package_btu;
-      const restored = await selectServicePackage(draft().service_package_key, draft().service_package_tier_key, container, { restoredBtu, restore: true });
-      if (!restored) return;
-    }
-    const preview = root.state.scheduledPreview;
-    const needPricing = !preview.pricing.data && preview.pricing.status !== "loading";
-    const needCalendar = preview.calendar.status === "idle";
-    const needAvailability = preview.availability.status === "idle";
-    if (!needPricing && !needCalendar && !needAvailability) return;
+    if (step() < 2 && !hasCompositeSelection()) return;
     const recovery = { lifecycleEpoch: scheduledLifecycleEpoch };
     recoveryInFlight = recovery;
     try {
+      if (hasCompositeSelection() && !draft().service_package_bundle_preview) {
+        if (!await recoverCompositePackage(container)) return;
+      }
+      if (hasPackageSelection() && !hasCompositeSelection() && root.state.scheduledPreview.package?.verified !== true) {
+        const restoredBtu = draft().service_package_btu;
+        const restored = await selectServicePackage(draft().service_package_key, draft().service_package_tier_key, container, { restoredBtu, restore: true });
+        if (!restored) return;
+      }
+      if (recovery.lifecycleEpoch !== scheduledLifecycleEpoch) return;
+      const preview = root.state.scheduledPreview;
+      const needPricing = !preview.pricing.data && preview.pricing.status !== "loading";
+      const needCalendar = preview.calendar.status === "idle";
+      const needAvailability = preview.availability.status === "idle";
+      if (!needPricing && !needCalendar && !needAvailability) return;
       if (needPricing) {
         try { await refreshPricing(container, { preserveDependents: true }); }
         catch (_) { return; }
       }
       if (recovery.lifecycleEpoch !== scheduledLifecycleEpoch) return;
       if (!root.state.scheduledPreview.pricing.data) return;
+      if (step() < 2) return;
       if (root.state.scheduledPreview.calendar.status === "idle") {
         await refreshCalendar(container);
       }
@@ -1549,8 +1629,13 @@
   function render(container) {
     const lifecycleEpoch = scheduledLifecycleEpoch;
     paint(container);
+    if (draft().scheduled_pending_payload) return;
     if (root.state.scheduledPreview.packages.status === "idle") loadServicePackages(container);
     if (step() === 1) {
+      if (hasCompositeSelection() && !draft().service_package_bundle_preview) {
+        recoverScheduledDependencies(container);
+        return;
+      }
       if (hasPackageSelection() && !hasCompositeSelection() && root.state.scheduledPreview.package?.verified !== true) {
         selectServicePackage(draft().service_package_key, draft().service_package_tier_key, container, { restoredBtu: draft().service_package_btu, restore: true });
         return;

@@ -330,12 +330,105 @@ function loadCustomerFrontend(context = makeContext()) {
   return root;
 }
 
+test("reloaded composite booking recovers server price before requesting availability", async () => {
+  const root = loadCustomerFrontend();
+  const calls = [];
+  root.state.updateDraft("scheduled", { catalog_item_id: 901,
+    service_package_groups: [{ package_key: "qa-package", btu: 12000, quantity: 2 }],
+    service_package_bundle_preview: null, scheduled_request_key: "keep-original-request" });
+  root.state.setScheduledWizard({ step: 2 });
+  root.state.setScheduledPreview("packages", { status: "success", items: [] });
+  root.api.quoteCatalogBooking = async () => {
+    calls.push("quote");
+    return { fixed_total_price: 959, duration_minutes: 120,
+      groups: root.state.draft.scheduled.service_package_groups,
+      services: [{ job_type: "ล้าง", ac_type: "ผนัง", btu: 12000, machine_count: 2, wash_variant: "ล้างธรรมดา" }] };
+  };
+  root.api.loadAvailabilityCalendar = async () => { calls.push("calendar"); return { days: [] }; };
+  root.api.loadAvailability = async () => { calls.push("slots"); return { slots: [] }; };
+  root.bookingScheduled.render(new WizardContainer(root));
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(root.state.scheduledPreview.pricing.data?.fixed_total_price, 959);
+  assert.equal(root.state.draft.scheduled.scheduled_request_key, "keep-original-request");
+  assert.deepEqual(calls, ["quote", "calendar", "slots"]);
+  root.bookingScheduled.render.onLeave();
+});
+
+test("switching a paid draft to an ordinary service removes the old redemption and package", () => {
+  for (const select of ["picker", "commerce"]) {
+    const root = loadCustomerFrontend();
+    root.state.updateDraft("scheduled", { catalog_item_id: 901, prepaid_redemption_token: "old-token",
+      prepaid_entitlement_code: "old-right", scheduled_request_key: "old-request",
+      service_package_groups: [{ package_key: "paid", btu: 12000, quantity: 2 }],
+      service_package_bundle_preview: { prepaid: true } });
+    if (select === "picker") root.bookingScheduled._test.clearPackageSelection();
+    else root.services.applyCommerceDraft("scheduled", root.services.commerceItem("wall-normal"));
+    const draft = root.state.draft.scheduled;
+    assert.equal(draft.prepaid_redemption_token, "", select);
+    assert.equal(draft.prepaid_entitlement_code, "", select);
+    assert.equal(draft.service_package_groups.length, 0, select);
+    assert.equal(draft.service_package_bundle_preview, null, select);
+    assert.equal(draft.scheduled_request_key, "", select);
+  }
+});
+
+test("paid reload uses the owned purchase snapshot without rotating its retry key or reopening sales", async () => {
+  const context = makeContext();
+  let root = loadCustomerFrontend(context);
+  root.state.updateDraft("scheduled", { catalog_item_id: 901,
+    service_package_groups: [{ package_key: "paid", btu: 12000, quantity: 2 }],
+    prepaid_entitlement_code: "RIGHT-OWNED", prepaid_redemption_token: "original-token",
+    scheduled_request_key: "original-request", service_package_bundle_preview: { fixed_total_price: 1 } });
+  root.state.setScheduledWizard({ step: 2 });
+  context.window.CWFCustomerAppV2 = {};
+  root = loadCustomerFrontend(context);
+  root.state.init();
+  assert.equal(root.state.draft.scheduled.service_package_bundle_preview, null);
+  root.state.setScheduledPreview("packages", { status: "success", items: [] });
+  const calls = [];
+  root.api.loadServiceRights = async () => {
+    calls.push("owned-rights");
+    return { items: [{ entitlement_code: "RIGHT-OWNED", status: "redeeming", redeem_until: "2027-01-31",
+      service_snapshot: { schema_version: 1, fixed_total_price: 959, duration_min: 120,
+        service_package_groups: [{ package_key: "paid", btu: 12000, quantity: 2 }],
+        services: [{ job_type: "ล้าง", ac_type: "ผนัง", btu: 12000, machine_count: 2, wash_variant: "ล้างธรรมดา" }] } }] };
+  };
+  root.api.quoteCatalogBooking = async () => { throw new Error("closed campaign must not be quoted again"); };
+  root.api.loadAvailabilityCalendar = async () => { calls.push("calendar"); return { days: [] }; };
+  root.api.loadAvailability = async () => { calls.push("slots"); return { slots: [] }; };
+  root.bookingScheduled.render(new WizardContainer(root));
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.deepEqual(calls, ["owned-rights", "calendar", "slots"]);
+  assert.equal(root.state.scheduledPreview.pricing.data.fixed_total_price, 959);
+  assert.equal(root.state.draft.scheduled.prepaid_redemption_token, "original-token");
+  assert.equal(root.state.draft.scheduled.scheduled_request_key, "original-request");
+  root.bookingScheduled.render.onLeave();
+});
+
+test("unowned or unavailable rights cannot recover cached price or load slots", async () => {
+  const root = loadCustomerFrontend();
+  root.state.updateDraft("scheduled", { catalog_item_id: 901,
+    service_package_groups: [{ package_key: "paid", btu: 12000, quantity: 2 }],
+    prepaid_entitlement_code: "NOT-OWNED", prepaid_redemption_token: "token" });
+  root.state.setScheduledWizard({ step: 2 });
+  root.state.setScheduledPreview("packages", { status: "success", items: [] });
+  root.api.loadServiceRights = async () => ({ items: [] });
+  let slotCalls = 0;
+  root.api.loadAvailability = async () => { slotCalls++; return { slots: [] }; };
+  root.bookingScheduled.render(new WizardContainer(root));
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(root.state.scheduledPreview.package.status, "error");
+  assert.equal(root.state.scheduledPreview.pricing.data, null);
+  assert.equal(slotCalls, 0);
+  root.bookingScheduled.render.onLeave();
+});
+
 test("Customer App build id is consistent across shell and service worker", () => {
   const index = read("customer-app/index.html");
   const sw = read("customer-app/sw.js");
   const app = read("customer-app/assets/customer-app.js");
   const manifest = read("customer-app/manifest.webmanifest");
-  const build = "20261003_prepaid_cancel_v1";
+  const build = "20261122_booking_recovery_v1";
 
   assert.match(index, new RegExp(`customer-app\\.css\\?v=${build}`));
   assert.match(index, new RegExp(`modules\\/api\\.js\\?v=${build}`));
@@ -353,7 +446,7 @@ test("Customer App build id is consistent across shell and service worker", () =
 test("store module is loaded in index.html and precached in the service worker app shell", () => {
   const index = read("customer-app/index.html");
   const sw = read("customer-app/sw.js");
-  const build = "20261003_prepaid_cancel_v1";
+  const build = "20261122_booking_recovery_v1";
 
   assert.match(index, new RegExp(`modules/store\\.js\\?v=${build}`));
   assert.match(sw, /`\.\/modules\/store\.js\?v=\$\{BUILD_ID\}`/);
@@ -815,6 +908,34 @@ test("scheduled double submit creates one booking request", async () => {
   assert.equal(submitCalls, 1);
   resolveSubmit({ success: true, booking_code: "BK-SCHEDULED", token: "TOKEN-SCHEDULED" });
   await Promise.all([firstSubmit, secondSubmit]);
+  root.bookingScheduled.render.onLeave();
+});
+
+test("reload retries the exact pending request even when its committed slot is no longer available", async () => {
+  const context = makeContext();
+  let root = loadCustomerFrontend(context);
+  const submitted = { booking_mode: "scheduled", scheduled_request_key: "original-confirmed-request",
+    appointment_datetime: "2026-11-23T09:00:00+07:00", customer_phone: "0800000001",
+    prepaid_redemption_token: "original-paid-capability" };
+  root.state.updateDraft("scheduled", { scheduled_pending_payload: submitted });
+  root.state.setScheduledWizard({ step: 3 });
+  context.window.CWFCustomerAppV2 = {};
+  root = loadCustomerFrontend(context);
+  root.state.init();
+  let calls = 0;
+  root.api.loadAvailability = async () => { throw new Error("occupied slot must not prevent replay"); };
+  root.api.submitScheduledBooking = async (body) => {
+    assert.deepEqual(JSON.parse(JSON.stringify(body)), submitted);
+    calls++;
+    return { success: true, replayed: true, booking_code: "CWFQA12345", token: "qa-token" };
+  };
+  const container = new WizardContainer(root);
+  root.bookingScheduled.render(container);
+  assert.match(container.innerHTML, /ตรวจสอบผลการจองเดิม/);
+  await container.querySelectorAll("[data-action]").find((button) => button.getAttribute("data-action") === "submit-scheduled").click();
+  assert.equal(calls, 1);
+  assert.equal(root.state.scheduledSubmit.status, "success");
+  assert.equal(root.state.draft.scheduled.scheduled_pending_payload, null);
   root.bookingScheduled.render.onLeave();
 });
 

@@ -7,6 +7,7 @@ const { packageRequest, resolvePackageBooking, packageBookingFromSnapshot, compo
 const { resolveCatalogBookingPolicy, buildCatalogBookingItem, buildCatalogBookingPayload } = require("./catalogBookingPolicy");
 const { buildBookingTicket, loadBookingTicket, exactMoney } = require("./bookingTicket");
 const adminIdempotency = require("./adminBookingIdempotency");
+const publicIdempotency = require("./publicBookingIdempotency");
 const persistedBookingReplay = require("./persistedBookingReplay");
 const { validateAdminStorePromotionRequest } = require("./adminStorePromotionPolicy");
 const { resolveUrgentCompositePreflight } = require("./urgentCompositePreflight");
@@ -1579,7 +1580,7 @@ function createBookingJobService(dependencies = {}) {
       : null;
     const bookingRequestKey = scheduledRequestKey || urgentRequestKey;
     const deterministicToken = scheduledDeterministicToken || urgentDeterministicToken;
-    const publicRequestFingerprint = bookingRequestKey ? adminIdempotency.requestFingerprint(req.body || {}) : null;
+    const publicRequestFingerprint = bookingRequestKey ? publicIdempotency.fingerprint(req.body || {}) : null;
     if (deterministicToken) token = deterministicToken;
     const allowAdminScheduleFallback = allow_admin_schedule_fallback === true || String(allow_admin_schedule_fallback || "").trim() === "true";
     const canUseAdminScheduleFallback = bm === "scheduled" && allowAdminScheduleFallback;
@@ -1617,7 +1618,7 @@ function createBookingJobService(dependencies = {}) {
         requestKey: bookingRequestKey, bookingToken: deterministicToken, bookingMode: bm,
       });
       if (prior?.booking_request_fingerprint) {
-        if (String(prior.booking_request_fingerprint) !== publicRequestFingerprint) {
+        if (!publicIdempotency.matches(String(prior.booking_request_fingerprint), req.body || {})) {
           return res.status(409).json({ error: "This request key was already used for another booking. Start a new booking.", code: "IDEMPOTENCY_KEY_REUSED" });
         }
         const replayDuration = Number(prior.duration_min || 0);
@@ -1961,7 +1962,7 @@ function createBookingJobService(dependencies = {}) {
           const row = existing.rows[0];
           await client.query("COMMIT");
           if (row.booking_request_fingerprint) {
-            if (String(row.booking_request_fingerprint) !== publicRequestFingerprint) {
+            if (!publicIdempotency.matches(String(row.booking_request_fingerprint), req.body || {})) {
               return res.status(409).json({ error: "This request key was already used for another booking. Start a new booking.", code: "IDEMPOTENCY_KEY_REUSED" });
             }
             const replayDuration = Number(row.duration_min || 0);
